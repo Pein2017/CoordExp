@@ -1,0 +1,16 @@
+# Owner recurrence: displacement-matched covered versus uncovered owner
+
+From the original R16 anchor, does replacing a naturally recurrent complete row with a distinct uncovered same-class owner improve free enumeration beyond a comparable move to an already-covered owner, conditional on physical admission and exact native replay?
+
+## Predecessor and decision
+The lead-accepted [row-branch study](../2026-09-17-owner-recurrence-row-branch/results.md) found conditional bird release, unchanged same-bird suffix, and immediate EOS after a clock substitution. Novelty was confounded with displacement, order and category. July22 showed spatially specific history effects at a different checkpoint; Sep08 reduced repeats without established owner recovery. This phase changes the comparator, not the model or decoder. Useful additional free owners with native-future retention and acceptable debt are required; lower repetition alone is insufficient.
+
+## Admission and bounded execution
+Use saved fresh128 original and normalized rows, starting with the prior eight-image recurrence screen. Select one convincing case if available, at most three, before intervention results. Confirm physical recurrence and covered/uncovered identity relative to literal common history, including credible unlabeled owners. Compare movement direction, magnitude, region, extent, wrapper, token length and changed fields. Geometry/GT matching alone cannot establish physical identity; overlap with neighbors is not automatic rejection. Preserve material mismatches. If no supported comparable pair is available, close admission-HOLD without model execution or a wider visual census.
+
+An admitted panel.json will bind original R16 adapter/paired embeddings, images, owner banks, tokenizer and sources; exact native heterogeneous batches, FP32/SDPA, greedy RP1 and cap3084 remain unchanged. Replace only one complete row then release all logits including EOS. Reuse predecessor producer-v2 and saved consumer at a narrow seam. Verify exact native replay before interpreting interventions. At most nine batches,27756 forwards,two allocated GPU-hours and two elapsed GPU-execution hours including mechanical work; fewer cases mean fewer runs. No unregistered retries or extra cells.
+
+## Outcomes, evidence and stop
+Exclude the union of all supplied physical/known owner IDs symmetrically from free-successor comparisons. Report supplied contributions and final sets separately. Preserve credible native-future owners; distinguish physical loss from extent/class change and assignment competition. Review only selected rows and changed clusters/suppression conflicts. Unknown stays unresolved unless visual evidence supports an owner. Save full tokens, raw parsing/stops, prefix hashes, owner ledgers, complete-row/first-fork scores and existing bounded sparse logits/readout inputs. No full KV/attention capture.
+
+Stop after the fixed admitted comparison, independent saved-output reduction and bounded sidecar, or admission-HOLD. Candidate only: cross-study lead owns acceptance, coordination/, global frontier and question synthesis. No training, norm changes, extra cohorts, annotation edits, project-memory/skill edits or Notion work.

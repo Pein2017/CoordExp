@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-covered-history-common-tail",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "full-row relative suppression across all extent contrasts; first-fork relative facilitation; absolute inhibition and ledger not identified",
+  "state_as_of": "2026-09-18T02:53:01.974041+00:00",
+  "protocol": "research/experiments/2026-09-18-covered-history-common-tail/unit.md",
+  "result": "research/experiments/2026-09-18-covered-history-common-tail/results.md",
+  "state_source": "research/experiments/2026-09-18-covered-history-common-tail/results.md",
+  "boundary": "One image, four supplied histories x four coherent candidates; root accepted conditional relative effects only",
+  "not_authorized": [
+    "training",
+    "successor",
+    "rollouts",
+    "checkpoint probes",
+    "QKV/layer sweep",
+    "labels",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Discuss accepted result; no automatic successor and checkpoint-stage probes remain deferred",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-covered-history-common-tail/lead-acceptance.json"
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-17-repetition-history-mechanism",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted bounded evidence: conditional history sensitivity and one reviewed useful sampled-pulse continuation among24; persistent relapse and physical debt; no promotion",
+  "state_as_of": "2026-09-17",
+  "protocol": "research/experiments/2026-09-17-repetition-history-mechanism/unit.md",
+  "result": "research/experiments/2026-09-17-repetition-history-mechanism/results.md",
+  "state_source": "research/experiments/2026-09-17-repetition-history-mechanism/results.md",
+  "boundary": "Inference-only fixed history and norm timing; StageC one bird prefix, three temperatures and eight seeds each; independent saved-output and RNG replay accepted; no population physical-recovery or isolated count-feedback claim",
+  "not_authorized": [
+    "training",
+    "parameter updates",
+    "annotation changes",
+    "Notion",
+    "project-memory",
+    "automatic successor"
+  ],
+  "next_action": "Closed with no live owned model work. A successor needs a new decision-changing contrast; no automatic compute or training follows this closeout."
+}

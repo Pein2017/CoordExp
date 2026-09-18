@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-owner-recurrence-onset",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "finite original-policy repeated-row preference; normalization reverses primary B full-row preference but not shared-x1 pair; earlier identity HOLD",
+  "state_as_of": "2026-09-18T02:17:44.349207+00:00",
+  "protocol": "research/experiments/2026-09-18-owner-recurrence-onset/unit.md",
+  "result": "research/experiments/2026-09-18-owner-recurrence-onset/results.md",
+  "state_source": "research/experiments/2026-09-18-owner-recurrence-onset/results.md",
+  "boundary": "one finite inference-only owner-grounded onset panel; root accepts",
+  "not_authorized": [
+    "training",
+    "successor",
+    "new layers/heads",
+    "label changes",
+    "Notion",
+    "project-memory",
+    "checkpoint-stage probes"
+  ],
+  "next_action": "Discuss accepted result with user; no automatic successor and no checkpoint-stage probes",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-owner-recurrence-onset/lead-acceptance.json"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-17-history-rereading-mechanism",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted local negative repair result and retained-current-cache drift; no policy or selective-rereading promotion",
+  "state_as_of": "2026-09-17",
+  "protocol": "research/experiments/2026-09-17-history-rereading-mechanism/unit.md",
+  "result": "research/experiments/2026-09-17-history-rereading-mechanism/results.md",
+  "state_source": "research/experiments/2026-09-17-history-rereading-mechanism/results.md",
+  "boundary": "One supplied-row historical K/V interval at a selected bird decision; changed margins without recovery; current14-positive evaluation admitted, negative/ignore semantics HOLD.",
+  "not_authorized": [
+    "training",
+    "new sampling or layer sweep",
+    "automatic successor",
+    "Notion",
+    "project-memory"
+  ],
+  "next_action": "This unit is closed with no owned jobs. Root may commission a separate finite wrapper-factor contrast under the user lead-only continuation grant; worker has no automatic successor authority."
+}

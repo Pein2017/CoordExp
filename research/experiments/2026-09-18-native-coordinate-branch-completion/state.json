@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-native-coordinate-branch-completion",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "No retained higher-likelihood nonrepeated owner row. Width4 improves repeated A realization; forced52 yields credible B but lower full-row probability;30 partial-owner identity HOLD.",
+  "state_as_of": "2026-09-18T03:27:42.446818+00:00",
+  "protocol": "research/experiments/2026-09-18-native-coordinate-branch-completion/unit.md",
+  "result": "research/experiments/2026-09-18-native-coordinate-branch-completion/results.md",
+  "state_source": "research/experiments/2026-09-18-native-coordinate-branch-completion/results.md",
+  "boundary": "One native recurrence; three fixed coordinate branches, width4, eight suffix tokens; root accepted finite row evidence",
+  "not_authorized": [
+    "training",
+    "successor",
+    "long rollout",
+    "wider beam",
+    "extra images/checkpoints",
+    "QKV/layer sweep",
+    "labels",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Discuss accepted result; no automatic successor, training or checkpoint-stage probes",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-native-coordinate-branch-completion/lead-acceptance.json"
+}

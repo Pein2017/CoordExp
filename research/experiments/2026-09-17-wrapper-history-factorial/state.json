@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-17-wrapper-history-factorial",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "mixed-state dependence; no selective partial-source recovery",
+  "state_as_of": "2026-09-17T17:26:15.894312+00:00",
+  "protocol": "research/experiments/2026-09-17-wrapper-history-factorial/unit.md",
+  "result": "research/experiments/2026-09-17-wrapper-history-factorial/results.md",
+  "state_source": "research/experiments/2026-09-17-wrapper-history-factorial/results.md",
+  "boundary": "One selected bird context; root owns acceptance/continuation; all-source success is expected restoration",
+  "not_authorized": [
+    "training",
+    "layer/head/position sweep",
+    "new cohort",
+    "automatic successor",
+    "Notion",
+    "project-memory"
+  ],
+  "next_action": "Stop this factor-decomposition branch; await user discussion before a qualitatively different research contract.",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-17-wrapper-history-factorial/lead-acceptance.json"
+}
