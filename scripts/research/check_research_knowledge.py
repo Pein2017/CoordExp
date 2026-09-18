@@ -22,7 +22,7 @@ CAPTURE = Path('docs/history/research-records/2026-09-15-root-collapse')
 RESEARCH = Path('research')
 CATALOG = RESEARCH / 'experiments/catalog.jsonl'
 ROOT_NAMES = {'index.md', 'CONVENTIONS.md', 'story.md', 'glossary.md',
-              'alternatives.md', 'questions', 'experiments'}
+              'alternatives.md', 'questions', 'literature', 'experiments'}
 LIFECYCLES = {'planned', 'ready', 'running', 'blocked', 'paused', 'closed', 'superseded'}
 EVIDENCE_STATES = {'none', 'partial', 'unreviewed', 'accepted', 'invalid'}
 LINK = re.compile(r'!?\[[^\]\n]*\]\(([^)\n]+)\)')
