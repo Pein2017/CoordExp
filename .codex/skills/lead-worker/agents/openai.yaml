@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lead / Worker"
+  short_description: "Astra lead discussion with isolated low-effort execution"
+  default_prompt: "Use $lead-worker to keep discussion and acceptance here in the Astra high-or-higher lead task and send bounded execution to my designated Astra-low worker."
