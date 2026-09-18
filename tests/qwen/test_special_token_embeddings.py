@@ -58,6 +58,85 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
     assert artifact["coord_token_ids_contiguous"] is True
 
 
+def test_untied_deltas_independent_updates_exact_save_and_inference_reload(tmp_path: Path) -> None:
+    import copy
+    from safetensors.torch import load_file
+
+    torch.manual_seed(17)
+    base = TinyTiedQwenModel(vocab_size=152670, hidden_size=4)
+    qwen = _qwen_identity_context(model=copy.deepcopy(base))
+    selection = build_default_special_token_selection(
+        SpecialTokenEmbeddingsConfig(groups=SpecialTokenEmbeddingGroupsConfig(
+            coordinate_tokens="default_coord_0_999", wrapper_tokens="default_object_box_wrappers"
+        )), qwen.token_identity,
+    )
+    ids = torch.tensor([[selection.token_ids[0], 3, selection.token_ids[-1]]])
+    expected_initial = base.lm_head(base.embed_tokens(ids)).detach()
+    result = install_special_token_embedding_deltas(base, selection, tie_word_embeddings=False)
+    left = result.input_wrapper.shared_embed_delta
+    right = result.output_wrapper.shared_embed_delta
+    assert left is not right and left.data_ptr() != right.data_ptr()
+    assert torch.equal(left, right)
+    assert torch.equal(base.lm_head(base.embed_tokens(ids)), expected_initial)
+    assert len(result.receipt.delta_parameter_names) == 2
+    from src.config import load_train_config
+    from src.optim.parameter_groups import build_optimizer_group_plan
+    config = load_train_config("configs/train/production.yaml").config
+    plan = build_optimizer_group_plan(base, config.optimizer,
+        adapter_receipt=None, special_token_receipt=result.receipt)
+    assert plan.groups[0].parameter_count == 2
+    assert plan.groups[0].lr == 1e-4
+    optimizer = torch.optim.AdamW(plan.to_torch_param_groups())
+    logits = base.lm_head(base.embed_tokens(ids))
+    torch.nn.functional.cross_entropy(logits.flatten(0, 1), ids.flatten()).backward()
+    assert left.grad is not None and left.grad.abs().sum() > 0
+    assert right.grad is not None and right.grad.abs().sum() > 0
+    assert not torch.equal(left.grad, right.grad)
+    tied_model = copy.deepcopy(qwen.model)
+    tied = install_special_token_embedding_deltas(tied_model, selection)
+    tied_logits = tied_model.lm_head(tied_model.embed_tokens(ids))
+    torch.nn.functional.cross_entropy(tied_logits.flatten(0, 1), ids.flatten()).backward()
+    torch.testing.assert_close(tied.shared_embed_delta.grad, left.grad + right.grad)
+    assert result.input_wrapper.base.weight.grad is None
+    optimizer.step()
+    assert not torch.equal(left, right)
+    save_special_token_embedding_deltas(result, tmp_path,
+        base_model_path="/models/qwen-base", base_config_sha256="base-config-sha",
+        tokenizer_sha256="tokenizer-sha")
+    payload = load_file(str(tmp_path / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS))
+    assert set(payload) == {"input_embed_delta", "output_embed_delta"}
+    assert torch.equal(payload["input_embed_delta"], left)
+    assert torch.equal(payload["output_embed_delta"], right)
+    identity = inspect_special_token_embedding_delta_payload(tmp_path)
+    assert identity["semantic_identity"]["tie_word_embeddings"] is False
+    with pytest.raises(RuntimeContractError, match="dynamic HF"):
+        fold_special_token_embedding_delta_for_execution(qwen.model, tmp_path)
+    load_inference_embedding_delta(config=_delta_config(tmp_path), qwen=qwen)
+    assert torch.equal(qwen.model.embed_tokens.shared_embed_delta, left)
+    assert torch.equal(qwen.model.lm_head.shared_embed_delta, right)
+    assert qwen.model.embed_tokens.shared_embed_delta is not qwen.model.lm_head.shared_embed_delta
+    assert torch.equal(qwen.model.lm_head(qwen.model.embed_tokens(ids)), base.lm_head(base.embed_tokens(ids)))
+    for invalid_right in (right[:, :-1].detach().contiguous(), right.detach().to(torch.bfloat16)):
+        before = left.detach().clone()
+        save_file({"input_embed_delta": torch.ones_like(left), "output_embed_delta": invalid_right},
+                  str(tmp_path / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS))
+        with pytest.raises(RuntimeContractError):
+            inspect_special_token_embedding_delta_payload(tmp_path)
+        with pytest.raises(RuntimeContractError):
+            load_special_token_embedding_deltas(result, tmp_path,
+                expected_base_model_path="/models/qwen-base", expected_base_config_sha256="base-config-sha",
+                expected_tokenizer_sha256="tokenizer-sha")
+        assert torch.equal(left, before)
+    # A missing output tensor must fail before either installed parameter mutates.
+    save_file({"input_embed_delta": payload["input_embed_delta"]}, str(tmp_path / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS))
+    with pytest.raises(RuntimeContractError):
+        inspect_special_token_embedding_delta_payload(tmp_path)
+    with pytest.raises(RuntimeContractError):
+        load_special_token_embedding_deltas(result, tmp_path,
+            expected_base_model_path="/models/qwen-base", expected_base_config_sha256="base-config-sha",
+            expected_tokenizer_sha256="tokenizer-sha")
+
+
 def test_tied_special_token_deltas_affect_only_selected_inputs_and_logits() -> None:
     torch.manual_seed(3)
     model = TinyTiedQwenModel(vocab_size=8, hidden_size=4)

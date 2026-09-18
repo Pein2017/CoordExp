@@ -1014,6 +1014,7 @@ def _resolve_or_build_pack_cache(
             micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
             preparation_seconds = time.monotonic() - preparation_started
             publication_started = time.monotonic()
+            print(f"[pack-cache] split={split} phase=publication started micro_steps={len(micro_steps)}", flush=True)
             manifest = write_micro_step_cache(
                 cache_dir,
                 micro_steps,
@@ -1025,6 +1026,7 @@ def _resolve_or_build_pack_cache(
                 augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
             )
             publication_seconds = time.monotonic() - publication_started
+            print(f"[pack-cache] split={split} phase=publication completed seconds={publication_seconds:.2f}", flush=True)
             admission_started = time.monotonic()
             manifest = load_cache_manifest(
                 cache_dir,
@@ -1841,11 +1843,16 @@ def _encode_examples_with_fork_process_pool(
             # fully materialized; only outstanding executor work is bounded.
             indices = iter(range(window_size, len(raw_examples)))
             indexed_results = []
+            reported = 0
+            report_every = max(1, len(raw_examples) // 20)
             while pending:
                 completed, pending = concurrent.futures.wait(
                     pending, return_when=concurrent.futures.FIRST_COMPLETED
                 )
                 indexed_results.extend(future.result() for future in completed)
+                if len(indexed_results) - reported >= report_every or len(indexed_results) == len(raw_examples):
+                    reported = len(indexed_results)
+                    print(f"[pack-cache] phase=encode progress={reported}/{len(raw_examples)}", flush=True)
                 for _ in completed:
                     index = next(indices, None)
                     if index is None:
@@ -1963,11 +1970,12 @@ def _materialize_pack_plan(
         )
         _reject_pack_plan_omissions((plan,))
         packs = replay_pack_plan(plan, encoded_examples)
+        plan_sha256 = plan.canonical_sha256
         receipt = {
             "schema_version": 1,
             "mode": "complete_plan",
             "policy_identity": policy_identity,
-            "plan_sha256": plan.canonical_sha256,
+            "plan_sha256": plan_sha256,
             "fragment_chain_sha256": None,
             "fragment_count": 1,
             "source_input_count": len(encoded_examples),
@@ -1976,7 +1984,9 @@ def _materialize_pack_plan(
         return (
             packs,
             receipt,
-            {pack.pack_index: plan.canonical_sha256 for pack in packs},
+            # Preserve independent strings for the frozen pickle memoization
+            # contract, without reserializing and hashing the complete plan.
+            {pack.pack_index: plan_sha256.encode("ascii").decode("ascii") for pack in packs},
         )
 
     fragments: list[PackPlan] = []
@@ -2053,18 +2063,31 @@ def _build_micro_steps_for_dataset(
         split=split,
     )
     raw_examples = augmentation_result.examples
+    phase_started = time.monotonic()
+    print(f"[pack-cache] split={split} phase=encode started examples={len(raw_examples)} "
+          f"workers={_resolve_pack_cache_materialization_workers(materialization_workers)}", flush=True)
     encoded_examples = _build_encoded_examples_for_dataset(
         config,
         components,
         raw_examples,
         materialization_workers=materialization_workers,
     )
+    print(f"[pack-cache] split={split} phase=encode completed seconds={time.monotonic()-phase_started:.2f}", flush=True)
+    phase_started = time.monotonic()
+    print(f"[pack-cache] split={split} phase=plan started", flush=True)
     packs, pack_plan_receipt, fragment_by_pack = _materialize_pack_plan(
         config,
         encoded_examples,
     )
+    print(f"[pack-cache] split={split} phase=plan completed packs={len(packs)} "
+          f"seconds={time.monotonic()-phase_started:.2f}", flush=True)
+    phase_started = time.monotonic()
+    print(f"[pack-cache] split={split} phase=supervision started", flush=True)
     supervision = build_packed_supervision(packs, encoded_examples)
     token_atoms_by_pack = index_token_atoms_by_pack(supervision)
+    print(f"[pack-cache] split={split} phase=supervision completed seconds={time.monotonic()-phase_started:.2f}", flush=True)
+    phase_started = time.monotonic()
+    print(f"[pack-cache] split={split} phase=assembly started", flush=True)
     micro_steps = assemble_micro_steps(
         config,
         components,
@@ -2077,6 +2100,7 @@ def _build_micro_steps_for_dataset(
         fragment_by_pack=fragment_by_pack,
         token_atoms_by_pack=token_atoms_by_pack,
     )
+    print(f"[pack-cache] split={split} phase=assembly completed seconds={time.monotonic()-phase_started:.2f}", flush=True)
     if not micro_steps:
         raise RuntimeContractError(
             "micro-step construction produced no packs",

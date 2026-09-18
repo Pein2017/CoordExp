@@ -1,0 +1,7 @@
+schema_version: 1
+extends: tied.yaml
+run:
+  name: qwen3-vl-2b-geo-sorted-xy-untied-ebs24-4epoch
+model:
+  special_token_embeddings:
+    tie_word_embeddings: false

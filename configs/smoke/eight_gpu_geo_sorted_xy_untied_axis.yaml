@@ -1,0 +1,9 @@
+schema_version: 1
+extends: eight_gpu_geo_sorted_xy_untied.yaml
+run:
+  name: geo-sorted-xy-untied-axis-eight-gpu-smoke
+losses:
+  auxiliary:
+    raw_axis_validity_hinge:
+      weight: 0.01
+      margin: 0.001001001001001001

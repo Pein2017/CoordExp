@@ -27,6 +27,7 @@ from src.qwen.tokens import (
 SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS = "special_token_embeddings.safetensors"
 SPECIAL_TOKEN_EMBEDDINGS_JSON = "special_token_embeddings.json"
 DEFAULT_EMBED_DELTA_TENSOR_KEY = "shared_embed_delta"
+UNTIED_EMBED_DELTA_TENSOR_KEYS = ("input_embed_delta", "output_embed_delta")
 SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
 SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
     "coordexp-infras-special-token-embedding-delta-v1"
@@ -165,6 +166,14 @@ class SpecialTokenEmbeddingInstallResult:
     shared_embed_delta: nn.Parameter
     receipt: SpecialTokenEmbeddingInstallReceipt
 
+    def delta_tensors(self) -> dict[str, nn.Parameter]:
+        if self.receipt.tie_word_embeddings:
+            return {DEFAULT_EMBED_DELTA_TENSOR_KEY: self.shared_embed_delta}
+        return {
+            "input_embed_delta": self.input_wrapper.shared_embed_delta,
+            "output_embed_delta": self.output_wrapper.shared_embed_delta,
+        }
+
 
 @dataclass(frozen=True)
 class SpecialTokenEmbeddingPayloadReceipt:
@@ -266,12 +275,19 @@ def inspect_special_token_embedding_delta_payload(
             code="special_token_embeddings.execution_semantics",
             context={"actual": metadata["semantics"]},
         )
-    if metadata["tensor_key"] != DEFAULT_EMBED_DELTA_TENSOR_KEY:
+    tied = metadata["tie_word_embeddings"]
+    if type(tied) is not bool:
+        raise RuntimeContractError(
+            "embedding payload tying mode must be boolean",
+            code="special_token_embeddings.execution_untied",
+        )
+    expected_keys = (DEFAULT_EMBED_DELTA_TENSOR_KEY,) if tied else UNTIED_EMBED_DELTA_TENSOR_KEYS
+    if metadata["tensor_key"] != expected_keys[0]:
         raise RuntimeContractError(
             "special-token embedding payload records the wrong tensor key",
             code="special_token_embeddings.execution_tensor_key",
             context={
-                "expected": DEFAULT_EMBED_DELTA_TENSOR_KEY,
+                "expected": expected_keys[0],
                 "actual": metadata["tensor_key"],
             },
         )
@@ -281,12 +297,6 @@ def inspect_special_token_embedding_delta_payload(
             "special-token embedding execution payload has an unsupported source dtype",
             code="special_token_embeddings.execution_dtype",
             context={"actual": metadata["tensor_dtype"]},
-        )
-    if metadata["tie_word_embeddings"] is not True:
-        raise RuntimeContractError(
-            "special-token embedding execution payload must require tied weights",
-            code="special_token_embeddings.execution_untied",
-            context={"tie_word_embeddings": metadata["tie_word_embeddings"]},
         )
 
     token_strings = metadata["token_strings"]
@@ -363,15 +373,26 @@ def inspect_special_token_embedding_delta_payload(
     try:
         with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
             tensor_keys = list(handle.keys())
-            if tensor_keys != [DEFAULT_EMBED_DELTA_TENSOR_KEY]:
+            if set(tensor_keys) != set(expected_keys):
                 raise RuntimeContractError(
-                    "special-token embedding payload must contain exactly one tensor key",
+                    "special-token embedding payload keys must match its tying mode",
                     code="special_token_embeddings.execution_tensor_key",
                     context={"actual_keys": tensor_keys},
                 )
-            tensor_slice = handle.get_slice(DEFAULT_EMBED_DELTA_TENSOR_KEY)
-            observed_shape = [int(item) for item in tensor_slice.get_shape()]
-            observed_dtype = str(tensor_slice.get_dtype())
+            for key in expected_keys:
+                tensor_slice = handle.get_slice(key)
+                if list(tensor_slice.get_shape()) != tensor_shape:
+                    raise RuntimeContractError(
+                        "embedding delta shape does not match metadata",
+                        code="special_token_embeddings.execution_tensor_shape",
+                        context={"tensor_key": key},
+                    )
+                if tensor_slice.get_dtype() != supported_source_dtypes[metadata["tensor_dtype"]]:
+                    raise RuntimeContractError(
+                        "embedding delta dtype does not match metadata",
+                        code="special_token_embeddings.execution_dtype",
+                        context={"tensor_key": key},
+                    )
     except RuntimeContractError:
         raise
     except Exception as exc:
@@ -381,24 +402,6 @@ def inspect_special_token_embedding_delta_payload(
             context={"tensor_path": str(tensor_path)},
             cause=exc,
         ) from exc
-    if observed_shape != tensor_shape:
-        raise RuntimeContractError(
-            "special-token embedding tensor shape does not match metadata",
-            code="special_token_embeddings.execution_tensor_shape",
-            context={"metadata": tensor_shape, "tensor": observed_shape},
-        )
-    expected_safetensors_dtype = supported_source_dtypes[metadata["tensor_dtype"]]
-    if observed_dtype != expected_safetensors_dtype:
-        raise RuntimeContractError(
-            "special-token embedding tensor dtype does not match metadata",
-            code="special_token_embeddings.execution_dtype",
-            context={
-                "metadata": metadata["tensor_dtype"],
-                "expected_tensor": expected_safetensors_dtype,
-                "tensor": observed_dtype,
-            },
-        )
-
     files = [
         _embedding_payload_file_identity(metadata_path, root=root),
         _embedding_payload_file_identity(tensor_path, root=root),
@@ -413,7 +416,7 @@ def inspect_special_token_embedding_delta_payload(
         "base_model_path": metadata["base_model_path"],
         "base_config_sha256": metadata["base_config_sha256"],
         "tokenizer_sha256": metadata["tokenizer_sha256"],
-        "tie_word_embeddings": True,
+        "tie_word_embeddings": tied,
     }
     determinants = {
         "version": SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION,
@@ -439,6 +442,11 @@ def fold_special_token_embedding_delta_for_execution(
     """Normalize one compact delta to FP32, then fold target-dtype tied rows once."""
 
     identity = inspect_special_token_embedding_delta_payload(path)
+    if identity["semantic_identity"]["tie_word_embeddings"] is not True:
+        raise RuntimeContractError(
+            "untied deltas require dynamic HF inference; dense folding is not supported",
+            code="special_token_embeddings.execution_untied",
+        )
     if expected_identity is not None:
         if not isinstance(expected_identity, Mapping):
             raise RuntimeContractError(
@@ -609,6 +617,7 @@ def load_inference_embedding_delta(
     install_result = install_special_token_embedding_deltas(
         model,
         selection,
+        tie_word_embeddings=identity_receipt["metadata"]["tie_word_embeddings"],
     )
     payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
     load_receipt = load_special_token_embedding_deltas(
@@ -728,7 +737,19 @@ def build_default_special_token_selection(
 def install_special_token_embedding_deltas(
     model: nn.Module,
     selection: SpecialTokenSelection,
+    *,
+    tie_word_embeddings: bool = True,
 ) -> SpecialTokenEmbeddingInstallResult:
+    """Keep the pretrained base frozen; optionally split the two effective deltas.
+
+    The shared_embed_delta attribute remains the input-side parameter for
+    existing callers. Checkpoint serialization always uses delta_tensors().
+    """
+    if type(tie_word_embeddings) is not bool:
+        raise RuntimeContractError(
+            "special-token tying mode must be boolean",
+            code="special_token_embeddings.tying_mode",
+        )
     preexisting_trainable_ids = {
         id(parameter) for parameter in model.parameters() if parameter.requires_grad
     }
@@ -751,7 +772,8 @@ def install_special_token_embedding_deltas(
         )
     )
     input_wrapper = SelectedDeltaInputEmbedding(base_embedding, selection, delta)
-    output_wrapper = SelectedDeltaOutputHead(output_head, selection, delta)
+    output_delta = delta if tie_word_embeddings else nn.Parameter(delta.detach().clone())
+    output_wrapper = SelectedDeltaOutputHead(output_head, selection, output_delta)
     model.set_input_embeddings(input_wrapper)
     model.set_output_embeddings(output_wrapper)
 
@@ -759,11 +781,15 @@ def install_special_token_embedding_deltas(
         name for name, parameter in model.named_parameters() if parameter.requires_grad
     )
     expected_name = _delta_parameter_name(model, delta)
+    expected_names = (expected_name,) if tie_word_embeddings else (
+        expected_name, _delta_parameter_name(model, output_delta)
+    )
     unexpected_trainable_names = [
         name
         for name, parameter in model.named_parameters()
         if parameter.requires_grad
         and parameter is not delta
+        and parameter is not output_delta
         and id(parameter) not in preexisting_trainable_ids
     ]
     if expected_name not in trainable_names or unexpected_trainable_names:
@@ -779,12 +805,12 @@ def install_special_token_embedding_deltas(
 
     receipt = SpecialTokenEmbeddingInstallReceipt(
         semantics=SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
-        tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY,
-        tie_word_embeddings=True,
+        tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY if tie_word_embeddings else UNTIED_EMBED_DELTA_TENSOR_KEYS[0],
+        tie_word_embeddings=tie_word_embeddings,
         token_selection=selection,
         delta_shape=(len(selection), int(base_embedding.embedding_dim)),
         delta_dtype=_dtype_name(delta.dtype),
-        delta_parameter_names=(expected_name,),
+        delta_parameter_names=expected_names,
         base_embedding_parameter_name=_parameter_name(model, base_embedding.weight),
         base_lm_head_parameter_name=_parameter_name(model, output_head.weight),
     )
@@ -809,7 +835,7 @@ def save_special_token_embedding_deltas(
     tensor_path = output_dir / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
     metadata_path = output_dir / SPECIAL_TOKEN_EMBEDDINGS_JSON
     save_file(
-        {DEFAULT_EMBED_DELTA_TENSOR_KEY: result.shared_embed_delta.detach().cpu()},
+        {key: value.detach().cpu() for key, value in result.delta_tensors().items()},
         str(tensor_path),
     )
     metadata = result.receipt.to_metadata_dict(
@@ -824,7 +850,7 @@ def save_special_token_embedding_deltas(
     return SpecialTokenEmbeddingPayloadReceipt(
         tensor_path=tensor_path,
         metadata_path=metadata_path,
-        tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY,
+        tensor_key=result.receipt.tensor_key,
         tensor_shape=tuple(int(item) for item in result.shared_embed_delta.shape),
         tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
         metadata=metadata,
@@ -850,7 +876,8 @@ def load_special_token_embedding_deltas(
         expected_tokenizer_sha256=expected_tokenizer_sha256,
     )
     tensors = load_file(str(tensor_path), device=str(result.shared_embed_delta.device))
-    allowed_keys = {DEFAULT_EMBED_DELTA_TENSOR_KEY}
+    runtime_tensors = result.delta_tensors()
+    allowed_keys = set(runtime_tensors)
     if set(tensors) != allowed_keys:
         raise RuntimeContractError(
             "special-token embedding payload must contain only compact delta tensors",
@@ -861,38 +888,29 @@ def load_special_token_embedding_deltas(
                 "expected_keys": sorted(allowed_keys),
             },
         )
-    loaded_delta = tensors[DEFAULT_EMBED_DELTA_TENSOR_KEY]
-    if _dtype_name(loaded_delta.dtype) != metadata.get("tensor_dtype"):
-        raise RuntimeContractError(
-            "special-token embedding tensor dtype does not match metadata",
-            code="special_token_embeddings.dtype_mismatch",
-            context={
-                "metadata_dtype": metadata.get("tensor_dtype"),
-                "tensor_dtype": _dtype_name(loaded_delta.dtype),
-            },
-        )
     expected_shape = tuple(int(item) for item in result.shared_embed_delta.shape)
-    if tuple(int(item) for item in loaded_delta.shape) != expected_shape:
-        raise RuntimeContractError(
-            "special-token embedding delta tensor shape mismatch",
-            code="special_token_embeddings.tensor_shape_mismatch",
-            context={
-                "expected_shape": list(expected_shape),
-                "actual_shape": [int(item) for item in loaded_delta.shape],
-            },
-        )
-    with torch.no_grad():
-        result.shared_embed_delta.copy_(
-            loaded_delta.to(
-                device=result.shared_embed_delta.device,
-                dtype=result.shared_embed_delta.dtype,
+    # Validate both sides before mutating either runtime parameter.
+    for key, loaded_delta in tensors.items():
+        if _dtype_name(loaded_delta.dtype) != metadata.get("tensor_dtype"):
+            raise RuntimeContractError(
+                "special-token embedding tensor dtype does not match metadata",
+                code="special_token_embeddings.dtype_mismatch",
+                context={"tensor_key": key},
             )
-        )
+        if tuple(loaded_delta.shape) != expected_shape:
+            raise RuntimeContractError(
+                "special-token embedding delta tensor shape mismatch",
+                code="special_token_embeddings.tensor_shape_mismatch",
+                context={"tensor_key": key, "expected_shape": list(expected_shape)},
+            )
+    with torch.no_grad():
+        for key, parameter in runtime_tensors.items():
+            parameter.copy_(tensors[key].to(device=parameter.device, dtype=parameter.dtype))
     return SpecialTokenEmbeddingLoadReceipt(
         loaded=True,
         tensor_path=tensor_path,
         metadata_path=metadata_path,
-        tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY,
+        tensor_key=result.receipt.tensor_key,
         tensor_shape=expected_shape,
         tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
         source_tensor_dtype=_dtype_name(loaded_delta.dtype),
@@ -1013,6 +1031,7 @@ def _validate_inference_delta_metadata(
         "base_model_path",
         "base_config_sha256",
         "tokenizer_sha256",
+        "tie_word_embeddings",
     )
     missing = [field for field in required if field not in metadata]
     if missing:
@@ -1020,6 +1039,11 @@ def _validate_inference_delta_metadata(
             "special-token embedding metadata is missing required inference identity fields",
             code="special_token_embeddings.inference_identity_missing",
             context={"missing_fields": missing},
+        )
+    if type(metadata["tie_word_embeddings"]) is not bool:
+        raise RuntimeContractError(
+            "special-token tying metadata must be boolean",
+            code="special_token_embeddings.tying_mode",
         )
     if metadata.get("semantics") != SPECIAL_TOKEN_EMBEDDING_SEMANTICS:
         raise RuntimeContractError(

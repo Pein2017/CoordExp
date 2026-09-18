@@ -1,0 +1,12 @@
+schema_version: 1
+extends: untied.yaml
+run:
+  name: qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch
+losses:
+  auxiliary:
+    raw_axis_validity_hinge:
+      weight: 0.01
+      margin: 0.001001001001001001
+resume:
+  mode: exact_same_world_size
+  checkpoint_dir: null

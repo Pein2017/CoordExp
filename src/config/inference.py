@@ -65,7 +65,7 @@ class InferTemplatePromptConfig(StrictConfigModel):
 
 class InferTemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
-    object_ordering: Literal["source_order", "geo_sorted", "random"]
+    object_ordering: Literal["source_order", "geo_sorted", "geo_sorted_xy", "random"]
     object_order_seed: int | None = None
     assistant_format: Literal["object_box_closed"]
     prompt: InferTemplatePromptConfig

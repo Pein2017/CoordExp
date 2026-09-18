@@ -558,6 +558,8 @@ def _publish_micro_step_cache(
                     "sha256": _file_sha256(chunk_path),
                 }
             )
+            print(f"[pack-cache] phase=publication chunk={chunk_index+1}/{(len(micro_steps)+chunk_size-1)//chunk_size} "
+                  f"micro_steps={end}/{len(micro_steps)}", flush=True)
         if _is_eval_cache_manifest(manifest):
             manifest["eval_ordinal_index"] = [
                 {

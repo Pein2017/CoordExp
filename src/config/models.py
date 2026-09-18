@@ -76,6 +76,7 @@ class SpecialTokenEmbeddingGroupsConfig(StrictConfigModel):
 
 class SpecialTokenEmbeddingsConfig(StrictConfigModel):
     groups: SpecialTokenEmbeddingGroupsConfig
+    tie_word_embeddings: bool = Field(default=True, strict=True)
 
 
 class QwenRuntimePatchesConfig(StrictConfigModel):
@@ -236,7 +237,7 @@ class TemplatePromptConfig(StrictConfigModel):
 
 class TemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
-    object_ordering: Literal["source_order", "geo_sorted", "random"]
+    object_ordering: Literal["source_order", "geo_sorted", "geo_sorted_xy", "random"]
     assistant_format: Literal["object_box_closed"]
     prompt: TemplatePromptConfig
 
@@ -412,7 +413,12 @@ class ProtectedLossesConfig(StrictConfigModel):
         return value
 
 
+class RawAxisValidityHingeLossConfig(WeightedLossConfig):
+    margin: float = Field(default=1.0 / 999.0, ge=0.0, allow_inf_nan=False)
+
+
 class AuxiliaryLossesConfig(StrictConfigModel):
+    raw_axis_validity_hinge: RawAxisValidityHingeLossConfig | None = None
     coord_gaussian_rps: CoordGaussianRPSLossConfig | None = None
 
 

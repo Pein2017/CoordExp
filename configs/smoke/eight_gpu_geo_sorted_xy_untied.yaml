@@ -1,0 +1,30 @@
+schema_version: 1
+extends: ../train/geo_sorted_xy/untied.yaml
+run:
+  name: geo-sorted-xy-untied-eight-gpu-smoke
+  artifact_root: /data/CoordExp/outputs/infra_base/untie-20260918
+  collision_policy: fail
+data:
+  train:
+    sample_limit: 256
+  eval:
+    sample_limit: 16
+training:
+  max_steps: 2
+eval:
+  forward:
+    every_fraction: 0.5
+    steps:
+    - 1
+    - 2
+checkpoint:
+  every_fraction: 0.5
+  steps:
+  - 1
+  - 2
+  save_final: true
+observability:
+  steps: 1
+resume:
+  mode: exact_same_world_size
+  checkpoint_dir: null

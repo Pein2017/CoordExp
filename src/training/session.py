@@ -1768,6 +1768,7 @@ def _run_initialized_training(
         special_token_result = install_special_token_embedding_deltas(
             model,
             special_token_selection,
+            tie_word_embeddings=config.model.special_token_embeddings.tie_word_embeddings,
         )
         model = special_token_result.model
         if getattr(adapter_plan, "mode", None) == "warm_start_expand_dora":

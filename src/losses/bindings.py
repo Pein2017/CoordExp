@@ -5,7 +5,7 @@ This module is **metadata for the single deep loss-runner implementation**
 extension point. It is deliberately excluded from the public `src.losses`
 package surface: there is no registry, no discovery, no import-by-name, no
 callable configuration, and no pass-through factory. The repository has
-exactly three implemented token losses and they are compiled with the code.
+exactly four implemented losses and they are compiled with the code.
 
 Each binding declares:
 
@@ -23,7 +23,7 @@ Each binding declares:
                                builds no denominator, runs no math, and emits
                                no fields at all.
 
-Adding a fourth token loss is a source change here plus an explicit branch in
+Adding another loss is a source change here plus an explicit branch in
 the runner's closed composition path, never a configuration or plugin action.
 """
 
@@ -70,11 +70,19 @@ COORD_GAUSSIAN_RPS_BINDING = TokenLossBinding(
     zero_policy="omit",
 )
 
+RAW_AXIS_VALIDITY_HINGE_BINDING = TokenLossBinding(
+    name="raw_axis_validity_hinge",
+    role="auxiliary",
+    normalizer="segment_balanced",
+    zero_policy="omit",
+)
+
 #: The complete closed inventory, in canonical composition order.
 TOKEN_LOSS_BINDINGS: tuple[TokenLossBinding, ...] = (
     BASE_CE_BINDING,
     TOKEN_TYPE_GATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
+    RAW_AXIS_VALIDITY_HINGE_BINDING,
 )
 
 #: The protected base-CE weight; the `forbid` zero policy admits no other.
@@ -104,6 +112,7 @@ def binding_for(name: str) -> TokenLossBinding:
 
 
 __all__ = [
+    "RAW_AXIS_VALIDITY_HINGE_BINDING",
     "BASE_CE_BINDING",
     "COORDINATE_TOKEN_TYPES",
     "COORD_GAUSSIAN_RPS_BINDING",

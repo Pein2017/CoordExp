@@ -53,9 +53,15 @@ def assemble_micro_steps(
     """
 
     image_token_id = _image_token_id(components)
+    examples_by_id = {
+        str(getattr(example, "example_id")): example for example in encoded_examples
+    }
     micro_steps: list[SupervisedMicroStep] = []
+    report_every = max(1, len(packs) // 20)
     for pack in packs:
-        pack_examples = _encoded_examples_for_pack(pack, encoded_examples)
+        pack_examples = tuple(
+            examples_by_id[segment.example_id] for segment in pack.segments
+        )
         position_inputs = build_qwen_position_inputs(
             pack,
             pack_examples,
@@ -89,17 +95,9 @@ def assemble_micro_steps(
                 == "every_forward",
             )
         )
+        if len(micro_steps) % report_every == 0 or len(micro_steps) == len(packs):
+            print(f"[pack-cache] split={split} phase=assembly progress={len(micro_steps)}/{len(packs)}", flush=True)
     return tuple(micro_steps)
-
-
-def _encoded_examples_for_pack(
-    pack: PackedSequence,
-    encoded_examples: Sequence[Any],
-) -> tuple[Any, ...]:
-    examples_by_id = {
-        str(getattr(example, "example_id")): example for example in encoded_examples
-    }
-    return tuple(examples_by_id[segment.example_id] for segment in pack.segments)
 
 
 def _image_token_id(components: Any) -> int | None:

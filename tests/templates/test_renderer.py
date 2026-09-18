@@ -92,6 +92,24 @@ def test_geo_sorted_object_ordering_rejects_unsorted_rows(tmp_path: Path) -> Non
     assert exc_info.value.context["current_anchor"] == [20, 10]
 
 
+def test_geo_sorted_xy_validates_x_then_y_without_reordering() -> None:
+    from dataclasses import replace
+
+    resolved = load_train_config(FIXTURE / "config.yaml")
+    payload = resolved.config.template.model_dump()
+    payload["object_ordering"] = "geo_sorted_xy"
+    config = type(resolved.config.template).model_validate(payload)
+    example = load_raw_examples(resolved.config.data.train)[0]
+    objects = (
+        RawObject("left", "left object", [10, 40, 20, 60], {}),
+        RawObject("right", "right object", [20, 10, 30, 30], {}),
+    )
+    rendered = render_example(replace(example, objects=objects), config)
+    assert [item.object_id for item in rendered.realized_object_order] == ["left", "right"]
+    with pytest.raises(TemplateContractError, match="left-to-right"):
+        render_example(replace(example, objects=objects[::-1]), config)
+
+
 def test_geometry_first_renders_box_before_description() -> None:
     resolved = load_train_config(FIXTURE / "config.yaml")
     config = resolved.config.template.model_copy(update={"object_field_order": "geometry_first"})

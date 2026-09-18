@@ -175,13 +175,15 @@ def _ordered_objects(
     indexed = tuple(enumerate(raw_example.objects))
     if object_ordering == "source_order":
         return indexed, None
-    if object_ordering == "geo_sorted":
-        unsorted = _first_unsorted_top_left_pair(indexed)
+    if object_ordering in ("geo_sorted", "geo_sorted_xy"):
+        xy_order = object_ordering == "geo_sorted_xy"
+        unsorted = _first_unsorted_top_left_pair(indexed, xy_order=xy_order)
         if unsorted is not None:
             prev_index, curr_index, prev_anchor, curr_anchor = unsorted
             raise TemplateContractError(
-                "geo_sorted object ordering requires top-to-bottom then left-to-right rows",
-                code="template.geo_sorted_order",
+                "geo_sorted_xy requires left-to-right then top-to-bottom rows"
+                if xy_order else "geo_sorted object ordering requires top-to-bottom then left-to-right rows",
+                code=f"template.{object_ordering}_order",
                 context={
                     "example_id": raw_example.example_id,
                     "previous_index": prev_index,
@@ -213,13 +215,15 @@ def _ordered_objects(
 
 def _first_unsorted_top_left_pair(
     indexed_objects: Sequence[tuple[int, RawObject]],
+    *,
+    xy_order: bool = False,
 ) -> tuple[int, int, tuple[int, int], tuple[int, int]] | None:
     if len(indexed_objects) < 2:
         return None
     previous_index, previous_object = indexed_objects[0]
-    previous_anchor = _top_left_anchor(previous_object)
+    previous_anchor = _top_left_anchor(previous_object, xy_order=xy_order)
     for current_index, current_object in indexed_objects[1:]:
-        current_anchor = _top_left_anchor(current_object)
+        current_anchor = _top_left_anchor(current_object, xy_order=xy_order)
         if current_anchor < previous_anchor:
             return previous_index, current_index, previous_anchor, current_anchor
         previous_index = current_index
@@ -227,9 +231,9 @@ def _first_unsorted_top_left_pair(
     return None
 
 
-def _top_left_anchor(obj: RawObject) -> tuple[int, int]:
+def _top_left_anchor(obj: RawObject, *, xy_order: bool = False) -> tuple[int, int]:
     x1, y1, _x2, _y2 = obj.bbox
-    return y1, x1
+    return (x1, y1) if xy_order else (y1, x1)
 
 
 def _render_objects(

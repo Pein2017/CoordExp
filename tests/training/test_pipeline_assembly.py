@@ -2050,7 +2050,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         ),
         training=SimpleNamespace(precision="no", max_grad_norm=1.0),
         model=SimpleNamespace(
-            special_token_embeddings=object(),
+            special_token_embeddings=SimpleNamespace(tie_word_embeddings=True),
             attn_implementation="flash_attention_2",
             fa2_branch_proof="first_micro_step",
         ),
@@ -2188,7 +2188,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     monkeypatch.setattr(
         session,
         "install_special_token_embedding_deltas",
-        lambda model, selection: SimpleNamespace(model=model, receipt=object()),
+        lambda model, selection, **kwargs: SimpleNamespace(model=model, receipt=object()),
     )
     monkeypatch.setattr(session, "enable_training_memory_savers", lambda model: None)
     monkeypatch.setattr(

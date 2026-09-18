@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.augmentation.processor import GeometryFlipAugmentationProcessor
 from src.config.models import GeometryFlipsAugmentationConfig
 from src.data import ImageRef, RawExample, RawObject, SourceProvenance
@@ -76,7 +78,8 @@ def test_processor_sampling_is_seeded_by_source_identity_not_worker_order(
     assert first_by_source != changed_by_source
 
 
-def test_geo_sorted_is_prepared_after_transform(tmp_path: Path) -> None:
+@pytest.mark.parametrize("ordering", ["geo_sorted", "geo_sorted_xy"])
+def test_geo_sorted_is_prepared_after_transform(tmp_path: Path, ordering: str) -> None:
     processor = _processor(horizontal_prob=1.0, vertical_prob=0.0)
     raw = _raw_example(
         tmp_path,
@@ -90,7 +93,7 @@ def test_geo_sorted_is_prepared_after_transform(tmp_path: Path) -> None:
     result = processor.materialize(
         (raw,),
         split="train",
-        object_ordering="geo_sorted",
+        object_ordering=ordering,
     )
 
     presentation = result.examples[0]

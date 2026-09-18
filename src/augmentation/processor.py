@@ -156,7 +156,7 @@ def _build_presentation(
     object_ordering: str,
     object_order_seed: int | None,
 ) -> RawExample:
-    if object_ordering not in {"source_order", "geo_sorted", "random"}:
+    if object_ordering not in {"source_order", "geo_sorted", "geo_sorted_xy", "random"}:
         raise DataContractError(
             "unsupported object ordering for augmentation",
             code="augmentation.object_ordering",
@@ -175,11 +175,12 @@ def _build_presentation(
         )
         for index, obj in enumerate(raw_example.objects)
     )
-    if object_ordering == "geo_sorted":
+    if object_ordering in {"geo_sorted", "geo_sorted_xy"}:
         transformed_objects = tuple(
             sorted(
                 transformed_objects,
-                key=lambda obj: (obj.bbox[1], obj.bbox[0]),
+                key=lambda obj: (obj.bbox[0], obj.bbox[1])
+                if object_ordering == "geo_sorted_xy" else (obj.bbox[1], obj.bbox[0]),
             )
         )
     metadata = dict(raw_example.metadata)
