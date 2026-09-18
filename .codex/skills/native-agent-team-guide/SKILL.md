@@ -56,9 +56,11 @@ verify the assigned outcome at its real consumer, not only their edited files.
 
 ### Route models and intervene
 
-Default to Luna for execution workers, choosing high, xhigh or max effort from
-uncertainty, risk, verifier strength and observed rework; do not default to max
-or automatically climb an effort ladder. Reduce Terra use: another family is an
+Default to Luna-xhigh for substantive execution work. Prefer Luna-max when
+semantic coupling or silent-correctness risk warrants it, such as token
+boundaries, owner-credit accounting or runtime equivalence. Reserve lower effort
+for mechanical work with strong deterministic checks and an explicit lead choice.
+Do not automatically climb an effort ladder. Reduce Terra use: another family is an
 exception for a concrete capability gap or explicit user choice, not routine
 rotation. The lead may take over difficult, coupled work. Check live callable
 models, effort support and fork inheritance so the actual assignment matches the
@@ -67,6 +69,8 @@ choice. This is a working preference, not a proven ranking of model quality.
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over
 uncertain design instead of repeatedly returning the same misunderstanding.
+After a demonstrated semantic misunderstanding, clarify the governing invariant
+or take over the coupled part; increasing effort alone is not a correction.
 User-owned meaning still belongs with the user.
 
 Intervene when work no longer advances the assigned outcome or coordination
@@ -82,13 +86,17 @@ completion notifications and worker self-report are not acceptance. Keep
 execution validity separate from scientific success. Reuse valid evidence rather
 than repeating completed work. Bundle blocking corrections; do not add
 another broad review after an unchanged contract has passed its checks.
+For decision-bearing semantics, include a source-grounded check that distinguishes
+the intended interpretation from the nearest plausible wrong one. A self-check
+using the implementation's own assumed constants is insufficient evidence.
 
 Record only observations that could change the next assignment in the existing
 task record: failure, brief contribution, correction/takeover, and acceptance.
 Do not create a routine interview, ledger, benchmark or extra reviewer per task.
 If a cost comparison is actually requested, the optional
 [evidence workflow](references/evidence-workflow.md) supports existing records.
-Count lead/rework costs; unknown costs remain unknown. One task does not establish
+Evaluate total cost through acceptance, including lead corrections and rework;
+unknown costs remain unknown. One task does not establish
 a model's capability ceiling or specialty. Persistent memory changes still need
 user authorization.
 
@@ -104,6 +112,11 @@ approach, rather than guessing or pursuing a prolonged detour. Send known facts,
 the precise question and a minimal option if evident. While waiting, continue
 independent work; otherwise return a clear resumption point. Silence is not
 approval. Stop when the assigned outcome and relevant checks are complete.
+
+Load decision-bearing constants, identities and denominators from the bound
+source artifacts rather than reconstructing them from remembered prose. If the
+sources conflict on research meaning, show the conflict to the parent before
+implementing an interpretation.
 
 ### Coordinate directly
 
