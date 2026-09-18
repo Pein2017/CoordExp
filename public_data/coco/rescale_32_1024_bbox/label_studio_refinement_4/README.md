@@ -1,18 +1,20 @@
-# Four-image Label Studio refinement subproject
+# Five-image Label Studio refinement subproject
 
-This directory is the file boundary for Project 3 (`CoordExp COCO refinement - 4-image subproject`).
-It contains only image IDs `7116`, `351017`, `417044`, and `477415`.
+This directory is the file boundary for Project 3 (`CoordExp COCO refinement - 5-image subproject`).
+It contains only image IDs `7116`, `309264`, `351017`, `417044`, and `477415`.
 
-- `source.norm.jsonl`: the four current source rows copied from the latest `train.norm.jsonl`.
-- `working.norm.jsonl`: the initial editable copy; export the reviewed annotations here.
+- `source.norm.jsonl`: the five current source rows copied from the latest `train.norm.jsonl`.
+- `working.norm.jsonl`: the current GT snapshot; it is refreshed after every successful
+  Project 3 `Update` and can contain added, deleted, moved, or relabeled boxes.
 - `project_manifest.json`: project, task, source-line, and checksum bindings.
-- `export_subproject.py`: fail-closed exporter for the four tasks only.
+- `export_subproject.py`: fail-closed exporter for the five tasks only.
 
 Open Project 3 at:
 
 `http://127.0.0.1:8080/projects/3/data`
 
-After editing and saving the annotations in Label Studio, run:
+The running local server refreshes the snapshot automatically after `Update`. To
+rebuild it manually (for recovery or verification), run:
 
 ```bash
 BASE_DATA_DIR=/data/CoordExp/outputs/label_studio_coco_refinement/rescale_32_1024_bbox_len12000/label-studio/state \
@@ -25,9 +27,11 @@ PYTHONPATH=/data/CoordExp \
 /data/CoordExp/public_data/coco/rescale_32_1024_bbox/label_studio_refinement_4/export_subproject.py
 ```
 
-The exporter writes only `working.norm.jsonl` in this directory. It preserves the
-original COCO annotation IDs, permits deletion or geometry/class edits of those
-four images, and rejects new/unknown annotation IDs or tasks outside the subset.
+The exporter writes only `working.norm.jsonl` in this directory. It preserves
+existing COCO annotation IDs, assigns deterministic negative IDs to newly drawn
+regions, and treats the live annotation list as authoritative: additions,
+deletions, geometry edits, and class edits are all published. It still rejects
+tasks outside the five-image subset.
 
 ## Frontend interaction profile
 
@@ -41,4 +45,4 @@ tool when you need to move or resize an existing box. The editor's `Regions`
 larger box covers it. The legacy relation/group tab is hidden for this project
 only; prediction/evidence layers and per-region text controls are intentionally
 not imported because this subproject exports rectangle-label results only and
-must remain limited to the four original annotations.
+must remain limited to the five original annotations.
