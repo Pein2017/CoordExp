@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-history-readout-crossover",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Persistence after withdrawal and efficacy of late normalization depend on model, scene and cut. Altered history can sustain low numerical recurrence in selected cases, but is not generally sufficient; ongoing readout and timing remain consequential.",
+  "state_as_of": "2026-09-19T00:37:16.355572+00:00",
+  "protocol": "research/experiments/2026-09-18-history-readout-crossover/unit.md",
+  "result": "research/experiments/2026-09-18-history-readout-crossover/results.md",
+  "state_source": "research/experiments/2026-09-18-history-readout-crossover/results.md",
+  "boundary": "11 existing failure boundaries, two actual history policies, fixed 4/8-row cuts, two future readout policies; at most88 fresh target continuations.",
+  "not_authorized": [
+    "training",
+    "checkpoint-stage sweeps",
+    "new images",
+    "RP/temperature sweeps",
+    "coefficient tuning",
+    "annotation edits",
+    "automatic successors",
+    "production changes",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Root may dispatch the separately frozen readout-direction control; worker has no automatic successor authority."
+}

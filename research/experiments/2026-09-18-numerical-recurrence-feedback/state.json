@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-numerical-recurrence-feedback",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted bounded local numeric sensitivity; recurrence-specific copying, physical recovery and relay not established",
+  "state_as_of": "2026-09-18T20:04:31.137943+00:00",
+  "protocol": "research/experiments/2026-09-18-numerical-recurrence-feedback/unit.md",
+  "result": "research/experiments/2026-09-18-numerical-recurrence-feedback/results.md",
+  "state_source": "research/experiments/2026-09-18-numerical-recurrence-feedback/results.md",
+  "boundary": "Seven fixed images, two mature model packages; recent coordinate replacements, fixed-suffix responses and short original-greedy releases; optional CPU readout accounting",
+  "not_authorized": [
+    "training",
+    "checkpoint-stage sweeps",
+    "architecture changes",
+    "RP/temperature sweeps",
+    "source annotation changes",
+    "automatic successors",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Separately released readout-common-component successor owns further model work."
+}

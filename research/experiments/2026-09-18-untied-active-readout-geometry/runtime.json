@@ -1,0 +1,31 @@
+{
+  "status": "awaiting_native_source_prefix",
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "allocated_gpu_seconds": 0,
+  "live_jobs": [],
+  "retained_tensor_bytes": 73736192,
+  "static_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-active-readout-geometry/static/static.json",
+  "producer_sha256": "17f346a8033e1d67f73ef54f48aebfc43acaa0166c5bb3a3bc82022d8a28cff5",
+  "pending": [
+    "shared native qualification",
+    "valid paired natural trajectories",
+    "frozen event receipt",
+    "native replay parity and selected-state capture"
+  ],
+  "not_claimed": [
+    "active mechanism",
+    "physical recurrence",
+    "rank-change causality"
+  ],
+  "utc": "2026-09-18T16:04:33.784815+00:00",
+  "implementation": "native schema adapter and gated selected-position capture ready",
+  "policy": "effective FP32 rows converted to FP64, FP64 vector norms, torch.median lower central value",
+  "inspected_source_images": 14,
+  "qualifying_images": 2,
+  "next_required": {
+    "image_id": 309264,
+    "group": "fresh-18",
+    "condition": "tied-original"
+  }
+}

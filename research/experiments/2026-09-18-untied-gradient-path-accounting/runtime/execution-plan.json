@@ -1,0 +1,58 @@
+{
+  "status": "CPU-prepared-awaiting-loader-gate",
+  "routes": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-gradient-path-accounting/preparation/routes.json",
+  "routes_sha256": "7f710044418cc42ae761a9bf080bedee13cf0742d3d6d0374734c425912be602",
+  "tolerances": {
+    "forward_max_abs": 1e-06,
+    "gradient_max_abs": 5e-05,
+    "gradient_relative_l2": 0.0001,
+    "fd_epsilon": 0.01,
+    "fd_atol": 2e-05,
+    "fd_rtol": 0.05
+  },
+  "precision": "FP32 SDPA; no autocast/TF32",
+  "seed": 17,
+  "scene_count": 18,
+  "complete_boxes": 570,
+  "incomplete_boxes": 0,
+  "active_tokens": 5349,
+  "chunk_sizes": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "planned_evaluations": 201,
+  "population_forwards": 54,
+  "population_backwards": 108,
+  "gate_forwards": 33,
+  "gate_backwards": 6,
+  "finite_difference_directions": [
+    "coord0 alternating normalized",
+    "coord500 alternating normalized",
+    "all1004 selected rows alternating normalized"
+  ],
+  "gate_scene": 1584,
+  "gate_teacher_boxes": 19,
+  "global_reduction": "sum per-scene gradients /18",
+  "hard_limits": {
+    "gpu_hours": 6,
+    "evaluations": 300,
+    "retained_bytes": 4294967296
+  },
+  "stop": "first failed gate, exhausted ceiling, or complete fixed measurements; no optimizer, automatic retry or tolerance relaxation"
+}

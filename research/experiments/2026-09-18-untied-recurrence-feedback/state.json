@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-untied-recurrence-feedback",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted CPU admission-HOLD; physical A/B/control tuple unresolved; no model work executed",
+  "state_as_of": "2026-09-18T16:44:01.411254+00:00",
+  "protocol": "research/experiments/2026-09-18-untied-recurrence-feedback/unit.md",
+  "result": "research/experiments/2026-09-18-untied-recurrence-feedback/results.md",
+  "state_source": "research/experiments/2026-09-18-untied-recurrence-feedback/results.md",
+  "boundary": "CPU admission only; model budget zero pending root release",
+  "not_authorized": [
+    "optimizer updates",
+    "new training",
+    "checkpoint-stage sweeps",
+    "cross-model head/input swaps",
+    "source-label edits",
+    "Notion",
+    "memory writes",
+    "automatic successors"
+  ],
+  "next_action": "Closed. Any successor needs a new root-owned contract and explicit release; no automatic continuation."
+}

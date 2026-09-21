@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-readout-common-component",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Shared-only does not account for full normalization across this panel; centered-only also fails to reproduce it. Mixed/path-dependent numerical effects, no established physical recovery.",
+  "state_as_of": "2026-09-18T23:27:58.165286+00:00",
+  "protocol": "research/experiments/2026-09-18-readout-common-component/unit.md",
+  "result": "research/experiments/2026-09-18-readout-common-component/results.md",
+  "state_source": "research/experiments/2026-09-18-readout-common-component/results.md",
+  "boundary": "Four fixed readout operators on the same25 completed-row prefixes,100 bounded target continuations maximum",
+  "not_authorized": [
+    "training",
+    "checkpoint-stage sweeps",
+    "new images",
+    "RP/temperature sweeps",
+    "coefficient tuning",
+    "annotation changes",
+    "automatic successors",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Any continuation requires a separately root-released contract; no worker self-expansion."
+}

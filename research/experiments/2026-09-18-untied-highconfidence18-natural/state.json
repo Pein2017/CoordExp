@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-untied-highconfidence18-natural",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted natural contrast: package-specific normalization benefit and damage; no population recall or deployment promotion",
+  "state_as_of": "2026-09-18T16:44:01.411254+00:00",
+  "protocol": "research/experiments/2026-09-18-untied-highconfidence18-natural/unit.md",
+  "result": "research/experiments/2026-09-18-untied-highconfidence18-natural/results.md",
+  "state_source": "research/experiments/2026-09-18-untied-highconfidence18-natural/results.md",
+  "boundary": "Four fixed readout/model cells on145unique scenes; no training",
+  "not_authorized": [
+    "optimizer updates",
+    "new training",
+    "checkpoint-stage sweeps",
+    "cross-model head/input swaps",
+    "source-label edits",
+    "Notion",
+    "memory writes",
+    "automatic successors"
+  ],
+  "next_action": "Closed. Any successor needs a new root-owned contract and explicit release; no automatic continuation."
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-18-untied-active-readout-geometry",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted fixed-state readout accounting: scale-sensitive subset; substantial endpoint alignment survives; no causal layer or recurrence claim",
+  "state_as_of": "2026-09-18T16:44:01.411254+00:00",
+  "protocol": "research/experiments/2026-09-18-untied-active-readout-geometry/unit.md",
+  "result": "research/experiments/2026-09-18-untied-active-readout-geometry/results.md",
+  "state_source": "research/experiments/2026-09-18-untied-active-readout-geometry/results.md",
+  "boundary": "Fixed native event panel; descriptive margin and layer accounting",
+  "not_authorized": [
+    "optimizer updates",
+    "new training",
+    "checkpoint-stage sweeps",
+    "cross-model head/input swaps",
+    "source-label edits",
+    "Notion",
+    "memory writes",
+    "automatic successors"
+  ],
+  "next_action": "Closed. Any successor needs a new root-owned contract and explicit release; no automatic continuation."
+}
