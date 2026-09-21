@@ -74,3 +74,16 @@ remains zero. Base remains Qwen3-VL-2B-Instruct-coordexp-natural-adjacent.
 
 The tmux launch is evidence of a running pipeline; consult packet `terminal.log`
 and `training.log` to distinguish cache preparation, GPU training and completion.
+
+## Production completed (2026-09-18 14:21:34 UTC)
+
+Exit code 0; run.json status completed, 2444 optimizer updates. All 2447 train/eval
+rows report finite status. Checkpoints: step-978, step-1956, step-2444; final and
+best (acc_top1) both point to step-2444. Final train total loss 1.40948935; final
+eval total loss 1.43690237. This is training/forward-eval completion, not a claim
+about autoregressive malformed-box rate or detection quality.
+
+Cache preparation and standalone admission took 48m48s; torchrun entry to clean
+exit took 7h05m58s including startup, evaluation and checkpoint publication.
+The terminal monitor d9bdd0e2-a4e3-4d48-a3b7-f89ce59a5b2e delivered completion.
+Final fresh-HF reload receipt is in the restart1 packet at final-hf-reload.json.
