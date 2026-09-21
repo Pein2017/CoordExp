@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-coordinate-margin-provenance",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Exact distributed score accounting with margin-specific readout-length effects; no causal localization or physical-recovery claim.",
+  "state_as_of": "2026-09-19T05:31:21.323363+00:00",
+  "protocol": "research/experiments/2026-09-19-coordinate-margin-provenance/unit.md",
+  "result": "research/experiments/2026-09-19-coordinate-margin-provenance/results.md",
+  "state_source": "research/experiments/2026-09-19-coordinate-margin-provenance/results.md",
+  "boundary": "Eight exact donor x1 states; paired observational/no-hook prefix replay, maximum16 replays; no free rollouts.",
+  "not_authorized": [
+    "training",
+    "checkpoint sweeps",
+    "new states",
+    "layer patches",
+    "attention-map sweeps",
+    "gradient repair",
+    "annotations",
+    "automatic successors",
+    "production changes",
+    "Notion",
+    "memory writes",
+    "wake-me-up monitors"
+  ],
+  "next_action": "Closed and lead-accepted. Provenance branch converged; no successor or layer sweep released. Broader duplication origin remains unresolved."
+}

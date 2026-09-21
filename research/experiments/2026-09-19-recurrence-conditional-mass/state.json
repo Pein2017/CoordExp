@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-recurrence-conditional-mass",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "45-state supplied-description numerical-event probability accepted from 11520 draws; low event mass can coexist with greedy recurrence. Seven empty proxy unions remain structural zeros; 1-q is not new-owner probability.",
+  "state_as_of": "2026-09-19T12:00:19.224182+00:00",
+  "protocol": "research/experiments/2026-09-19-recurrence-conditional-mass/unit.md",
+  "result": "research/experiments/2026-09-19-recurrence-conditional-mass/results.md",
+  "state_source": "research/experiments/2026-09-19-recurrence-conditional-mass/results.md",
+  "owner": "recurrence_mass",
+  "parent": "01a0a3d5-dc45-7693-8467-4801aa7190df",
+  "result_documents": {
+    "results": "research/experiments/2026-09-19-recurrence-conditional-mass/results.md",
+    "output_results": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/results.md",
+    "prior_output_results": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/results.pre-cpu-update.md",
+    "reduction": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/reduction.json",
+    "raw_draws": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/draws.jsonl",
+    "run_manifest": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/run-manifest.json",
+    "sampler_entry": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/sampler-entry.json",
+    "state_bindings": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/state-bindings.json",
+    "launch_failures": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/launch-failures.json",
+    "qualification": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/qualification/qualification.json",
+    "qualification_attempts": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-conditional-mass/qualification-attempts.json"
+  },
+  "boundary": "Final frozen 45-state panel, 23 split-aware image identities, 256 original-policy temperature-1 full-vocabulary draws per state; description-conditioned numerical <=8-bin repeat event; no physical identity or owner-loss claim",
+  "not_authorized": [
+    "new panel selection or replacement",
+    "normalized or forced policy",
+    "long sampled continuations",
+    "temperature/top-k/top-p sweeps",
+    "prefix-tree expansion",
+    "training or parameter edits",
+    "physical duplicate claims",
+    "new-owner claims from 1-q",
+    "policy promotion or successor launch"
+  ],
+  "next_action": "Closed and lead-accepted within stated limits. Duplication origin remains open; no successor, training or policy promotion is released.",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/integration/lead-acceptance.json"
+}

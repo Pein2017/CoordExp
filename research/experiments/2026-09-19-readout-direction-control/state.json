@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-readout-direction-control",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "True normalization is not uniquely privileged for numerical recurrence on this fixed panel. Reflected and several fixed balanced-sign controls also reduce runs without shorter termination or additional invalidity in some cases. Direction-specific outcomes remain heterogeneous; generic perturbation/path sensitivity remains viable, with no physical-recovery or training-origin conclusion.",
+  "state_as_of": "2026-09-19T01:29:14.108286+00:00",
+  "protocol": "research/experiments/2026-09-19-readout-direction-control/unit.md",
+  "result": "research/experiments/2026-09-19-readout-direction-control/results.md",
+  "state_source": "research/experiments/2026-09-19-readout-direction-control/results.md",
+  "boundary": "11 original failure boundaries, true/reflected/eight fixed balanced sign directions plus original; at most121 fresh continuations.",
+  "not_authorized": [
+    "training",
+    "checkpoint sweeps",
+    "coefficient tuning",
+    "new cases",
+    "new seeds",
+    "automatic successors",
+    "annotation edits",
+    "production changes",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Root separately releases first-coordinate mediation; no automatic worker successor."
+}

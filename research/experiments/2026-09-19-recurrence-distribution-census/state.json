@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-recurrence-distribution-census",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Descriptive recurrence census accepted for separate mature145 and prospective seed19-128 strata; no physical duplicate census or untie-only causal claim. Original overwritten metadata bytes remain an archival gap.",
+  "state_as_of": "2026-09-19T12:00:19.224182+00:00",
+  "protocol": "research/experiments/2026-09-19-recurrence-distribution-census/unit.md",
+  "result": "research/experiments/2026-09-19-recurrence-distribution-census/results.md",
+  "state_source": "research/experiments/2026-09-19-recurrence-distribution-census/unit.md",
+  "owner": "recurrence_census",
+  "parent": "01a0a3d5-dc45-7693-8467-4801aa7190df",
+  "not_authorized": [
+    "training",
+    "optimizer updates",
+    "embedding or output-head edits",
+    "rescue sweeps",
+    "checkpoint-stage sweeps",
+    "source annotation changes",
+    "policy promotion",
+    "successor launch",
+    "Notion",
+    "memory writes"
+  ],
+  "result_documents": {
+    "results": "research/experiments/2026-09-19-recurrence-distribution-census/results.md",
+    "scientific_synthesis": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/scientific-synthesis.json",
+    "replay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/replay/replayed-new-census.json",
+    "result_json": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/result.json",
+    "archival_binding_reconciliation": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/archival/archival-binding-reconciliation.json",
+    "source_snapshot_manifest": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/archival/source-snapshot-manifest.json"
+  },
+  "boundary": "Candidate image-unit descriptive census and fixed 45-boundary mechanism panel; 145 mature images plus deterministic seed19 128-image cohort, 256 original-policy outputs, no causal localization or policy promotion; exact original prelaunch/source/selection bytes are archival-gap evidence.",
+  "next_action": "Closed and lead-accepted within stated limits. Duplication origin remains open; no successor, training or policy promotion is released.",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/integration/lead-acceptance.json"
+}

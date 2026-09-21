@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-first-coordinate-mediation",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "First x1=1 is sufficient for a low-recurrence conditional original-readout route in untied donut, but not tied donut. It is not necessary for the numerical effect of sign20/22/23/24 in either model: all remain near-run1 when first x1 is forced0. Continuing readout can act through other choices; the post-hoc first-token association is not a complete mediator.",
+  "state_as_of": "2026-09-19T03:29:09.473261+00:00",
+  "protocol": "research/experiments/2026-09-19-first-coordinate-mediation/unit.md",
+  "result": "research/experiments/2026-09-19-first-coordinate-mediation/results.md",
+  "state_source": "research/experiments/2026-09-19-first-coordinate-mediation/results.md",
+  "boundary": "Two mature-model417044 prefixes; first x1 forced0/1 crossed with original and all8 fixed sign readouts;36 continuations including18 concordant controls.",
+  "not_authorized": [
+    "training",
+    "checkpoint sweeps",
+    "additional bins",
+    "new seeds",
+    "new images",
+    "coefficient tuning",
+    "annotation work",
+    "automatic successors",
+    "production changes",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Root separately releases coordinate-pair-readout; no automatic worker successor."
+}

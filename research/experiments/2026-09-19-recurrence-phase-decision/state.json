@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-recurrence-phase-decision",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead accepted phase/role and bridge evidence with first-ever subgroup corrected4/16 to6/16; coordinate sensitivity without consistent recurrence escape. Small-perturbation branch closed; general origin unresolved.",
+  "state_as_of": "2026-09-19T16:47:51.645323+00:00",
+  "protocol": "research/experiments/2026-09-19-recurrence-phase-decision/unit.md",
+  "result": "research/experiments/2026-09-19-recurrence-phase-decision/lead-results.md",
+  "state_source": "research/experiments/2026-09-19-recurrence-phase-decision/lead-results.md",
+  "owner": "01a0ba19-8004-7400-b8af-98ce9b9df0cd",
+  "parent": "01a0a3d5-dc45-7693-8467-4801aa7190df",
+  "boundary": "Accepted original-policy sources only; native stage profiles plus x1/y2 +/-1 history edits with immediate versus two-native-row-bridge free release; no physical identity or training-origin claim.",
+  "not_authorized": [
+    "training",
+    "checkpoint sweeps",
+    "architecture/head/embedding mutation",
+    "source annotation changes",
+    "new cohort",
+    "temperature sweep",
+    "Notion",
+    "memory writes",
+    "wake monitor",
+    "self acceptance",
+    "successor launch"
+  ],
+  "next_action": "Closed; no successor or model job authorized. Root retains broader research decisions.",
+  "budget": {
+    "allocated_gpu_hours": 12,
+    "model_forward_invocations": 160000,
+    "free_release_cells": 520,
+    "artifact_bytes": 34359738368
+  },
+  "dispatch_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision/coordination/dispatch.json",
+  "worker_turn_id": "01a0ba23-060e-7fc1-b651-97390c0abf2f",
+  "candidate_manifest": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision/candidate-manifest-final.json",
+  "lead_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision/lead-acceptance.json"
+}

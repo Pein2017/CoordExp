@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-19-coordinate-pair-readout",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Sparse continuing changes on logits0/1 are sufficient for sign23-like low numerical recurrence on both selected donut models, while removing that pair from sign23 loses the near-run1/zero-all-pairs outcome. Untied responds to only0; tied requires the pair among these tested supports. The pattern is case-specific, not a universal two-logit cause or physical recovery.",
+  "state_as_of": "2026-09-19T04:53:31.887023+00:00",
+  "protocol": "research/experiments/2026-09-19-coordinate-pair-readout/unit.md",
+  "result": "research/experiments/2026-09-19-coordinate-pair-readout/results.md",
+  "state_source": "research/experiments/2026-09-19-coordinate-pair-readout/results.md",
+  "boundary": "Original11 failure prefixes crossed with original/sign23/only0/only1/pair01/except01;66 continuations including22 unchanged controls.",
+  "not_authorized": [
+    "training",
+    "checkpoint sweeps",
+    "new bins",
+    "new cases",
+    "role/dose sweeps",
+    "coefficient tuning",
+    "annotation work",
+    "automatic successors",
+    "production changes",
+    "Notion",
+    "memory writes"
+  ],
+  "next_action": "Closed. Root separately releases forward-only coordinate-margin-provenance; no automatic successor."
+}
