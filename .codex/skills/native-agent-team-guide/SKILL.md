@@ -37,13 +37,20 @@ known dependencies and owners before dispatch; leave local implementation choice
 to the worker. Resolve uncertainty that blocks dependent work first, without
 trying to predict every overlap or inventing interfaces just to divide tasks.
 Assignments may change as facts emerge; make the new ownership explicit.
+For research or review assignments, name what next action each plausible result
+changes. If none changes, do not delegate; unresolved findings stay `HOLD` and
+do not become new mandatory gates.
+For an already frozen CoordExp probe, bind the assignment to the
+[Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md)
+rather than sending broad research history.
 
 A brief needs only execution-changing facts:
 
 ```text
 outcome and non-goals; cwd and owned paths;
 existing entrypoint/pattern and chosen approach, or the unresolved question;
-frozen behavior, interfaces and permissions;
+authoritative inputs and consumer schema, including valid empty/HOLD states;
+frozen behavior, interfaces, permissions and attempt/repair budget;
 acceptance evidence and stop condition;
 relevant peers; runtime handoff to root when applicable.
 ```
@@ -56,15 +63,10 @@ verify the assigned outcome at its real consumer, not only their edited files.
 
 ### Route models and intervene
 
-Default to Luna-xhigh for substantive execution work. Prefer Luna-max when
-semantic coupling or silent-correctness risk warrants it, such as token
-boundaries, owner-credit accounting or runtime equivalence. Reserve lower effort
-for mechanical work with strong deterministic checks and an explicit lead choice.
-Do not automatically climb an effort ladder. Reduce Terra use: another family is an
-exception for a concrete capability gap or explicit user choice, not routine
-rotation. The lead may take over difficult, coupled work. Check live callable
-models, effort support and fork inheritance so the actual assignment matches the
-choice. This is a working preference, not a proven ranking of model quality.
+Follow the subagent family rule in the [agent contract](../../AGENTS.md) before
+choosing effort. Check live callable models, effort support and fork inheritance
+so the assignment matches the intended route; do not automatically climb an
+effort ladder or rotate families.
 
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over

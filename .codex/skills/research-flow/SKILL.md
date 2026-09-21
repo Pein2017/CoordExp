@@ -96,6 +96,11 @@ a duplicate packet. Bind prefix identity when conditioning or replay depends
 on it. Exact-token identity is a replay/provenance diagnostic unless the unit
 explicitly makes exact replay the estimand.
 
+For a worker implementing or running an already frozen probe, use the
+[Frozen Probe Execution Packet](references/probe-execution-packet.md). It binds
+the technical handoff without transferring research meaning or adding another
+review or launch gate.
+
 An auxiliary proxy, null, mechanism diagnostic, or gradient screen is
 decision-owning only when the active contract explicitly names it and its stop
 rule is user-authorized. Otherwise run it after or alongside the frozen primary

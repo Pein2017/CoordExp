@@ -89,6 +89,12 @@ bodies, logs, or tracked files. Skip network operations that have no work.
   and inspect uncommitted work plus ahead/behind state.
 - Retire a worktree only after its work is merged or explicitly discarded,
   durable artifacts are preserved, and its status is clean.
+- For a worktree carrying research or documentation history, verify its content
+  is absorbed by the retained owner. Clean status or merged commits alone do not
+  prove this; preserve unabsorbed sources under the owning retention policy with
+  a recoverable ref and verified manifest before removal.
+- After removing a worktree, inspect its remaining branch refs separately and
+  retire only those covered by the authorized cleanup scope.
 - Dry-run metadata pruning before applying it.
 - A stale worktree marker or lock error is evidence to investigate, not proof
   that deletion is safe.

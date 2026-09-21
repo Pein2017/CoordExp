@@ -23,6 +23,10 @@ either framework just to obtain a model or token scores.
 - For precision, normalization, causal alignment, batches or template assembly,
   use only the applicable section of [execution checks](references/execution-checks.md).
   It points to code/spec/test owners rather than another execution framework.
+- For candidate-set probability, row scoring, finite-set mass or reducers, read
+  its `Objective, denominator and distributed reduction` section. Bind the real
+  consumer schema and test empty support, `null`/finite representation and EOS
+  behavior rather than inferring them from nonempty examples.
 - For a training launch, discover the selected checkout's config/launcher;
   this skill owns no GPU count, batch size, precision default or launch budget.
 
@@ -30,6 +34,10 @@ Start from the named source/artifact and retrieve one relevant contract or
 counterexample. Familiar tensor operations do not require a tutorial or a
 full checklist. Correct shapes and a finite scalar do not by themselves prove
 correct target alignment, reduction, autograd or conditioning.
+
+When implementing or running an already frozen research probe, also use the
+[Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md)
+for producer identity, attempt handling and dependent-artifact readiness.
 
 ## Close the specific question
 

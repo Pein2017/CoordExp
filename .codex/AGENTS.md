@@ -85,6 +85,6 @@ task.
 
 ## Model routing
 
-* Verify live availability. Effort changes search depth, not role fit; change family when semantic or architectural capability is uncertain.
-* The lead chooses supported effort from task shape, risk, verifier strength, observed gaps, latency, and cost. No effort or family is mandatory by label; escalate only for a concrete gap or stakes that justify it.
+* Verify live availability. Prefer Luna-family subagents for routine bounded worker, explorer, and scout tasks. Delegated decision-bearing, critical, or research analysis, design, and interpretation work requires an Astra-family subagent. Route by the work's substance, not the role name or worktree; if Astra is unavailable, hold that delegation rather than substitute Luna.
+* The lead chooses supported effort from task shape, risk, verifier strength, observed gaps, latency, and cost. No effort is mandatory by label; raising Luna effort does not replace the required Astra family. The lead retains decisions and acceptance.
 * Use the smallest sufficient reviewer. Provider-diverse and major-decision models advise only; they do not own writes, conclusions, or authority.
