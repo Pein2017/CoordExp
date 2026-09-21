@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-21-history-source-sign",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted with protocol debt: local conditional score effects; failure specificity not established; cut-row owner reselection HOLD",
+  "state_as_of": "2026-09-21",
+  "protocol": "research/experiments/2026-09-21-history-source-sign/task-profile.md",
+  "result": "research/experiments/2026-09-21-history-source-sign/lead-results.md",
+  "state_source": "research/experiments/2026-09-21-history-source-sign/lead-results.md",
+  "not_authorized": [
+    "model replay or fresh qualification",
+    "new cells, cohort expansion, or threshold change",
+    "training or successor design"
+  ],
+  "next_action": "Closed; no further model work or successor authorized.",
+  "counts": {
+    "source_trajectories": 11,
+    "owner_grounded_failure_boundaries": 1,
+    "failure_holds": 10,
+    "matched_pairs": 1,
+    "failure_trios_complete": 1,
+    "control_trios_complete": 1,
+    "protocol_compliance": "violated",
+    "qualification_attempt_overrun": 1,
+    "control_evaluation": "POSTHOC_CORRECTED_SENSITIVITY",
+    "pairwise_first_divergence_pairs": 20,
+    "condition_level_pair_diagnostics": 60
+  },
+  "boundary": "Eleven frozen source trajectories across six images; one owner-grounded failure, one matched control, two completed trios; protocol violation and posthoc corrected control sensitivity retained."
+}

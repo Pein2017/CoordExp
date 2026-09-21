@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-21-native-row-choice",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted bounded finite search: 0/3 positive N witnesses; global preference unresolved",
+  "state_as_of": "2026-09-21",
+  "protocol": "research/experiments/2026-09-21-history-source-sign/task-profile.md",
+  "result": "research/experiments/2026-09-21-native-row-choice/lead-results.md",
+  "state_source": "research/experiments/2026-09-21-native-row-choice/lead-results.md",
+  "not_authorized": [
+    "beam expansion or global MAP claim",
+    "candidate search after outcomes",
+    "new cohort, training, or successor"
+  ],
+  "next_action": "Closed; no further model work or successor authorized.",
+  "counts": {
+    "source_trajectories": 11,
+    "admitted_states": 3,
+    "identity_holds": 8,
+    "completed_states": 3,
+    "positive_local_witnesses": 0,
+    "optional_continuations": 0
+  },
+  "boundary": "Eleven frozen source trajectories; three admitted mature native target-first-revisit states and eight identity HOLDs; finite-candidate diagnostic only."
+}
