@@ -21,7 +21,7 @@ from probes.training_set_completion.recurrence_spatial.prepare import (
     SHIFT_PX,
     transform_history,
 )
-from probes.training_set_completion.readout_norm_fresh import _binding
+from probes.training_set_completion.artifacts import literal_binding as _binding
 from probes.training_set_completion.recurrence_spatial.state_entry import digest_json
 
 

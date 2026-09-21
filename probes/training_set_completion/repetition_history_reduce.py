@@ -1,14 +1,12 @@
 """Saved-output accounting; physical identity remains a separate bounded sidecar."""
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 from transformers import AutoTokenizer
-from probes.training_set_completion.readout_norm_fresh import _binding, _write
+from probes.training_set_completion.artifacts import literal_binding as _binding, write_pretty_json as _write
+from probes.training_set_completion import row_scoring as scorer
 
-SCORER=Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-endpoint-loop-natural-readout-norm/reduce.py')
-spec=importlib.util.spec_from_file_location('accepted_pure_score',SCORER)
-scorer=importlib.util.module_from_spec(spec);spec.loader.exec_module(scorer)
+SCORER = Path(scorer.__file__)
 
 
 def consume(root):

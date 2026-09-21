@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from src.artifacts.source_archive import SourceArchive
+
 
 B = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-14-training-set-completion-curriculum")
 ROOT_V1 = B / "annotations-with-unlabeled-v1"
@@ -57,6 +59,13 @@ def binding(path: str | Path) -> dict[str, Any]:
 
 def read(path: str | Path) -> Any:
     return json.loads(Path(path).read_text())
+
+
+def retained_v1_producer_binding() -> dict[str, Any]:
+    """Locate the checksum-pinned annotation producer as historical evidence only."""
+    archive = SourceArchive(Path("/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"))
+    observed = archive.resolve(ROOT_V1 / "producer.py", "9ccf7835709f19ca790e877fedcc7befb0767cde0be60bd3ddb46e2ad68f84b6")
+    return binding(observed["path"])
 
 
 def _as_bindings(value: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -499,7 +508,7 @@ def build(*, output: Path = ROOT, catalog_path: Path = CATALOG, acquisition_path
         "schema": SCHEMA,
         "status": "candidate_ready",
         "annotations": binding(annotations_path),
-        "sources": {"catalog": catalog_binding, "acquisition_manifest": binding(acquisition_path), "complete_bank_acceptance": mask_binding, "complete_bank": binding(complete_bank_path), "review_source_index": review_index_binding, "v1_snapshot_producer": binding(ROOT_V1 / "producer.py"), "producer": binding(Path(__file__)), "extra_root_admissions": extra_bindings},
+        "sources": {"catalog": catalog_binding, "acquisition_manifest": binding(acquisition_path), "complete_bank_acceptance": mask_binding, "complete_bank": binding(complete_bank_path), "review_source_index": review_index_binding, "v1_snapshot_producer": retained_v1_producer_binding(), "producer": binding(Path(__file__)), "extra_root_admissions": extra_bindings},
         "counts": {"images": len(rows), "gt_objects": sum(len(row["objects"]) for row in rows), "valid_unlabeled": len(candidates), "class_unknown": len(unknown_owners), "class_verified": len(candidates) - len(unknown_owners)},
         "replay": "python -m probes.training_set_completion.unlabeled_annotations --output <new-empty-output-dir>" + (f" --extra-root-admissions {extra_root_admissions}" if extra_root_admissions else ""),
     }

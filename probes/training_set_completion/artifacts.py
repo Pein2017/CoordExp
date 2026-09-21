@@ -45,3 +45,28 @@ def binding(path: str | Path) -> dict[str, Any]:
         "sha256": file_hash(resolved),
         "size_bytes": resolved.stat().st_size,
     }
+
+
+def literal_binding(path: Path) -> dict[str, Any]:
+    """Preserve the authored path, unlike the resolved-path ``binding`` above."""
+    return {
+        "path": str(path),
+        "sha256": file_hash(path),
+        "size_bytes": path.stat().st_size,
+    }
+
+
+def write_pretty_json(path: Path, value: Any) -> None:
+    """Historical overwrite writer: ASCII escaping, NaN allowed, one newline.
+
+    This is byte compatibility, not the default for a newly frozen receipt.
+    The caller still owns collision/immutability and directory creation.
+    """
+    path.write_text(json.dumps(value, indent=2) + "\n")
+
+
+def ascii_json_digest(value: Any) -> str:
+    """Historical sorted ASCII JSON without a terminal newline."""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()

@@ -1,6 +1,8 @@
 """One Source-started, two-entrance last-token CE feasibility update sequence."""
 from __future__ import annotations
 
+from src.artifacts.source_provenance import preserve_source
+
 import argparse
 import json
 import math
@@ -96,10 +98,8 @@ def prepare(output):
                Path(__file__).with_name('branch_bridge.py'), Path(__file__).with_name('route_access.py')]
     sources += list(Path('src/qwen').glob('*.py')) + [Path('src/losses/token_scores.py'), Path('src/adapters/dora.py')]
     records = []
-    for path in sources:
-        target = output / 'effective_code' / str(path.resolve()).lstrip('/')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+    for path in [*sources, Path(preserve_source.__code__.co_filename)]:
+        target = preserve_source(path, run_root=output, relative_name=Path('effective_code') / str(path.resolve()).lstrip('/'))
         records.append(dict(path=str(path.resolve()), staged=str(target), sha256=file_hash(target)))
     publish(output / 'code_identity.json', dict(files=records,
             git_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),

@@ -91,3 +91,9 @@ Run these with CUDA hidden and bounded CPU threads. Tests explicitly requiring
 retained production preparations, a bound tokenizer or model artifacts are a
 separate integration tier; do not replace their inputs with fabricated receipts
 or reinterpret a CPU-only pass as their acceptance.
+
+## Shared identity and scoring
+
+`artifacts.literal_binding` preserves authored paths, while `artifacts.binding` resolves them; their JSON/hash contracts are intentionally distinct. Native tensor/input identity is owned by `src.qwen.input_identity`, not `readout_norm_fresh`. `row_scoring.score` owns the shared frozen saved-row accounting, with eleven real/edge characterization cases. `row_branch` is a distinct maintained row-boundary runtime. `src.qwen.untied_embeddings` retains the exact untied payload implementation; it is not interchangeable with the general embedding owner.
+
+New producer receipts bind current maintained sources and shared dependencies. Historical source recovery does not permit rewriting old hashes or running old grants. See the [storage policy](../../docs/OUTPUT_STORAGE_POLICY.md).

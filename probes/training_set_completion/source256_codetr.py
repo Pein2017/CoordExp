@@ -43,9 +43,8 @@ CONFIG = CODETR_ROOT / "projects/configs/co_dino_vit/co_dino_5scale_vit_large_co
 WEIGHTS = CODETR_ROOT / "models/co_dino_5scale_vit_large_coco.pth"
 HELPER = CODETR_ROOT / "tools/codetr_infer_human_refined12.py"
 PREDECESSOR_PROBE = Path(
-    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
-    "2026-09-10-autonomous-unmatched-evaluator/codetr_probe.py"
-)
+    __file__
+).resolve().parents[1] / "unmatched_judge/codetr_profile/codetr_probe.py"
 
 _ID_RE = re.compile(r"[A-Za-z0-9_.:-]+\Z")
 

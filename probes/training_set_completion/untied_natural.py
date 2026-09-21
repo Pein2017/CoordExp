@@ -4,7 +4,8 @@ from pathlib import Path
 import torch
 from transformers import LogitsProcessor,LogitsProcessorList
 from probes.training_set_completion.untied_shared import ROOT,load_model
-from probes.training_set_completion.readout_norm_fresh import _binding,_tensor_hash,_input_identity
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import tensor_hash as _tensor_hash, input_identity as _input_identity
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.native import prepare_native_inputs
 from src.qwen.generation import NativeGenerationPolicy,generate_continuations

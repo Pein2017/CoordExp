@@ -1,6 +1,8 @@
 """Frozen Source-to-round1 witness replay; no generation, update, or new selection."""
 from __future__ import annotations
 
+from src.artifacts.source_provenance import preserve_source
+
 import argparse
 from collections import Counter, defaultdict
 import gc
@@ -245,10 +247,8 @@ def prepare(output):
     code = sorted(set([Path(__file__), Path(__file__).with_name('runtime.py'), Path(__file__).with_name('train.py'),
                        Path(__file__).with_name('candidate_opportunity.py'), Path(__file__).with_name('round1_realization.py')]
                       + list(Path('src/qwen').glob('*.py')) + list(Path('src/losses').glob('*.py'))))
-    for path in code + [CONFIG, Path(__file__).with_name('tests') / 'test_route_access.py']:
-        target = output / 'effective_code' / str(path.resolve()).lstrip('/')
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+    for path in [*code + [CONFIG, Path(__file__).with_name('tests') / 'test_route_access.py'], Path(preserve_source.__code__.co_filename)]:
+        target = preserve_source(path, run_root=output, relative_name=Path('effective_code') / str(path.resolve()).lstrip('/'))
         staged.append(dict(source=str(path.resolve()), staged=str(target), sha256=file_hash(target), size_bytes=target.stat().st_size))
     base = Path(plan['model']['base_model_path'])
     base_files = [dict(path=str(p), sha256=file_hash(p), size_bytes=p.stat().st_size)

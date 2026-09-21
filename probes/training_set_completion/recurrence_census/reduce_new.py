@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import collections
 import hashlib
-import importlib.util
+from probes.training_set_completion import row_scoring
 import json
 from pathlib import Path
 from typing import Any
@@ -16,7 +16,6 @@ from probes.training_set_completion.recurrence_census.prepare import (
     _annotation_meta,
     _area_bin,
     _boundary_metadata,
-    _old_reduce_module,
     _region,
     binding,
     recurrence_accounting,
@@ -308,7 +307,7 @@ def _make_boundary(kind: str, episode: str, i: int, rr: list[dict[str, Any]], ce
 
 def main() -> None:
     panel = json.loads((OUT / "panel.json").read_text())
-    score_mod = _old_reduce_module()
+    score_mod = row_scoring
     cells: dict[str, dict[str, Any]] = {}
     receipts = []
     failed = []

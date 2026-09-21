@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from probes.training_set_completion.recurrence_census import reduce_new
+from probes.training_set_completion import row_scoring
 from probes.training_set_completion.recurrence_census.prepare import binding
 
 
@@ -22,7 +23,7 @@ def _reduce(source_root: Path) -> dict[str, Any]:
     # Rebinding this module global keeps the existing scorer pure and avoids a
     # second implementation of the saved-output semantics.
     reduce_new.OUT = source_root
-    score_mod = reduce_new._old_reduce_module()
+    score_mod = row_scoring
     cells: dict[str, dict[str, Any]] = {}
     failed: list[dict[str, Any]] = []
     for condition in panel["conditions"]:

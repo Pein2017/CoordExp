@@ -1,0 +1,18 @@
+{
+  "status": "frozen_candidate_not_validated",
+  "name": "codetr-context-plus-free-category-v1",
+  "development_scope": "54 provisional visual references, 13 clean / 20 defective / 21 gray; no holdout labels inspected for method selection",
+  "detector": "Co-DETR ViT-L existing native mmdet runtime and checkpoint",
+  "detector_view": "3x candidate width and height, minimum 128px per side, image-clipped context; no candidate outline or class supplied",
+  "detector_score_min": 0.5,
+  "candidate_detector_iou_min": 0.75,
+  "semantic_observer": "official Qwen3-VL-8B-Instruct, exact reground-dev-v1 point prompts, original image and fixed half-image context",
+  "semantic_rule": "at least one valid resolved observation has a canonical category exactly equal to candidate category; generic/unknown/unmapped categories provide no support",
+  "aliases": {"man":"person", "woman":"person", "boy":"person", "girl":"person", "child":"person", "baby":"person", "motorbike":"motorcycle", "aeroplane":"airplane", "sofa":"couch", "television":"tv", "monitor":"tv", "computer monitor":"tv", "doughnut":"donut"},
+  "admission_rule": "detector score/IoU gate AND semantic support; otherwise unknown, never an automatic negative",
+  "localization_output": "detector agreement is only eligible for bounded acceptable-localization proxy after independent holdout acceptance; it is not ground truth",
+  "duplicate_scope": "strict pairwise IoU>.95 is separate automatic rule; lower-IoU cross-prediction duplication remains outside this profile",
+  "holdout": "holdout-v1/candidates.jsonl: 64 images disjoint from 39 development images, sha256 bae64e2d9549ffc8549c255be1614f0893cae757e1fadd188e2ebcba28f61b3d",
+  "validation": "original contract.md thresholds unchanged; no tuning or case-specific exceptions from holdout outcomes",
+  "operational_profile_status": "not_admitted"
+}

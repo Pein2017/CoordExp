@@ -29,7 +29,8 @@ from probes.training_set_completion.recurrence_spatial.recurrence_semantics impo
     runs as _pairwise_runs,
 )
 from probes.training_set_completion.untied_shared import load_model
-from probes.training_set_completion.readout_norm_fresh import _binding, _input_identity
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import input_identity as _input_identity
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.generation import NativeGenerationPolicy, generate_continuations
 from src.qwen.native import NativeRequest, prepare_native_inputs

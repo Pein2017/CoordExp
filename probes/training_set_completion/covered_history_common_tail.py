@@ -5,7 +5,8 @@ from pathlib import Path
 import torch
 from transformers import LogitsProcessor,LogitsProcessorList
 from probes.dora_owner_learning.runtime import load_policy
-from probes.training_set_completion.readout_norm_fresh import _binding,_input_identity,_tensor_hash,_write
+from probes.training_set_completion.artifacts import literal_binding as _binding, write_pretty_json as _write
+from src.qwen.input_identity import input_identity as _input_identity, tensor_hash as _tensor_hash
 from src.config.inference import InferConfig
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.native import prepare_native_inputs,exact_history_inputs

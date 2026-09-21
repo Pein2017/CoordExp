@@ -65,6 +65,7 @@ class FakePeftModel(nn.Module):
         if self.fail:
             raise RuntimeError("synthetic rank-zero save failure")
         save_file(self.tensors, str(path / "adapter_model.safetensors"))
+        (path / "README.md").write_text("# Generated model card\n模型\n", encoding="utf-8")
 
 
 def test_adapter_only_atomic_checkpoint_and_safe_peft_arguments(tmp_path: Path) -> None:
@@ -75,6 +76,9 @@ def test_adapter_only_atomic_checkpoint_and_safe_peft_arguments(tmp_path: Path) 
     )
     assert result.checkpoint_dir == tmp_path / "checkpoints" / "step-3"
     assert (result.checkpoint_dir / "adapter" / "adapter_model.safetensors").is_file()
+    assert not (result.checkpoint_dir / "adapter" / "README.md").exists()
+    metadata = json.loads((result.checkpoint_dir / "adapter" / "model_card.json").read_text())
+    assert metadata["content_utf8"] == "# Generated model card\n模型\n"
     assert model.calls == [{
         "safe_serialization": True,
         "selected_adapters": ["default"],

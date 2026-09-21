@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import torch
-from probes.training_set_completion.readout_norm_fresh import _binding, _write
+from probes.training_set_completion.artifacts import literal_binding as _binding, write_pretty_json as _write
 
 
 def check(folder):

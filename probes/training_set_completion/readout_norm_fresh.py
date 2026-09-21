@@ -23,6 +23,10 @@ if __package__ in (None, ""):
 
 from probes.dora_owner_learning.runtime import load_policy
 from src.config.inference import InferConfig
+from probes.training_set_completion.artifacts import (
+    literal_binding as _binding, write_pretty_json as _write, ascii_json_digest as _json_hash,
+)
+from src.qwen.input_identity import input_identity as _input_identity, tensor_hash as _tensor_hash
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.generation import NativeGenerationPolicy, generate_continuations
 from src.qwen.native import NativeBatch, prepare_native_inputs
@@ -41,43 +45,14 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
-def _write(path: Path, value: Mapping[str, Any]) -> None:
-    path.write_text(json.dumps(value, indent=2) + "\n")
 
 
-def _binding(path: Path) -> dict[str, Any]:
-    return {
-        "path": str(path),
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "size_bytes": path.stat().st_size,
-    }
 
 
-def _tensor_hash(value: torch.Tensor) -> str:
-    return hashlib.sha256(
-        value.detach().cpu().contiguous().numpy().tobytes()
-    ).hexdigest()
 
 
-def _json_hash(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
 
 
-def _input_identity(batch: NativeBatch) -> dict[str, Any]:
-    tensors = {
-        name: _tensor_hash(value)
-        for name, value in sorted(batch.inputs.items())
-        if isinstance(value, torch.Tensor)
-    }
-    return {
-        "request_ids": list(batch.request_ids),
-        "prompt_token_ids": [list(row) for row in batch.prompt_token_ids],
-        "media_sha256": None if batch.media_sha256 is None else list(batch.media_sha256),
-        "image_grids": [None if grid is None else list(grid) for grid in batch.image_grids],
-        "tensor_sha256": tensors,
-    }
 
 
 def _image_id(case: Mapping[str, Any]) -> int:

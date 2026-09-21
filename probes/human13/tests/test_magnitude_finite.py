@@ -223,9 +223,11 @@ def test_receipt_is_not_published_before_source_restoration(
     assert not (tmp_path / RECEIPT_NAME).exists()
 
 
+@pytest.mark.parametrize("card_kind", ["missing", "markdown", "json"])
 def test_materialization_mapping_and_natural_gate_order_is_nongating(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    card_kind: str,
 ) -> None:
     from safetensors import safe_open
     from safetensors.torch import load_file, save_file
@@ -244,7 +246,12 @@ def test_materialization_mapping_and_natural_gate_order_is_nongating(
             }
         )
     )
-    (source_adapter / "README.md").write_text("source adapter\n")
+    if card_kind != "missing":
+        (source_adapter / "README.md").write_text("source adapter\n")
+    if card_kind == "json":
+        from src.artifacts.model_card import package_model_card
+
+        package_model_card(source_adapter)
     source = {}
     candidate = {}
     for index in range(finite.CANDIDATE_TENSOR_COUNT):
@@ -294,6 +301,14 @@ def test_materialization_mapping_and_natural_gate_order_is_nongating(
     )
 
     observed = load_file(str(output_adapter / ADAPTER_TENSOR_NAME))
+    assert not (output_adapter / "README.md").exists()
+    assert (output_adapter / "model_card.json").exists() == (card_kind != "missing")
+    assert materialized["schema_version"].endswith(".v2")
+    files, metadata = finite._verify_materialization_files(
+        output_adapter, materialized, stage="n2"
+    )
+    assert set(files) == {"adapter_config.json", ADAPTER_TENSOR_NAME}
+    assert metadata["mode"] == "current_json"
     for key, value in source.items():
         if ".lora_magnitude_vector" not in key:
             assert torch.equal(observed[key], value)
@@ -615,3 +630,53 @@ def test_new_producer_n2_receipt_keeps_legacy_pin_and_all_payload_bindings(tmp_p
     candidate.write_bytes(b'corrupted candidate')
     with pytest.raises(MechanicalInvalid, match='binding differs'):
         finite._load_finite_candidate_receipt(receipt_path)
+
+
+def test_legacy_materialization_verifies_archived_card_without_restoring_it(tmp_path):
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    for name in ("adapter_config.json", finite.ADAPTER_TENSOR_NAME):
+        (adapter / name).write_bytes(b"retained payload")
+    archived = tmp_path / "archived-card.md"
+    archived.write_bytes(b"original card\n")
+    card_hash = finite.same_panel.sha256_file(archived)
+    manifest = tmp_path / "archive.json"
+    manifest.write_text(json.dumps({
+        "schema": "coordexp.output_source_archive.v1",
+        "files": [{"source": str(adapter / "README.md"), "archive": str(archived),
+                   "sha256": card_hash}],
+    }))
+    receipt = {
+        "schema_version": "human13_n2_dora_magnitude_materialization.v1",
+        "adapter_files": {
+            name: finite.same_panel.sha256_file(adapter / name)
+            for name in ("adapter_config.json", finite.ADAPTER_TENSOR_NAME)
+        } | {"README.md": card_hash},
+    }
+    payload, metadata = finite._verify_materialization_files(
+        adapter, receipt, stage="n2", archive_manifest=manifest
+    )
+    assert set(payload) == {"adapter_config.json", finite.ADAPTER_TENSOR_NAME}
+    assert metadata["mode"] == "historical_markdown"
+    assert metadata["binding"]["resolution"] == "archived_exact_path"
+    assert not (adapter / "README.md").exists()
+    archived.write_bytes(b"changed card")
+    with pytest.raises(MechanicalInvalid, match="metadata is unavailable"):
+        finite._verify_materialization_files(adapter, receipt, stage="n2", archive_manifest=manifest)
+
+
+def test_current_materialization_rejects_changed_metadata_without_archive_fallback(tmp_path):
+    for name in ("adapter_config.json", finite.ADAPTER_TENSOR_NAME, "model_card.json"):
+        (tmp_path / name).write_bytes(b"current payload")
+    receipt = {
+        "schema_version": "human13_n2_dora_magnitude_materialization.v2",
+        "adapter_files": {
+            name: finite.same_panel.sha256_file(tmp_path / name)
+            for name in ("adapter_config.json", finite.ADAPTER_TENSOR_NAME)
+        },
+        "metadata_files": {"model_card.json": finite.same_panel.sha256_file(tmp_path / "model_card.json")},
+    }
+    finite._verify_materialization_files(tmp_path, receipt, stage="n2")
+    (tmp_path / "model_card.json").write_bytes(b"changed metadata")
+    with pytest.raises(MechanicalInvalid, match="metadata hashes differ"):
+        finite._verify_materialization_files(tmp_path, receipt, stage="n2")

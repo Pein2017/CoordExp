@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import importlib.util
+from probes.training_set_completion import row_scoring
 import json
 import math
 import os
@@ -302,17 +302,6 @@ def freeze_cohort() -> dict[str, Any]:
     return {"manifest": manifest, "selected": selected, "runtime": runtime, "panel_source": panel}
 
 
-def _old_reduce_module():
-    path = MATURE / "reduce.py"
-    spec = importlib.util.spec_from_file_location("mature_reduce", path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    # The mature package reducer is a thin driver whose ``m`` member is the
-    # accepted score implementation used by its saved reduction.
-    return getattr(mod, "m", mod)
-
-
 def _rows_from_tokens(tokens: list[int]) -> list[dict[str, Any]]:
     rows = []
     for start, token in enumerate(tokens):
@@ -434,7 +423,7 @@ def _annotation_meta(case: dict[str, Any]) -> dict[str, Any]:
 
 def mature_census() -> dict[str, Any]:
     panel = json.loads((MATURE / "panel.json").read_text())
-    reduce_mod = _old_reduce_module()
+    reduce_mod = row_scoring
     cells: dict[str, dict[str, Any]] = {}
     image_meta: dict[str, dict[str, Any]] = {}
     condition_names = list(panel["conditions"])

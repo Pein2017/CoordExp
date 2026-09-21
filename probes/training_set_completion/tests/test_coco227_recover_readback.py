@@ -66,6 +66,12 @@ def test_original_reconciliation_identity_matches_live_process(tmp_path: Path):
     process = _child("import time; time.sleep(30); # " + marker)
     try:
         identity = recovery._process_identity(process.pid)
+        # Popen can return while /proc still exposes the child's pre-exec state.
+        # Wait for the test child to publish a command line, not an arbitrary delay.
+        deadline = time.monotonic() + 2
+        while (identity is None or not identity["cmdline"]) and time.monotonic() < deadline:
+            time.sleep(0.005)
+            identity = recovery._process_identity(process.pid)
         assert identity is not None
         assert identity["pid"] == process.pid
         assert marker in identity["cmdline"][-1]

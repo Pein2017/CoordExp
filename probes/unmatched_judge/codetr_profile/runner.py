@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import os
 import re
@@ -13,18 +12,19 @@ from typing import Any
 from PIL import Image
 
 ROOT = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-10-autonomous-unmatched-evaluator")
-CODETR = ROOT / "codetr_probe.py"
-SEMANTIC = ROOT / "semantic_probe.py"
-RULE = ROOT / "profile_rule.py"
-SPEC = ROOT / "selected-candidate-v1.json"
+SOURCE_ROOT = Path(__file__).resolve().parent
+CODETR = SOURCE_ROOT / "codetr_probe.py"
+SEMANTIC = SOURCE_ROOT / "semantic_probe.py"
+RULE = SOURCE_ROOT / "profile_rule.py"
+SPEC = SOURCE_ROOT / "selected-candidate-v1.json"
 CODETR_PYTHONPATH = "/data/CoordExp/external/Co-DETR"
 FROZEN_HASHES = {
     CODETR: "d8bef8c851fdb774d8bd9cc570758a071a24a80db266d87f54c955510ef787a9",
     SEMANTIC: "71a618e8118e38912d2b782b1db718b4143e2a0294bd626dd937408ee33baffd",
     RULE: "f0029189880518b29093fcc90a64485d48120b85914c9690d07ef7f4272c2216",
     SPEC: "f2344113da286c6c271325fd3f2970eeea01a423d98f62d592c99ad2ffceaace",
-    ROOT / "reground-dev-v1/run.py": "a1920b89c4c225736cbfcd9b855ecf0b9f0e00ced97589611d88849705563d90",
-    ROOT / "reground-dev-v1/requests.jsonl": "af6625ad50166b1418167606c676d2f11acde262278c09d59636ee8d059d7a0d",
+    SOURCE_ROOT / "reground-dev-v1/run.py": "a1920b89c4c225736cbfcd9b855ecf0b9f0e00ced97589611d88849705563d90",
+    SOURCE_ROOT / "reground-dev-v1/requests.jsonl": "af6625ad50166b1418167606c676d2f11acde262278c09d59636ee8d059d7a0d",
     Path("/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct/config.json"): "5cd452860dc1e9c29dd71cc3cef7f39b338b7a40793f7a260655c2d3568f3661",
     Path("/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct/model.safetensors.index.json"): "520b2e05079402e9468a8701d03d1154d14b2599593afb6effa7fb60c1bff070",
     Path("/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct/model-00001-of-00004.safetensors"): "d5d0aef0eb170fc7453a296c43c0849a56f510555d3588e4fd662bb35490aefa",
@@ -129,10 +129,7 @@ def _run_stage(name: str, command: list[str], env: dict[str, str], out: Path, re
 
 
 def _load_rule():
-    spec = importlib.util.spec_from_file_location("frozen_profile_rule", RULE)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
+    from . import profile_rule as module
     return module
 
 

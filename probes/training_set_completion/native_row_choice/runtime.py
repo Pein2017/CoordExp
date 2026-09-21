@@ -24,7 +24,7 @@ import torch
 
 from probes.training_set_completion.coordinate_continuity.runtime import _source
 from probes.training_set_completion.numerical_feedback.select import rows as parsed_rows
-from probes.training_set_completion.readout_norm_fresh import _input_identity
+from src.qwen.input_identity import input_identity as _input_identity
 from probes.training_set_completion.untied_shared import load_model
 from src.qwen.native import exact_history_inputs
 

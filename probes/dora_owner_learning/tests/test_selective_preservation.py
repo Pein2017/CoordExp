@@ -13,6 +13,13 @@ from probes.dora_owner_learning.selective_preservation import (
 EOS = 151645
 
 
+@pytest.fixture(autouse=True)
+def local_source_capture(tmp_path, monkeypatch):
+    from src.artifacts import source_provenance
+
+    monkeypatch.setattr(source_provenance, "SOURCE_ARCHIVE_ROOT", tmp_path / "source-history")
+
+
 @pytest.mark.parametrize("suffix", ["", "_wide", "_dense", "_strong", "_seven", "_stable"])
 def test_fresh_profile_preparation_captures_shared_input_sources(tmp_path, suffix):
     profile = importlib.import_module(f"probes.dora_owner_learning.selective_preservation{suffix}")
@@ -29,21 +36,26 @@ def test_fresh_profile_preparation_captures_shared_input_sources(tmp_path, suffi
 
 def test_fresh_source_snapshot_changes_with_shared_helper_bytes(tmp_path, monkeypatch):
     from probes.dora_owner_learning import selective_preservation as profile
+    from src.artifacts import source_provenance
 
     output = tmp_path / "prepared"
     source = Path("src/inference/inputs.py").resolve()
     changed_source = tmp_path / "changed-inputs.py"
     changed_source.write_bytes(source.read_bytes() + b"\n# changed producer fixture\n")
-    copyfile = profile.shutil.copyfile
+    copyfileobj = source_provenance.shutil.copyfileobj
 
     def copy_changed_helper(src, dst, **kwargs):
-        return copyfile(changed_source if Path(src).resolve() == source else src, dst, **kwargs)
+        if Path(src.name).resolve() == source:
+            with changed_source.open("rb") as changed:
+                return copyfileobj(changed, dst, **kwargs)
+        return copyfileobj(src, dst, **kwargs)
 
-    monkeypatch.setattr(profile.shutil, "copyfile", copy_changed_helper)
-    profile.prepare(output)
-    identity = json.loads((output / "code_identity.json").read_text())
-    record = next(row for row in identity["files"] if Path(row["path"]) == source)
-    assert record["sha256"] == file_hash(changed_source) != file_hash(source)
+    monkeypatch.setattr(source_provenance, "SOURCE_ARCHIVE_ROOT", tmp_path / "archive")
+    monkeypatch.setattr(source_provenance.shutil, "copyfileobj", copy_changed_helper)
+    with pytest.raises(ValueError, match="copy verification failed"):
+        profile.prepare(output)
+    assert not (output / "code_identity.json").exists()
+    assert file_hash(source) != file_hash(changed_source)
 
 
 def fixture(length=4):

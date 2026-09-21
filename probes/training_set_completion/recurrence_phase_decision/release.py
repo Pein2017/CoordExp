@@ -28,7 +28,7 @@ from transformers import (
 
 from probes.training_set_completion.numerical_feedback.metrics import release_metrics
 from probes.training_set_completion.numerical_feedback.select import ROLES, rows as parsed_rows
-from probes.training_set_completion.readout_norm_fresh import _input_identity
+from src.qwen.input_identity import input_identity as _input_identity
 from probes.training_set_completion.recurrence_phase_decision.common import (
     PANEL,
     binding,

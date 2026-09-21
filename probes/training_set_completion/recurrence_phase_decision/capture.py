@@ -21,7 +21,8 @@ if __package__ in (None, ""):
 
 import torch
 
-from probes.training_set_completion.readout_norm_fresh import _binding, _input_identity
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import input_identity as _input_identity
 from probes.training_set_completion.recurrence_phase_decision.common import (
     bound_source,
     prefix as verify_prefix,

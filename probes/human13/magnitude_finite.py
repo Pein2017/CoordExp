@@ -244,6 +244,51 @@ def _materialized_adapter_tensors(
     }
 
 
+def _verify_materialization_files(
+    adapter_path: Path,
+    materialization: Mapping[str, Any],
+    *,
+    stage: str,
+    archive_manifest: Path | None = None,
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Verify live model payloads separately from current or historical metadata."""
+    payload_names = {"adapter_config.json", ADAPTER_TENSOR_NAME}
+    declared = materialization.get("adapter_files")
+    if not isinstance(declared, Mapping):
+        raise MechanicalInvalid("materialized adapter file map is missing")
+    observed = {name: same_panel.sha256_file(adapter_path / name) for name in sorted(payload_names)}
+    if any(observed[name] != declared.get(name) for name in payload_names):
+        raise MechanicalInvalid("materialized adapter file hashes differ")
+    version = materialization.get("schema_version")
+    if version == f"human13_{stage}_dora_magnitude_materialization.v2":
+        if set(declared) != payload_names:
+            raise MechanicalInvalid("materialized adapter payload names differ")
+        metadata = materialization.get("metadata_files")
+        if not isinstance(metadata, Mapping) or not set(metadata) <= {"model_card.json"}:
+            raise MechanicalInvalid("materialized metadata file map differs")
+        current = {name: same_panel.sha256_file(adapter_path / name) for name in metadata}
+        if current != metadata:
+            raise MechanicalInvalid("materialized metadata hashes differ")
+        return observed, {"mode": "current_json", "files": current}
+    if version == f"human13_{stage}_dora_magnitude_materialization.v1":
+        if set(declared) != payload_names | {"README.md"}:
+            raise MechanicalInvalid("legacy materialization file names differ")
+        from src.artifacts.source_archive import SourceArchive
+
+        manifest = archive_manifest or Path(
+            "/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"
+        )
+        try:
+            metadata = SourceArchive(manifest).resolve(
+                adapter_path / "README.md", declared["README.md"]
+            )
+        except (OSError, ValueError) as exc:
+            raise MechanicalInvalid("retained materialization metadata is unavailable") from exc
+        # This is explicitly historical metadata, not a claim that README is live.
+        return observed, {"mode": "historical_markdown", "binding": metadata}
+    raise MechanicalInvalid("unsupported materialization schema")
+
+
 def materialize_finite_adapter(
     *,
     candidate_receipt_path: Path,
@@ -255,6 +300,7 @@ def materialize_finite_adapter(
 
     from safetensors import safe_open
     from safetensors.torch import load_file, save_file
+    from src.artifacts.model_card import package_model_card
 
     label, _spec = _stage(stage)
     candidate_receipt, candidate_path = _load_finite_candidate_receipt(
@@ -280,7 +326,12 @@ def materialize_finite_adapter(
         shutil.copyfile(
             source_adapter / "adapter_config.json", temporary / "adapter_config.json"
         )
-        shutil.copyfile(source_adapter / "README.md", temporary / "README.md")
+        # Cards describe a model but are not load-bearing adapter payloads.
+        if (source_adapter / "model_card.json").is_file():
+            shutil.copyfile(source_adapter / "model_card.json", temporary / "model_card.json")
+        elif (source_adapter / "README.md").is_file():
+            shutil.copyfile(source_adapter / "README.md", temporary / "README.md")
+            package_model_card(temporary)
         tensor_path = temporary / ADAPTER_TENSOR_NAME
         save_file(tensors, str(tensor_path), metadata={"format": "pt"})
         with safe_open(tensor_path, framework="pt", device="cpu") as handle:
@@ -298,15 +349,18 @@ def materialize_finite_adapter(
         ):
             raise MechanicalInvalid("materialized adapter persistence differs")
         receipt = {
-            "schema_version": f"human13_{stage}_dora_magnitude_materialization.v1",
+            "schema_version": f"human13_{stage}_dora_magnitude_materialization.v2",
             "status": "materialized_unmerged",
             "stage": label,
             "adapter_path": str(output_adapter.resolve()),
             "adapter_fingerprint": identity["fingerprint"],
             "adapter_files": {
                 name: same_panel.sha256_file(temporary / name)
-                for name in ("adapter_config.json", "README.md", ADAPTER_TENSOR_NAME)
+                for name in ("adapter_config.json", ADAPTER_TENSOR_NAME)
             },
+            "metadata_files": {
+                "model_card.json": same_panel.sha256_file(temporary / "model_card.json")
+            } if (temporary / "model_card.json").is_file() else {},
             "candidate_receipt_path": str(candidate_receipt_path.resolve()),
             "candidate_receipt_sha256": same_panel.sha256_file(candidate_receipt_path),
             "candidate_sha256": candidate_receipt["candidate_sha256"],
@@ -851,12 +905,9 @@ def _validate_materialized_adapter(
     )
     if identity["fingerprint"] != materialization.get("adapter_fingerprint"):
         raise MechanicalInvalid("materialized adapter fingerprint differs")
-    observed_files = {
-        name: same_panel.sha256_file(adapter_path / name)
-        for name in ("adapter_config.json", "README.md", ADAPTER_TENSOR_NAME)
-    }
-    if observed_files != materialization.get("adapter_files"):
-        raise MechanicalInvalid("materialized adapter file hashes differ")
+    observed_files, metadata_evidence = _verify_materialization_files(
+        adapter_path, materialization, stage=stage
+    )
     source = load_file(str(SOURCE_ADAPTER / ADAPTER_TENSOR_NAME), device="cpu")
     candidate = load_file(str(candidate_path), device="cpu")
     expected, mapping = _materialized_adapter_tensors(source, candidate)
@@ -873,6 +924,7 @@ def _validate_materialized_adapter(
     return {
         "adapter_identity": identity,
         "adapter_files": observed_files,
+        "metadata_verification": metadata_evidence,
         "materialization_receipt_path": str(materialization_path.resolve()),
         "materialization_receipt_sha256": same_panel.sha256_file(materialization_path),
         "materialization_process_id": int(materialization["process_id"]),

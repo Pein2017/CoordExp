@@ -1,17 +1,18 @@
 """Frozen production untied loader reused with research-native inputs; no checkpoint edits."""
-import importlib.util,json,sys
+import json
 from pathlib import Path
 import torch
 from src.adapters.dora import attach_dora_adapter
 from src.qwen.runtime_loading import QwenLoadOptions,load_qwen_components_from_options
 from src.config.inference import InferConfig
-from probes.training_set_completion.readout_norm_fresh import _binding,_tensor_hash
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import tensor_hash as _tensor_hash
+from src.qwen import untied_embeddings as payload
 ROOT=Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural')
 TIED=Path('/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444')
 UNTIED=Path('/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444')
 BASE='/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent'
-SOURCE=ROOT/'sources/infras_special_token_embeddings.py'
-spec=importlib.util.spec_from_file_location('frozen_untied_payload',SOURCE);payload=importlib.util.module_from_spec(spec);sys.modules[spec.name]=payload;spec.loader.exec_module(payload)
+SOURCE = Path(payload.__file__)
 def config_for(model_key):
  p=json.loads((ROOT/'panel.json').read_text());return InferConfig.model_validate(p['configs'][model_key])
 def load_model(model_key,device):

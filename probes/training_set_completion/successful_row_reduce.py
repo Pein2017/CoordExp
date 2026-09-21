@@ -1,22 +1,20 @@
 """Saved-output accounting for the fixed successful-row mechanism package."""
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 
 from transformers import AutoTokenizer
-from probes.training_set_completion.readout_norm_fresh import _binding, _write
+from probes.training_set_completion.artifacts import literal_binding as _binding, write_pretty_json as _write
+from probes.training_set_completion import row_scoring as scorer
 
-SCORER = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-endpoint-loop-natural-readout-norm/reduce.py')
-PREVIOUS = SCORER.parent.parent / '2026-09-17-repetition-history-mechanism'
+SCORER = Path(scorer.__file__)
+ARTIFACT_BASE = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration')
+PREVIOUS = ARTIFACT_BASE / '2026-09-17-repetition-history-mechanism'
 BANK_PANEL = PREVIOUS.parent / '2026-09-17-readout-norm-fresh128/panel.json'
 
 
 def reduce(manifest_path):
     manifest = json.loads(manifest_path.read_text())
-    spec = importlib.util.spec_from_file_location('accepted_saved_score', SCORER)
-    scorer = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(scorer)
     cells = {}
     tokenizer = None
     base_model = None

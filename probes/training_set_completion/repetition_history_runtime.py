@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 import sys
@@ -25,15 +24,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from probes.training_set_completion import readout_norm_fresh as fresh
+from probes.training_set_completion import row_branch
 
 
 EOS = fresh.EOS
 MAX_NEW_TOKENS = fresh.MAX_NEW_TOKENS
 BOX_END = 151649
-PRODUCER_V2 = Path(
-    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
-    "2026-09-17-owner-recurrence-row-branch/producer-v2.py"
-)
+PRODUCER_V2 = Path(row_branch.__file__)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -102,23 +99,11 @@ def _cell(panel: Mapping[str, Any], image_id: int) -> Mapping[str, Any]:
     return found[0]
 
 
-def _load_producer_v2() -> Any:
-    if not PRODUCER_V2.is_file():
-        raise FileNotFoundError(PRODUCER_V2)
-    spec = importlib.util.spec_from_file_location("coordexp_owner_recurrence_producer_v2", PRODUCER_V2)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot import {PRODUCER_V2}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def run_fixed_prefix(
     *, panel_path: Path, image_id: int, arm: str, output_root: Path
 ) -> dict[str, Any]:
     """Run the frozen complete-row force/free producer without copying it."""
-    producer = _load_producer_v2()
-    return producer._run(
+    return row_branch._run(
         panel_path=panel_path, image_id=image_id, arm=arm, output_root=output_root
     )
 

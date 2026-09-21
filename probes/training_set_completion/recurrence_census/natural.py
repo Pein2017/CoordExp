@@ -12,7 +12,8 @@ import torch
 from transformers import LogitsProcessor, LogitsProcessorList
 
 from probes.training_set_completion import untied_shared as shared
-from probes.training_set_completion.readout_norm_fresh import _binding, _input_identity
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import input_identity as _input_identity
 from src.data.examples import raw_example_from_jsonl_row
 from src.inference.inputs import plan_examples
 from src.qwen.generation import NativeGenerationPolicy, generate_continuations

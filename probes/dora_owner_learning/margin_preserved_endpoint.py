@@ -12,7 +12,6 @@ import argparse
 from collections import Counter
 from collections.abc import Mapping, Sequence
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -40,14 +39,16 @@ from probes.dora_owner_learning.geometric_dedup_eval import overlap_counts  # no
 from probes.dora_owner_learning.route_access import checkpoint_config  # noqa: E402
 from src.adapters.dora import inspect_dora_adapter_payload  # noqa: E402
 from src.artifacts import publish_json_exclusive  # noqa: E402
+from probes.dora_owner_learning import positive_branch_endpoint
 
 
 SOURCE_ROOT = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
     "2026-09-11-positive-branch-vs-repeat-event"
 )
-OLD_PRODUCER = SOURCE_ROOT / "endpoint_eval.py"
-OLD_PRODUCER_SHA256 = "abc4391a37d6edaa8e50d9a728bf86f602fbabad82f8cfe8d5310c86b365ec39"
+OLD_PRODUCER = Path(positive_branch_endpoint.__file__)
+# Current maintained engine identity; original producer bytes stay in the source archive.
+OLD_PRODUCER_SHA256 = "6269a0749d89469dfba0f18a2ddbef774d26fe37ec110c2f697560b2dbf3102b"
 OLD_PACKET = SOURCE_ROOT / "endpoint-preparation/packet.json"
 OLD_PACKET_SHA256 = "560006e73f3f0fc416e7d58751fe96c936aba9478fb6b320ab6118db2bcd5053"
 RETAINED_A_ROOT = SOURCE_ROOT / "endpoint-A"
@@ -116,24 +117,17 @@ def source(path: Path, sha256: str) -> dict[str, Any]:
     return {"path": str(path), "sha256": sha256, "size_bytes": path.stat().st_size}
 
 
-def _load_path_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
-    require(spec is not None and spec.loader is not None, f"cannot load {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def old_endpoint() -> Any:
     source(OLD_PRODUCER, OLD_PRODUCER_SHA256)
-    return _load_path_module("margin_preserved_immutable_endpoint_source", OLD_PRODUCER)
+    return positive_branch_endpoint
 
 
 def load_old_packet() -> dict[str, Any]:
     source(OLD_PACKET, OLD_PACKET_SHA256)
-    packet = load_json(OLD_PACKET)
-    old_endpoint().validate_packet(packet)
-    return packet
+    return old_endpoint().read_retained_packet(
+        OLD_PACKET, expected_sha256=OLD_PACKET_SHA256,
+        archive_manifest=Path("/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"),
+    )
 
 
 def _flattened_identity(packet: Mapping[str, Any]) -> list[tuple[int, str]]:
@@ -309,7 +303,7 @@ def rank_bounds(jobs: Sequence[Any]) -> list[dict[str, int]]:
 
 
 def packet_base(old_packet: Mapping[str, Any]) -> dict[str, Any]:
-    old_endpoint().validate_packet(old_packet)
+    require(dict(old_packet) == load_old_packet(), "retained endpoint packet content changed")
     validate_retained_baselines(old_packet)
     jobs = build_conditional_jobs(old_packet)
     bounds = rank_bounds(jobs)

@@ -1,6 +1,8 @@
 """Fixed dense48 Source-preservation arm using the existing eight-rank DDP pattern."""
 from __future__ import annotations
 
+from src.artifacts.source_provenance import preserve_source
+
 import argparse
 from contextlib import nullcontext, redirect_stdout, redirect_stderr
 from datetime import timedelta
@@ -160,11 +162,9 @@ def prepare(output):
     files+=list(Path('src/qwen').glob('*.py'))+[Path('src/losses/token_scores.py'),Path('src/adapters/dora.py')]
     files += [Path('src/inference/inputs.py'), Path('src/inference/prompt.py'), Path('src/inference/image_plan.py')]
     saved=[]
-    for path in files:
-        target=output/'effective_code'/str(path.resolve()).lstrip('/')
-        target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(path,target)
-        saved.append(dict(path=str(path.resolve()),staged=str(target),sha256=file_hash(target)))
+    for path in [*files, Path(preserve_source.__code__.co_filename)]:
+        target = preserve_source(path, run_root=output, relative_name=Path('effective_code') / str(path.resolve()).lstrip('/'))
+        saved.append(dict(path=str(path.resolve()), staged=str(target), sha256=file_hash(target)))
     publish(output/'code_identity.json',dict(files=saved,git_head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
                                            git_status=subprocess.check_output(['git','status','--short'],text=True)))
     return packet

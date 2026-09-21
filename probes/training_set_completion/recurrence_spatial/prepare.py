@@ -10,7 +10,7 @@ from typing import Any
 
 from PIL import Image
 
-from probes.training_set_completion.readout_norm_fresh import _binding
+from probes.training_set_completion.artifacts import literal_binding as _binding
 
 
 ROOT = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural")

@@ -23,7 +23,8 @@ import torch
 
 from probes.training_set_completion.numerical_feedback.runtime import _prefix_tokens
 from probes.training_set_completion.numerical_feedback.select import rows as parsed_rows
-from probes.training_set_completion.readout_norm_fresh import _binding, _input_identity
+from probes.training_set_completion.artifacts import literal_binding as _binding
+from src.qwen.input_identity import input_identity as _input_identity
 from probes.training_set_completion.untied_shared import load_model
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.native import exact_history_inputs, prepare_native_inputs
