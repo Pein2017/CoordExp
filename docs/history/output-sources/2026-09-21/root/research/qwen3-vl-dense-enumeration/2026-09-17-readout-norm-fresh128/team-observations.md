@@ -1,0 +1,13 @@
+# Team execution observations (this package only)
+
+Lead retained cohort meaning, policy/runtime interfaces, production admission, scoring integration, review sampling and scientific acceptance. Luna/high prepared a deterministic CPU cohort and a bounded cross-view provenance check. Terra/high implemented the native producer and CPU checks; both returned stable candidates without monitors or nested workers. GPU processes are owned by the lead's single launch.
+
+Observed correction: Luna disclosed a legacy provenance mismatch only at final return despite the requested source-stage milestone. Lead requested one bounded selected-row/cross-view check; it verified current authorized-filter hashes and identical selected pre-filter rows, leaving older global coord/norm history unresolved. This was a communication correction, not evidence that every stale dataset manifest is harmless.
+
+Terra asked early about optional control rows and EOS capture; lead settled both and supplied the group-local input-source seam before execution. Implemented file is668 formatted lines versus initial300–400 estimate, mostly explicit native checks and artifact handling; no new controller/framework. Accepted short real-entry evidence reproduced both policies exactly and reconstructed captured readout logits. The root made two CPU-only data-view fixes (geo_sorted_xy sorting and relative-path contract); these did not change images/annotation content or spend model calls.
+
+This is not a matched Luna-versus-Terra capability or token-cost benchmark: tasks differ and total usage is not yet audited. No generalized ranking is inferred. Reuse cheaper workers only with explicit interfaces and strong consumer/real-entry verification.
+
+Review scope correction: the lead overinterpreted a24–32-image review budget as a mandatory all-page/all-unique-row review. The user explicitly stopped this aggressive viewing. Both workers were interrupted; they were asked to preserve partial evidence and return without more views. This was a lead brief/scope error, not evidence that either worker independently chose to expand the research. The corrected closeout uses selective witnesses and no weighted population physical-FN claim.
+
+Partial-review acceptance found a concrete Luna inventory error:217495 claimed A-page2/B-page2 although neither file exists. Root held those claims and did not restart review. This concerns retained evidence accuracy, not a matched model ranking. Terra returned partial notes promptly; Luna required a second interrupt to end closeout, with its short partial-summary already preserved. Both have stopped.

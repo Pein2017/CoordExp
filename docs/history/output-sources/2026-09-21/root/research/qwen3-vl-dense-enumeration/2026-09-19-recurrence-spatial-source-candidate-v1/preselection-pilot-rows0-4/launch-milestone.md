@@ -1,0 +1,9 @@
+# Lane B launch milestone
+
+Transform and admission schema is frozen in `unit.md`. Source/panel dependency: mature panel `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json`; qualification case is tied-original image 417044 from refined-03, prefix rows 0-4 before the accepted donut recurrence onset. Final scientific cells wait for Lane A frozen panel and consume it unchanged.
+
+Geometry: for each source `(W,H)`, lossless RGB copy into `(W+256,H)` canvas, fixed black fill, shift `d=128` px = four processor grid cells. Centered scene/history is `00` at x=128; negative/positive cells use x=0/256. History boxes use exact canvas pixel map and round-half-even to bins; inverse drift and token counts are checked. Seven cells: `00`, `10-`, `10+`, `01-`, `01+`, `11-`, `11+`; mismatch cells diagnostic.
+
+Native seam: build original prompt with `build_bound_native_requests`, replace only image path/size/hash in `NativeRequest`, prepare each transformed image via `prepare_native_inputs`, then pass transformed literal history as `extensions` to `generate_continuations` with original RP1 and 512-token budget. Every cell gets a fresh `prepare_native_inputs` call; no cache transplant. Centered `00` must retain valid rows, one mapped known-bank match, and the frozen failure/proxy predicate or the state is admission-HOLD. Forced description/wrapper x1 logits are a separate full-vocabulary capture at the same row boundary.
+
+Qualification outcome: `00` retained 24 valid rows and 8/63 mapped known-bank matches, but EOS after 241 tokens with no exact or <=8-bin run of length three. The centered maintenance gate therefore failed; no `10`, `01` or `11` calls were launched. See `results.md`, `runtime-result.json`, `reduced.json` and `qualification-attempts.json`.

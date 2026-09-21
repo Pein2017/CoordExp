@@ -1,0 +1,22 @@
+import json,pathlib,hashlib,copy
+from PIL import Image,ImageDraw
+R=pathlib.Path(__file__).parent;P=R.parent/'2026-09-18-owner-recurrence-onset';S=R.parent/'2026-09-17-history-rereading-mechanism/human-evaluation/annotation-snapshot-v1'
+def bind(p):
+ p=pathlib.Path(p);return dict(path=str(p),sha256=hashlib.sha256(p.read_bytes()).hexdigest(),size_bytes=p.stat().st_size)
+def write(p,v):p.write_text(json.dumps(v,indent=2)+'\n')
+p=json.load(open(P/'panel.json'));g=p['group'];t=p['target'];raw=g['rows'][t]['generated_token_ids'];h=raw[:9];C=raw[9:19];assert h[-1]==C[-1]==151649 and len(C)==10
+old=p['windows'][2]['candidates'];cands={k:copy.deepcopy(old[n]) for k,n in [('A1','A_seed'),('A2','A_recurrence'),('B1','B_native_geometry'),('B2','B_refined_geometry')]}
+for v in cands.values():assert len(v['tokens'])==10 and v['tokens'][:5]==C[:5];v['text']=None
+Cbox=[x-151670 for x in C[5:9]];hbox=[x-151670 for x in h[4:8]];assert Cbox==[0,310,57,373] and hbox==[0,406,500,999]
+windows=[dict(name=k,history=h+v['tokens']+C,supplied=k,owner_id=v['owner_id'],candidates=cands,offset=29,policy_history='supplied common-tail; no natural-route claim') for k,v in cands.items()]
+assert len({len(w['history']) for w in windows})==1 and all(w['history'][-10:]==C for w in windows)
+m=json.load(open(S/'manifest.json'));annotation_checks={k:bind(v['path'])==v for k,v in m['source'].items() if isinstance(v,dict) and {'path','sha256','size_bytes'}<=v.keys()};assert all(annotation_checks.values());ib=m['image_bindings']['417044'];assert bind(ib['resolved_path'])['sha256']==ib['sha256']
+ann=next(json.loads(l) for l in open(S/'working.norm.jsonl') if json.loads(l)['image_id']==417044);assert len(ann['objects'])==63;Cowner=-5529525760667096;assert any(o['coco_ann_id']==Cowner for o in ann['objects'])
+write(R/'annotation-identity.json',dict(checks=annotation_checks,image=ib,snapshot=bind(S/'manifest.json'),working=bind(S/'working.norm.jsonl'),count=63,ignore_semantics='No explicit ignore fields; unmatched remains UNKNOWN'))
+sources=p['sources']+[bind(P/'panel.json'),bind(P/'lead-acceptance.json'),bind(P/'runtime/native/receipt.json'),bind(P/'runtime/scores/readout.pt'),bind(S/'working.norm.jsonl')]
+write(R/'panel.json',dict(schema='covered_history_common_tail.v1',image_id=417044,target=t,config=p['config'],group=g,sources=sources,coordinate_ids=p['coordinate_ids'],coefficients=p['coefficients'],native_raw=p['native_raw'],native_receipt=p['native_receipt'],accepted_onset_native=bind(P/'runtime/native/receipt.json'),h=dict(tokens=h,native_rows=[1],box=hbox,description='person',coverage_A_B_C='none; person row lies below all three donut boxes'),C=dict(tokens=C,box=Cbox,owner_id=Cowner,source='original native row2'),candidates=cands,windows=windows,bounds=dict(scientific_calls=16,incremental_calls=160,total_planned=176,hard_calls=4000,gpu_seconds=3600,tensor_bytes=268435456),parity=dict(candidate='A1',first_capture_offset=29,last_capture_offset=39,incremental_calls_per_history=40,stop='abort after raw next-boundary capture, before selecting/emitting action39',original_generate_budget=3084)))
+img=Image.open(ib['resolved_path']).convert('RGB');draw=ImageDraw.Draw(img)
+for label,box,color in [('h person',hbox,'cyan'),('A1',cands['A1']['box'],'red'),('A2',cands['A2']['box'],'orange'),('B1',cands['B1']['box'],'lime'),('B2',cands['B2']['box'],'green'),('C',Cbox,'magenta')]:
+ xy=[box[0]*img.width/999,box[1]*img.height/999,box[2]*img.width/999,box[3]*img.height/999];draw.rectangle(xy,outline=color,width=2);draw.text((xy[2]+3,xy[1]),label,fill=color)
+img.save(R/'review/triple-full.png');img.crop((0,200,170,350)).resize((850,750)).save(R/'review/triple-local.png')
+write(R/'review/admission.json',dict(status='pending visual confirmation',new_inspected_rows=['native row1 common h','native row2 C'],reused_owner_evidence=['onset A native5/6','onset B norm4/refined'],new_inspection_count=2,ceiling=12,C_owner=Cowner,earlier_HOLD_rows='original3/4 excluded by choosing genuine prefix row1; not assumed uncovered',prefix_distance='h ends at action9, before first native donut. Supplied histories end29 versus confirmed natural recurrence boundary49; insert A/B before native C, do not claim natural occurrence',spatial_confounds='A→C mostly downward; B→C down-left with greater x displacement. Similar donut scales but not matched displacement. C tokens fixed; its contextual state can differ.'))

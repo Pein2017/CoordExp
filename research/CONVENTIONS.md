@@ -103,3 +103,7 @@ git diff --check
 The single knowledge checker covers the live layout/links, catalog/state, original-source preservation and known retirement records. Consumer changes also need their focused CPU tests and an actual data-read equivalence check. Historical missing sources must be explicitly reported or bound to verified Git recovery, never ignored merely to pass. The obsolete decision-graph checker is retired, not left as a misleading zero-node success.
 
 Checks do not certify all scientific interpretations, external artifacts, every Markdown construct or model execution. No GPU run is needed for document restructuring. Report exact scope, source preservation, validation/gaps, Project/path/branch, remaining work and active jobs. Git publication, memory writes and research resumption remain separate authorizations.
+
+## Source and artifact placement
+
+The source/output boundary is owned by [Output storage policy](../docs/OUTPUT_STORAGE_POLICY.md). Maintained Python and shell code never execute from outputs or historical archives. Frozen source bytes are preserved outside outputs with explicit hash-bound recovery; original scientific records and output data remain immutable.

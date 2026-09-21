@@ -1,0 +1,18 @@
+# Final candidate artifact index
+
+All paths below are relative to this output directory unless absolute. Research protocol/results/state are under `/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-17-successful-row-mechanism/`; frozen copies are in `candidate-records/`.
+
+- Selection and bindings: `selection.json`, `selection-distance-check.json`, `predecessor-source-check.json`, `source-snapshots.json`, `source-snapshots/`. Original54-token history, nine-token rows, model/checkpoint/embedding/data/runtime sources and native batch companions are bound by selection, panels and runtime receipts.
+- Factorial: `stage1/manifest.json`, `stage1/panels/`, `stage1/runtime/{SS,FF,SX_FY,FX_SY}/309264/prefix/{raw.json,receipt.json,pulse-captures.pt}`. Full tokens/text/stops and parser/owner ledgers in `stage1-reduction.json`, inputs in `stage1-reduction-manifest.json`.
+- Same54 likelihoods: `stage1/score-runtime/{receipt.json,scores.json,same54.pt,cpu-check.json}`; complete-row likelihood and same-prefix fork are separate.
+- State patches: `stage2/runtime/<condition>/{raw.json,receipt.json,states.pt,logits.pt,cache.pt}`. Exact executed cells and raw paths in `stage2-final-manifest.json`; all full/supplied/free ledgers in `stage2-final-reduction.json`. This final manifest supersedes preparation/interim manifests for executed-cell accounting.
+- Components: `stage2/component-capture/` and `stage2/runtime/{attention-S-to-F-layer20,mlp-S-to-F-layer20}/`. Component raw outputs live at `native/309264/prefix/raw.json` inside those directories; outer receipts bind intervention tensors and inner native receipts. `component-plan.json`, `conditional-admission.json`, `stage2-stability-rule.md` freeze conditional selection.
+- Captures: `tensor-inventory.json` lists exact file hashes, tensor keys, shape/dtype/bytes. Selected full-vocabulary logits, normalized head inputs, residual outputs6/13/20, actual positions, last-position K/V at67/68, and layer20 attention/MLP outputs are present. No full attention matrices, complete historical KV, direct layer20 incoming snapshot or new sampling RNG is promised. Incoming residual in `layer20-decomposition.json` is algebraically inferred.
+- Checks: `stage1-verification-SS-FF-SX_FY-FX_SY.json`, `state-verification-*.json`, `rebuild-verification.json`, `component-verification.json`, `independent-output-check.json`, `consumer-check/exclusion-check.json`, `native-state-comparison.json`.
+- Physical sidecar: `physical-review.json`, inherited `physical-review-basis.json`, three `review/{stage1-comparison,retention-context,stage2-comparison}/` plotted plates and renderer manifests. UNKNOWN/HOLD and annotation identity are kept separate.
+- Commands/cost: `launch-*.sh`, `logs/` with PID/start/end/exit/full logs, `cost.json`; `team-observations.md` contains bounded integration corrections. No cleanup performed.
+- Final: `result.json`, `terminal.json`, `candidate-records/`, `knowledge-check.json`. Candidate is not lead acceptance.
+
+## Saved-output reconstruction (CPU only)
+
+From `/data/CoordExp/.worktrees/research-probes`, set `PYTHONPATH=.` and run `python <this-directory>/independent_output_check.py`. It calls the frozen consumer through both reduction manifests and requires JSON-exact outputs, validates raw row counts/stops and model identities. Additional targeted scripts: `verify_stage1.py`, `verify_state.py`, `verify_rebuild.py`, `verify_components.py`, `compare_native_states.py`, `decompose_layer20.py`. Consult their executed launch/log arguments; no model producer needs rerunning. Frozen executed sources are retained in `source-snapshots/`.

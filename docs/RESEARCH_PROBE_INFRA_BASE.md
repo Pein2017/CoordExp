@@ -246,3 +246,9 @@ Maintained direction tests live beside their package and are discovered by
 the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
 
 The remaining `scripts/research` closure supports existing optional admission/evidence consumers, coverage comparison and research navigation checks. Its historical producers and dedicated tests are listed in the [retirement disposition](../openspec/changes/restructure-research-probe-development/retired-files.md); new direction work starts in the four packages above or a new ordinary direction package.
+
+## Source and identity owners after the September 21 migration
+
+See [Output storage policy](OUTPUT_STORAGE_POLICY.md) before creating source captures or run-local files. Shared literal native-input identity lives in `src/qwen/input_identity.py`; completion JSON/path operations live in `probes/training_set_completion/artifacts.py`; saved row accounting lives in `probes/training_set_completion/row_scoring.py`. DoRA loaded-composition checks live in `probes/dora_owner_learning/composition.py`.
+
+`src/artifacts/source_provenance.py` captures source evidence outside outputs. `src/artifacts/source_archive.py` explicitly recovers expected historical bytes without executing them or satisfying current-source launch gates. Ordinary maintained imports replace the old output-directory loaders. Scientifically distinct recipes and the untied payload implementation retain separate owners rather than being collapsed into a universal trainer.

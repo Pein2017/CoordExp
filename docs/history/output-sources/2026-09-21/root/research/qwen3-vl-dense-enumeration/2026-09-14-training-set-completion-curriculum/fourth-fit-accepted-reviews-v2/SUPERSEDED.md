@@ -1,0 +1,1 @@
+Unaccepted policy projection. Root validation rejected parent417044 p34: repeated unresolved geometry had no physical owner ID. Preserved for evidence; v3 classifies physical identity unknown while retaining exact-output repetition evidence. No coverage change.

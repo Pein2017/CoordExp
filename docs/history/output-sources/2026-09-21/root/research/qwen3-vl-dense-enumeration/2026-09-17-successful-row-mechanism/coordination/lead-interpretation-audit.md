@@ -1,0 +1,3 @@
+# Bounded interpretation audit
+
+Existing advisor /root/basin_dynamics returned no blocker on the fixed candidate. Layer20 output is a sufficient intervention surface in this case, not a demonstrated origin; earlier state, later history rereading and interactions remain unresolved. Native same-token cache reconstruction proves the injected K/V differences unnecessary for the observed rescued token route, not general cache irrelevance. Seven reviewed owners remain seven; improved grey-bird annotation agreement is not discovery. Prefix A remains in the full output despite free-future retention0/1. Root independently checked saved evidence and the plotted Stage2 comparison. No additional review or model work was requested.

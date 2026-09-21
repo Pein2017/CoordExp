@@ -1,0 +1,9 @@
+# Candidate interpretation boundaries
+
+- The history factorial changes earlier A/B relative exposure and placement. It leaves the last A/B occurrences fixed, but its native references do not share the inserted B route. All four factorial cells freely recover the same known C; differences in row scores/extent and BB extra ambiguous rows do not isolate an A-count feedback mechanism. The native-to-synthetic release cannot be attributed to X/Y alone.
+- Pre-entry labels mean before the designated literal-template recurrence; existing H_base may already expose the same physical bird. This is not a claim about first physical-owner entry.
+- Complete-row log probabilities include all observed row tokens; EOS is a separate one-token action. Joint sequence length differs, so their magnitudes are not an interchangeable greedy decision score. Earliest common-prefix fork logits are the local comparison.
+- Bird full-time normalization recovers three known owners, whereas the declared finite pulses and late sustained route have no known gains. That selected timing dependence is not irrecoverability or a universal mechanism.
+- Book finite pulses retain the one known native-future owner340554 and all four full known matches; three were already in the fixed prefix. This is not four newly recovered owners. Physical right-shelf preservation remains uncertain, particularly after the four-row pulse.
+- Sampling rates are seed variation at one image/prefix. A literal A-template nonreturn, a different repeated template, EOS and physical recovery are separate. No unknown prediction is silently false positive. The symmetrically excluded physical A can recur without being counted as a new owner.
+- Coordinate winner changes, static frozen E/W and upstream conditional alignment do not identify training-origin causality, separate circuits, input-embedding innocence or a general deployable repair.

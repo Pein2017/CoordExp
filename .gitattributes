@@ -1,0 +1,2 @@
+# Frozen source captures retain their hash-bound bytes, including whitespace.
+docs/history/output-sources/** -whitespace

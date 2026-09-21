@@ -40,6 +40,7 @@
 !tests/**
 !.cursorignore
 !.cursorindexingignore
+!.gitattributes
 !pytest.ini
 !*.md
 !public_data/**/

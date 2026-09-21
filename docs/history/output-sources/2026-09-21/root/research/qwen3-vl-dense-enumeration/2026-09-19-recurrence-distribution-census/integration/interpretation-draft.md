@@ -1,0 +1,11 @@
+# Integrated interpretation draft — not a terminal candidate
+
+A: The prospective seed-19 cohort contains 128 images and 256 original-policy outputs. Numerical near-repeat occurs on 7 tied and 10 untied images; no output caps. The enriched mature panel has substantially heavier recurrence and cap burden. These are separate selection/runtime strata, not an untie-only causal comparison or a general COCO prevalence estimate. Category exposure and image-level uncertainty must accompany counts; long-run pair counts are quadratic.
+
+D: Actual natural-adjacent initialization is structured and not distance-monotone. Trained input rows and output rows are separately bound. The fixed 16-state audit contains only y2 edits with preserved geometry/order, and measures conditional fixed-suffix sensitivity. One of 32 immediate winners changes and none at the later captured site. Residual differences and centered-logit changes do not identify a causal layer or guarantee free-trajectory stability. Full-vocabulary and coordinate-family-centered metrics remain separate.
+
+B: Original spatial outputs are technical-invalid because the history map changed y coordinates and the row limiter counted description endings. They cannot support the horizontal visual-versus-history contrast. Parent CPU, pixel/history, saved-output and correctly aligned native-parity gates now pass. Two corrected donut00 states are local admission-HOLD; the remaining43 frozen states are released. Five supplied boxes change validity under declared coordinate-bin rounding. Final corrected reduction is pending.
+
+C: All45 states and11520 draws are complete and independently reconstructed. There are441 legal numerical repeats,939 other invalid extents,4 invalid near-repeats and17 grammar escapes. Failure-state q ranges0.0117–0.1094 tied and0–0.2266 untied; per-state Wilson uncertainty remains broad. Seven prospective proxy event unions are empty by construction. Its event is same-description legal numerical near-repeat under a supplied description, not total physical duplicate probability. One minus event probability is not new-owner probability. Grammar escapes and invalid outputs remain in the denominator.
+
+No lane establishes physical FP from unmatched rows, an abstract owner ledger, a unique loop circuit, or a deployed repair. Root acceptance remains pending.
