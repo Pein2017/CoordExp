@@ -1,6 +1,6 @@
 ---
 name: lead-worker
-description: Keep discussion and decisions in an Astra high-or-higher lead task while delegating bounded execution to an isolated Astra-low worker task. Use when the user requests this lead/worker split or wants to reuse an existing worker; ordinary parallel subtasks do not require this skill.
+description: Let a research lead dispatch bounded execution to a persistent worker with user-selected model and effort. The lead invokes this workflow; the worker reads it for its role. Use for a lead/worker split or reuse of an existing worker; ordinary parallel subtasks do not require this skill.
 ---
 
 # Lead / Worker
@@ -9,26 +9,22 @@ Keep one decision owner and one persistent execution owner per package. The user
 converses with the lead. The worker owns implementation and evidence production;
 the lead owns interpretation, acceptance, and the next assignment.
 
-## Bind the pair and actual settings
+## Bind roles, pair and user choices
 
-- Lead: `gpt-6-astra`, `high` or a supported higher effort. Keep the user's existing
-  higher setting; `high+` is a description, not an API effort value.
-- Worker: `gpt-6-astra`, `low`, unless the user explicitly changes that choice.
-- Check current task settings or persisted runtime context, not the task title.
-  A skill cannot change the reasoning already used by its invoking turn. If the
-  lead is below the requested tier, explain that the user must select the tier
-  for the next turn; do not claim that prose changed it. Do not change global
-  defaults, permissions, or unrelated tasks.
-- Discover callable tools before selecting transport. Reuse a user-designated
-  worker after checking its identity, cwd, status and current responsibilities.
-  Record the pair and current assignment in the existing task artifact, not a
-  second registry. Old authorization does not authorize a new research arm.
-- Create a sidebar task only when the user explicitly requests a new task and
-  the creation tool is available. For a temporary subtask, use native agents:
-  `model="gpt-6-astra", reasoning_effort="low", fork_turns="none"` when that
-  exact schema is supported. A full-history fork may inherit lead effort and
-  defeats intentional context separation. A subagent is not a replacement for
-  a specifically requested persistent sidebar worker.
+The lead normally invokes this skill proactively when the authorized work fits
+this split. A worker reading it remains the worker; reading does not authorize
+creating another main or changing research direction.
+
+Before binding or dispatching the pair, read the [agent contract's Model routing](../../AGENTS.md#model-routing)
+for user model/effort selection and role boundaries, and
+[Agent topology and delegation](../../AGENTS.md#agent-topology-and-delegation)
+for fork choice. Record the selected settings in the assignment and compare them
+with actual task settings; resolve mismatches through an authorized route.
+
+- Reuse a suitable designated worker. Record the pair and assignment in the
+  existing task artifact, not another registry. Create a sidebar task only when
+  the user explicitly requests one; native subagents serve temporary subtasks,
+  not a requested persistent sidebar worker.
 
 ## Keep the lead useful and small
 
@@ -47,10 +43,13 @@ Give the worker execution-changing facts, preferably through an existing file:
 
 ```text
 Assignment and source of current authorization:
+Roles, lead/worker task identities, user-selected worker model and effort (required):
+Applicable AGENTS/skills and authoritative task artifacts to read:
 Outcome / non-goals:
 Cwd, owned write surfaces, shared inputs:
 Frozen question or behavior, decisive sources and constraints:
-Acceptance evidence, compute/attempt ceiling if relevant, stop rule:
+Blocking decisions/tasks and independently verifiable delivered behavior:
+Acceptance evidence, explicit user resource limits if any, stop rule:
 Return candidate + changed paths + checks + unresolved questions + job status.
 Stop after the package; no self-acceptance or next-round launch.
 ```
@@ -58,8 +57,10 @@ Stop after the package; no self-acceptance or next-round launch.
 The worker may make reversible implementation choices inside this boundary.
 It returns scope/meaning/cost conflicts to the lead, with evidence and one clear
 question. The lead resolves discoverable facts and preserves user-owned choices.
-No automatic scheduler, reviewer chain, or nested delegation follows from this
-skill. Explicit Astra routing here overrides older generic model preferences.
+For a failed attempt or decision-bearing event, follow
+[Checkpoints and waiting](../../AGENTS.md#checkpoints-and-waiting). Send the
+supervising main the evidence, impact and proposed next step; identify any
+research-lead ruling needed before dependent work resumes.
 
 ## Dispatch using the smallest available transport
 
@@ -87,12 +88,13 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
   --send --message /absolute/assignment.txt --receipt /absolute/dispatch.json
 ```
 
-The helper requires the configured lead/worker tiers and an idle or unloaded
-worker. It resumes an unloaded worker without setting overrides, checks again,
+The helper is model/effort-neutral and requires an idle or unloaded worker.
+It resumes an unloaded worker without setting overrides, checks again,
 and sends once. It refuses a reused receipt path. One dispatcher owns the pair;
-this preflight is not an atomic lock against another UI operator. If the model
-settings are wrong, have the user select them or use a separately authorized,
-verified configuration route; never silently inherit the lead's effort.
+this preflight is not an atomic lock against another UI operator. User model
+and effort choices are assignment/prompt requirements, not transport allowlists.
+The lead checks them before dispatch and uses an authorized configuration route
+if needed; the helper never overrides them.
 
 A send timeout is **unknown delivery**, not permission to resend: inspect the
 receipt and target task before any retry. Do not run `codex exec resume` beside

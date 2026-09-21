@@ -5,7 +5,7 @@ description: Coordinate an authorized native team with a decision-owning lead an
 
 # Native Agent Team Guide
 
-Use the role matching the current thread: main lead or subagent worker.
+Use the current role: research-lead-main, research-worker-main, or execution subagent.
 The [agent contract](../../AGENTS.md) owns authority and delegation permission.
 This skill grants neither extra agents nor research launches.
 
@@ -24,8 +24,9 @@ before transfer; never duplicate or silently abandon one.
 Keep small or tightly coupled work local. Use a few execution workers only when
 independent work saves more than briefing, integration and acceptance cost.
 Reconcile existing workers first; reuse a suitable worker through ordinary
-corrections. Keep one writer per surface. Nested delegation requires explicit
-applicable authorization and a concrete benefit; workers are not schedulers.
+corrections. Keep one writer per surface. A research-worker-main may implement
+directly or coordinate execution children within its assigned package; it does
+not independently schedule the research program.
 
 The lead owns direction, minimal implementation approach, shared interfaces,
 acceptance, runtime continuation and scientific interpretation. Workers execute
@@ -36,6 +37,11 @@ Assign an independently verifiable outcome, not just a set of files. Establish
 known dependencies and owners before dispatch; leave local implementation choices
 to the worker. Resolve uncertainty that blocks dependent work first, without
 trying to predict every overlap or inventing interfaces just to divide tasks.
+Prefer packages that deliver a complete, independently verifiable behavior
+through the real consumer. Declare only actual blocking dependencies; do not
+split by layers merely to create parallel work. For a mechanical migration that
+cannot stay valid in slices, choose a coherent integration boundary and its
+verification; add transitional compatibility only when it is actually needed.
 Assignments may change as facts emerge; make the new ownership explicit.
 For research or review assignments, name what next action each plausible result
 changes. If none changes, do not delegate; unresolved findings stay `HOLD` and
@@ -50,7 +56,7 @@ A brief needs only execution-changing facts:
 outcome and non-goals; cwd and owned paths;
 existing entrypoint/pattern and chosen approach, or the unresolved question;
 authoritative inputs and consumer schema, including valid empty/HOLD states;
-frozen behavior, interfaces, permissions and attempt/repair budget;
+frozen behavior, interfaces, permissions and explicit user resource limits if any;
 acceptance evidence and stop condition;
 relevant peers; runtime handoff to root when applicable.
 ```
@@ -63,10 +69,11 @@ verify the assigned outcome at its real consumer, not only their edited files.
 
 ### Route models and intervene
 
-Follow the subagent family rule in the [agent contract](../../AGENTS.md) before
-choosing effort. Check live callable models, effort support and fork inheritance
-so the assignment matches the intended route; do not automatically climb an
-effort ladder or rotate families.
+Before selecting models, effort or fork context, read
+[Model routing](../../AGENTS.md#model-routing) and
+[Agent topology and delegation](../../AGENTS.md#agent-topology-and-delegation).
+For pairing with a persistent worker and dispatching its assignment, read
+[lead-worker](../lead-worker/SKILL.md).
 
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over
@@ -106,9 +113,11 @@ user authorization.
 
 ### Execute with local ownership
 
-Own local investigation, implementation, tests and ordinary repairs within the
-assignment. Reuse the real entrypoint and existing patterns; choose the smallest
-coherent solution. Do not ask the lead to decide facts you can cheaply discover.
+Own local investigation, implementation, tests and directed repairs within the
+assignment. On failure or a decision-bearing event, use the escalation policy in
+[Checkpoints and waiting](../../AGENTS.md#checkpoints-and-waiting) and the report
+format below. Reuse the real entrypoint and existing patterns; choose the
+smallest coherent solution. Do not ask the lead to decide facts you can cheaply discover.
 Ask when uncertainty affects shared commitments, scope, authority or the accepted
 approach, rather than guessing or pursuing a prolonged detour. Send known facts,
 the precise question and a minimal option if evident. While waiting, continue

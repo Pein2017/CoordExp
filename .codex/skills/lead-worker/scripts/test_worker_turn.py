@@ -21,10 +21,12 @@ class WorkerTurnTest(unittest.TestCase):
             initial = {
                 ident: dict(id=ident, cwd=str(root), model='gpt-6-astra',
                             reasoningEffort=effort, status={'type': 'idle'})
-                for ident, effort in [('lead', 'ultra'), ('worker', 'low')]
+                for ident, effort in [('lead', 'low'), ('worker', 'xhigh')]
             }
+            initial['worker']['model'] = 'gpt-5.6-sol'
             state, calls = copy.deepcopy(initial), []
             timeout = False
+            resume_override = {}
 
             async def call(method, params):
                 calls.append((method, params))
@@ -32,6 +34,7 @@ class WorkerTurnTest(unittest.TestCase):
                     return {'thread': copy.deepcopy(state[params['threadId']])}
                 if method == 'thread/resume':
                     state['worker']['status']['type'] = 'idle'
+                    state['worker'].update(resume_override)
                     return {}
                 if method == 'turn/start':
                     if timeout:
@@ -46,9 +49,6 @@ class WorkerTurnTest(unittest.TestCase):
             args.send = True
             for who, key, value in [('worker', 'cwd', '/wrong'),
                                     ('worker', 'id', 'wrong'),
-                                    ('worker', 'model', 'another-model'),
-                                    ('worker', 'reasoningEffort', 'high'),
-                                    ('lead', 'reasoningEffort', 'low'),
                                     ('worker', 'status', {'type': 'active'})]:
                 state, calls = copy.deepcopy(initial), []
                 state[who][key] = value
@@ -81,6 +81,24 @@ class WorkerTurnTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 asyncio.run(operate(call, args))
             self.assertTrue(all(m == 'thread/read' for m, _ in calls))
+
+
+            for key, value in [('model', 'gpt-5.6-luna'), ('reasoningEffort', 'low')]:
+                with self.subTest(changed_setting=key):
+                    state, calls = copy.deepcopy(initial), []
+                    state['worker']['status']['type'] = 'notLoaded'
+                    resume_override = {key: value}
+                    timeout = False
+                    args.receipt = root / f'{key}-changed.json'
+                    with self.assertRaisesRegex(ValueError, 'settings changed'):
+                        asyncio.run(operate(call, args))
+                    self.assertEqual([m for m, _ in calls if m != 'thread/read'],
+                                     ['thread/resume'])
+                    saved = json.loads(args.receipt.read_text())
+                    self.assertEqual(saved['status'], 'prepared')
+                    self.assertEqual(saved['worker'][key], value)
+                    self.assertEqual(saved['worker']['status'], {'type': 'idle'})
+                    self.assertEqual(saved['error_type'], 'ValueError')
 
 
 if __name__ == '__main__':

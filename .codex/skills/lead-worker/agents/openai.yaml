@@ -1,4 +1,4 @@
 interface:
   display_name: "Lead / Worker"
-  short_description: "Astra lead discussion with isolated low-effort execution"
-  default_prompt: "Use $lead-worker to keep discussion and acceptance here in the Astra high-or-higher lead task and send bounded execution to my designated Astra-low worker."
+  short_description: "Lead decisions with user-selected worker execution"
+  default_prompt: "Use $lead-worker to keep discussion and acceptance with the research lead and dispatch bounded execution to the designated worker. Ask for worker model and effort when unspecified; preserve explicit user choices and report decision-bearing events promptly."

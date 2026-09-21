@@ -13,7 +13,7 @@ Before writing code or calling a model, bind the worker to:
 - intervention boundary, population and denominator;
 - the real consumer and its output schema, including valid empty, `null`, EOS,
   unavailable and `HOLD` states;
-- output root, owner, attempt/repair budget and stop condition.
+- output root, owner, explicit user resource limits if any and stop condition.
 
 Reuse the owning unit or existing launch packet instead of duplicating it. If a
 decision-bearing field is missing or conflicting, return `NEEDS_CONTEXT` or
@@ -41,7 +41,9 @@ explicitly or keep it on `HOLD`.
 - Include one positive case and one mutation, corruption or boundary case that
   would fail under the nearest wrong implementation.
 - Preserve failed attempts. A repair uses a new output path, records the changed
-  producer identity and counts against the frozen attempt budget.
+  producer identity and actual resource use. For continuation and escalation,
+  follow [Checkpoints and waiting](../../../AGENTS.md#checkpoints-and-waiting);
+  the packet binds the evidence, not a second repair policy.
 - Keep one live invocation per owned unit and publish immutable artifacts plus a
   manifest sufficient for fresh readback.
 

@@ -69,11 +69,18 @@ and raw labels; a synthetic overall grade is not needed for a maintenance plan.
 
 ## Choose the knowledge owner
 
-- A skill description should make a recurring task discoverable.
+- A skill description should make a recurring task discoverable. For a missing
+  read, inspect the pointer first: does it name the trigger, target and decision
+  supported? Strengthen that pointer before copying the target into context.
+  Check one representative task that should trigger the read and one that should
+  not; distinguish a readable file from evidence that it was actually loaded.
 - Its body should guide the task and load only relevant knowledge.
 - Conditional local procedures belong in its references.
 - Shared model/domain semantics belong in one maintained document or contract,
   linked from the relevant skills; do not copy a manual into several skills.
+  Keep shared policy at its contract, role actions in the skill, and branch-only
+  details behind conditional references. Replace duplicate clauses with precise
+  links; do not make a new constitution or registry just to index the old ones.
 - An invariant with a deterministic counterexample usually needs an executable
   test at its code owner, not another paragraph of warnings.
 - A decision/exception for one experiment belongs in that research record, not

@@ -16,6 +16,9 @@ checkout. The expected base is `research-probes` at
 Read its `research/index.md` and `research/CONVENTIONS.md` through that Project,
 not by copying its research tree into the checkout hosting this Skill.
 The convention is the single layout/maintenance owner; this Skill routes to it.
+For source/artifact placement, read that checkout's `docs/OUTPUT_STORAGE_POLICY.md`.
+Keep maintained code out of `outputs/`; source captures and historical recovery
+follow that owner rather than turning saved run directories into module libraries.
 
 All primary readers are agents. Fast catch-up is `research/index.md` plus the
 current unit state/result; deep catch-up adds `story.md`, relevant question pages
@@ -81,6 +84,30 @@ owners integrate their work; the lead verifies the decision-bearing boundary
 rather than repeating every internal check. Model capability never substitutes
 for evidence or grants research authority.
 
+## Unresolved decisions across tasks
+
+For work whose unresolved decisions span tasks, use the existing question page
+or owning OpenSpec design to keep the destination and next decision visible.
+Apply this only when a short current-state note is insufficient; follow the
+research base's conventions rather than creating another map or ticket system.
+
+- Keep precise unresolved questions with their actual blockers and the evidence
+  or user ruling that resolves them. The lead chooses the next unblocked question.
+- Keep in-scope uncertainties that cannot yet be phrased precisely separate from
+  actionable questions; expand them only as evidence makes the question clear.
+- Keep explicitly excluded work with its reason and reopening condition. It does
+  not silently become the next task when current work completes.
+- Record each decision once at its owner. Indexes hold a short gist and link;
+  briefs carry only the relevant decision and evidence pointers. When a decision
+  changes, revisit affected dependents rather than regenerating the whole plan.
+
+Use the existing glossary to resolve overloaded research terms before dependent
+work. Record a settled term there; keep a consequential trade-off's rationale
+in its owning research record or OpenSpec design, not a duplicate ADR by default.
+This planning note is complete when the next decision, its owner and evidence
+path are clear; it does not require enumerating every future branch or changing
+frozen experimental records.
+
 ## Active-contract gate
 
 Before executing a probe or training step, freeze one current sentence:
@@ -90,8 +117,8 @@ From anchor A, does intervention X change decision outcome Y under gate Z?
 ```
 
 Bind it to immutable checkpoint/config/input identities, intervention boundary
-and provenance, evaluation/owner ledger, acceptance level, attempt budget, and
-stop rule. Existing unit/config/receipts may hold this contract; do not create
+and provenance, evaluation/owner ledger, acceptance level, explicit user resource
+limits if any, and stop rule. Existing unit/config/receipts may hold this contract; do not create
 a duplicate packet. Bind prefix identity when conditioning or replay depends
 on it. Exact-token identity is a replay/provenance diagnostic unless the unit
 explicitly makes exact replay the estimand.
@@ -242,11 +269,10 @@ completion; archive authorization remains separate.
   receipt/write-read checks, one minimal real end-to-end mechanics smoke, and
   then the smallest decision-bearing scientific pilot. Do not let in-memory
   outputs or helper-only tests stand in for durable end-to-end evidence.
-- For a long self-driven loop, predeclare the attempt budget and phase-reset
-  triggers. Use at most one advisory pass at an unresolved semantic fork and
-  at most one independent review when a named promotion/flatten risk needs it
-  or the governing contract requires it. Share that budget across skills; do
-  not review a changing target or run cleanup lanes against active science.
+- For long-running work, apply the [agent contract's checkpoint policy](../../AGENTS.md#checkpoints-and-waiting)
+  when an attempt fails or a decision changes, and its
+  [review policy](../../AGENTS.md#acceptance-and-review) when choosing further
+  verification. Keep research-specific evidence and scope in their owning unit.
 - Report launch, anomaly, decision-bearing result, and closure. Do not turn
   command liveness, buffered logs, or routine receipt reads into a second
   status stream.

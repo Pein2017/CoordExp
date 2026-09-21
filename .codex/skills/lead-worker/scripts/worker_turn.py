@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect, or dispatch once to, an existing same-host Astra-low worker."""
+"""Inspect, or dispatch once to, an existing same-host worker."""
 import argparse
 import asyncio
 import hashlib
@@ -10,8 +10,6 @@ from uuid import UUID
 import aiohttp
 
 HOME_DIR = Path('/data/CoordExp/.codex')
-MODEL = 'gpt-6-astra'
-HIGH = {'high', 'xhigh', 'max', 'ultra'}
 
 
 def check_pair(lead, worker, args):
@@ -20,10 +18,6 @@ def check_pair(lead, worker, args):
             raise ValueError('Thread identity or cwd mismatch')
     if lead['id'] == worker['id']:
         raise ValueError('Lead and worker must be different tasks')
-    if lead.get('model') != MODEL or lead.get('reasoningEffort') not in HIGH:
-        raise ValueError('Lead must already be configured as Astra high or higher')
-    if worker.get('model') != MODEL or worker.get('reasoningEffort') != 'low':
-        raise ValueError('Worker must already be configured as Astra low')
     if worker['status']['type'] not in {'idle', 'notLoaded'}:
         raise ValueError('Worker is busy or unavailable; reconcile it before dispatch')
 
@@ -44,6 +38,7 @@ async def operate(call, args):
     }
     if not args.send:
         return summary
+    worker_settings = (worker['model'], worker['reasoningEffort'])
     message = args.message.read_text(encoding='utf-8')
     if not message.strip():
         raise ValueError('Assignment is empty')
@@ -62,6 +57,10 @@ async def operate(call, args):
                 await call('thread/resume', {'threadId': args.worker_thread})
             lead, worker = await pair()
             check_pair(lead, worker, args)
+            summary['lead'] = {k: lead[k] for k in ('id', 'model', 'reasoningEffort')}
+            summary['worker'] = {k: worker[k] for k in ('id', 'model', 'reasoningEffort', 'status')}
+            if (worker['model'], worker['reasoningEffort']) != worker_settings:
+                raise ValueError('Worker settings changed during preflight; reconcile before dispatch')
             save('delivery_unknown')
             result = await call('turn/start', {
                 'threadId': args.worker_thread,

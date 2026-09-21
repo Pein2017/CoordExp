@@ -336,6 +336,13 @@ route authority.
 
 ## Artifact Root
 
+The research checkout's `docs/OUTPUT_STORAGE_POLICY.md` owns the source/artifact
+boundary. Output roots hold execution artifacts, not loose Python, shell scripts,
+Markdown, environments or vendor checkouts. Capture source bytes outside outputs
+with the maintained source-provenance operation, and record its returned path.
+Use an explicit hash-bound archive reader for historical evidence, never as a
+fallback to satisfy a new run's current-source checks.
+
 Use:
 
 ```text
