@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-21-spatial-progress-gate",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted technical HOLD: H1 untested; 0/8 planned scientific cells analyzable",
+  "state_as_of": "2026-09-21",
+  "protocol": "research/experiments/2026-09-21-spatial-progress-gate/task-profile.md",
+  "state_source": "research/experiments/2026-09-21-spatial-progress-gate/lead-results.md",
+  "result": "research/experiments/2026-09-21-spatial-progress-gate/lead-results.md",
+  "not_authorized": [
+    "further model calls, qualifications, or release cells",
+    "new cohort, checkpoint sweep, training, or changed scientific conditions",
+    "successor launch or retrospective removal of execution debt"
+  ],
+  "next_action": "Closed; no further model calls, qualifications, releases, or successor authorized. A fresh explicit contract and authorization are required to resume research.",
+  "boundary": "Accepted mature six-image/11-trajectory pool; no new cohort, training, checkpoint sweep, or perturbation search."
+}

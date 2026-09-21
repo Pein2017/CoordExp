@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-21-visual-instance-binding",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted with redundant-replay debt: differentiated local visual support; H2 downgraded only on admitted finite rows; native x1 owner selection unresolved",
+  "state_as_of": "2026-09-21",
+  "protocol": "research/experiments/2026-09-21-spatial-progress-gate/task-profile.md",
+  "state_source": "research/experiments/2026-09-21-visual-instance-binding/lead-results.md",
+  "result": "research/experiments/2026-09-21-visual-instance-binding/lead-results.md",
+  "not_authorized": [
+    "further model calls, qualifications, or release cells",
+    "new cohort, checkpoint sweep, training, or changed scientific conditions",
+    "successor launch or retrospective removal of execution debt"
+  ],
+  "next_action": "Closed; no further model calls, qualifications, releases, or successor authorized. A fresh explicit contract and authorization are required to resume research.",
+  "boundary": "Accepted mature six-image/11-trajectory pool; localized raw-input ablation only; no training-origin claim."
+}

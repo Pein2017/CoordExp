@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-21-spatial-progress-recovery",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted with redundant-replay debt: eight logical cells complete; local historical-x1 effect without selective crossing or burst specificity; strong H1 downgraded on admitted support",
+  "state_as_of": "2026-09-21",
+  "protocol": "research/experiments/2026-09-21-spatial-progress-recovery/unit.md",
+  "result": "research/experiments/2026-09-21-spatial-progress-recovery/lead-results.md",
+  "state_source": "research/experiments/2026-09-21-spatial-progress-recovery/lead-results.md",
+  "boundary": "Frozen six-image/eleven-trajectory pool; one tied14038 failure boundary and one matched control; ten failure HOLDs; eight unique primary cells. Luna-max assisted recovery verified. Predecessor technical HOLD and Lane B unchanged.",
+  "not_authorized": [
+    "further model calls, qualifications, release cells, or successor launch",
+    "new cohort, changed candidate support or scientific conditions, sampling or training",
+    "relabeling redundant replays as replication or removing their cost",
+    "commit or publication"
+  ],
+  "next_action": "Closed. No further execution. Preserve the candidate and lead acceptance with explicit replay debt and noncrossed counterexample."
+}
