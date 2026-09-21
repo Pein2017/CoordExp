@@ -66,3 +66,92 @@ def test_native_im_end_is_canonical_eos_but_early_length_fails_closed():
         canonical_terminal_stop("length", 100, 3064)
     with pytest.raises(ValueError, match="unknown stop"):
         canonical_terminal_stop("cancelled", 100, 3064)
+
+
+def test_prepare_retains_completed_gate_after_source_migration(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+    import shutil
+    from probes.native_owner_scale import state
+
+    original_root = state.RAW_ROOT
+    monkeypatch.setattr(state, "RAW_ROOT", tmp_path)
+    shutil.copyfile(original_root / "packet.json", tmp_path / "packet.json")
+    (tmp_path / "gate-v1").mkdir()
+    for name in ["gate.json", "receipt.json", "consumer.json"]:
+        shutil.copyfile(original_root / "gate-v1" / name, tmp_path / "gate-v1" / name)
+    monkeypatch.setattr(state, "_render_carrier_card", lambda case, output: {"case_id": case["case_id"]})
+    result = state.prepare()
+    packet = json.loads(Path(result["packet"]).read_text())
+    receipt = json.loads((tmp_path / "gate-v1/receipt.json").read_text())
+    assert packet["completed_gate"]["runner_sha256"] == receipt["runner_sha256"]
+    assert not (tmp_path / "gate-v1/runner.py").exists()
+
+    # New receipts name the external capture. A changed capture must not fall
+    # back to a matching historical source.
+    retained = state.SourceArchive(Path(
+        "/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"
+    )).resolve(original_root / "gate-v1/runner.py", receipt["runner_sha256"])
+    capture = tmp_path / "source-capture.py"
+    shutil.copyfile(retained["path"], capture)
+    receipt["runner_source"] = str(capture)
+    (tmp_path / "gate-v1/receipt.json").write_text(json.dumps(receipt))
+    state.prepare()
+    capture.write_text("changed")
+    with pytest.raises(ValueError, match="completed gate runner changed"):
+        state.prepare()
+    del receipt["runner_source"]
+    receipt["runner_sha256"] = "0" * 64
+    (tmp_path / "gate-v1/receipt.json").write_text(json.dumps(receipt))
+    with pytest.raises(FileNotFoundError, match="no verified source bytes"):
+        state.prepare()
+
+
+@pytest.mark.parametrize("entry", ["native", "instance", "amplitude"])
+def test_runtime_captures_sources_outside_outputs_before_model_load(tmp_path, monkeypatch, entry):
+    import json
+    from pathlib import Path
+    from probes.native_owner_scale import state
+    from probes.parallel_owner_research import instance_state, instance_state_amplitude
+    from probes.dora_owner_learning import runtime
+    from src.artifacts import source_provenance
+    from src.config.inference import InferConfig
+
+    monkeypatch.setattr(source_provenance, "SOURCE_ARCHIVE_ROOT", tmp_path / "sources")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "5")
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda: 0)
+    monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda: 0)
+    monkeypatch.setattr(InferConfig, "model_validate", lambda value: value)
+
+    def stop_before_model(*args, **kwargs):
+        raise RuntimeError("CPU test stops before model load")
+
+    monkeypatch.setattr(state, "_load_policy", stop_before_model)
+    monkeypatch.setattr(runtime, "load_policy", stop_before_model)
+    monkeypatch.setattr(instance_state_amplitude, "load_case", stop_before_model)
+    source = tmp_path / "input.json"
+    source.write_text("{}")
+    packet = {"config": {}, "cases": [], "references": {}, "source_files": {}}
+    for key in ["source_packet", "parent_panel", "carrier_manifest", "parent_packet"]:
+        packet[key] = str(source)
+    for key in ["source_sha256", "parent_panel_sha256", "carrier_manifest_sha256", "parent_sha256"]:
+        packet[key] = state.file_hash(source)
+    packet_path = tmp_path / "packet.json"
+    packet_path.write_text(json.dumps(packet))
+    out = tmp_path / "outputs" / entry
+    with pytest.raises(RuntimeError, match="stops before model load"):
+        if entry == "native":
+            state.run_stage(packet_path, out, [])
+        elif entry == "instance":
+            instance_state.execute(packet_path, out, False)
+        else:
+            instance_state_amplitude.stage(packet_path, out, "capture")
+    receipt = json.loads((out / "receipt.json").read_text())
+    runner = Path(receipt["runner_source"])
+    assert runner.is_relative_to(tmp_path / "sources")
+    assert state.file_hash(runner) == receipt["runner_sha256"]
+    assert not list(out.rglob("*.py"))
+    assert (out / "packet.json").read_bytes() == packet_path.read_bytes()
+    if entry == "amplitude":
+        assert Path(receipt["dependency_source"]).read_bytes() == Path(instance_state.__file__).read_bytes()

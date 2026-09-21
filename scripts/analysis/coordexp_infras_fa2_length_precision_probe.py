@@ -120,11 +120,11 @@ def main() -> int:
         "verdict": _verdict(comparisons, tolerance=args.max_abs_tolerance),
         "tolerance": {"max_abs": args.max_abs_tolerance},
     }
+    payload["summary"] = _render_markdown(payload)
     (output_dir / "summary.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    (output_dir / "summary.md").write_text(_render_markdown(payload), encoding="utf-8")
     print(json.dumps({"output_dir": str(output_dir), "verdict": payload["verdict"]}))
     return 0
 

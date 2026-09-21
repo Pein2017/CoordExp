@@ -13,6 +13,8 @@ from typing import Any
 
 import torch
 
+from src.artifacts.model_card import package_model_card
+
 
 DEFAULT_MODEL_PATH = Path(
     "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
@@ -392,6 +394,7 @@ def main() -> None:
 
     original_eval_logits = eval_logits(dora_model, batch)
     dora_model.save_pretrained(output_dir, safe_serialization=True)
+    package_model_card(output_dir)
     saved = assert_saved_adapter(output_dir)
 
     del dora_model

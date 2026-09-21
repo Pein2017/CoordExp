@@ -705,7 +705,7 @@ def render_gallery(
             row["gallery_image"] = str(output_path)
             rendered.append(rendered_row)
     write_jsonl(gallery_root / "gallery_rows.jsonl", rendered)
-    (gallery_root / "index.md").write_text(build_gallery_index(rendered), encoding="utf-8")
+    write_json(gallery_root / "index.json", {"summary": build_gallery_index(rendered)})
     return rendered
 
 
@@ -783,7 +783,7 @@ def build_report(summary: dict[str, Any], rendered_count: int, output_root: Path
             "- `unmatched_peak_rows.jsonl`: full row-level catalog with manual-review fields.",
             "- `manual_review_template.csv`: spreadsheet-friendly review sheet.",
             "- `gallery/gallery_rows.jsonl`: rendered subset manifest.",
-            "- `gallery/index.md`: local image gallery.",
+            "- `gallery/index.json`: local image gallery text in `summary`.",
             "",
             "The rendered image layout keeps metadata and legend outside the image: the upper panel shows pure-CE peaks, "
             "the lower panel shows ET-RMP-CE peaks, the bottom panel is a shared 0..1000 x1 ruler with colored markers, "
@@ -837,11 +837,8 @@ def main() -> int:
     write_manual_template(output_root / "manual_review_template.csv", review_rows)
     summary["rendered_gallery_count"] = len(rendered_rows)
     summary["artifact_root"] = str(output_root)
+    summary["summary"] = build_report(summary, len(rendered_rows), output_root)
     write_json(output_root / "unmatched_peak_summary.json", summary)
-    (output_root / "unmatched_peak_review.md").write_text(
-        build_report(summary, len(rendered_rows), output_root),
-        encoding="utf-8",
-    )
     print(json.dumps({"output_root": str(output_root), **summary}, indent=2, sort_keys=True))
     return 0
 

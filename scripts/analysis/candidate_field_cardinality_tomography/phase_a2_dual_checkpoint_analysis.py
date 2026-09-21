@@ -925,8 +925,8 @@ def main() -> int:
     }
     plot_paths = make_plots(summary, args.output_root)
     summary["plots"] = plot_paths
+    summary["summary"] = build_report(summary)
     write_json(args.output_root / "phase_a2_summary.json", summary)
-    (args.output_root / "phase_a2_report.md").write_text(build_report(summary), encoding="utf-8")
     print(json.dumps({"output_root": str(args.output_root), "matched_row_count": len(common_ids)}, indent=2))
     return 0
 

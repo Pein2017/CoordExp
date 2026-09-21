@@ -16,6 +16,8 @@ import traceback
 
 import torch
 
+from src.artifacts.source_provenance import preserve_source
+
 from .instance_state import (ROOT as PARENT, EOS, cache_slices, digest, file_hash,
     generation_inputs, grounding_mask, require, transplant, write)
 
@@ -180,10 +182,12 @@ def stage(packet_path,out_dir,kind,arms=(),capture_dir=None):
     for ref in packet['references'].values():
         require(file_hash(ref['path'])==ref['sha256'],'reference output changed')
     out = Path(out_dir);out.mkdir(parents=True,exist_ok=False)
-    shutil.copyfile(__file__,out/'runner.py');shutil.copyfile(packet_path,out/'packet.json')
-    shutil.copyfile(Path(__file__).with_name('instance_state.py'),out/'instance_state_dependency.py')
+    runner_source = preserve_source(Path(__file__), run_root=out, relative_name='runner.py')
+    shutil.copyfile(packet_path,out/'packet.json')
+    dependency_source = preserve_source(Path(__file__).with_name('instance_state.py'), run_root=out, relative_name='instance_state_dependency.py')
     receipt = {'status':'running','kind':kind,'arms':list(arms),'packet_sha256':file_hash(packet_path),
-               'runner_sha256':file_hash(__file__),'gpu':os.environ.get('CUDA_VISIBLE_DEVICES'),'cells':[]}
+               'runner_sha256':file_hash(__file__),'runner_source':str(runner_source),
+               'dependency_source':str(dependency_source),'gpu':os.environ.get('CUDA_VISIBLE_DEVICES'),'cells':[]}
     start = time.monotonic();write(out/'receipt.json',receipt)
     try:
         qwen,batch,ids = load_case(packet,out,receipt)

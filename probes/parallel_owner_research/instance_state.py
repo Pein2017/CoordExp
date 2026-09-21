@@ -15,6 +15,8 @@ import traceback
 
 import torch
 
+from src.artifacts.source_provenance import preserve_source
+
 ROOT = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-12-parallel-owner-research/instance-state')
 SOURCE = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-11-small-owner-repeat-origin/packet-repair-01.json')
 EOS, OPENER, BOX_END = 151645, 151646, 151649
@@ -273,11 +275,11 @@ def execute(packet_path, out_dir, smoke):
     require(os.environ.get('CUDA_VISIBLE_DEVICES') == '5' and torch.cuda.device_count() == 1, 'exclusive GPU5 required')
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=False)
-    shutil.copyfile(__file__,out/'runner.py')
+    runner_source = preserve_source(Path(__file__), run_root=out, relative_name='runner.py')
     shutil.copyfile(packet_path,out/'packet.json')
     start = time.monotonic()
     receipt = {'status':'running','packet':str(packet_path),'packet_sha256':file_hash(packet_path),
-               'runner_sha256':file_hash(__file__),'smoke':smoke,'model_forwards':0,'image_forwards':0,'cells':[]}
+               'runner_sha256':file_hash(__file__),'runner_source':str(runner_source),'smoke':smoke,'model_forwards':0,'image_forwards':0,'cells':[]}
     write(out/'receipt.json',receipt)
     try:
         qwen, identity = load_policy(InferConfig.model_validate(packet['config']), device=torch.device('cuda:0'))
