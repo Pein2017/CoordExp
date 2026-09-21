@@ -26,7 +26,7 @@ MATCH_IOU_THRESHOLD = 0.50
 class VisualizationResult:
     output_dir: Path
     manifest_path: Path
-    readme_path: Path
+    summary: str
     image_paths: tuple[Path, ...]
 
 
@@ -250,16 +250,15 @@ def _write_outputs(
 ) -> VisualizationResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
-    readme_path = output_dir / "README.md"
+    manifest = {**manifest, "summary": readme}
     manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    readme_path.write_text(readme, encoding="utf-8")
     return VisualizationResult(
         output_dir=output_dir,
         manifest_path=manifest_path,
-        readme_path=readme_path,
+        summary=readme,
         image_paths=image_paths,
     )
 

@@ -13,6 +13,7 @@ from typing import Any
 from safetensors import safe_open
 
 from src.artifacts.run_writer import RunWriter
+from src.artifacts.model_card import package_model_card
 from src.common.errors import ArtifactContractError
 from src.qwen.special_token_embeddings import (
     SpecialTokenEmbeddingInstallResult,
@@ -103,6 +104,7 @@ class CheckpointWriter:
                     save_embedding_layers=False,
                 )
                 _validate_adapter_payload(adapter_dir)
+                package_model_card(adapter_dir)
                 if special_token_result is not None:
                     save_special_token_embedding_deltas(
                         special_token_result,

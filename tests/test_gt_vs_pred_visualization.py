@@ -96,7 +96,8 @@ def test_prediction_comparison_hides_matched_gt_and_records_surfaces(
     assert manifest["coordinate_surfaces"]["drawable_field"] == "bbox_pixel_xyxy"
     assert manifest["items"][0]["left"]["match"]["tp"] == 1
     assert manifest["items"][0]["right"]["match"]["tp"] == 1
-    assert "Matched GT boxes are canceled" in result.readme_path.read_text(encoding="utf-8")
+    assert "Matched GT boxes are canceled" in result.summary
+    assert not (result.output_dir / "README.md").exists()
     assert result.image_paths[0].is_file()
 
 
