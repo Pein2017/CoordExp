@@ -90,6 +90,7 @@ class InferTemplateConfig(StrictConfigModel):
 class InferHfBackendOptions(StrictConfigModel):
     attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
     patch_embed_linearization: Literal["enabled", "disabled"]
+    coordinate_output_norm: Literal["disabled", "median"] = "disabled"
 
 
 class InferVllmBackendOptions(StrictConfigModel):

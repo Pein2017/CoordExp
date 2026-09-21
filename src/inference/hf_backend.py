@@ -71,6 +71,11 @@ class HFBackendSession:
         self._tokenizer = tokenizer
         self._receipt = receipt
         self._closed = False
+        self._coordinate_output_norm = None
+        if _hf_options(launch).get("coordinate_output_norm", "disabled") == "median":
+            from src.inference.coordinate_output_norm import CoordinateOutputNorm
+
+            self._coordinate_output_norm = CoordinateOutputNorm(model, tokenizer)
 
     @property
     def receipt(self) -> BackendSessionReceipt:
@@ -152,6 +157,10 @@ class HFBackendSession:
         }
         if policy.include_raw_model_logprob:
             generate_kwargs["output_logits"] = True
+        if self._coordinate_output_norm is not None:
+            # HF runs custom processors after repetition penalty; output scores
+            # therefore retain the actual normalized policy used for decoding.
+            generate_kwargs["logits_processor"] = [self._coordinate_output_norm]
         with torch.inference_mode():
             outputs = self._model.generate(**generate_kwargs)
         scores = _require_step_tensors(
