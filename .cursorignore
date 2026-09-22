@@ -1,4 +1,5 @@
 # Minimal blacklist; allow nearly everything for in-IDE reference
+/reference/
 /.git/
 **/__pycache__/
 *.py[cod]

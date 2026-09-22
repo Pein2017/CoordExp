@@ -54,6 +54,7 @@
 **/*.xz
 
 # Block heavy directories entirely
+reference/**
 model_cache/**
 outputs/**
 output-*/**

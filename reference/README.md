@@ -1,13 +1,22 @@
-# Reference Code
+# Retained execution evidence
 
-This directory contains historical material for the coordexp-infras rebuild.
+`retained-sources/` holds exact bytes required by existing source-bound receipts.
+It is not a code library, research reading path, or default search/index input.
+Current implementation belongs in `src/` and `probes/`; useful conclusions belong
+with their current research owner. Temporary code without a current consumer or
+specific evidence obligation should be deleted, not archived here.
 
-`legacy_src/` is the previous active implementation moved out of the import
-root. It is reference-only code for source study, invariant recovery, and
-debugging comparisons. New implementation code must live under the active
-top-level `src/` package and must not import from `reference/legacy_src/` or
-use path hacks to keep the legacy source executable.
+`objects/<sha-prefix>/<sha><suffix>` stores source bytes once. `runs/` keeps
+receipt-bound names as hard links to those objects, preserving old paths and
+checksums without copying identical bytes for every run. These generated aliases
+are local-only. Captures are read-only evidence; never edit or execute them.
+Historical relocation identities remain in `manifests/documentation-layout.json`.
 
-`legacy_openspec_2026-06-29/` is the archived OpenSpec tree. It remains useful
-for historical comparison, but the active contracts for this rebuild come from
-the current OpenSpec change and later approved changes.
+The unused `legacy_src/` and `legacy_openspec_2026-06-29/` trees were removed.
+Their exact tracked versions remain recoverable from Git commit
+`f47c20606864f453e4ab8bb6a143319efa043b0c`; they have no maintained runtime consumer.
+Do not restore the trees merely to satisfy an old documentation pointer.
+
+Ordinary search and Codegraph/Cursor indexing exclude `reference/`. For an explicit
+historical investigation, use a known receipt/path/hash and opt in to that path
+(e.g. `rg --no-ignore pattern reference/retained-sources/objects/`).

@@ -24,6 +24,8 @@
 !memories/
 !.planning/
 !README.md
+!codegraph.json
+!.ignore
 
 # Track files in the tracked folders
 !src/**
@@ -139,6 +141,9 @@ handoff/*
 .codex/vendor_imports/
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
+
+# Receipt-bound hard links are generated locally, not a second source tree.
+/reference/retained-sources/runs/
 
 # Python bytecode caches are always local and must never surface in Git state.
 **/__pycache__/
