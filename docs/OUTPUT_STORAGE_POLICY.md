@@ -34,7 +34,9 @@ belong to their research/document owners, not inside a run directory.
 
 Source captures are evidence, not implementation. Use
 `src.artifacts.source_provenance.preserve_source` for exact source copies outside
-outputs, below this checkout's `docs/history/run-sources/`. It returns a verified
+outputs, below this checkout's `reference/retained-sources/`. Identical bytes share
+a content-addressed object; `runs/` holds read-only hard links for receipt-bound
+paths, not independent copies. It returns a verified
 path for the caller's existing receipt; it does not change scientific admission
 or create a second receipt hierarchy. Include newly used shared dependencies.
 Current runs bind current code. Existing sealed receipts remain immutable.
@@ -99,3 +101,9 @@ metadata through the source archive. It does not claim that a README remains in
 the adapter directory, modify the old receipt, or permit an archive fallback for
 current version 2 metadata. This metadata change does not alter learned tensors,
 optimizer behavior, stage populations or natural evaluation gates.
+
+## Documentation and retained source locations
+
+No implementation files, source snapshots, scripts, notebooks or code caches belong anywhere under `docs/`, including `docs/history/`. Inline explanatory examples in documentation are not executable source ownership. Useful research documents, including old or completed results, belong under `research/` according to its convention. Global documentation stays in `docs/`. History is a temporary salvage queue, not a date-based warehouse.
+
+Existing source copies have been deduplicated into `reference/retained-sources/objects/`. Their original path/hash identities remain in `manifests/documentation-layout.json`; future captures reuse those objects with receipt-bound hard links under `reference/retained-sources/runs/`. The evidence tree is excluded from ordinary source search and indexing. Retain a source only for a concrete consumer or evidence obligation; uniqueness or age alone is not a retention reason. Use the source-archive reader from this research checkout when verifying the September 21 root manifest: the original manifest is immutable, and the local location overlay supplies relocated exact bytes. This round does not modify the root checkout or authorize archive execution. A frozen historical document may be recoverable from its recorded Git blob even after its useful content is integrated elsewhere.
