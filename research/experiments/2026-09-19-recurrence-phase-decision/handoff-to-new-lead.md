@@ -24,13 +24,13 @@ source_lead_task: 01a0a3d5-dc45-7693-8467-4801aa7190df
 
 ## 1. Minimum reading path, in authority order
 
-1. Current user instructions and local agent contract; [research placement and authority convention](/data/CoordExp/.worktrees/research-probes/research/CONVENTIONS.md).
-2. [Current frontier](/data/CoordExp/.worktrees/research-probes/research/index.md).
-3. Latest [state](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-19-recurrence-phase-decision/state.json), [lead result](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-19-recurrence-phase-decision/lead-results.md), and [acceptance receipt](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision/lead-acceptance.json). Use the **lead** result, not the superseded derived count in the immutable worker result.
-4. [History, repetition and stopping](/data/CoordExp/.worktrees/research-probes/research/questions/history-repetition-stopping.md) and [capacity and readout](/data/CoordExp/.worktrees/research-probes/research/questions/capacity-and-readout.md): combined evidence, counterexamples and limits.
-5. [Research story](/data/CoordExp/.worktrees/research-probes/research/story.md) for why we moved away from finite fitting; [catalog](/data/CoordExp/.worktrees/research-probes/research/experiments/catalog.jsonl) for exact predecessors. The story contains historical proposed next steps; it does not override the current frontier.
-6. [Physical evaluation](/data/CoordExp/.worktrees/research-probes/research/questions/physical-evaluation.md), [metric interpretation](/data/CoordExp/.worktrees/research-probes/docs/eval/INTERPRETATION.md), and [TIDE-aligned unmatched vocabulary](/data/CoordExp/.worktrees/research-probes/docs/eval/UNMATCHED_REVIEW.md) before translating a numerical failure into an owner claim.
-7. [Literature map](/data/CoordExp/.worktrees/research-probes/research/literature/index.md) only for the selected question. External papers and Pro replies are hypotheses/methods, not local experimental evidence. Reopen their primary sources before relying on them.
+1. Current user instructions and local agent contract; [research placement and authority convention](../../CONVENTIONS.md).
+2. [Current frontier](../../index.md).
+3. Latest [state](state.json), [lead result](lead-results.md), and [acceptance receipt](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision/lead-acceptance.json). Use the **lead** result, not the superseded derived count in the immutable worker result.
+4. [History, repetition and stopping](../../questions/history-repetition-stopping.md) and [capacity and readout](../../questions/capacity-and-readout.md): combined evidence, counterexamples and limits.
+5. [Research story](../../story.md) for why we moved away from finite fitting; [catalog](../catalog.jsonl) for exact predecessors. The story contains historical proposed next steps; it does not override the current frontier.
+6. [Physical evaluation](../../questions/physical-evaluation.md), [metric interpretation](../../../docs/eval/INTERPRETATION.md), and [TIDE-aligned unmatched vocabulary](../../../docs/eval/UNMATCHED_REVIEW.md) before translating a numerical failure into an owner claim.
+7. [Literature map](../../literature/index.md) only for the selected question. External papers and Pro replies are hypotheses/methods, not local experimental evidence. Reopen their primary sources before relying on them.
 
 Do not read every old transcript before acting. Retrieve the nearest accepted predecessor and its strongest counterexample. The rest of this document preserves the context needed to choose those sources.
 
@@ -58,7 +58,7 @@ Do not read every old transcript before acting. Retrieve the nearest accepted pr
 | Norm intervention | On R16 fresh128, known matches578→592 (G30/L16), invalid rows476→5, strict near-repeat rows604→40, caps2→0. Net+13 came from9 unhealthy images, +1 from119 healthier images; paired bootstrap interval includes zero. | Population physical recall improvement, global policy promotion, unique mechanism or training-origin defect. |
 | Mechanism interventions | Particular output decisions causally redirect complete continuations; history and retained state can matter; some routes relapse after apparent rescue. | A universal repetition circuit, a reliable covered-owner ledger or a general intervention that restores distinct-owner enumeration. |
 
-The oldest A/B denotes initialization (full-teacher step256 versus original geo-sorted-xy step2444 with its embeddings); later Source256 A/B denotes learning recipes. Do not merge their meanings. Finite fitting used fixed teachers; it is not evidence of online rollout refresh. The [frontier's completed-evidence table](/data/CoordExp/.worktrees/research-probes/research/index.md) links the exact owning result for each row above.
+The oldest A/B denotes initialization (full-teacher step256 versus original geo-sorted-xy step2444 with its embeddings); later Source256 A/B denotes learning recipes. Do not merge their meanings. Finite fitting used fixed teachers; it is not evidence of online rollout refresh. The [frontier's completed-evidence table](../../index.md) links the exact owning result for each row above.
 
 ## 4. Mechanistic evidence that changes the explanation
 
@@ -68,7 +68,7 @@ Changing only the effective coordinate output-row norms can change actual winner
 
 Magnitude-matched reflected/sign controls also reduce numerical recurrence in some selected cases; normalization is not uniquely privileged by that evidence. Sparse0/1 readout support explains selected donut routes through only one or two actual argmax changes, but other scenes retain null/adverse effects. Forcing the initial0→1 alone helps one untied donut route and fails on tied; continuing operators can work while restoring the original0 or the entire first row. Do not call coord1 an escape identity.
 
-The [forward provenance result](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-19-coordinate-margin-provenance/results.md) reconstructed eight states and16 paired prefix replays. At one tied slot, raw0−30=+0.332750 decomposed into directional−0.589133 plus length+0.921884. Equalization reverses that pair, but the global winner is23. Positive0−1 can coexist with global winners52/46/23. FinalMLP27 is a large positive0−1 contributor across all eight states, including nonzero-winner states; contribution rank is not recurrence specificity or causal blame. History differences are distributed and opposed across residual updates.
+The [forward provenance result](../2026-09-19-coordinate-margin-provenance/results.md) reconstructed eight states and16 paired prefix replays. At one tied slot, raw0−30=+0.332750 decomposed into directional−0.589133 plus length+0.921884. Equalization reverses that pair, but the global winner is23. Positive0−1 can coexist with global winners52/46/23. FinalMLP27 is a large positive0−1 contributor across all eight states, including nonzero-winner states; contribution rank is not recurrence specificity or causal blame. History differences are distributed and opposed across residual updates.
 
 ### 4.2 History is used; abstract coveredness is not isolated
 
@@ -112,7 +112,7 @@ Same-anchor distances are non-monotone: at anchor0, distance to bin4 can exceed 
 
 ## 5. Latest accepted experiment — exact continuation state
 
-Owner: [phase-decision lead result](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-19-recurrence-phase-decision/lead-results.md). Output root: [recurrence-phase-decision](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision).
+Owner: [phase-decision lead result](lead-results.md). Output root: [recurrence-phase-decision](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-phase-decision).
 
 **Question:** across seed/first-repeat/third-row phases, do x1/y2±1 history edits alter decisions and free recurrence, and do effects survive two supplied native rows?
 
@@ -266,7 +266,7 @@ The original Pro replies remain local; no need to copy their long text here. The
 | [Move beyond local0/1 attribution](</data/CoordExp/.codex/attachments/da8380e5-90d2-4cc3-bfad-021696130176/Pasted text.txt>) | Separate image position, history position and fixed numeric preference; spatial/distribution package now completed. | `6bf54045061016bdaaea38a021b9b448f28a4ed94f39124521fbcc5969542009` |
 | [Equivalent histories and coveredness](</data/CoordExp/.codex/attachments/207bcaa4-30d8-42b2-a748-835a4d845719/Pasted text.txt>) | Task-equivalent history stability versus genuinely changed coverage; still relevant but do not relabel old permutation/common-tail studies as new. | `bbab90ea083700b77b7a867f3158c0d957b65e9db18310055a7f0263d61c4289` |
 
-Earlier consultations and all user adjudications remain in the source lead task. The [literature map](/data/CoordExp/.worktrees/research-probes/research/literature/index.md) also records external session intake. In particular, temporal growth, readable features and attention mass need appropriate nulls before causal interpretation. A VIT-register analogy was raised by the user but was never established as the cause of these outputs.
+Earlier consultations and all user adjudications remain in the source lead task. The [literature map](../../literature/index.md) also records external session intake. In particular, temporal growth, readable features and attention mass need appropriate nulls before causal interpretation. A VIT-register analogy was raised by the user but was never established as the cause of these outputs.
 
 ## 12. Checkout, tasks and transport
 

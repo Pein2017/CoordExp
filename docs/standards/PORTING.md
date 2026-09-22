@@ -35,7 +35,7 @@ loss/logit availability checks.
 ## Supervision and metric ownership
 
 Current CoordExp supervision is owned by
-[`src/supervision/`](../../src/supervision/) and loss assembly by
+[`src/supervision/`](../../src/supervision) and loss assembly by
 [`src/losses/runner.py`](../../src/losses/runner.py). Use the
 [supervision/loss contract](../../openspec/specs/coordexp-infras-supervision-losses/spec.md)
 for token types, causal alignment, reductions, and emitted metrics, and the

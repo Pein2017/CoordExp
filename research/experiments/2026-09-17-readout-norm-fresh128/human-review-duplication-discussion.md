@@ -84,14 +84,14 @@ confounded. The present evidence does not identify annotation inconsistency
 as the training-origin cause of hundreds of repeated emissions.
 
 Do not assume that the model lacks all coverage memory. The
-[July22 bottle counterfactual](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/results.md)
+[July22 bottle counterfactual](../2026-07-22-physical-owner-duplication-causality-and-training-treatment/results.md)
 found spatially specific suppression from a previously covered owner, while
 the first differing coordinate still preferred the duplicate even when the
 complete distinct-owner row had a higher average score. This is a bounded
 counterexample: an available history signal need not control greedy selection.
 
 Avoid repeating an already answered training question. The
-[Sep08 matched dedup experiment](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-coco-owner-recovery-dedup/results.md)
+[Sep08 matched dedup experiment](../2026-09-08-coco-owner-recovery-dedup/results.md)
 reduced repeats by207 but had G19/L14, net+5 with interval[-11,+27]; distinct
 owner recovery was not established. Reduced overlap can also mean box jitter,
 invalid output, or premature stopping, rather than recovered owners.

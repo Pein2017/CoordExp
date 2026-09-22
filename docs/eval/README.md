@@ -46,7 +46,7 @@ research comparison.
 - [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
   - historical mainline runbook for 1024-budget COCO test-dev inference and
     official submission export; verify current Swift support separately
-- [drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
+- [drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](../../research/experiments/2026-03-13-unmatched-proposal-verifier/design.md)
   - draft supplementary study; not part of the default infer -> score -> evaluate path
 
 - [Legacy evaluation reference](../history/evaluation/2026-09-09-legacy-eval-reference.md)

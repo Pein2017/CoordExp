@@ -121,6 +121,10 @@ docs:
       title: Artifacts & Provenance
       type: artifacts-reference
       status: canonical
+    - path: research/assets.md
+      title: Reusable Research Assets
+      type: assets-reference
+      status: canonical
     - path: docs/history/README.md
       title: Documentation History
       type: history-router

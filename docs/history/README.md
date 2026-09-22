@@ -1,32 +1,56 @@
----
-doc_id: docs.history.index
-layer: docs
-doc_type: history-router
-status: historical-router
-domain: repo
-summary: Router for non-normative CoordExp documentation history kept outside current behavior docs.
-tags: [history, archive, docs]
-updated: 2026-06-15
----
+# Temporary legacy salvage
 
-# Documentation History
+This is a temporary recycle/extraction queue, not the archive for completed
+research and not a date-based warehouse. A useful result, protocol, negative
+finding, research asset or source observation belongs with its research owner,
+even when it is old. Implementation files and source snapshots never belong
+under `docs/`.
 
-This directory preserves historical plans, design specs, handoffs, and superseded notes that are useful for provenance but are not current behavior.
+The current research layout is owned by
+[research/CONVENTIONS.md](../../research/CONVENTIONS.md). Global behavior and
+engineering documentation remain in [docs/](../README.md); source-byte evidence
+is reference-only under [reference/](../../reference/README.md).
 
-For a current question, use its named source/contract or
-[AGENT_INDEX.md](../AGENT_INDEX.md) to locate the owner. There is no prerequisite
-chain of architecture pages to read before consulting a dated record.
+## Remaining salvage and exit conditions
 
-Only use this archive when reconstructing history, reviewing why an implementation path existed, or importing lessons into current docs.
+| Material | Residual use | Extraction or removal condition |
+|---|---|---|
+| `architecture/`, `engineering/`, `evaluation/` | Superseded global interfaces and historical behavior needed for contract comparisons; one source-study document is still hash-pinned by a legacy reader. | Integrate a decision-relevant distinction into the current global owner, or retire the exact reader; then remove the obsolete source document. |
+| `research-records/` | Unresolved alternatives, old synthesis context, immutable preservation manifests and frozen exposure JSON. Primary protocols/results now live under `research/experiments/`. | Extract only a genuinely missing scientific distinction into its question/unit. Remove consumed context rather than retaining another router. |
+| `worktree-retirements/`, `worktree-cleanup/`, `worktree-union/` | Unique branch-specific designs and retirement provenance not yet reconciled with current owners. Named research records and superseded global copies were separated from this material. | Resolve a concrete original-branch question, incorporate the remaining useful distinction, and delete the unneeded transport or snapshot. Do not regenerate these bulk intakes. |
+| `superpowers/`, `root-orphans/` | Unmatched legacy implementation plans and design context whose useful remainder is not yet established. They are not current execution instructions. | Find a real current consumer or scientific owner and integrate the useful portion; otherwise discard after provenance/reference checks. |
 
-## Contents
+No file earns permanent retention merely because it is unique. The remaining
+messy material is explicitly pending extraction or deletion, not promoted
+knowledge. Do not add routine run notes, complete source trees or copies of
+current documentation here.
 
-- [architecture/README.md](architecture/README.md): old architecture reviews,
-  simplification proposals, refactoring programs, blueprints, and decision logs
-- [superpowers/README.md](superpowers/README.md): dated agent implementation plans, design specs, and handoffs
-- [worktree-union/README.md](worktree-union/README.md): raw Markdown union intakes from linked worktrees before cleanup and migration
-- [worktree-cleanup/README.md](worktree-cleanup/README.md): preservation receipts for recycled experimental worktrees
-- [research-intake/](research-intake/): raw research-note intakes used as provenance for synthesized `research/` reading paths
+## Frozen exposure compatibility boundary
 
-- [Historical engineering principles](engineering/2026-09-09-agent-engineering-constitution.md): superseded July guidance; current code style and agent authority remain separate owners
-- [Legacy evaluation reference](evaluation/2026-09-09-legacy-eval-reference.md): old MS-Swift commands, artifact shapes and diagnostic flows, separated from the current Swift runbook
+The 106 JSON records below
+`research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/`
+remain byte-exact at their original paths because the unchanged
+`probes/parallel_owner_research/transfer.py` still reads that corpus directly.
+Their union of 135 image IDs is an exclusion boundary, not a Markdown reading
+path. Move them only with the consumer's owner and a source-hash/image-ID parity
+check. This exception neither permits code in docs nor makes history a permanent
+data store.
+
+## Recovery and checks
+
+`manifests/documentation-layout.json` records each move, integration, duplicate
+removal and retained source hash. Original manifests and scientific receipts
+were not rewritten; the research-checkout source reader uses this location
+overlay. Git or exact content-addressed copies recover old bytes without
+reviving their old path as an import alias.
+
+From the canonical research checkout, run:
+
+```sh
+python -B scripts/research/check_research_knowledge.py check
+python -B -m pytest -q -p no:cacheprovider tests/research/test_documentation_ownership.py tests/research/test_research_transfer_exposure.py
+```
+
+These are layout, identity and consumer checks, not scientific revalidation or
+permission to resume experiments. The root checkout and ongoing probe changes
+are outside this cleanup's mutation scope.

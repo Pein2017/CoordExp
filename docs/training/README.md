@@ -32,7 +32,7 @@ with their own objectives. Do not read all architecture pages before a local edi
 - [`METRICS.md`](METRICS.md): historical metric and loss interpretation;
 - [`../data/PACKING.md`](../data/PACKING.md): current packing ownership and contract
   links (not a historical training surface);
-- [`drafts/`](drafts/): explicitly non-canonical experiment drafts.
+- [`drafts/`](drafts): explicitly non-canonical experiment drafts.
 
 The old `configs/stage1/`, `configs/stage2/`, archived recursive-detection
 configs, `src/sft.py`, `src/trainers/`, `src/detection/`, and `src/infer/`

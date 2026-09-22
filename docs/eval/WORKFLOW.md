@@ -75,7 +75,7 @@ python scripts/visualize_detection.py gt-vs-pred \
 
 Use `compare` for two run directories; inspect its `--help` for row selection
 and labels. Rendering is separate from aggregate evaluation. Its owner is
-[`src/vis/`](../../src/vis/), not an implied evaluator overlay option.
+[`src/vis/`](../../src/vis), not an implied evaluator overlay option.
 
 ## Validation scope
 

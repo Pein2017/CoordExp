@@ -13,6 +13,7 @@ research/
   story.md                     # how evidence changed the research direction
   glossary.md                  # shared definitions and ambiguous historical aliases
   alternatives.md              # selective unresolved ideas and reopening conditions
+  assets.md                    # reusable research checkpoint, data and panel locators
   questions/<question>.md      # evidence, interpretation, counterexamples, decisions
   literature/
     index.md                   # public papers mapped to local research questions
@@ -28,7 +29,7 @@ research/
 
 No `ideas/`, `decisions/`, `mechanisms/`, `investigations/`, `archive/`, `reports/`, `handoffs/`, or `progress/` buckets inside the active research root. Temporary migration staging must be emptied before closeout. A new question earns a page through a distinct scientific decision and evidence chain, not through a quota or a speculative future need. Reconsider a program layer only if an actually independent second topic exists.
 
-Maintained experimental code lives in `probes/<direction>/`. Existing `outputs/research/...` roots and immutable study/run identifiers remain unchanged: flattening the knowledge tree is not permission to rename model artifacts. Retired protocols, evidence records, code, consultations and old schemas live in manifest-bound `docs/history/`, outside the maintained reading path. Reusable public literature and its source material live in `literature/`; publication age or completed reading is not a reason to archive them.
+Maintained experimental code lives in `probes/<direction>/`. Existing `outputs/research/...` roots and immutable study/run identifiers remain unchanged: flattening the knowledge tree is not permission to rename model artifacts. Useful protocols, results, negative findings, source observations and consultations stay with their research unit regardless of age or completion. Code never belongs in `docs/`: maintained code has its `probes/` or `src/` owner; necessary immutable source bytes live in `reference/retained-sources/`. `docs/history/` is temporary salvage only for unsynthesized or superseded material with an explicit residual use and extraction/drop condition. Reusable public literature and its source material live in `literature/`; publication age or completed reading is not a reason to archive them.
 
 ## Read for a task, not for a file count
 
@@ -52,7 +53,10 @@ This is targeted retrieval, not a mandatory whole-library review: reuse already 
 | Why the direction changed | `story.md`, not a chronological run log |
 | An important untested or unresolved idea | A concise entry in `alternatives.md`, linked to its question and predecessor |
 | Record identity and retrieval | `experiments/catalog.jsonl`; no live metrics or inferred process state |
-| Old bytes, old grants and retired interpretations | Frozen `docs/history/` sources |
+| Retained scientific sources and completed results | Their `research/experiments/<unit-id>/` owner; original evidence scope retained |
+| Reusable research checkpoints, datasets and panels | `assets.md`, linking original identities and unit evidence |
+| Exact old source bytes | Git or `reference/retained-sources/`, located by explicit hash-bound manifests |
+| Unresolved legacy salvage | `docs/history/` temporarily, with a named extraction or drop condition |
 
 Short attributed overlap is useful for catch-up; duplicated ledgers, full repeated backgrounds and separately edited volatile counters are not. A directory name, source code search result or tool success wrapper is not evidence of an accepted scientific claim.
 
@@ -72,7 +76,7 @@ During design, `unit.md` is a proportionate executable outline. Freeze decision-
 
 `state.json` uses `schema_version: 1`, `unit_id`, `lifecycle`, `evidence`, `disposition`, `state_as_of`, `protocol`, `result`, `state_source`, `boundary`, `not_authorized` and `next_action`. Paths are repository-relative; `result` may be null before acceptance. Lifecycle is `planned|ready|running|blocked|paused|closed|superseded`; evidence is `none|partial|unreviewed|accepted|invalid`; disposition states the bounded scientific outcome independently. Accepted evidence, an incomplete stage and a paused task can coexist. Historical units keep their old schema as provenance, never as present launch authority.
 
-Keep live/paused or actually continuing units in `research/experiments/`. At a substantive closeout, distill the useful result and safely retire the source record to `docs/history/`; keep its stable ID and exact paths in the catalog. Do not move whole directories merely because another week passed. Reopening creates an explicit new current contract with a predecessor link; it does not rewrite frozen evidence. Historical phase syntheses and operational studies are labeled as such rather than counted as newly executed scientific experiments.
+Keep useful units in `research/experiments/`, including completed, negative, invalid and paused work. At closeout, integrate the useful result into its question and retain the unit evidence at its owning location. Completion and age are not archival criteria. Delete consumed transport, duplicate routers and valueless residue after reference checks; only unresolved reference-value legacy may enter temporary `docs/history/`. Do not move directories because a date or lifecycle changed. Reopening creates an explicit new current contract with a predecessor link; it does not rewrite frozen evidence. Historical phase syntheses and operational studies are labeled as such rather than counted as newly executed scientific experiments.
 
 ## Preserve sparks without preserving obsolete furniture
 
@@ -107,3 +111,7 @@ Checks do not certify all scientific interpretations, external artifacts, every 
 ## Source and artifact placement
 
 The source/output boundary is owned by [Output storage policy](../docs/OUTPUT_STORAGE_POLICY.md). Maintained Python and shell code never execute from outputs or historical archives. Frozen source bytes are preserved outside outputs with explicit hash-bound recovery; original scientific records and output data remain immutable.
+
+## Documentation versus salvage
+
+`docs/` owns project-wide behavior, architecture, interfaces and operating guidance, not individual scientific results or copied code. The catalog keeps `tracking: historical` for retained scientific records without inventing a current state or a renewed execution grant. Unit-local `supporting/` and `sources.md` hold attributable observations required to audit the interpretation; they are not another frontier. The migration location index in `manifests/documentation-layout.json` records recovery and present owners, not scientific status.

@@ -66,6 +66,10 @@ documented here.
   [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
 - Research interpretation, units, and durable results:
   [research/index.md](../research/index.md)
+- Common checkpoints, datasets and fixed panels:
+  [RESEARCH_ASSETS.md](../research/assets.md). Start with its exact locators and
+  reuse limits before searching historical runs; verify the selected asset for
+  the current task. Promote new durable assets here after lead review.
 - Shared research mechanics live directly in the fixed `research-probes`
   base. Large/conflicting work can use temporary development worktrees; the
   former permanent infra lane retires after preservation and integration.
@@ -111,7 +115,7 @@ Use the smallest relevant spec family:
 - Inference and evaluation: [`coordexp-infras-infer-config-runtime`](../openspec/specs/coordexp-infras-infer-config-runtime/spec.md), [`coordexp-infras-infer-pipeline`](../openspec/specs/coordexp-infras-infer-pipeline/spec.md), [`coordexp-infras-infer-backend-trace`](../openspec/specs/coordexp-infras-infer-backend-trace/spec.md), [`coordexp-infras-infer-scoring-artifacts`](../openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md), [`coordexp-infras-detection-evaluator`](../openspec/specs/coordexp-infras-detection-evaluator/spec.md)
 
 The remaining `coordexp-infras-*` specs are reachable from the
-[`openspec/specs/`](../openspec/specs/) directory. Do not invent a missing
+[`openspec/specs/`](../openspec/specs) directory. Do not invent a missing
 pre-promotion spec path to make a link look normative.
 
 ## Query routing

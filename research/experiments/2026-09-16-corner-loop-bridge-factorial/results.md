@@ -61,7 +61,7 @@ A prelaunch preparation import lacked PYTHONPATH and the premature launcher fail
 ## Sources and stable artifacts
 
 - [Accepted phase1](../2026-09-16-corner-loop-mechanism/results.md): conditional exit remains available on P history.
-- [Older checkpoint/history contrast](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-checkpoint-history-cross/results.md) and [KV amplitude controls](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md) are different checkpoints and are not rerun here.
+- [Older checkpoint/history contrast](../2026-09-11-checkpoint-history-cross/results.md) and [KV amplitude controls](../2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md) are different checkpoints and are not rerun here.
 - [Frozen panel](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-bridge-factorial/panel.json): complete common and supplied prefixes, exact edit positions, bank, config and checkpoint/data hashes.
 - [Independent result](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-bridge-factorial/result.json), SHA256 `e2a2529f2cc6dd1cad61f7c8acf378884db620cf7c049e97e273734db08520b0`; [per-owner ledger](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-bridge-factorial/owner-ledger.json).
 - [Candidate terminal receipt](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-bridge-factorial/terminal.json): source/command/artifact bindings, cost, exits and no live jobs.

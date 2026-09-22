@@ -40,7 +40,7 @@ worktree and its research records. Neither route is a substitute for the other.
 ## Contract and proposal boundaries
 
 - Stable compatibility semantics live in the relevant
-  [`openspec/specs/`](../openspec/specs/) contract.
+  [`openspec/specs/`](../openspec/specs) contract.
 - Bounded active code-change work lives only in an explicitly scoped
   `openspec/changes/<change>/` workspace, which may
   carry durable proposal/design/tasks/apply/verify/archive artifacts. Add
@@ -64,3 +64,7 @@ stable spec for compatibility semantics, and a research unit or investigation
 for research interpretation. The pages above are alternative entry points,
 not a mandatory reading sequence. An older plan, proposal, worktree, or
 progress note does not establish current behavior.
+
+## Placement by purpose, not age
+
+Global behavior and engineering documentation stay here. [Research assets](../research/assets.md), experiment protocols/results and scientific interpretation belong in `research/`, including useful completed work. [History](history/README.md) is a temporary salvage queue for unresolved legacy value, not the default destination for yesterday's work. No source code or source captures belong under `docs/`; see [storage policy](OUTPUT_STORAGE_POLICY.md).

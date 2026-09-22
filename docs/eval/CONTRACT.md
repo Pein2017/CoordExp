@@ -90,7 +90,7 @@ and overlays are not outputs of this aggregate consumer.
 
 ## Shared Visualization Contract
 
-Current Swift review is owned by [`src/vis/`](../../src/vis/) through
+Current Swift review is owned by [`src/vis/`](../../src/vis) through
 [`scripts/visualize_detection.py`](../../scripts/visualize_detection.py).
 It consumes run artifacts via its own loader and matching/rendering contract;
 use the [review command](WORKFLOW.md#review-predictions). Do not require a

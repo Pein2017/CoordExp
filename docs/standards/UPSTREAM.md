@@ -11,7 +11,7 @@ updated: 2026-06-07
 # Upstream Dependencies
 
 Use this page as the upstream dependency router. Detailed notes live under
-[`upstream/`](upstream/). The current source of truth for CoordExp behavior is
+[`upstream/`](upstream). The current source of truth for CoordExp behavior is
 the canonical Swift implementation on `main` plus the active `ms` environment.
 The ms-swift checkout remains an upstream/reference dependency, not the
 CoordExp application entrypoint.
@@ -139,4 +139,4 @@ When bumping any upstream package:
    changed training/eval behavior.
 
 Detailed handles and troubleshooting live in the companion pages under
-[`upstream/`](upstream/).
+[`upstream/`](upstream).

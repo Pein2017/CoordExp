@@ -255,7 +255,7 @@ a concatenated training pack have different position and attention owners.
 | --- | --- |
 | Native preparation or exact-history replay | [`src/qwen/native.py`](../../../src/qwen/native.py): `prepare_native_inputs` encodes image/text inputs through the processor. `exact_history_inputs` and `prepare_replay` retain the visual payload and derive positions through the loaded model's `get_rope_index`; `resolve_rope_index` locates that owner through wrapper `.model` levels. |
 | Packed training forward | [`src/qwen/positions.py`](../../../src/qwen/positions.py): `build_qwen_position_inputs` constructs four rows, resetting text positions and deriving MRoPE independently per segment. [`src/qwen/forward.py`](../../../src/qwen/forward.py) owns visual concatenation, explicit FA2 arguments, `labels=None`, and `use_cache=False`. |
-| Local supervision and objective | [`src/supervision/`](../../../src/supervision/) and [`src/losses/runner.py`](../../../src/losses/runner.py), governed by the [supervision/loss contract](../../../openspec/specs/coordexp-infras-supervision-losses/spec.md). Model-provided loss is not the local loss owner. |
+| Local supervision and objective | [`src/supervision/`](../../../src/supervision) and [`src/losses/runner.py`](../../../src/losses/runner.py), governed by the [supervision/loss contract](../../../openspec/specs/coordexp-infras-supervision-losses/spec.md). Model-provided loss is not the local loss owner. |
 
 ### Packing and causal alignment
 

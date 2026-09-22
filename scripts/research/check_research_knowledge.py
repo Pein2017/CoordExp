@@ -18,11 +18,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+# The documented direct script entry and module entry share the same checkout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.artifacts.source_locations import SourceLocations
+
 CAPTURE = Path('docs/history/research-records/2026-09-15-root-collapse')
 RESEARCH = Path('research')
 CATALOG = RESEARCH / 'experiments/catalog.jsonl'
 ROOT_NAMES = {'index.md', 'CONVENTIONS.md', 'story.md', 'glossary.md',
-              'alternatives.md', 'questions', 'literature', 'experiments'}
+              'alternatives.md', 'assets.md', 'questions', 'literature', 'experiments'}
 LIFECYCLES = {'planned', 'ready', 'running', 'blocked', 'paused', 'closed', 'superseded'}
 EVIDENCE_STATES = {'none', 'partial', 'unreviewed', 'accepted', 'invalid'}
 LINK = re.compile(r'!?\[[^\]\n]*\]\(([^)\n]+)\)')
@@ -67,7 +71,7 @@ def load_bundle(root: Path) -> dict:
     return {'canonical_root': latest['canonical_root'],
             'captures': [previous, latest, consumers],
             'retirements': latest['preexisting_retirements'],
-            'exposure': latest['research_json_exposure']}
+            'exposure': latest['research_json_exposure'], 'locations': SourceLocations(root)}
 
 
 def resolve_reference(root: Path, bundle: dict, document: str, target: str) -> dict:
@@ -111,9 +115,12 @@ def resolve_reference(root: Path, bundle: dict, document: str, target: str) -> d
                 prefix = capture.get('source_prefix')
                 if prefix and (logical == prefix or logical.startswith(prefix + '/')):
                     proposed = capture['archive_prefix'] + logical[len(prefix):]
-                    if local_path(root, proposed).is_dir():
+                    current = bundle['locations'].target(proposed) if 'locations' in bundle else proposed
+                    if local_path(root, current).is_dir():
                         resolved = proposed
                         break
+    if 'locations' in bundle:
+        resolved = bundle['locations'].target(resolved)
     try:
         exists = local_path(root, resolved).exists()
     except ValueError:
@@ -124,6 +131,13 @@ def resolve_reference(root: Path, bundle: dict, document: str, target: str) -> d
     if retired and not exists:
         result['recovery_git_spec'] = retired['recovery_git_spec']
         result['availability'] = 'git_recoverable_not_materialized'
+    elif not exists and 'locations' in bundle:
+        moved = bundle['locations'].entries.get(resolved)
+        if moved and moved.get('git_blob'):
+            # This is still a missing live link, but its exact historical bytes
+            # are independently verified by check_sources, not silently lost.
+            result['recovery_git_spec'] = moved['git_blob']
+            result['availability'] = 'git_recoverable_not_materialized'
     return result
 
 
@@ -150,7 +164,8 @@ def check_sources(root: Path, bundle: dict) -> list[str]:
                         errors.append(f'retirement identity mismatch: {source}')
                     used_retirements.add(archived)
                     continue
-                data = path.read_bytes()
+                data = (bundle['locations'].original_bytes(archived, entry['sha256'])
+                        if 'locations' in bundle else path.read_bytes())
                 if digest(data) != entry['sha256'] or len(data) != entry['bytes']:
                     errors.append(f'source bytes changed: {archived}')
             except (OSError, ValueError) as exc:
@@ -264,7 +279,8 @@ def check_catalog(root: Path, rows: list[dict], bundle: dict) -> list[str]:
                 errors.append(f'{uid}: state result not catalogued')
         elif row.get('tracking') != 'historical' or state_path is not None:
             errors.append(f'{uid}: invalid historical/current ownership')
-    expected_protocols = {e['archive'] for c in bundle['captures'] for e in c['files']
+    expected_protocols = {(bundle['locations'].target(e['archive']) if 'locations' in bundle else e['archive'])
+                          for c in bundle['captures'] for e in c['files']
                           if e['source'].startswith('research/') and Path(e['source']).name == 'unit.md'}
     if not expected_protocols <= protocols:
         errors.append('catalog omits preserved protocols')
@@ -302,6 +318,13 @@ def check_layout(root: Path) -> list[str]:
     for path in (root / RESEARCH).rglob('*'):
         if path.is_symlink() or path.suffix in {'.py', '.pyc', '.sh', '.log'} or path.name == '__pycache__':
             errors.append(f'executable/cache/alias in research: {path.relative_to(root)}')
+    code_suffixes = {'.py', '.pyi', '.pyc', '.pyo', '.sh', '.bash', '.zsh', '.js',
+                     '.ts', '.c', '.h', '.cpp', '.cu', '.ipynb', '.patch', '.diff', '.yaml', '.yml'}
+    for path in (root / 'docs').rglob('*'):
+        if path == root / 'docs/catalog.yaml':
+            continue  # Documentation metadata, not an executable configuration.
+        if path.suffix in code_suffixes or path.name == '__pycache__':
+            errors.append(f'code/cache in docs: {path.relative_to(root)}')
     return errors
 
 
@@ -341,26 +364,41 @@ def run_check(root: Path, bundle: dict) -> dict[str, Any]:
     rows = [json.loads(line) for line in local_path(root, str(CATALOG)).read_text().splitlines() if line.strip()]
     errors = check_sources(root, bundle) + check_git_sources(root, bundle)
     errors += check_layout(root) + check_catalog(root, rows, bundle) + check_exposure(root, bundle)
-    documents = sorted((root / RESEARCH).rglob('*.md'))
+    all_documents = sorted((root / RESEARCH).rglob('*.md'))
+    # Historical scientific records remain useful in research. They do not become
+    # live frontiers merely by moving, and old unresolved citations stay disclosed.
+    historical_roots = [root / row['record_root'] for row in rows if row['tracking'] == 'historical']
+    documents = [p for p in all_documents if not any(p.is_relative_to(d) for d in historical_roots)]
     live_errors, valid_links, external = check_live_links(root, bundle, documents)
     errors += live_errors
     gaps = []
     for capture in bundle['captures']:
         for entry in capture['files']:
             path = local_path(root, entry['archive'])
-            if path.suffix != '.md' or not path.is_file():
+            if path.suffix != '.md':
                 continue
-            for target in links_in(path.read_text()):
+            try:
+                original = (bundle['locations'].original_bytes(entry['archive'], entry['sha256']).decode()
+                            if 'locations' in bundle else path.read_text())
+            except (OSError, ValueError):
+                continue  # check_sources already reports any missing original bytes.
+            for target in links_in(original):
                 ref = resolve_reference(root, bundle, entry['archive'], target)
                 if ref['kind'] == 'local' and not ref['exists'] and 'recovery_git_spec' not in ref:
                     gaps.append({'source': entry['source'], 'target': target})
     total = sum(len(c['files']) for c in bundle['captures'])
+    git_only = sum(bool(bundle.get('locations') and e['archive'] in bundle['locations'].entries
+                        and not bundle['locations'].materialized(e['archive'], e['sha256'])
+                        and not local_path(root, e['archive']).is_file())
+                   for c in bundle['captures'] for e in c['files'])
     return {'ok': not errors, 'errors': errors, 'source_versions': total,
-            'materialized_source_versions': total - len(bundle.get('retirements', [])),
+            'materialized_source_versions': total - len(bundle.get('retirements', [])) - git_only,
+            'relocated_originals_recoverable_from_git': git_only,
             'git_recoverable_preexisting_retirements': len(bundle.get('retirements', [])),
             'catalog_entries': len(rows), 'catalogued_protocols': sum(len(r['protocols']) for r in rows),
             'current_state_owners': sum(r['tracking'] == 'current' for r in rows),
-            'live_documents': len(documents), 'valid_live_local_links': valid_links,
+            'live_documents': len(documents), 'retained_research_documents': len(all_documents) - len(documents),
+            'valid_live_local_links': valid_links,
             'unverified_external_live_handles': external,
             'frozen_exposure_records': len(bundle['exposure']['records']),
             'historical_unresolved_links': len(gaps), 'historical_gap_examples': gaps[:12],

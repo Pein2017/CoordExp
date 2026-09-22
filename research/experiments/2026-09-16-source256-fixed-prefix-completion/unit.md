@@ -47,9 +47,9 @@ SFT. A positive result would justify testing later refresh. No incremental value
 at the fixed dose closes this candidate at that dose, rather than triggering more
 labels, K, seeds or a KV/architecture search automatically.
 
-The [previous train256 SFT course](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-sft256-dev128-baseline/results.md)
+The [previous train256 SFT course](../2026-09-05-sft256-dev128-baseline/results.md)
 improved training IoU50 matches by 135 while losing 18 on dev128. Its endpoint is
-not a promoted starting adapter. The [retained K4 census](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-09-natural-candidate-opportunity/results.md)
+not a promoted starting adapter. The [retained K4 census](../2026-09-09-natural-candidate-opportunity/results.md)
 contains 32 strong-witness images, but selecting only them would change the
 population. All 256 images remain in the training and reporting denominator.
 

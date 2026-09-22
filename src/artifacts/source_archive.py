@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from src.artifacts.source_locations import SourceLocations
+
 
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -27,6 +29,7 @@ class SourceArchive:
 
     def __init__(self, manifest: Path):
         self.manifest = Path(manifest).resolve(strict=True)
+        self.locations = SourceLocations(Path(__file__).resolve().parents[2])
         value = json.loads(self.manifest.read_text())
         if value.get("schema") != "coordexp.output_source_archive.v1":
             raise ValueError("unsupported source-archive manifest")
@@ -51,11 +54,16 @@ class SourceArchive:
                             key=lambda item: (item["source"] != str(source), item["archive"]))
         for entry in candidates:
             path = Path(entry["archive"])
+            relocated = self.locations.materialized(path, expected_sha256)
+            if relocated is not None:
+                path = relocated
             if path.is_file() and not path.is_symlink() and file_sha256(path) == expected_sha256:
                 return {"source": str(source), "path": str(path),
                         "sha256": expected_sha256, "size_bytes": path.stat().st_size,
                         "resolution": "archived_exact_path" if entry["source"] == str(source)
-                        else "archived_identical_bytes", "manifest": str(self.manifest)}
+                        else "archived_identical_bytes", "manifest": str(self.manifest),
+                        **({"location_index": str(self.locations.index),
+                            "original_archive": entry["archive"]} if relocated is not None else {})}
         raise FileNotFoundError(f"no verified source bytes: {source} sha256={expected_sha256}")
 
     def verify_bindings(self, bindings: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
@@ -70,6 +78,7 @@ class SourceArchive:
     def verify_archive(self) -> dict[str, int]:
         for entry in self.files:
             path = Path(entry["archive"])
+            path = self.locations.materialized(path, entry["sha256"]) or path
             if path.is_symlink() or file_sha256(path) != entry["sha256"]:
                 raise ValueError(f"archived bytes changed: {path}")
         return {"verified_files": len(self.files)}

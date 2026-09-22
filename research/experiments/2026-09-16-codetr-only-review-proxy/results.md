@@ -37,7 +37,7 @@ context checks are an additional control, not the actual historical route.
 
 ## Research direction correction
 
-The [Human13 pure-CE result](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-human13-pure-ce-replay/results.md)
+The [Human13 pure-CE result](../2026-09-05-human13-pure-ce-replay/results.md)
 already demonstrated 392/392 at IoU80 and zero unmatched after 140 magnitude-only
 CE updates from Source. COCO22 adds only the narrower result of successful
 continuation to 11 additional images with full old-data replay. Its larger image

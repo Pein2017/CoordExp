@@ -41,7 +41,7 @@ Historical source/config handles include:
 
 - [`../history/superpowers/README.md`](../history/superpowers/README.md) for
   dated historical plans and handoffs;
-- [`../../openspec/changes/archive/`](../../openspec/changes/archive/) for
+- [`../../openspec/changes/archive/`](../../openspec/changes/archive) for
   one-time archived contract projects.
 
 Do not use an old Stage-2 document to infer current config schemas, backend

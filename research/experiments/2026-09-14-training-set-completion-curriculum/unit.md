@@ -7,7 +7,7 @@ the predecessor's user pause. The user subsequently directed the lead to continu
 implementation and coordination, preserving unrelated dirty changes. The versioned teacher, shared-loss integration and full paired batch are
 lead-accepted. Both final endpoints achieve scoped218 FN0/F1=1; see
 [the paired result](dual-start-results.md) for the preserved historical deficits. The prior accepted result remains historical
-evidence. The [preserved protocol](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md)
+evidence. The [preserved protocol](retained-unit-6f6b2bd4e0.md)
 retains its original population, conditions and receipts.
 
 The [preparation receipt](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-14-training-set-completion-curriculum/dual-start-coco80-preparation-v1/preparation.json)

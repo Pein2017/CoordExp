@@ -144,6 +144,7 @@ handoff/*
 
 # Receipt-bound hard links are generated locally, not a second source tree.
 /reference/retained-sources/runs/
+/reference/retained-sources/objects/
 
 # Python bytecode caches are always local and must never surface in Git state.
 **/__pycache__/

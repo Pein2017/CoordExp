@@ -21,7 +21,7 @@ Use this folder for stable repo policy and engineering conventions.
   - code and architecture style guidance
 - [UPSTREAM.md](UPSTREAM.md)
   - upstream dependencies and boundary rules
-- [upstream/](upstream/)
+- [upstream/](upstream)
   - focused upstream notes for Qwen-VL, ms-swift, FlashAttention, and the HF training ecosystem
 - [PORTING.md](PORTING.md)
   - porting notes and compatibility guidance
