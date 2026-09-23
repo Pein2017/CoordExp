@@ -173,6 +173,10 @@ The [accepted Lane A recovery](../experiments/2026-09-21-spatial-progress-recove
 
 The lead currently prefers a continuous spatial proximity/recency prior over a hard frontier as an explanation of this intervention response: recent box coordinates may bias the next-coordinate readout without representing which owners are covered. This is a mechanistic conjecture, not an established burst explanation. A matched same-axis noncrossing displacement is the missing discriminator: a selective discontinuity at the fixed candidate boundary would undermine the continuous-prior preference, while comparable distance-dependent responses without a crossing advantage would undermine the gate. No such successor is authorized here. The earlier Lane B support separation remains compatible with a defect in natural routing before candidate-conditioned visual grounding; it does not identify that defect or its training origin.
 
+## Local old-image improvement does not establish address-mediated burst repair
+
+The [accepted coarse address-readout pilot](../experiments/2026-09-22-address-readout-pilot/lead-results.md) improves annotation coverage/revisit proxies on its six development images but worsens fresh coverage and creates additional capped/invalid trajectories. Both aligned seeds also worsen held-out teacher coordinate calibration. Therefore this is a negative result for that intervention, not the discriminating result “calibration improved but bursts persisted.” No physical-owner adjudication was added, the old/fresh cohorts remain separate, and the original burst mechanism is still unidentified. The fixed pilot is closed without a seed, dose or escape-example extension.
+
 ## One hallucinated exit: opposing history/position effects and coordinate feedback
 
 The [accepted native history/position crossing](../experiments/2026-09-22-recurrence-position-history/results.md)
@@ -405,3 +409,7 @@ The eight existing synthesis units now own their original 223 source records. Th
 - [2026-06-22_formation_state_and_closeout](../experiments/2026-06-22_formation_state_and_closeout/sources.md): 24 source records.
 - [2026-06-23_25_ownership_and_prefix_denoising_bridge](../experiments/2026-06-23_25_ownership_and_prefix_denoising_bridge/sources.md): 3 source records.
 - [2026-06-26_27_case_studies_and_x1_y1_routes](../experiments/2026-06-26_27_case_studies_and_x1_y1_routes/sources.md): 17 source records.
+
+## Corrected codebook gate: partial geometry progress, no AP or recurrence rescue
+
+The [accepted corrected paired2048 order gate](../experiments/2026-09-23-codebook-paired2048-ordergate/lead-results.md) replaces the earlier mean-coordinate hinge surrogate for the intended token-level constraint. Early invalid spans fall from 567 to 40, while AP is 0.462946 for source, 0.448846 for early, and 0.446772 for late; recurrence remains unresolved. This is partial geometry progress, not owner recovery or a burst-mechanism result. The codebook branch is CLOSED, with no outstanding successor.
