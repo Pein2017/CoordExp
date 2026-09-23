@@ -173,6 +173,226 @@ The [accepted Lane A recovery](../experiments/2026-09-21-spatial-progress-recove
 
 The lead currently prefers a continuous spatial proximity/recency prior over a hard frontier as an explanation of this intervention response: recent box coordinates may bias the next-coordinate readout without representing which owners are covered. This is a mechanistic conjecture, not an established burst explanation. A matched same-axis noncrossing displacement is the missing discriminator: a selective discontinuity at the fixed candidate boundary would undermine the continuous-prior preference, while comparable distance-dependent responses without a crossing advantage would undermine the gate. No such successor is authorized here. The earlier Lane B support separation remains compatible with a defect in natural routing before candidate-conditioned visual grounding; it does not identify that defect or its training origin.
 
+## One hallucinated exit: opposing history/position effects and coordinate feedback
+
+The [accepted native history/position crossing](../experiments/2026-09-22-recurrence-position-history/results.md)
+uses one exposed mature untied+axis val:7511 state. Both crossed x2 choices follow
+the history package; advancing the current-prefix positions favors the repeated
+bin38 while adding the final contextual row favors999. Current-prefix position
+alone does not transport this exit. The interaction prevents a fixed additive
+history-plus-position readout from exactly describing these four cells.
+
+The [accepted written-row content contrast and coordinate split](../experiments/2026-09-22-recurrence-written-content/results.md)
+then hold length, positions, current prefix and mask fixed. Replacing past x2=38
+by999 favors current x2=999 on both tested y2 backgrounds. Replacing past y2=575
+by999 also favors current x2=999 on both x2 backgrounds. This admits a
+cross-coordinate numerical-feedback effect and rules out attributing the joint
+content effect solely to literal same-role repetition. It does not distinguish
+endpoint-token feedback from geometric compatibility or contextual retrieval;
+the tested changes have different numeric displacements. The signs fit a
+restricted copying account and oppose a symmetric inhibitory account only under
+their declared equal-strength/no-other-content-effect assumptions.
+
+The [accepted donor-tracking assay](../experiments/2026-09-22-recurrence-donor-tracking/results.md)
+now weakens the interpretation as selective amplification of a written identity.
+At row88 x2, prior x2/y2 edits using640/832 produce0/4 localized absolute donor
+amplification cells; neither axis passes matched two-donor transfer. Both x2
+edits switch the winner38 to999, predominantly accompanying strong loss of38
+support and broad redistribution. Both y2 edits retain38. This is not a
+calibrated comparison of axis strength because baseline values and displacements
+differ. Bound full-vocabulary readback also shows that the earlier y2=999 edit
+improves999/38 odds while lowering absolute P999; relative support is not absolute
+amplification.
+
+The [accepted location and native-exit investigation](../experiments/2026-09-22-recurrence-history-location/results.md)
+now directly tests that next contrast. Identical row/token counts produce very
+different effects at different historical locations. A source-token/downstream-
+history cache partition finds interaction, including a sign reversal of the
+near downstream-state effect conditional on source-token state; neither route
+alone preserves the full near-versus-older contrast.
+
+A separate final bridge returns to the actual native row89 exit, with no640
+edit. Masking the added repeated row reproduces the matched early-history/late-
+position control. Duplicating the preceding row's exact post-RoPE K/V into the
+added row is insufficient to reproduce999. Replacing only K returns the winner
+to38, while replacing only V with the specified preceding-row values retains999.
+Thus the tested natural transition is strongly changed through historical key
+state and attention weighting, rather than being explained by this exact
+cached-evidence duplication. That bridge left key contextual features and final
+rotary phase confounded; values are not generally declared irrelevant. All three
+stages are accepted and closed without a finer scan.
+
+The [accepted key/phase crossing and global clamp](../experiments/2026-09-22-recurrence-key-phase/results.md)
+resolve that local fork. With native V fixed, old pre-keys at new phase choose999
+and new pre-keys at old phase choose38. The two phase effects on z38-z999 are
+−0.76595/−0.76213, versus pre-key effects−0.00802/−0.01184. Both native anchors
+reproduce full logits exactly. Qualified all-layer attention decomposition then
+motivates a single clamp: fixing all six current-S Q/K/V at all28 layers to NN
+collapses the NN/OO contrast from+0.75411 to−0.01786 and both cells choose999.
+
+The strongest current local account is phase-conditioned historical attention
+followed by current-state propagation and renewed reading across layers. The
+final key rotation changes the initial attention computation; adaptive current-S
+Q/K/V is required to retain this particular categorical intervention effect
+under the joint clamp. This does not separate Q/K/V feedback components or
+identify natural mediation fractions. It is a within-forward result with fixed
+prefix tokens, not proof of the onset or maintenance of an entire autoregressive
+burst. Prediction of an unmodified held-out natural exit remains untested.
+
+The phase intervention changes relative age; it does not identify an absolute
+position clock. With fixed pre-Q/pre-K and static interleaved MRoPE, shifting
+all three text axes of both query and key by the same amount leaves their dot
+product unchanged. During a natural repeated row, the newest row and the
+current query both advance nine positions. Their direct relative phase stays
+fixed under those assumptions. Older/image anchors, the competing history
+pool and contextual Q/K/V can still change. The accepted one-row phase swap
+therefore cannot by itself explain the timing of the natural burst exit.
+
+The user's continued-loop grant led first to a [fixed cross-case directional
+test](../experiments/2026-09-22-recurrence-phase-transfer/results.md), which
+**failed** the advance prediction that old phase restores the repeated350 on
+train269858 row20 x1. Both old-phase cells choose591; both new-phase cells348.
+Thus phase sensitivity extends to this second exposed case, while a generic
+old-phase repetition-restoration rule does not. Pure old phase suppresses348
+and350 by roughly1.8/1.9 logits and leaves591's logit nearly unchanged;591 moves
+from rank48 to1 as its absolute probability rises. The decision is a competition
+among several candidates, not a binary repeat/exit switch.
+
+An all-layer fixed-query decomposition on val7511 finds a larger row-mass than
+within-row allocation response in355/448 layer-heads, all above reconstruction
+noise. This is descriptive and cannot attribute final-logit causality. The
+[accepted live-query mass/profile crossing](../experiments/2026-09-22-recurrence-attention-mass/results.md)
+on these same two states rejects the advance mass-following winner prediction.
+On val, either component changed alone reverses999 to38. On train, mixed rules
+choose592 and599, while the named591-versus348 margin remains strongly influenced
+by mass. Both components affect the adaptive multi-candidate competition; a
+larger fixed-query response norm does not imply global-winner sufficiency.
+These are head/query-wise log-normalizer rules, not one scalar gate or matched
+normalized attention probabilities across different live queries.
+
+The [accepted position-correct whole-row substitution](../experiments/2026-09-22-recurrence-positioned-duplicate/results.md)
+retains native999/348 in both cases using preceding-row pre-K at the newest
+row's phase and preceding-row V. This resolves the joint-cache gap: newly
+computed last-row K/V is not required for those categorical endpoints under
+this replacement. Val's fixed masked-row and old-phase duplicate controls both
+choose38, so correctly positioning the old contextual cache matters. This does
+not make older K/V context-free or explain why the native exit occurs then.
+
+The [accepted fixed-first-template test](../experiments/2026-09-22-recurrence-fixed-template/results.md)
+further shows that identical row tokens and a corrected final key phase do not
+make contextual cache states interchangeable. A penultimate-row donor retains
+999/348, whereas the first-row donor at the same last destination selects38/599.
+Applying that first template to all later repeats also selects38/599, but LAST
+already fails, so replacement extent is not identified as the cause. Layer0
+pre-K and V are exactly equal between first and last in both cases; later-layer
+source-state differences and their joint K/V effect remain unpartitioned.
+
+The present local computation is: historical contextual K is rotated relative
+to the current Q; the resulting scores alter both the row log-normalizer and
+within-row weights; weighted V changes the current residual, which changes
+subsequent Q/K/V and the final full-vocabulary competition. The accepted clamp
+supports the need for that adaptive within-forward route for its specific phase
+contrast. This does not identify the natural origin or duration of the burst.
+The subsequent [native trajectory assay](../experiments/2026-09-22-recurrence-native-trajectory/results.md)
+rejects its prespecified rapid geometric-settling description: val's27 active
+pre-K and V layers each retain69–74% of movement after the first15 of61
+transitions. Layer0 stays exactly constant in pre-Q/pre-K/V yet already changes
+its output across queries. Using accepted old templates and native phases, the
+conditional first-layer repeated-pool log-mass prediction matches all16 heads
+and62 nonempty query positions within4.60e-6. This is an explicit relative-age
+computation, not a final-winner or exit-time prediction. The upper trajectories
+also reverse direction; path length is neither monotonic accumulation nor
+causal importance. An entry transient alone does not describe the measured
+trajectory, but its possible decision importance remains unresolved.
+
+The [subsequent first-layer factorial](../experiments/2026-09-22-recurrence-first-layer-groups/results.md)
+separates fixed image/prompt/pre-repeat anchors aging relative to Q from growth
+of the repeated pool. With current-prefix scores fixed, their symmetric signed
+projections onto the row42→89 head-output displacement are0.566 and0.434.
+Both contribute substantially, with interaction norm0.216 versus net0.939.
+Actual native attention reconstruction error is8.70e-7. Head13 contains80.15%
+of squared net displacement, a posthoc geometric observation with no selected-
+head verdict. This geometric result alone does not identify final-logit effects.
+
+The [downstream whole-head intervention](../experiments/2026-09-22-recurrence-first-layer-readout/results.md)
+then preserves native/sham999 but restores38 under both mixed cells and joint-old00
+at the fixed row89 query. Only its layer0 o_proj input changes; all downstream
+computation remains native. Pool reversal has the larger margin effect(+0.165865
+versus anchor+0.041771), reversing the geometric contribution ranking. This
+connects first-layer state to the final local choice, with qualified full-vocabulary
+outcomes and exact companion/off-target controls. It still does not show that
+the late vector is sufficient in earlier downstream context, predict natural
+exit timing, or identify a physical recovery. Five model/vision calls, all jobs
+terminal.
+
+The [reverse-transfer test](../experiments/2026-09-22-recurrence-first-layer-reverse-transfer/results.md)
+then supplies the actual row89 layer0 output at row42, with all other native
+computation preserved. It retains38, shifting z38-z999 from1.901579 to1.780115;
+old-sham and companions are exactly unchanged. Root's advance retained38
+prediction passes. Thus the first-layer state influences the late choice but
+is not a portable exit signal at the earlier landmark. Downstream historical
+state and current-query phase remain confounded; nontransfer does not identify
+a distributed counter or prove many layers necessary. Separating those two
+factors under matched incoming state is the distinct unlaunched frontier. Three
+model/vision calls, all local jobs terminal; broad user authorization remains.
+
+The [matched-state downstream phase test](../experiments/2026-09-22-recurrence-downstream-query-phase/results.md)
+sets early layer1 input exactly to the late native state and co-rotates current
+Q/self-K in layers1..27 to late phase. It chooses579, falsifying root's retained38
+prediction and the competing999 prediction. P38 and P999 both decline despite
+a5.28328 shift in their log-odds toward999; this is a multi-candidate change.
+Self-score/norms and unchanged visible historical K/V qualify. Late incoming
+state plus current phase does not reproduce late999 on earlier memory, but
+neither does earlier memory preserve38. Current-row prefix keys retain early
+phase, so query-to-prefix role cues are disrupted even though self-score is
+preserved. The next distinct control restores only the five prefix-key phases
+for the target query while leaving earlier computation fixed. That control is
+unlaunched. Root repaired a vision-dispatch and composed-consumer boundary;
+three qualified plus one failed model/vision invocation, all local jobs terminal.
+
+The [target-query-only local-prefix control](../experiments/2026-09-22-recurrence-local-prefix-phase/results.md)
+now restores38: baseline and identity recomputation both remain579 with exactly
+equal full logits; aligning just five prefix K phases raises P38 from0.0000357
+to0.04952 and lowers P579 to0.00000539. Live prefix content, V, older memory and
+all other queries' attention outputs remain fixed at the replacement boundary.
+Late layer1 input still matches exactly. This supports intervention-induced local
+relative-phase disruption behind579; it does not identify native axis confusion.
+Even coherent late current/local phase plus late incoming state fails to port999
+to the earlier context. Remaining history differences include contextual local
+prefix content as well as the older pool, not just47 extra rows or a scalar count.
+The unit is closed with3 qualified model calls and a preserved0-forward failure.
+Root independently corrected stale post-enrichment artifact bindings without a
+GPU rerun. A source-bound145-image inventory finds9 repeat images/61 exact runs;
+future cross-image work must distinguish episode exits from eventual EOS and
+short2–5-row runs from long censored tails. No successor model job is active.
+
+The user adjudicated the repeated water-person and first long multi-owner
+rectangle as bad predictions; later valid kite/person output remains a separate
+endpoint. These probes concern one exposed numerical exit, with no physical-owner,
+population or training-origin claim. The donor assay and three-stage follow-up
+are closed; the user's authorization for autonomous research continuation remains
+in force.
+
+## Cross-image local-prefix content: influence without majority sufficiency
+
+The [three-image native-phase content assay](../experiments/2026-09-23-recurrence-local-prefix-content-transfer/results.md)
+changes only what the target query reads from its current row's prefix, replacing
+contextual K/V from the second exact repeated row at unchanged destination phase.
+Original native/identity winners801/85/159 become801/86/159. Thus1/3 restores the
+repeated coordinate, falsifying the predeclared at-least2/3 prediction. All27
+upper-layer replacements were nonzero; native controls and layer0/incoming-layer1
+identity qualify. This is conditional local influence on351017, not shared
+dominant-prefix control of these three native first differences.
+
+All3 repeat-versus-native margins move toward repetition, but this secondary
+movement does not rescue the categorical prediction. The positive351017 was
+initially close (native gap0.001596), whereas repeated197 on417044 remains rank3.
+Retained current-query state and older history are still alternatives; this
+assay does not distinguish them. No physical recovery, natural exit timing or
+training-origin claim follows. Close this branch without rescue scans. A useful
+next question must predict natural transitions prospectively, instead of adding
+another fixed-state sensitivity measurement; that successor is unlaunched.
+
 ## Retained selected-case source records
 
 The eight existing synthesis units now own their original 223 source records. This is provenance organization, not revalidation or mechanism promotion. Source proposals and historical running statuses do not authorize execution.
