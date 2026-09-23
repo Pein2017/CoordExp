@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import torch
@@ -12,6 +12,7 @@ import torch
 from src.common.errors import LossContractError
 from src.config.models import LossesConfig
 from src.losses.base_ce import BaseTokenCE
+from src.losses.conditional_order_gate import ConditionalOrderGateLoss, grouped_coordinate_atoms
 from src.losses.context import LossContext
 from src.losses.coord_gaussian_rps import CoordGaussianRPSLoss
 from src.losses.normalizers import (
@@ -115,12 +116,15 @@ class LossRunner:
     )
     coord_gaussian_rps_weight: float = 0.0
     coord_gaussian_rps: CoordGaussianRPSLoss | None = None
+    conditional_order_gate_weight: float = 0.0
+    conditional_order_gate: ConditionalOrderGateLoss | None = None
 
     def __post_init__(self) -> None:
         _validate_weight("base_ce", self.base_ce_weight)
         _validate_weight("token_type_gate", self.token_type_gate_weight)
         _validate_weight("raw_axis_validity_hinge", self.raw_axis_validity_hinge_weight)
         _validate_weight("coord_gaussian_rps", self.coord_gaussian_rps_weight)
+        _validate_weight("conditional_order_gate", self.conditional_order_gate_weight)
         _validate_token_type_groups(self.token_type_gate_groups)
         if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is None:
             raise LossContractError(
@@ -136,6 +140,12 @@ class LossRunner:
                 "raw_axis_validity_hinge weight requires a configured loss term",
                 code="loss.raw_axis_validity_hinge_missing_term",
                 context={"weight": self.raw_axis_validity_hinge_weight},
+            )
+        if self.conditional_order_gate_weight > 0.0 and self.conditional_order_gate is None:
+            raise LossContractError(
+                "conditional_order_gate weight requires a configured loss term",
+                code="loss.conditional_order_gate_missing_term",
+                context={"weight": self.conditional_order_gate_weight},
             )
 
     @classmethod
@@ -173,6 +183,11 @@ class LossRunner:
             ),
             coord_gaussian_rps_weight=coord_cfg.weight,
             coord_gaussian_rps=coord_term,
+            conditional_order_gate_weight=config.protected.conditional_order_gate.weight,
+            conditional_order_gate=(
+                ConditionalOrderGateLoss()
+                if config.protected.conditional_order_gate.weight > 0.0 else None
+            ),
         )
 
     def compute(self, contexts: Sequence[LossContext]) -> LossBundle:
@@ -201,6 +216,14 @@ class LossRunner:
                     contexts=checked_contexts,
                     weight=self.raw_axis_validity_hinge_weight,
                     term=self.raw_axis_validity_hinge,
+                )
+            )
+        if self.conditional_order_gate_weight > 0.0 and self.conditional_order_gate is not None:
+            terms_list.append(
+                _compute_raw_axis_validity_hinge_term(
+                    contexts=checked_contexts,
+                    weight=self.conditional_order_gate_weight,
+                    term=self.conditional_order_gate,
                 )
             )
         if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is not None:
@@ -285,6 +308,13 @@ class LossRunner:
             local_denominators["raw_axis_validity_hinge"] = (
                 _build_raw_axis_validity_hinge_denominator(token_sequences)
             )
+        if self.conditional_order_gate_weight > 0.0:
+            for sequence in token_sequences:
+                grouped_coordinate_atoms(sequence)
+            local_denominators["conditional_order_gate"] = replace(
+                _build_raw_axis_validity_hinge_denominator(token_sequences),
+                term_name="conditional_order_gate",
+            )
         if self.coord_gaussian_rps_weight > 0.0:
             local_denominators["coord_gaussian_rps"] = (
                 _build_denominator_from_token_sequences(
@@ -368,6 +398,24 @@ class LossRunner:
                     weight=self.raw_axis_validity_hinge_weight,
                     term=self.raw_axis_validity_hinge,
                     denominator=raw_axis_denominator,
+                    local_micro_step_index=local_micro_step_index,
+                    backend_gradient_scale=plan.backend_gradient_scale,
+                )
+            )
+        if self.conditional_order_gate_weight > 0.0:
+            denominator = plan.denominators.get("conditional_order_gate")
+            if not isinstance(denominator, RawAxisValidityHingeDenominator) or self.conditional_order_gate is None:
+                raise LossContractError(
+                    "enabled order gate lacks its planned denominator or term",
+                    code="loss.conditional_order_gate_missing_term",
+                    context={},
+                )
+            terms_list.append(
+                _compute_raw_axis_validity_hinge_contribution(
+                    context=context,
+                    weight=self.conditional_order_gate_weight,
+                    term=self.conditional_order_gate,
+                    denominator=denominator,
                     local_micro_step_index=local_micro_step_index,
                     backend_gradient_scale=plan.backend_gradient_scale,
                 )
@@ -458,7 +506,7 @@ class LossRunner:
             metrics[f"loss/{name}/segment_count"] = float(
                 denominator.get("eligible_segment_count", 0)
             )
-            if name == "raw_axis_validity_hinge":
+            if name in {"raw_axis_validity_hinge", "conditional_order_gate"}:
                 for count_name in (
                     "complete_box_count",
                     "incomplete_box_count",
@@ -466,6 +514,10 @@ class LossRunner:
                 ):
                     metrics[f"loss/{name}/{count_name}"] = float(
                         denominator.get(count_name, 0)
+                    )
+                if name == "conditional_order_gate":
+                    metrics[f"loss/{name}/participating_slot_count"] = float(
+                        2 * int(denominator.get("complete_box_count", 0))
                     )
         for name, value in plan.counts.items():
             metrics[name] = float(value)
@@ -508,7 +560,7 @@ def _compute_raw_axis_validity_hinge_term(
     *,
     contexts: tuple[LossContext, ...],
     weight: float,
-    term: RawAxisValidityHingeLoss,
+    term: RawAxisValidityHingeLoss | ConditionalOrderGateLoss,
 ) -> LossTermResult:
     results = tuple(term.per_segment_loss(context) for context in contexts)
     denominator = RawAxisValidityHingeDenominator(
@@ -559,7 +611,7 @@ def _compute_raw_axis_validity_hinge_contribution(
     *,
     context: LossContext,
     weight: float,
-    term: RawAxisValidityHingeLoss,
+    term: RawAxisValidityHingeLoss | ConditionalOrderGateLoss,
     denominator: RawAxisValidityHingeDenominator,
     local_micro_step_index: int,
     backend_gradient_scale: float,
@@ -1244,6 +1296,12 @@ def _merge_term_artifacts(
     for name in plan.denominators:
         term_items = terms_by_name.get(name, [])
         if not term_items:
+            if name == "conditional_order_gate":
+                raise LossContractError(
+                    "enabled order gate is absent from micro-step artifacts",
+                    code="loss.conditional_order_gate_missing_term",
+                    context={},
+                )
             continue
         selected_count = sum(int(item.get("selected_count", 0)) for item in term_items)
         weighted_loss = sum(float(item["weighted_loss"]) for item in term_items)
@@ -1263,7 +1321,7 @@ def _merge_term_artifacts(
             term_items=tuple(term_items),
             denominator=denominator,
         )
-        is_raw_axis = name == "raw_axis_validity_hinge"
+        is_raw_axis = name in {"raw_axis_validity_hinge", "conditional_order_gate"}
         if is_raw_axis:
             selected_count = int(denominator.get("complete_box_count", selected_count))
         merged.append(
@@ -1302,7 +1360,7 @@ def _merge_term_diagnostics(
         "denominator_scope": denominator["denominator_scope"],
         "context_count": denominator["context_count"],
     }
-    if name == "raw_axis_validity_hinge":
+    if name in {"raw_axis_validity_hinge", "conditional_order_gate"}:
         diagnostics.update(
             {
                 key: int(denominator.get(key, 0))
@@ -1316,6 +1374,8 @@ def _merge_term_diagnostics(
                 )
             }
         )
+        if name == "conditional_order_gate":
+            diagnostics["participating_slot_count"] = 2 * int(denominator.get("complete_box_count", 0))
     source_diagnostics = [
         dict(item.get("diagnostics", {}))
         for item in term_items
@@ -1508,6 +1568,10 @@ def _build_metrics(
             metrics[f"loss/{term.name}/zero_box_segment_count"] = float(
                 term.denominator.zero_box_segment_count
             )
+            if term.name == "conditional_order_gate":
+                metrics[f"loss/{term.name}/participating_slot_count"] = float(
+                    2 * term.denominator.complete_box_count
+                )
     for name, value in counts.items():
         metrics[name] = float(value)
     return metrics

@@ -16,6 +16,10 @@ from src.qwen.special_token_embeddings import SpecialTokenEmbeddingInstallReceip
 
 ADAPTER_GROUP_PREFIX = "adapter."
 TOKEN_EMBEDDINGS_GROUP = "token_embeddings"
+COORDINATE_CODEBOOK_GROUP = "coordinate_codebook"
+COORDINATE_CODEBOOK_PARAMETER = "coordinate_codebook.raw_gain"
+COORDINATE_CODEBOOK_PROJECTION_GROUP = "coordinate_codebook_projection"
+COORDINATE_CODEBOOK_PROJECTION_PARAMETER = "coordinate_codebook.projection.weight"
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,8 @@ def build_optimizer_group_plan(
             "adapter.vision": optimizer_config.groups.adapters.vision,
             "adapter.aligner": optimizer_config.groups.adapters.aligner,
             TOKEN_EMBEDDINGS_GROUP: optimizer_config.groups.token_embeddings,
+            COORDINATE_CODEBOOK_GROUP: optimizer_config.groups.coordinate_codebook,
+            COORDINATE_CODEBOOK_PROJECTION_GROUP: optimizer_config.groups.coordinate_codebook_projection,
         },
         adapter_receipt=adapter_receipt,
         special_token_receipt=special_token_receipt,
@@ -102,6 +108,8 @@ def build_optimizer_group_plan_from_groups(
         "adapter.vision",
         "adapter.aligner",
         TOKEN_EMBEDDINGS_GROUP,
+        COORDINATE_CODEBOOK_GROUP,
+        COORDINATE_CODEBOOK_PROJECTION_GROUP,
     )
     unknown_groups = set(groups) - set(group_order)
     if unknown_groups:
@@ -128,6 +136,20 @@ def build_optimizer_group_plan_from_groups(
         _match_token_embedding_parameters(
             group_names_by_parameter,
             special_token_receipt=special_token_receipt,
+        )
+    _match_coordinate_codebook_parameter(
+        group_names_by_parameter,
+        group_config=groups.get(COORDINATE_CODEBOOK_GROUP),
+    )
+    if COORDINATE_CODEBOOK_PROJECTION_PARAMETER in group_names_by_parameter:
+        if groups.get(COORDINATE_CODEBOOK_PROJECTION_GROUP) is None:
+            raise RuntimeContractError(
+                "coordinate-codebook projection requires an explicit optimizer group",
+                code="optimizer.group_missing",
+                context={"group_name": COORDINATE_CODEBOOK_PROJECTION_GROUP},
+            )
+        group_names_by_parameter[COORDINATE_CODEBOOK_PROJECTION_PARAMETER].append(
+            COORDINATE_CODEBOOK_PROJECTION_GROUP
         )
 
     for parameter_name, group_names in group_names_by_parameter.items():
@@ -238,6 +260,24 @@ def _match_token_embedding_parameters(
                 },
             )
         group_names_by_parameter[parameter_name].append(TOKEN_EMBEDDINGS_GROUP)
+
+
+def _match_coordinate_codebook_parameter(
+    group_names_by_parameter: dict[str, list[str]],
+    *,
+    group_config: OptimizerGroupConfig | None,
+) -> None:
+    if COORDINATE_CODEBOOK_PARAMETER not in group_names_by_parameter:
+        return
+    if group_config is None:
+        raise RuntimeContractError(
+            "coordinate-codebook raw gain requires an explicit optimizer group",
+            code="optimizer.group_missing",
+            context={"group_name": COORDINATE_CODEBOOK_GROUP},
+        )
+    group_names_by_parameter[COORDINATE_CODEBOOK_PARAMETER].append(
+        COORDINATE_CODEBOOK_GROUP
+    )
 
 
 def _optimizer_group_config(

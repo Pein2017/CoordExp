@@ -336,6 +336,7 @@ def load_rank_micro_steps_from_cache(
     schedule: ResolvedStepSchedule,
     rank: int,
     world_size: int,
+    shuffle_seed: int | None = None,
 ) -> tuple[SupervisedMicroStep, ...]:
     if world_size <= 0:
         raise ValueError("world_size must be positive")
@@ -343,6 +344,10 @@ def load_rank_micro_steps_from_cache(
         raise ValueError("rank must be inside world_size")
     if schedule.runtime_batch.world_size != world_size:
         raise ValueError("world_size must match schedule runtime_batch")
+    if shuffle_seed is not None and (
+        isinstance(shuffle_seed, bool) or not isinstance(shuffle_seed, int)
+    ):
+        raise ValueError("shuffle_seed must be an integer or None")
     try:
         root = Path(cache_dir)
         manifest = _load_validated_manifest(
@@ -354,6 +359,7 @@ def load_rank_micro_steps_from_cache(
             rank=rank,
             world_size=world_size,
             micro_step_count=micro_step_count,
+            shuffle_seed=shuffle_seed,
         )
         required = set(indices)
         selected: dict[int, SupervisedMicroStep] = {}
@@ -393,14 +399,31 @@ def _rank_local_pack_indices(
     rank: int,
     world_size: int,
     micro_step_count: int,
+    shuffle_seed: int | None = None,
 ) -> tuple[int, ...]:
     if micro_step_count <= 0:
         raise ValueError("micro_step_count must be positive")
+    if shuffle_seed is not None and (
+        isinstance(shuffle_seed, bool) or not isinstance(shuffle_seed, int)
+    ):
+        raise ValueError("shuffle_seed must be an integer or None")
     local_count = (
         schedule.resolved_max_steps
         * schedule.runtime_batch.resolved_grad_accum_steps
     )
     indices: list[int] = []
+    permutations: dict[int, torch.Tensor] = {}
+
+    def shuffled_index(global_index: int) -> int:
+        epoch, offset = divmod(global_index, micro_step_count)
+        permutation = permutations.get(epoch)
+        if permutation is None:
+            generator = torch.Generator(device="cpu")
+            generator.manual_seed(int(shuffle_seed) + epoch)
+            permutation = torch.randperm(micro_step_count, generator=generator)
+            permutations[epoch] = permutation
+        return int(permutation[offset])
+
     for local_index in range(local_count):
         planned_step_index = (
             local_index // schedule.runtime_batch.resolved_grad_accum_steps
@@ -413,7 +436,11 @@ def _rank_local_pack_indices(
             + local_accum_index * world_size
             + rank
         )
-        indices.append(global_micro_step_index % micro_step_count)
+        indices.append(
+            shuffled_index(global_micro_step_index)
+            if shuffle_seed is not None
+            else global_micro_step_index % micro_step_count
+        )
     return tuple(indices)
 
 

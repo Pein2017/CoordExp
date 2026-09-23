@@ -97,6 +97,7 @@ class InferTemplateConfig(StrictConfigModel):
 class InferHfBackendOptions(StrictConfigModel):
     attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
     patch_embed_linearization: Literal["enabled", "disabled"]
+    adapter_runtime: Literal["mixin", "live_promoted"] = "mixin"
 
 
 class InferVllmBackendOptions(StrictConfigModel):

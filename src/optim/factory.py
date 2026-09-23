@@ -7,7 +7,7 @@ import math
 from typing import Any
 
 import torch
-from transformers import get_cosine_schedule_with_warmup
+from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
 
 from src.config.models import OptimizerConfig
 from src.optim.parameter_groups import OptimizerGroupPlan
@@ -56,12 +56,18 @@ def build_optimizer_and_scheduler(
         eps=config.epsilon,
         **config.kwargs,
     )
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=scheduler_plan.resolved_warmup_steps,
-        num_training_steps=total_training_steps,
-        **config.scheduler.kwargs,
-    )
+    if config.scheduler.name == "constant_with_warmup":
+        scheduler = get_constant_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=scheduler_plan.resolved_warmup_steps,
+        )
+    else:
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=scheduler_plan.resolved_warmup_steps,
+            num_training_steps=total_training_steps,
+            **config.scheduler.kwargs,
+        )
     return optimizer, scheduler
 
 
@@ -72,7 +78,7 @@ def build_scheduler_plan(
 ) -> SchedulerPlan:
     if total_training_steps <= 0:
         raise ValueError("total_training_steps must be positive")
-    if config.scheduler.name != "cosine_with_warmup":
+    if config.scheduler.name not in {"cosine_with_warmup", "constant_with_warmup"}:
         raise ValueError(f"unsupported scheduler: {config.scheduler.name}")
     return SchedulerPlan(
         name=config.scheduler.name,

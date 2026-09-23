@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import gc
+import json
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -809,16 +810,78 @@ def _load_hf_components(launch: BackendLaunch) -> Any:
     )
     adapter = _namespace_or_none(launch.adapter)
     embedding_delta = _namespace_or_none(launch.embedding_delta)
-    adapter_receipt = (
+    adapter_runtime = options.get("adapter_runtime", "mixin")
+    if adapter_runtime not in {"mixin", "live_promoted"}:
+        raise ValueError(f"unsupported adapter runtime: {adapter_runtime}")
+    if adapter is not None and adapter_runtime == "live_promoted":
+        from src.adapters.dora import load_live_dora_adapter
+        model, adapter_receipt = load_live_dora_adapter(
+            qwen.model, adapter_path=Path(adapter.path),
+            base_model_path=qwen.base_model_path, adapter_name=adapter.name)
+        qwen = replace(qwen, model=model)
+    else:
+        adapter_receipt = (
         attach_dora_adapter(qwen.model, adapter_path=adapter.path,
                             base_model_path=qwen.base_model_path, adapter_name=adapter.name)
         if adapter is not None else None
-    )
-    embedding_delta_receipt = (
-        attach_embedding_delta(delta_path=embedding_delta.path, qwen=qwen,
-                               source_gate_root=getattr(embedding_delta, "source_gate_root", None))
-        if embedding_delta is not None else None
-    )
+        )
+    embedding_delta_receipt = None
+    if embedding_delta is not None:
+        payload_path = Path(embedding_delta.path)
+        metadata_path = (payload_path if payload_path.suffix == ".json" else
+                         (payload_path if payload_path.is_dir() else payload_path.parent)
+                         / "special_token_embeddings.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("tie_word_embeddings") is False:
+            from src.qwen.untied_embeddings import load_inference_embedding_delta
+            embedding_delta_receipt = load_inference_embedding_delta(
+                config=SimpleNamespace(embedding_delta=embedding_delta), qwen=qwen,
+            )
+        else:
+            embedding_delta_receipt = attach_embedding_delta(
+                delta_path=embedding_delta.path, qwen=qwen,
+                source_gate_root=getattr(embedding_delta, "source_gate_root", None),
+            )
+    codebook_path = options.get("coordinate_codebook_path")
+    if adapter is not None:
+        checkpoint_root = Path(adapter.path).resolve().parent
+        composition_path = checkpoint_root / "model_composition.json"
+        if composition_path.is_file():
+            composition = json.loads(composition_path.read_text(encoding="utf-8"))
+            if composition != {"schema": 1, "coordinate_codebook": "coordinate_codebook",
+                               "untied_selected_rows": True}:
+                raise RuntimeContractError(
+                    "unsupported checkpoint model composition",
+                    code="hf_backend.checkpoint_composition",
+                )
+            required_path = checkpoint_root / "coordinate_codebook"
+            delta_directory = None if embedding_delta is None else Path(embedding_delta.path).resolve()
+            if delta_directory is not None and delta_directory.is_file():
+                delta_directory = delta_directory.parent
+            if delta_directory != checkpoint_root / "special_token_embeddings":
+                raise RuntimeContractError(
+                    "checkpoint composition requires its own selected embedding payload",
+                    code="hf_backend.checkpoint_composition",
+                )
+            if codebook_path is not None and Path(str(codebook_path)).resolve() != required_path:
+                raise RuntimeContractError(
+                    "codebook path differs from the checkpoint composition",
+                    code="hf_backend.checkpoint_composition",
+                )
+            codebook_path = required_path
+    if codebook_path is not None:
+        from src.qwen.coordinate_codebook import (
+            install_coordinate_codebook, load_coordinate_codebook,
+        )
+        codebook_metadata = json.loads(
+            (Path(str(codebook_path)) / "coordinate_codebook.json").read_text(encoding="utf-8")
+        )
+        install_coordinate_codebook(
+            qwen.model, qwen.token_identity.coordinate_token_ids, initial_gain=0.05,
+            mode=codebook_metadata.get("mode", "late_masked_center"),
+            projection_seed=codebook_metadata.get("projection_seed", 1729),
+        )
+        load_coordinate_codebook(qwen.model, Path(str(codebook_path)))
     return SimpleNamespace(
         qwen=qwen,
         adapter_receipt=adapter_receipt,

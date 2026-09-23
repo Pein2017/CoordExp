@@ -355,6 +355,12 @@ def _exact_surface_groups(
         if group.group_name == "adapter.language"
         for name in group.parameter_names
     )
+    coordinate_codebook = tuple(
+        name
+        for group in optimizer_group_plan.groups
+        if group.group_name in {"coordinate_codebook", "coordinate_codebook_projection"}
+        for name in group.parameter_names
+    )
     delta_names = frozenset(
         ()
         if special_token_receipt is None
@@ -397,4 +403,5 @@ def _exact_surface_groups(
         "frozen_vision": group(frozen_vision),
         "frozen_aligner": group(frozen_aligner),
         "frozen_selected_token_delta": group(frozen_delta),
+        "trainable_coordinate_codebook": group(coordinate_codebook),
     }

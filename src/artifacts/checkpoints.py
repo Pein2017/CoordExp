@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import shutil
 import uuid
 from collections.abc import Mapping
@@ -19,6 +21,7 @@ from src.qwen.special_token_embeddings import (
     SpecialTokenEmbeddingInstallResult,
     save_special_token_embedding_deltas,
 )
+from src.training.resume import STATE_FILE, save_training_state
 
 
 _MAX_COLLECTIVE_ERROR_CHARS = 1024
@@ -55,6 +58,7 @@ class CheckpointWriter:
         run_writer: RunWriter | None = None,
         is_final: bool = False,
         best_candidate: Mapping[str, Any] | None = None,
+        training_state: Mapping[str, Any] | None = None,
     ) -> CheckpointWriteResult:
         """Save a step atomically and synchronize one bounded outcome to all ranks."""
         if isinstance(step, bool) or not isinstance(step, int) or step <= 0:
@@ -76,6 +80,7 @@ class CheckpointWriter:
         final_updated = False
         best_updated = False
 
+        rank_states = _gather_training_states(accelerator, training_state)
         accelerator.wait_for_everyone()
         if is_main:
             alias_backups = _capture_aliases(checkpoints_dir)
@@ -106,13 +111,39 @@ class CheckpointWriter:
                 _validate_adapter_payload(adapter_dir)
                 package_model_card(adapter_dir)
                 if special_token_result is not None:
-                    save_special_token_embedding_deltas(
+                    embedding_saver = save_special_token_embedding_deltas
+                    if not getattr(special_token_result.receipt, "tie_word_embeddings", True):
+                        from src.qwen.untied_embeddings import (
+                            save_special_token_embedding_deltas as embedding_saver,
+                        )
+                    embedding_saver(
                         special_token_result,
                         staging_dir / "special_token_embeddings",
                         base_model_path=base_model_path,
                         base_config_sha256=base_config_sha256,
                         tokenizer_sha256=tokenizer_sha256,
                     )
+                if getattr(unwrapped, "coordinate_codebook", None) is not None:
+                    from src.qwen.coordinate_codebook import save_coordinate_codebook
+                    save_coordinate_codebook(unwrapped, staging_dir / "coordinate_codebook")
+                    _write_model_composition_marker(
+                        staging_dir / "model_composition.json",
+                        untied_selected_rows=(
+                            special_token_result is not None
+                            and not getattr(
+                                special_token_result.receipt,
+                                "tie_word_embeddings",
+                                True,
+                            )
+                        ),
+                    )
+                if training_state is not None:
+                    state_to_write = dict(training_state)
+                    state_to_write["rank_rngs"] = rank_states
+                    state_to_write["model_payloads"] = _model_payload_hashes(
+                        staging_dir
+                    )
+                    save_training_state(staging_dir / STATE_FILE, state_to_write)
                 os.replace(staging_dir, checkpoint_dir)
                 committed_this_call = True
                 _fsync_directory(checkpoints_dir)
@@ -159,6 +190,82 @@ class CheckpointWriter:
             final_updated=final_updated if is_main else False,
             best_updated=best_updated if is_main else False,
         )
+
+
+def _gather_training_states(
+    accelerator: Any, training_state: Mapping[str, Any] | None
+) -> list[dict[str, Any]] | None:
+    if training_state is None:
+        return None
+    world_size = int(getattr(accelerator, "num_processes", 1))
+    rng = training_state.get("rng")
+    if not isinstance(rng, Mapping):
+        raise ArtifactContractError(
+            "resume checkpoint state must contain rank-local RNG state",
+            code="checkpoint.resume_rng_missing",
+        )
+    if world_size == 1:
+        return [{"rng": dict(rng)}]
+    # accelerate.gather_object flattens nested lists after all_gather_object;
+    # gather this tiny list only, never the optimizer tensors.
+    local = [{"rng": dict(rng)}]
+    gather = getattr(accelerator, "gather_object", None)
+    if callable(gather):
+        gathered = gather(local)
+    else:
+        try:
+            from accelerate.utils import gather_object
+
+            gathered = gather_object(local)
+        except Exception as exc:
+            raise ArtifactContractError(
+                "multi-rank resume requires object gathering support",
+                code="checkpoint.resume_gather_unavailable",
+                cause=exc,
+            ) from exc
+    if not isinstance(gathered, (list, tuple)) or len(gathered) != world_size:
+        raise ArtifactContractError(
+            "multi-rank resume state gather returned the wrong number of ranks",
+            code="checkpoint.resume_gather_invalid",
+            context={"expected": world_size, "observed": len(gathered) if isinstance(gathered, (list, tuple)) else None},
+        )
+    if any(
+        not isinstance(item, Mapping) or not isinstance(item.get("rng"), Mapping)
+        for item in gathered
+    ):
+        raise ArtifactContractError(
+            "multi-rank resume state gather returned malformed RNG state",
+            code="checkpoint.resume_gather_invalid",
+        )
+    return [dict(item) for item in gathered]
+
+
+def _write_model_composition_marker(path: Path, *, untied_selected_rows: bool) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "coordinate_codebook": "coordinate_codebook",
+                "untied_selected_rows": bool(untied_selected_rows),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _model_payload_hashes(root: Path) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.name == STATE_FILE:
+            continue
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        payload[str(path.relative_to(root))] = digest.hexdigest()
+    return payload
 
 
 def _validate_adapter_payload(adapter_dir: Path) -> None:

@@ -86,6 +86,52 @@ def test_optimizer_group_plan_requires_explicit_lr_for_trainable_tower() -> None
     assert exc_info.value.context["group_name"] == "adapter.language"
 
 
+def test_optimizer_group_plan_matches_only_the_concrete_codebook_gain() -> None:
+    model = FakeTrainableSurface(coordinate_codebook=True)
+    plan = build_optimizer_group_plan(
+        model,
+        _optimizer_config(coordinate_codebook=_group(lr=1.0e-3)),
+        adapter_receipt=None,
+        special_token_receipt=None,
+    )
+    assert plan.groups[0].group_name == "coordinate_codebook"
+    assert plan.groups[0].parameter_names == ("coordinate_codebook.raw_gain",)
+
+
+def test_early_codebook_projection_has_its_own_explicit_lr() -> None:
+    model = FakeTrainableSurface(coordinate_codebook=True)
+    model.coordinate_codebook.projection = nn.Linear(8, 4, bias=False)
+    with pytest.raises(RuntimeContractError, match="coordinate-codebook projection"):
+        build_optimizer_group_plan(
+            model, _optimizer_config(coordinate_codebook=_group(lr=1.0e-3)),
+            adapter_receipt=None, special_token_receipt=None,
+        )
+    config = _optimizer_config(
+        coordinate_codebook=_group(lr=1.0e-3),
+        coordinate_codebook_projection=_group(lr=2.0e-5),
+    )
+    plan = build_optimizer_group_plan(
+        model, config, adapter_receipt=None, special_token_receipt=None,
+    )
+    groups = {group.group_name: group for group in plan.groups}
+    assert groups["coordinate_codebook"].parameter_names == ("coordinate_codebook.raw_gain",)
+    assert groups["coordinate_codebook_projection"].parameter_names == ("coordinate_codebook.projection.weight",)
+    assert groups["coordinate_codebook_projection"].lr == 2.0e-5
+
+
+def test_optimizer_group_plan_fails_closed_when_codebook_group_is_omitted() -> None:
+    model = FakeTrainableSurface(coordinate_codebook=True)
+    with pytest.raises(RuntimeContractError) as exc_info:
+        build_optimizer_group_plan(
+            model,
+            _optimizer_config(),
+            adapter_receipt=None,
+            special_token_receipt=None,
+        )
+    assert exc_info.value.code == "optimizer.group_missing"
+    assert exc_info.value.context["group_name"] == "coordinate_codebook"
+
+
 def test_optimizer_group_plan_rejects_unmatched_trainable_base_weight() -> None:
     model = FakeTrainableSurface(
         adapter_targets=("model.language_model.q_proj",),
@@ -191,6 +237,7 @@ class FakeTrainableSurface(nn.Module):
         *,
         adapter_targets: tuple[str, ...] = (),
         token_delta: bool = False,
+        coordinate_codebook: bool = False,
         extra_trainable: bool = False,
     ) -> None:
         super().__init__()
@@ -202,6 +249,9 @@ class FakeTrainableSurface(nn.Module):
         if token_delta:
             self.embed_tokens = nn.Module()
             self.embed_tokens.shared_embed_delta = nn.Parameter(torch.zeros(()))
+        if coordinate_codebook:
+            self.coordinate_codebook = nn.Module()
+            self.coordinate_codebook.raw_gain = nn.Parameter(torch.zeros(()))
         if extra_trainable:
             self.extra_weight = nn.Parameter(torch.ones(()))
 
@@ -287,6 +337,8 @@ def _optimizer_config(
     vision: OptimizerGroupConfig | None = None,
     aligner: OptimizerGroupConfig | None = None,
     token_embeddings: OptimizerGroupConfig | None = None,
+    coordinate_codebook: OptimizerGroupConfig | None = None,
+    coordinate_codebook_projection: OptimizerGroupConfig | None = None,
 ) -> OptimizerConfig:
     return OptimizerConfig(
         name="adamw_torch",
@@ -299,6 +351,8 @@ def _optimizer_config(
                 aligner=aligner,
             ),
             token_embeddings=token_embeddings or _group(lr=5.0e-4),
+            coordinate_codebook=coordinate_codebook,
+            coordinate_codebook_projection=coordinate_codebook_projection,
         ),
         scheduler=SchedulerConfig(name="cosine_with_warmup", warmup_ratio=0.03),
     )

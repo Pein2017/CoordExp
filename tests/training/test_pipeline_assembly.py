@@ -474,14 +474,34 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     dataset.path.write_text("{}\n")
     config = SimpleNamespace(
         runtime=SimpleNamespace(seed=7),
-        training=SimpleNamespace(precision="no", max_grad_norm=1.0),
-        model=SimpleNamespace(special_token_embeddings=object()),
-        adapter=object(), template=object(), losses=object(), optimizer=object(),
-        data=SimpleNamespace(train=dataset, eval=SimpleNamespace(path=dataset.path, sample_limit=2, model_dump=lambda **kwargs: {"path": str(dataset.path), "sample_limit": 2})),
+        training=SimpleNamespace(
+            precision="no", max_grad_norm=1.0, resume_from_checkpoint=None
+        ),
+        model=SimpleNamespace(
+            special_token_embeddings=SimpleNamespace(tie_word_embeddings=True),
+            coordinate_codebook=None,
+        ),
+        adapter=object(),
+        template=object(),
+        losses=object(),
+        optimizer=SimpleNamespace(model_dump=lambda **kwargs: {}),
+        data=SimpleNamespace(
+            train=dataset,
+            train_order="source_order",
+            eval=SimpleNamespace(
+                path=dataset.path,
+                sample_limit=2,
+                model_dump=lambda **kwargs: {
+                    "path": str(dataset.path),
+                    "sample_limit": 2,
+                },
+            ),
+        ),
         checkpoint=SimpleNamespace(save_final=False),
     )
+    model = SimpleNamespace(named_modules=lambda: ())
     components = SimpleNamespace(
-        model=object(), token_identity=SimpleNamespace(tokenizer_vocab_size=10),
+        model=model, token_identity=SimpleNamespace(tokenizer_vocab_size=10),
         tokenizer=object(), base_model_path=tmp_path / "model",
         base_config_sha256="base", tokenizer_sha256="tokenizer",
         processor=SimpleNamespace(image_processor=object()),
@@ -513,7 +533,20 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "resolve_qwen_runtime_controls", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_default_adapter_source_gate_evidence", lambda root: object())
     monkeypatch.setattr(pipeline, "build_adapter_setup_plan", lambda *args, **kwargs: SimpleNamespace(mode="fresh"))
-    monkeypatch.setattr(pipeline, "setup_dora_adapter", lambda model, plan: SimpleNamespace(model=model, receipt=SimpleNamespace(adapter_name="default")))
+    monkeypatch.setattr(
+        pipeline,
+        "setup_dora_adapter",
+        lambda model, plan: SimpleNamespace(
+            model=model,
+            receipt=SimpleNamespace(
+                adapter_name="default",
+                adapter_type="dora",
+                target_discovery=SimpleNamespace(
+                    target_policy="test", target_towers=()
+                ),
+            ),
+        ),
+    )
     monkeypatch.setattr(pipeline, "build_default_special_token_selection", lambda *args: object())
     monkeypatch.setattr(pipeline, "load_default_special_token_embedding_source_gate_evidence", lambda root: object())
     monkeypatch.setattr(pipeline, "install_special_token_embedding_deltas", lambda model, selection, source_gate: SimpleNamespace(model=model, receipt=object()))
@@ -525,11 +558,19 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "_attach_image_processors_to_micro_steps", lambda steps, **kwargs: tuple(steps))
     monkeypatch.setattr(pipeline, "_apply_fa2_branch_proof_policy", lambda steps, config: tuple(steps))
     monkeypatch.setattr(pipeline.LossRunner, "from_config", lambda config: object())
-    monkeypatch.setattr(pipeline, "build_optimizer_group_plan", lambda *args, **kwargs: object())
-    monkeypatch.setattr(pipeline, "build_scheduler_plan", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        pipeline,
+        "build_optimizer_group_plan",
+        lambda *args, **kwargs: SimpleNamespace(to_artifact_dict=lambda: {}),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "build_scheduler_plan",
+        lambda *args, **kwargs: SimpleNamespace(to_artifact_dict=lambda: {}),
+    )
     monkeypatch.setattr(pipeline, "build_optimizer_and_scheduler", lambda *args, **kwargs: (object(), object()))
     monkeypatch.setattr(pipeline, "build_trainable_surface_receipt", lambda *args, **kwargs: object())
-    runtime = SimpleNamespace(model=object(), accelerator=_Accelerator(), is_main_process=True, world_size=1)
+    runtime = SimpleNamespace(model=model, accelerator=_Accelerator(), is_main_process=True, world_size=1)
     monkeypatch.setattr(pipeline, "TrainRuntime", lambda **kwargs: runtime)
     monkeypatch.setattr(
         pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache

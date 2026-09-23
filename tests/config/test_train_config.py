@@ -700,6 +700,23 @@ def test_active_profile_semantic_digest_detects_non_allowlisted_drift(
     assert mismatches[path]["actual"] != expected
 
 
+def test_active_profile_semantic_digest_keeps_nondefault_new_fields_visible() -> None:
+    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
+    path, expected = next(iter(baseline["profiles"].items()))
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+
+    _set_nested(
+        payload,
+        "model.special_token_embeddings.tie_word_embeddings",
+        False,
+    )
+
+    mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
+    assert set(mismatches) == {path}
+    assert mismatches[path]["expected"] == expected
+    assert mismatches[path]["actual"] != expected
+
+
 @pytest.mark.parametrize(
     ("field_path", "value"),
     [
@@ -973,6 +990,21 @@ def _remove_infrastructure_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
 def _active_profile_semantic_digest(payload: dict[str, Any]) -> str:
     normalized = _remove_infrastructure_allowlist(payload)
     resolved_mapping = TrainConfig.model_validate(normalized).model_dump(mode="json")
+
+    # These fields were added after the frozen profile baseline. Project away
+    # only their legacy-neutral defaults so the digest continues to represent
+    # historical semantics; explicit non-neutral values remain visible.
+    special_tokens = resolved_mapping["model"]["special_token_embeddings"]
+    if special_tokens.get("tie_word_embeddings") is True:
+        special_tokens.pop("tie_word_embeddings")
+    if resolved_mapping["model"].get("coordinate_codebook") is None:
+        resolved_mapping["model"].pop("coordinate_codebook", None)
+    if resolved_mapping["training"].get("resume_from_checkpoint") is None:
+        resolved_mapping["training"].pop("resume_from_checkpoint", None)
+    optimizer_groups = resolved_mapping["optimizer"]["groups"]
+    if optimizer_groups.get("coordinate_codebook") is None:
+        optimizer_groups.pop("coordinate_codebook", None)
+
     return sha256_json(resolved_mapping)
 
 

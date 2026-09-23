@@ -63,6 +63,24 @@ def test_scheduler_plan_records_resolved_warmup_steps() -> None:
     assert explicit_plan.resolved_warmup_steps == 3
 
 
+def test_optimizer_factory_supports_constant_with_warmup() -> None:
+    parameter = torch.nn.Parameter(torch.tensor([1.0]))
+    plan = OptimizerGroupPlan(
+        groups=(OptimizerGroupAssignment("coordinate_codebook", 1.0e-3, 0.0, ("raw_gain",)),),
+        parameters_by_name={"raw_gain": parameter},
+    )
+    config = _optimizer_config(warmup_steps=2)
+    config = config.model_copy(update={"scheduler": SchedulerConfig(name="constant_with_warmup", warmup_steps=2)})
+    optimizer, scheduler = build_optimizer_and_scheduler(config, plan, total_training_steps=5)
+    optimizer.step(); scheduler.step()
+    first = optimizer.param_groups[0]["lr"]
+    optimizer.step(); scheduler.step()
+    second = optimizer.param_groups[0]["lr"]
+    optimizer.step(); scheduler.step()
+    assert second > first
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(second)
+
+
 def test_optimizer_factory_rejects_empty_group_plan() -> None:
     with pytest.raises(ValueError, match="at least one"):
         build_optimizer_and_scheduler(

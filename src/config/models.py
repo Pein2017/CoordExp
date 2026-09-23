@@ -57,6 +57,14 @@ class SpecialTokenEmbeddingGroupsConfig(StrictConfigModel):
 
 class SpecialTokenEmbeddingsConfig(StrictConfigModel):
     groups: SpecialTokenEmbeddingGroupsConfig
+    tie_word_embeddings: bool = True
+
+
+class CoordinateCodebookConfig(StrictConfigModel):
+    initial_gain: float = Field(gt=0.0, allow_inf_nan=False)
+    checkpoint_path: str | None = None
+    mode: Literal["late_masked_center", "early_patch_edges"] = "late_masked_center"
+    projection_seed: int = 1729
 
 
 class QwenRuntimePatchesConfig(StrictConfigModel):
@@ -72,6 +80,7 @@ class ModelConfig(StrictConfigModel):
     logits_memory_budget_bytes: int = Field(gt=0)
     processor: ProcessorConfig
     special_token_embeddings: SpecialTokenEmbeddingsConfig
+    coordinate_codebook: CoordinateCodebookConfig | None = None
     runtime_patches: QwenRuntimePatchesConfig = Field(
         default_factory=QwenRuntimePatchesConfig
     )
@@ -206,7 +215,7 @@ class DataAugmentationConfig(StrictConfigModel):
 class DataConfig(StrictConfigModel):
     train: DatasetSplitConfig | None = None
     eval: DatasetSplitConfig | None = None
-    train_order: Literal["source_order"] = "source_order"
+    train_order: Literal["source_order", "seeded_shuffle"] = "source_order"
     augmentation: DataAugmentationConfig = Field(default_factory=DataAugmentationConfig)
 
 
@@ -291,6 +300,12 @@ class RawAxisValidityHingeLossConfig(WeightedLossConfig):
     )
 
 
+class ConditionalOrderGateLossConfig(WeightedLossConfig):
+    """Explicit opt-in; historical hinge configurations keep their meaning."""
+
+    weight: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+
+
 class RolloutSiteTokenTypeGateLossConfig(WeightedLossConfig):
     """Token-type legality weight for rollout-selected causal sites only."""
 
@@ -303,6 +318,10 @@ class ProtectedLossesConfig(StrictConfigModel):
     )
     raw_axis_validity_hinge: RawAxisValidityHingeLossConfig = Field(
         default_factory=RawAxisValidityHingeLossConfig
+    )
+    conditional_order_gate: ConditionalOrderGateLossConfig = Field(
+        default_factory=ConditionalOrderGateLossConfig,
+        exclude_if=lambda value: value.weight == 0.0,
     )
     rollout_site_token_type_gate: RolloutSiteTokenTypeGateLossConfig | None = Field(
         default=None,
@@ -439,10 +458,12 @@ class AdapterOptimizerGroupsConfig(StrictConfigModel):
 class OptimizerGroupsConfig(StrictConfigModel):
     adapters: AdapterOptimizerGroupsConfig
     token_embeddings: OptimizerGroupConfig
+    coordinate_codebook: OptimizerGroupConfig | None = None
+    coordinate_codebook_projection: OptimizerGroupConfig | None = None
 
 
 class SchedulerConfig(StrictConfigModel):
-    name: Literal["cosine_with_warmup"]
+    name: Literal["cosine_with_warmup", "constant_with_warmup"]
     warmup_ratio: float | None = Field(
         default=None,
         ge=0.0,
@@ -482,6 +503,7 @@ class TrainingConfig(StrictConfigModel):
     effective_batch_size: int = Field(gt=0)
     precision: Literal["bf16", "fp16"]
     max_grad_norm: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    resume_from_checkpoint: str | None = None
 
 
 class RuntimeConfig(StrictConfigModel):
@@ -584,6 +606,11 @@ class TrainConfig(StrictConfigModel):
             raise ValueError(
                 "training.mode=rollout_calibration requires "
                 "losses.protected.raw_axis_validity_hinge.weight=0"
+            )
+        if protected.conditional_order_gate.weight != 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires "
+                "losses.protected.conditional_order_gate.weight=0"
             )
         if rollout_gate_weight <= 0.0:
             raise ValueError(

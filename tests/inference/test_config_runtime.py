@@ -41,6 +41,7 @@ def test_valid_production_infer_config_loads() -> None:
     assert resolved.config.backend.type == "hf"
     assert resolved.config.backend.hf.attn_implementation == "flash_attention_2"
     assert resolved.config.backend.hf.patch_embed_linearization == "enabled"
+    assert resolved.config.backend.hf.adapter_runtime == "mixin"
     assert set(type(resolved.config.model).model_fields) == {
         "base_model",
         "dtype",
@@ -63,6 +64,24 @@ def test_valid_production_infer_config_loads() -> None:
         with pytest.raises(ValueError):
             resolved_path.relative_to(config_dir)
     assert resolved.fingerprint
+
+
+def test_hf_adapter_runtime_is_explicit_and_strict() -> None:
+    from pydantic import ValidationError
+    from src.config.inference import InferHfBackendOptions
+
+    options = {
+        "attn_implementation": "sdpa",
+        "patch_embed_linearization": "enabled",
+    }
+    assert InferHfBackendOptions.model_validate(options).adapter_runtime == "mixin"
+    assert InferHfBackendOptions.model_validate(
+        {**options, "adapter_runtime": "live_promoted"}
+    ).adapter_runtime == "live_promoted"
+    with pytest.raises(ValidationError):
+        InferHfBackendOptions.model_validate(
+            {**options, "adapter_runtime": "unsupported"}
+        )
 
 
 @pytest.mark.parametrize(

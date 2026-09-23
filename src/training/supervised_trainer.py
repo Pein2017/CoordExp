@@ -160,9 +160,15 @@ class SupervisedTrainer:
         on_eval: ScheduledStepHandler | None = None,
         on_checkpoint: ScheduledStepHandler | None = None,
         on_final: ScheduledStepHandler | None = None,
+        start_step: int = 0,
     ) -> None:
+        if isinstance(start_step, bool) or not isinstance(start_step, int) or start_step < 0:
+            raise ValueError("start_step must be a non-negative integer")
+        if start_step > schedule.resolved_max_steps:
+            raise ValueError("start_step must not exceed the resolved schedule")
         self.model = model
         self.schedule = schedule
+        self.start_step = start_step
         self.pack_stream = iter(pack_stream)
         self.qwen_forward = qwen_forward or _default_qwen_forward
         self.loss_context_factory = loss_context_factory or _default_loss_context
@@ -178,12 +184,23 @@ class SupervisedTrainer:
     def run(self) -> SupervisedTrainingResult:
         latest_observation: CompletedStepObservation | None = None
         scheduled_event_counts = {name: 0 for name in sorted(self.schedule.events)}
-        consumed_micro_steps = 0
         micro_steps_per_planned_step = (
             self.schedule.runtime_batch.resolved_grad_accum_steps
         )
+        consumed_micro_steps = self.start_step * micro_steps_per_planned_step
 
-        for planned_step_id in range(1, self.schedule.resolved_max_steps + 1):
+        for _ in range(self.start_step * micro_steps_per_planned_step):
+            try:
+                next(self.pack_stream)
+            except StopIteration as exc:
+                raise RuntimeContractError(
+                    "pack stream ended while skipping resumed training steps",
+                    code="trainer.resume_stream_exhausted",
+                    context={"start_step": self.start_step},
+                    cause=exc,
+                ) from exc
+
+        for planned_step_id in range(self.start_step + 1, self.schedule.resolved_max_steps + 1):
             if _supports_streaming_loss(self.loss_runner):
                 observation, consumed_count = self._run_streaming_planned_step(
                     planned_step_id=planned_step_id,

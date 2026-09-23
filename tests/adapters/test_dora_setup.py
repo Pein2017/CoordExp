@@ -870,3 +870,60 @@ def _probe_receipt_for_towers(target_towers: tuple[str, ...]) -> dict[str, objec
             "finite_magnitude_vector_gradient": True,
         },
     }
+
+
+def test_bfloat16_expansion_preserves_new_zero_b_function(tmp_path: Path) -> None:
+    torch.manual_seed(1729)
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    result = setup_dora_adapter(
+        TinyQwenLikeModel().to(torch.bfloat16),
+        _warm_start_plan(source_adapter_path=source_dir),
+    )
+    layer = result.model.base_model.model.model.visual.block_proj
+    magnitude = layer.lora_magnitude_vector["default"]
+    weight = layer.get_base_layer().weight
+    runtime_weight = weight.to(layer.lora_A["default"].weight.dtype)
+    norm = magnitude.get_weight_norm(runtime_weight, torch.zeros_like(runtime_weight), layer.scaling["default"])
+    old_norm = weight.norm(dim=1).float()
+    assert (old_norm / norm - 1).abs().max() > 1e-4
+    assert torch.equal(magnitude.weight, norm)
+    assert torch.count_nonzero(layer.lora_B["default"].weight) == 0
+    source = result.model.base_model.model.model.language_model.q_proj
+    assert torch.equal(source.lora_magnitude_vector["default"].weight, torch.full((4,), 3.75))
+
+
+def test_live_reference_preserves_fp32_source_on_bfloat16_base(tmp_path: Path) -> None:
+    from src.adapters.dora import load_live_dora_adapter
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    config_path = source_dir / "adapter_config.json"
+    config = json.loads(config_path.read_text())
+    config["base_model_name_or_path"] = "/tmp/base"
+    config_path.write_text(json.dumps(config))
+    model, receipt = load_live_dora_adapter(
+        TinyQwenLikeModel().to(torch.bfloat16), adapter_path=source_dir,
+        base_model_path=Path('/tmp/base'),
+    )
+    assert len(receipt['copied_tensors']) == 3
+    assert all(p['runtime_dtype'] == 'torch.float32' for p in receipt['copied_tensors'])
+    assert not any('visual' in name and 'lora_' in name for name, _ in model.named_parameters())
+    layer = model.base_model.model.model.language_model.q_proj
+    assert torch.equal(layer.lora_A['default'].weight, torch.full((2, 4), 1.25))
+    assert not any(p.requires_grad for p in model.parameters())
+
+
+def test_new_dora_finalization_is_once_and_restored_targets_are_untouched(tmp_path: Path) -> None:
+    from src.adapters.dora import finalize_dora_initialization
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    result = setup_dora_adapter(TinyQwenLikeModel().to(torch.bfloat16),
+                                _warm_start_plan(source_adapter_path=source_dir))
+    layer = result.model.base_model.model.model.visual.block_proj
+    mature = result.model.base_model.model.model.language_model.q_proj
+    original = mature.lora_magnitude_vector['default'].weight.detach().clone()
+    assert len(finalize_dora_initialization(result.model)) == 2
+    with torch.no_grad():
+        layer.lora_magnitude_vector['default'].weight.add_(1)
+    learned = layer.lora_magnitude_vector['default'].weight.detach().clone()
+    result.model.to('cpu')
+    assert finalize_dora_initialization(result.model) == []
+    assert torch.equal(learned, layer.lora_magnitude_vector['default'].weight)
+    assert torch.equal(original, mature.lora_magnitude_vector['default'].weight)

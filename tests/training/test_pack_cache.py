@@ -558,6 +558,40 @@ def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) 
     assert [step.metadata["pack_id"] for step in rank1] == [1, 3, 5, 7]
 
 
+def test_seeded_shuffle_uses_one_global_order_for_all_ranks(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    _write_micro_step_cache(
+        cache_dir,
+        tuple(_micro_step(index) for index in range(5)),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+        chunk_size=2,
+        materialization=build_packing_cache_materialization(workers=1),
+        augmentation=DISABLED_AUGMENTATION,
+    )
+    schedule = _schedule(
+        resolved_max_steps=3,
+        grad_accum_steps=2,
+        world_size=2,
+        effective_batch_size=4,
+    )
+    rank0 = load_rank_micro_steps_from_cache(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT, schedule=schedule,
+        rank=0, world_size=2, shuffle_seed=1729,
+    )
+    rank1 = load_rank_micro_steps_from_cache(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT, schedule=schedule,
+        rank=1, world_size=2, shuffle_seed=1729,
+    )
+    repeat = load_rank_micro_steps_from_cache(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT, schedule=schedule,
+        rank=0, world_size=2, shuffle_seed=1729,
+    )
+    assert [step.metadata["pack_id"] for step in rank0] == [1, 4, 0, 0, 3, 1]
+    assert [step.metadata["pack_id"] for step in rank1] == [3, 2, 1, 2, 4, 2]
+    assert [step.metadata["pack_id"] for step in repeat] == [step.metadata["pack_id"] for step in rank0]
+
+
 def test_micro_step_cache_wraps_tail_presentations_by_pack_count(tmp_path: Path) -> None:
     micro_steps = tuple(_micro_step(index) for index in range(3))
     cache_dir = tmp_path / "cache"

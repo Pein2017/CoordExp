@@ -892,6 +892,43 @@ def _validate_transformers_mixin_adapter_state(
     }
 
 
+def load_live_dora_adapter(model: nn.Module, *, adapter_path: Path,
+                           base_model_path: Path, adapter_name: str = DEFAULT_ADAPTER_NAME):
+    """Compose the saved target set under the explicit promoted training policy."""
+    from peft import PeftConfig, get_peft_model
+
+    adapter_path = Path(adapter_path).resolve(strict=True)
+    identity = inspect_dora_adapter_payload(adapter_path, expected_base_model_path=base_model_path)
+    config = PeftConfig.from_pretrained(str(adapter_path))
+    config.inference_mode = False
+    wrapped = get_peft_model(model, config, adapter_name=adapter_name,
+                             autocast_adapter_dtype=True)
+    source = _load_source_adapter_tensors(adapter_path / "adapter_model.safetensors")
+    copied = []
+    used = set()
+    for group in _group_dora_target_parameters(wrapped, adapter_name=adapter_name):
+        for entry in group["entries"]:
+            key, parameter = entry["source_key"], entry["parameter"]
+            tensor = source[key]
+            if tensor.shape != parameter.shape:
+                raise ValueError(f"live adapter shape mismatch: {key}")
+            with torch.no_grad():
+                parameter.copy_(tensor.to(device=parameter.device, dtype=parameter.dtype))
+            assert torch.equal(parameter.detach().cpu(), tensor.to(parameter.dtype))
+            used.add(key)
+            copied.append({"source_key": key, "source_dtype": str(tensor.dtype),
+                           "runtime_dtype": str(parameter.dtype),
+                           "source_sha256": _tensor_sha256(tensor),
+                           "runtime_sha256": _tensor_sha256(parameter)})
+    if used != source.keys():
+        raise ValueError("live adapter source target membership mismatch")
+    for parameter in wrapped.parameters():
+        parameter.requires_grad_(False)
+    wrapped.eval()
+    return wrapped, {"api": "get_peft_model+exact_payload_copy", "autocast_adapter_dtype": True,
+                     "merged_adapters": [], "identity": identity, "copied_tensors": copied}
+
+
 def normalize_dora_state_key(key: str, *, adapter_name: str) -> str:
     """Normalize equivalent PEFT/mixin adapter keys for payload comparison."""
     parts = [part for part in key.split(".") if part != adapter_name]
@@ -1072,6 +1109,25 @@ def _warm_start_expand_dora_adapter(
             entry for entry in group["entries"] if entry["source_key"] in source_tensors
         ]
         if not present_entries:
+            # PEFT initializes magnitude before promoting adapters to FP32.
+            # Match the runtime norm so newly expanded zero-B layers are identity.
+            prefix = _source_key_target_prefix(group["entries"][0]["source_key"])
+            layer = adapted_model.get_submodule(prefix)
+            lora_a = layer.lora_A[adapter_name]
+            lora_b = layer.lora_B[adapter_name]
+            if torch.count_nonzero(lora_b.weight).item():
+                raise RuntimeContractError(
+                    "new expansion target must have zero LoRA B",
+                    code="adapter.warm_start_nonzero_new_target",
+                )
+            magnitude = layer.lora_magnitude_vector[adapter_name]
+            with torch.no_grad():
+                weight = layer.get_base_layer().weight.to(lora_a.weight.dtype)
+                norm = magnitude.get_weight_norm(
+                    weight, lora_b.weight @ lora_a.weight, layer.scaling[adapter_name]
+                )
+                magnitude.weight.copy_(norm)
+            layer._coordexp_pending_dora_initialization = adapter_name
             initialized_counts[str(group["tower"])] += len(group["entries"])
             initialized_target_tensors.extend(
                 str(entry["target_key"]) for entry in group["entries"]
@@ -1171,6 +1227,33 @@ def _warm_start_expand_dora_adapter(
         if plan.repaired_embedding_payload_path is None
         else str(plan.repaired_embedding_payload_path),
     }
+
+
+def finalize_dora_initialization(model: nn.Module) -> list[dict[str, Any]]:
+    """Finalize fresh expansion magnitudes once, after execution placement.
+
+    Loaded targets never carry the pending marker. No forward/backward override
+    or device-move hook is installed, and learned magnitudes are never reset.
+    """
+    records = []
+    for name, layer in model.named_modules():
+        adapter_name = getattr(layer, "_coordexp_pending_dora_initialization", None)
+        if adapter_name is None:
+            continue
+        a, b = layer.lora_A[adapter_name], layer.lora_B[adapter_name]
+        if torch.count_nonzero(b.weight).item():
+            raise RuntimeContractError("cannot initialize a trained DoRA target",
+                                       code="adapter.initialization_nonzero_b")
+        magnitude = layer.lora_magnitude_vector[adapter_name]
+        with torch.no_grad(), torch.autocast(device_type=a.weight.device.type, enabled=False):
+            weight = layer.get_base_layer().weight.to(a.weight.dtype)
+            norm = magnitude.get_weight_norm(weight, b.weight @ a.weight, layer.scaling[adapter_name])
+            difference = float((magnitude.weight - norm).abs().max())
+            magnitude.weight.copy_(norm)
+        delattr(layer, "_coordexp_pending_dora_initialization")
+        records.append({"module": name, "device": str(a.weight.device),
+                        "dtype": str(a.weight.dtype), "max_initialization_delta": difference})
+    return records
 
 
 def _load_source_adapter_tensors(tensor_path: Path) -> dict[str, torch.Tensor]:

@@ -62,6 +62,7 @@ from src.qwen.special_token_embeddings import (
     install_special_token_embedding_deltas,
     load_special_token_embedding_deltas,
 )
+from src.qwen import untied_embeddings
 from src.rollout_calibration import (
     CheckpointIdentity,
     load_state_bank,
@@ -98,6 +99,14 @@ from src.training.supervised_trainer import (
     CompletedStepObservation,
     SupervisedMicroStep,
     SupervisedTrainer,
+)
+from src.training.resume import (
+    STATE_FILE,
+    build_training_state,
+    load_training_state,
+    restore_runtime_state,
+    validate_model_payloads,
+    validate_resume_state,
 )
 from src.training.rollout_calibration import (
     CalibrationTokenSequence,
@@ -523,9 +532,33 @@ def _run_initialized_training(
     )
     del runtime_controls
 
+    resume_checkpoint = _resume_checkpoint_dir(config.training.resume_from_checkpoint)
+    resume_state = None
+    if resume_checkpoint is not None:
+        resume_state = load_training_state(resume_checkpoint / STATE_FILE)
+        validate_model_payloads(resume_checkpoint, resume_state)
     adapter_evidence = load_default_adapter_source_gate_evidence(repo_root)
+    adapter_config = config.adapter
+    if resume_checkpoint is not None:
+        adapter_path = resume_checkpoint / "adapter"
+        if not adapter_path.is_dir():
+            raise RuntimeContractError(
+                "resume checkpoint is missing its adapter payload",
+                code="training.resume_adapter_missing",
+                context={"path": str(adapter_path)},
+            )
+        adapter_config = config.adapter.model_copy(
+            update={
+                # Restore through the exact post-promotion copy path. All targets
+                # exist in a validated checkpoint, so no new initialization occurs.
+                "seed_mode": "warm_start_expand_dora",
+                "path": None,
+                "source_adapter_path": str(adapter_path),
+                "repaired_embedding_payload_path": str(resume_checkpoint / "special_token_embeddings"),
+            }
+        )
     adapter_plan = build_adapter_setup_plan(
-        config.adapter,
+        adapter_config,
         adapter_evidence,
         base_model_path=components.base_model_path,
     )
@@ -552,28 +585,81 @@ def _run_initialized_training(
         )
 
     adapter_result = setup_dora_adapter(components.model, adapter_plan)
+    if resume_checkpoint is not None and adapter_result.receipt.warm_start["initialized_target_tensors"]:
+        raise RuntimeContractError("resume checkpoint omits requested adapter targets",
+                                   code="training.resume_adapter_target_missing")
     model = adapter_result.model
-    special_token_evidence = load_default_special_token_embedding_source_gate_evidence(
-        repo_root
-    )
-    special_token_result = install_special_token_embedding_deltas(
-        model,
-        special_token_selection,
-        source_gate=special_token_evidence,
-    )
+    tied_embeddings = config.model.special_token_embeddings.tie_word_embeddings
+    if tied_embeddings:
+        special_token_evidence = load_default_special_token_embedding_source_gate_evidence(
+            repo_root
+        )
+        special_token_result = install_special_token_embedding_deltas(
+            model, special_token_selection, source_gate=special_token_evidence,
+        )
+    else:
+        special_token_result = untied_embeddings.install_special_token_embedding_deltas(
+            model, special_token_selection, tie_word_embeddings=False,
+        )
     model = special_token_result.model
-    if adapter_plan_mode == "warm_start_expand_dora":
+    if resume_checkpoint is not None:
+        embedding_path = resume_checkpoint / "special_token_embeddings"
+        if not embedding_path.is_dir():
+            raise RuntimeContractError(
+                "resume checkpoint is missing its selected embedding payload",
+                code="training.resume_embedding_missing",
+                context={"path": str(embedding_path)},
+            )
+        embedding_loader = (
+            load_special_token_embedding_deltas
+            if tied_embeddings
+            else untied_embeddings.load_special_token_embedding_deltas
+        )
+        embedding_loader(
+            special_token_result,
+            embedding_path,
+            expected_base_model_path=components.base_model_path,
+            expected_base_config_sha256=components.base_config_sha256,
+            expected_tokenizer_sha256=components.tokenizer_sha256,
+        )
+    elif adapter_plan_mode == "warm_start_expand_dora":
         if adapter_plan.repaired_embedding_payload_path is None:
             raise RuntimeContractError(
                 "warm_start_expand_dora requires repaired embedding payload path",
                 code="adapter.warm_start_embedding_payload_required",
             )
-        load_special_token_embedding_deltas(
+        embedding_loader = (
+            load_special_token_embedding_deltas if tied_embeddings
+            else untied_embeddings.load_special_token_embedding_deltas
+        )
+        embedding_loader(
             special_token_result,
             adapter_plan.repaired_embedding_payload_path,
             expected_base_model_path=components.base_model_path,
             expected_base_config_sha256=components.base_config_sha256,
             expected_tokenizer_sha256=components.tokenizer_sha256,
+        )
+    if config.model.coordinate_codebook is not None:
+        from src.qwen.coordinate_codebook import (
+            install_coordinate_codebook, load_coordinate_codebook,
+        )
+        install_coordinate_codebook(
+            model, components.token_identity.coordinate_token_ids,
+            initial_gain=config.model.coordinate_codebook.initial_gain,
+            mode=config.model.coordinate_codebook.mode,
+            projection_seed=config.model.coordinate_codebook.projection_seed,
+        )
+        codebook_path = (
+            resume_checkpoint / "coordinate_codebook"
+            if resume_checkpoint is not None
+            else config.model.coordinate_codebook.checkpoint_path
+        )
+        if codebook_path is not None:
+            load_coordinate_codebook(model, Path(codebook_path))
+    elif resume_checkpoint is not None and (resume_checkpoint / "coordinate_codebook").exists():
+        raise RuntimeContractError(
+            "resume checkpoint contains a coordinate codebook but current config does not install one",
+            code="training.resume_codebook_config_missing",
         )
     source_step_zero_parity = None
     if calibration_bank is not None:
@@ -612,6 +698,11 @@ def _run_initialized_training(
             schedule=schedule,
             rank=int(accelerator.process_index),
             world_size=int(accelerator.num_processes),
+            shuffle_seed=(
+                int(config.runtime.seed)
+                if config.data.train_order == "seeded_shuffle"
+                else None
+            ),
         )
         loss_runner = LossRunner.from_config(config.losses)
         loss_context_factory = None
@@ -689,7 +780,6 @@ def _run_initialized_training(
         config.optimizer,
         total_training_steps=schedule.resolved_max_steps,
     )
-    del scheduler_plan
     optimizer, scheduler = build_optimizer_and_scheduler(
         config.optimizer,
         optimizer_group_plan,
@@ -726,6 +816,71 @@ def _run_initialized_training(
             int(accelerator.num_processes)
         ),
     )
+
+    from src.adapters.dora import finalize_dora_initialization
+    runtime.dora_initialization_receipt = finalize_dora_initialization(runtime.model)
+
+    source_identity = {
+        "base_model_path": str(components.base_model_path),
+        "base_config_sha256": components.base_config_sha256,
+        "tokenizer_sha256": components.tokenizer_sha256,
+        "adapter_type": adapter_result.receipt.adapter_type,
+        "adapter_target_policy": adapter_result.receipt.target_discovery.target_policy,
+        "adapter_target_towers": list(adapter_result.receipt.target_discovery.target_towers),
+        "embedding_tie_word_embeddings": bool(tied_embeddings),
+        "coordinate_codebook": config.model.coordinate_codebook is not None,
+    }
+    data_identity = {
+        "train_cache_fingerprint": (
+            None if calibration_bank is not None else str(train_cache["fingerprint"])
+        ),
+        "train_order": config.data.train_order,
+        "shuffle_seed": (
+            int(config.runtime.seed)
+            if config.data.train_order == "seeded_shuffle"
+            else None
+        ),
+        "world_size": int(accelerator.num_processes),
+    }
+    optimizer_identity = {
+        "optimizer": config.optimizer.model_dump(mode="json"),
+        "groups": optimizer_group_plan.to_artifact_dict(),
+        "scheduler": scheduler_plan.to_artifact_dict(),
+    }
+    resume_step = 0
+    if resume_checkpoint is not None:
+        assert resume_state is not None
+        resume_step = validate_resume_state(
+            resume_state,
+            schedule=schedule.to_artifact_dict(),
+            source_identity=source_identity,
+            data_identity=data_identity,
+            optimizer_identity=optimizer_identity,
+        )
+        rank_rngs = resume_state.get("rank_rngs")
+        rank = int(accelerator.process_index)
+        if (
+            not isinstance(rank_rngs, list)
+            or len(rank_rngs) != int(accelerator.num_processes)
+            or rank >= len(rank_rngs)
+            or not isinstance(rank_rngs[rank], Mapping)
+            or not isinstance(rank_rngs[rank].get("rng"), Mapping)
+        ):
+            raise RuntimeContractError(
+                "resume checkpoint is missing the current rank RNG state",
+                code="training.resume_rank_state_missing",
+                context={
+                    "rank": rank,
+                    "expected_rank_count": int(accelerator.num_processes),
+                },
+            )
+        state_for_rank = dict(resume_state)
+        state_for_rank["rng"] = rank_rngs[rank]["rng"]
+        restore_runtime_state(
+            runtime,
+            state_for_rank,
+            rank=int(accelerator.process_index),
+        )
 
     eval_by_step: dict[int, dict[str, Any]] = {}
     eval_handler = None
@@ -782,6 +937,9 @@ def _run_initialized_training(
         committed_steps=committed_checkpoint_steps,
         lifecycle=lifecycle,
         save_final=config.checkpoint.save_final,
+        source_identity=source_identity,
+        data_identity=data_identity,
+        optimizer_identity=optimizer_identity,
     )
     post_update_replay = None
     if calibration_bank is not None:
@@ -810,6 +968,7 @@ def _run_initialized_training(
             committed_steps=committed_checkpoint_steps,
             save_final=config.checkpoint.save_final,
         ),
+        start_step=resume_step,
     )
     result = trainer.run()
     latest = result.latest_observation
@@ -1743,11 +1902,29 @@ def _checkpoint_handler(
     committed_steps: set[int],
     lifecycle: dict[str, Any],
     save_final: bool = True,
+    source_identity: Mapping[str, Any] | None = None,
+    data_identity: Mapping[str, Any] | None = None,
+    optimizer_identity: Mapping[str, Any] | None = None,
 ) -> Any:
     def handle(scheduled_event: Any, observation: CompletedStepObservation) -> None:
         accelerator = getattr(runtime, "accelerator", runtime)
         step = int(scheduled_event.planned_step_id)
         eval_observation = eval_by_step.get(step)
+        training_state = None
+        if (
+            source_identity is not None
+            and data_identity is not None
+            and optimizer_identity is not None
+            and runtime is not None
+        ):
+            training_state = build_training_state(
+                step=step,
+                schedule=schedule.to_artifact_dict(),
+                source_identity=source_identity,
+                data_identity=data_identity,
+                optimizer_identity=optimizer_identity,
+                runtime=runtime,
+            )
         checkpoint_writer.write_checkpoint(
             step=step,
             accelerator=accelerator,
@@ -1768,6 +1945,7 @@ def _checkpoint_handler(
                 "optimizer_update_status": observation.optimizer_update_status,
                 "finite_status": observation.finite_status,
             },
+            training_state=training_state,
         )
         committed_steps.add(step)
         lifecycle["checkpoint_event_count"] = (
@@ -2104,3 +2282,16 @@ def _model_and_base_model_owners(model: Any) -> tuple[tuple[str, Any], ...]:
 
 def _run_id(run_name: str, fingerprint: str) -> str:
     return f"{run_name}-{fingerprint[:12]}"
+
+
+def _resume_checkpoint_dir(value: str | Path | None) -> Path | None:
+    if value is None:
+        return None
+    path = Path(value).expanduser().resolve()
+    if not path.is_dir():
+        raise RuntimeContractError(
+            "configured resume checkpoint directory does not exist",
+            code="training.resume_checkpoint_missing",
+            context={"path": str(path)},
+        )
+    return path
