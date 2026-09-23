@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-address-readout-pilot",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Lead-accepted fixed Lane A negative recipe result: both aligned seeds worsen held-out calibration and fresh annotation coverage; no promotion. Broad ruler causality remains unidentified; Lane B source-inapplicable HOLD, untested.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-address-readout-pilot/unit.md",
+  "result": "research/experiments/2026-09-22-address-readout-pilot/lead-results.md",
+  "state_source": "research/experiments/2026-09-22-address-readout-pilot/lead-results.md",
+  "boundary": "Fixed mature tied source, four 256-update fits; complete 190 native / 160 calibration cells; owner quantities are annotation proxies. All jobs terminal; original wall/GPU ceilings respected. Qualified execution is accepted, not geometric or burst-cause success.",
+  "not_authorized": [
+    "further model calls, training, evaluation, qualification, or successor launch",
+    "dose/seed/cohort/checkpoint sweep or outcome-selected promotion",
+    "changing frozen annotations, source, geometry, sorting, objectives or evaluation meaning",
+    "new physical review campaign, automated judge, commit or publication",
+    "Lane B replacement source/detail contrast under this closed contract"
+  ],
+  "next_action": "Closed. Preserve accepted results and all raw evidence; discuss a new discriminating contract before any further execution."
+}
