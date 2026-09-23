@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-recurrence-local-prefix-content-transfer",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "One of three restores the repeated coordinate; the frozen at-least-two-of-three prediction fails. Conditional local influence, not a majority controller or natural-timing mechanism.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-recurrence-local-prefix-content-transfer/unit.md",
+  "state_source": "research/experiments/2026-09-23-recurrence-local-prefix-content-transfer/results.md",
+  "boundary": "Three original native full batches; target-query-only earlier same-token within-row prefix K/V at native destination phase.",
+  "authorization": "Autonomous continuation under user grant; child routing now gpt-6-luna/max.",
+  "next_action": "Close this branch; no donor/layer/head/strength/extra-image rescue scans. Prospective natural-transition prediction remains unlaunched; no GPU reservation.",
+  "worker": "/root/luna6_content",
+  "worker_model": "gpt-6-luna",
+  "worker_effort": "max",
+  "selection": "research/experiments/2026-09-23-recurrence-local-prefix-content-transfer/selection.json",
+  "not_authorized": [
+    "publication",
+    "peer model work",
+    "unrelated cleanup",
+    "extra image/layer/donor rescue scans"
+  ],
+  "execution_owner": "/root",
+  "result": "research/experiments/2026-09-23-recurrence-local-prefix-content-transfer/results.md",
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-local-prefix-content-transfer/lead-acceptance.json"
+}

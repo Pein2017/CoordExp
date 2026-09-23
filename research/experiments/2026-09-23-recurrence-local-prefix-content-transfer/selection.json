@@ -1,0 +1,468 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-recurrence-local-prefix-content-transfer",
+  "condition": "untied-original",
+  "panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json",
+    "sha256": "968f6f7e7752ad68deb697d69690704cb94c2cd3d3ebd15c254d9cbb709bf40a",
+    "size_bytes": 1870712
+  },
+  "event_selection_order": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/event-selection-order.json",
+    "sha256": "99773c98267209b31ddcba03742adf03867a3afd1447aa407aca3438a4fe9c6e",
+    "size_bytes": 1911
+  },
+  "selection_rule": "First three source-order images excluding7511/269858; earliest adjacent coordinate difference after>=3exactrows; second-row donor; exclude query self-key.",
+  "examined": [
+    {
+      "image_id": 1584,
+      "source_order_rank": 0,
+      "group": "refined-00",
+      "batch_index": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 2299,
+      "source_order_rank": 1,
+      "group": "refined-00",
+      "batch_index": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 2685,
+      "source_order_rank": 2,
+      "group": "refined-00",
+      "batch_index": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 4134,
+      "source_order_rank": 3,
+      "group": "refined-00",
+      "batch_index": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 5001,
+      "source_order_rank": 4,
+      "group": "refined-01",
+      "batch_index": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+        "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+        "size_bytes": 40378
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 6040,
+      "source_order_rank": 5,
+      "group": "refined-01",
+      "batch_index": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+        "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+        "size_bytes": 40378
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 10707,
+      "source_order_rank": 7,
+      "group": "refined-01",
+      "batch_index": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+        "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+        "size_bytes": 40378
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 13348,
+      "source_order_rank": 8,
+      "group": "refined-02",
+      "batch_index": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 13923,
+      "source_order_rank": 9,
+      "group": "refined-02",
+      "batch_index": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 14038,
+      "source_order_rank": 10,
+      "group": "refined-02",
+      "batch_index": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "eligible_run_count": 1
+    },
+    {
+      "image_id": 14439,
+      "source_order_rank": 11,
+      "group": "refined-02",
+      "batch_index": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 16228,
+      "source_order_rank": 12,
+      "group": "refined-03",
+      "batch_index": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 7116,
+      "source_order_rank": 13,
+      "group": "refined-03",
+      "batch_index": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 309264,
+      "source_order_rank": 14,
+      "group": "fresh-18",
+      "batch_index": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+        "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d",
+        "size_bytes": 16062
+      },
+      "eligible_run_count": 0
+    },
+    {
+      "image_id": 351017,
+      "source_order_rank": 15,
+      "group": "refined-03",
+      "batch_index": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "eligible_run_count": 4
+    },
+    {
+      "image_id": 417044,
+      "source_order_rank": 16,
+      "group": "refined-03",
+      "batch_index": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "eligible_run_count": 3
+    }
+  ],
+  "cases": [
+    {
+      "image_id": 14038,
+      "source_order_rank": 10,
+      "group": "refined-02",
+      "batch_index": 2,
+      "row_id": "coco2017_val_000000014038",
+      "run_rows": [
+        8,
+        10
+      ],
+      "donor_row": 9,
+      "recipient_row": 11,
+      "role": "x1",
+      "raw_action": 108,
+      "row_difference_offset": 4,
+      "prefix_count": 3,
+      "donor_prefix_raw": [
+        86,
+        89
+      ],
+      "destination_prefix_raw": [
+        104,
+        107
+      ],
+      "prompt_width": 1362,
+      "prompt_lengths": [
+        1362,
+        1362,
+        1362,
+        1260
+      ],
+      "query": 1469,
+      "donor_prefix_physical": [
+        1448,
+        1451
+      ],
+      "destination_prefix_physical": [
+        1466,
+        1469
+      ],
+      "prefix_tokens": [
+        151646,
+        2190,
+        151647
+      ],
+      "repeat_token": 152465,
+      "native_token": 152471,
+      "repeat_bin": 795,
+      "native_bin": 801,
+      "stop": "im_end",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/trace.json",
+        "sha256": "0dba6a8172c84dc14e5c72442cd6a6c713110be437041c6d4e1222d0a5b8856a",
+        "size_bytes": 249346
+      },
+      "runtime_receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/receipt.json",
+        "sha256": "e0297cf4b701f70badf594fe29372b6795d2d2bb0f2d8f9196bc4fa77a86b82a",
+        "size_bytes": 188746
+      },
+      "image": {
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000014038.jpg",
+        "sha256": "055f28bbd181590b7a7c4844bf488d7f1be752d39916e07034c279f5f387acd2",
+        "size_bytes": 133833
+      },
+      "saved_trace": {
+        "winner": 152471,
+        "runnerup": 152465,
+        "top2": [
+          27.619359970092773,
+          27.49189567565918
+        ],
+        "logsumexp": 30.150787353515625
+      },
+      "model_identity_sha256": "a005f727f9eb2eeccc58d906bd88a56b267e548c76225fceb33f11ba4cf3245a"
+    },
+    {
+      "image_id": 351017,
+      "source_order_rank": 15,
+      "group": "refined-03",
+      "batch_index": 2,
+      "row_id": "coco2017_train_000000351017",
+      "run_rows": [
+        3,
+        10
+      ],
+      "donor_row": 4,
+      "recipient_row": 11,
+      "role": "y2",
+      "raw_action": 106,
+      "row_difference_offset": 7,
+      "prefix_count": 6,
+      "donor_prefix_raw": [
+        36,
+        42
+      ],
+      "destination_prefix_raw": [
+        99,
+        105
+      ],
+      "prompt_width": 1362,
+      "prompt_lengths": [
+        1336,
+        1362,
+        1362,
+        1320
+      ],
+      "query": 1467,
+      "donor_prefix_physical": [
+        1398,
+        1404
+      ],
+      "destination_prefix_physical": [
+        1461,
+        1467
+      ],
+      "prefix_tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670
+      ],
+      "repeat_token": 151756,
+      "native_token": 151755,
+      "repeat_bin": 86,
+      "native_bin": 85,
+      "stop": "length",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+        "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+        "size_bytes": 3312523
+      },
+      "runtime_receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+        "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+        "size_bytes": 189302
+      },
+      "image": {
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+        "sha256": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+        "size_bytes": 154193
+      },
+      "saved_trace": {
+        "winner": 151755,
+        "runnerup": 151756,
+        "top2": [
+          21.8931941986084,
+          21.89158821105957
+        ],
+        "logsumexp": 25.696914672851562
+      },
+      "model_identity_sha256": "a005f727f9eb2eeccc58d906bd88a56b267e548c76225fceb33f11ba4cf3245a"
+    },
+    {
+      "image_id": 417044,
+      "source_order_rank": 16,
+      "group": "refined-03",
+      "batch_index": 3,
+      "row_id": "coco2017_train_000000417044",
+      "run_rows": [
+        16,
+        30
+      ],
+      "donor_row": 17,
+      "recipient_row": 31,
+      "role": "y1",
+      "raw_action": 315,
+      "row_difference_offset": 6,
+      "prefix_count": 5,
+      "donor_prefix_raw": [
+        169,
+        174
+      ],
+      "destination_prefix_raw": [
+        309,
+        314
+      ],
+      "prompt_width": 1362,
+      "prompt_lengths": [
+        1336,
+        1362,
+        1362,
+        1320
+      ],
+      "query": 1676,
+      "donor_prefix_physical": [
+        1531,
+        1536
+      ],
+      "destination_prefix_physical": [
+        1671,
+        1676
+      ],
+      "prefix_tokens": [
+        151646,
+        15007,
+        332,
+        151647,
+        151648
+      ],
+      "repeat_token": 151867,
+      "native_token": 151829,
+      "repeat_bin": 197,
+      "native_bin": 159,
+      "stop": "length",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+        "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+        "size_bytes": 3312523
+      },
+      "runtime_receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+        "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+        "size_bytes": 189302
+      },
+      "image": {
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg",
+        "sha256": "babd3b1132d5007428ac6202e23b0de6c3fd72c00271427cfdce9185f8231160",
+        "size_bytes": 127134
+      },
+      "saved_trace": {
+        "winner": 151829,
+        "runnerup": 151835,
+        "top2": [
+          17.65872573852539,
+          17.64965057373047
+        ],
+        "logsumexp": 22.13603973388672
+      },
+      "model_identity_sha256": "a005f727f9eb2eeccc58d906bd88a56b267e548c76225fceb33f11ba4cf3245a"
+    }
+  ],
+  "budget": {
+    "model_forwards": 9,
+    "vision_forwards": 9,
+    "gpu": 4,
+    "wall_seconds_from_setup": 900,
+    "tensor_bytes": 100663296
+  },
+  "output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-local-prefix-content-transfer"
+}
