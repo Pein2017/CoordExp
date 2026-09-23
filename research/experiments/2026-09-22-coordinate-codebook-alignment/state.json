@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-coordinate-codebook-alignment",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Full package lead-accepted: two independent fresh seeds each achieve32/32 clean known-positive fit and679/679 class-consistent IoU80 matches. Monitor regression is retained separately, with no transfer/component-causal claim. All352cells complete and63producers terminal; model work closed.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-coordinate-codebook-alignment/lead-ruling-02-runtime-reference.md",
+  "result": "research/experiments/2026-09-22-coordinate-codebook-alignment/lead-results.md",
+  "state_source": "research/experiments/2026-09-22-coordinate-codebook-alignment/lead-results.md",
+  "boundary": "Mature untied+axis001; live output-codebook main-merger injection, trainable selected input/output rows and three-tower all-linear DoRA; full-response sorted_xy SFT. Training-set natural completion remains primary, including for the proposed 1024/256 stage; validation coverage/CE improvement is not required. Format/duplication regression needs bounded guardrails. Reusable maintained training integration is authorized.",
+  "not_authorized": [
+    "full-dataset or 1k/4k scientific training expansion",
+    "architecture ablations, new auxiliary losses or broad hyperparameter sweeps",
+    "worker self-acceptance, production promotion, commits or publication",
+    "changing annotations or closed predecessor records",
+    "dense/vLLM export compatibility work"
+  ],
+  "next_action": "Closed. The separately authorized successor is research/experiments/2026-09-22-coordinate-codebook-scale/unit.md; do not reopen this package.",
+  "dispatch_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-coordinate-codebook-alignment/dispatch-v1.json",
+  "worker_turn_id": "01a0c7e3-5c10-7591-9f32-c09c148dcc24",
+  "next_stage_preparation": "research/experiments/2026-09-22-coordinate-codebook-alignment/lead-next-stage-preparation.md"
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-early-edge-codebook",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Fixed early-edge package independently accepted; no clear clean-completion advantage over late16, source-relative bad/owner recurrence limits fail. Not promoted.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-early-edge-codebook/lead-ruling-02-eight-gpu-sequential.md",
+  "result": "research/experiments/2026-09-23-early-edge-codebook/lead-results.md",
+  "state_source": "research/experiments/2026-09-23-early-edge-codebook/lead-results.md",
+  "boundary": "Same source/seed1024/256,984calls16epochs, three default losses and early four-edge architecture. Eight training ranks x accumulation1, then eight inference workers with no overlap. Original1790131536.7124155 clock and8wallh/64GPUh/16GiB retained.",
+  "not_authorized": [
+    "changing original RoPE, MRoPE, geometry, ordering or source annotations",
+    "adding reconstruction losses, architecture/LR/dose/seed search or dual early/late injection",
+    "full-data training, automatic promotion, successor, commit or publication",
+    "worker self-acceptance, global skills/AGENTS/memory edits or automatic budget extension"
+  ],
+  "next_action": "No execution remains. Discuss a discriminating next experiment before any successor; no automatic extension or promotion."
+}

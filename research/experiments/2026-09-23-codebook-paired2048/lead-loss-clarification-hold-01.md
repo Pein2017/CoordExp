@@ -1,0 +1,7 @@
+# Loss terminology clarification: retain model-entry HOLD
+
+The lead verified loss-contract-conflict-v1.json SHA256701020b90fd032bcdaa0757935b84ce7d499dc58e49cda473f4429fe24e0f7f1 and asked the user directly whether "Bbox geometry area" means the existing positive-width/height hinge or a distinct target-area objective. The question is pending; no equivalence is assumed and no new loss is authorized.
+
+Keep further smoke/production/inference model entry on HOLD until the user resolves this meaning and the lead binds the ruling. Continue only independent bounded CPU work: arm-specific receipt isolation and actual concurrent-caller collision falsification, configuration/source captures, official composition inspection. Do not add or tune an area loss or alter prior records. Preserve successful late two-update smoke and failed early smoke; reuse valid evidence only if the resolved objective is unchanged. If objective changes, explicitly identify which objective-dependent checks require requalification.
+
+Preserve original clock1790158092.1078854 and509.1889133453369 allocatedGPU-seconds; no automatic clock reset or budget extension during clarification. If elapsed user-decision time makes the envelope infeasible, report it before entry; it is not authorization to extend. No tmux production or wake monitor while no production is launched. Return material CPU conflicts directly; no ACK-only reply needed.

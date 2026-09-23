@@ -1,0 +1,8 @@
+922-worker first real-entry checkpoint: PARTIAL qualification, continuing ordinary repairs; no ruling requested.
+Primary estimand remains native empty-prefix completion on the frozen 32 fit images; monitor does not select fitting.
+Single-GPU and two-rank maintained src.train/pipeline/SupervisedTrainer slices each completed 2 updates and atomic checkpoints. All first-batch full-vocabulary segment-balanced CE/logit-gradient checks pass; single-rank maxima are 0. Global segment target counts are [629,21,415]. Intended tower/input/output/gain gradient/update checks pass, live-address output-delta gradient and detached/wrong-grid mutations pass, frozen original hashes unchanged on both ranks.
+Source OFF parity has not yet reached a model forward: attempt1 stopped at str/Path loader mismatch; attempt2 stopped at bound prompt-width mismatch. Both preserved; I am fixing the request binding. Fresh reload/native generation and single-vs-distributed saved optimizer comparison remain pending. No broad fitting yet.
+Cost: wall start 1790062963.818157 (conservative model-entry process launch), 192.703 allocated GPU-seconds, 8 model/vision forwards total across the two training slices; all four supervisors/producers terminal. Eight-hour/64-GPU-hour envelope unchanged.
+Stable checkpoint manifest: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-coordinate-codebook-alignment/qualification/first-entry/manifest.json
+SHA256: 14ddd419b28a83b8b5b2fb5d7fe9bef1c3c304b025efc074e028a770d2c8a838
+Single: 6fd9dee6e1c5cd66c0a1de763b0121de0acd85561c867b5208102c02feef99e4; two-rank r0 e449360c4f0e4c3d6f846f8b85f9b4f4ee8e2654051f061ffbcbec04846bea67; r1 7d387ba087b26cdc399c1f91cf248548f797132bcf976fb5176b5c26610026aa.

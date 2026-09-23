@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-codebook-discriminator",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Independently accepted. Neither injection meets practical advantage; off does not dominate all failure measures. Mixed/inconclusive, no promotion.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-codebook-discriminator/unit.md",
+  "result": "research/experiments/2026-09-23-codebook-discriminator/lead-results.md",
+  "state_source": "research/experiments/2026-09-23-codebook-discriminator/lead-results.md",
+  "boundary": "One1024/25616epoch984call off fit;5120 analytical cells incl3840reuse;48forward secondary assay;8GPU training then inference;4wallh32GPUh8GiB.",
+  "not_authorized": [
+    "automatic promotion, successor or budget extension",
+    "architecture/LR/seed/dose search, commit or publication"
+  ],
+  "next_action": "No execution remains. Lead recommends pausing codebook scaling/location tuning pending a new discriminating hypothesis; no successor authorized."
+}
