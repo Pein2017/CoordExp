@@ -1,6 +1,6 @@
 ---
 name: lead-worker
-description: Let a research lead dispatch bounded execution to a persistent worker with user-selected model and effort. The lead invokes this workflow; the worker reads it for its role. Use for a lead/worker split or reuse of an existing worker; ordinary parallel subtasks do not require this skill.
+description: Exchange bounded assignments and direct reports between a research lead and persistent worker with user-selected model and effort. The lead invokes this workflow; the worker reads it for its role. Use for a lead/worker split or reuse of an existing worker; ordinary parallel subtasks do not require this skill.
 ---
 
 # Lead / Worker
@@ -33,17 +33,21 @@ Delegate hands-on exploration, implementation, runtime operation and local
 checks as one coherent package. Direct lead work is appropriate for the small
 independent verification needed to accept the package.
 
-Read compact worker status and final reports first. Expand exact artifacts only
-for a decision-bearing uncertainty. Never ingest the entire worker transcript
-or routine tool logs just to stay informed. Contexts are separate, but returned
-summaries and evidence still consume lead context; this is not zero-cost or a
-security boundary. Reuse the worker while its ownership and context remain sound.
+The worker sends a self-contained report directly to the lead task at a
+decision-bearing checkpoint or completion. Include status, the result or exact
+question, key evidence/checks, resource and job state, and the stable artifact
+path/hash. A bare "done" or wake pointer is insufficient. The lead reads that
+message and inspects the exact artifacts needed for acceptance; do not fetch the
+worker chat again to recover a report already delivered. Use history only for a
+specific missing fact or ambiguous delivery. Reuse the worker while its ownership
+and context remain sound.
 
 Give the worker execution-changing facts, preferably through an existing file:
 
 ```text
 Assignment and source of current authorization:
 Roles, lead/worker task identities, user-selected worker model and effort (required):
+Direct return target and supported message route:
 Applicable AGENTS/skills and authoritative task artifacts to read:
 Outcome / non-goals:
 Cwd, owned write surfaces, shared inputs:
@@ -64,12 +68,13 @@ research-lead ruling needed before dependent work resumes.
 
 ## Dispatch using the smallest available transport
 
-Use an exposed task-message tool when available and authorized. Check its actual
-schema and model-setting behavior. An active worker receives compatible steering
-through a supported steering surface; do not start a duplicate turn. Native
-subagents use `send_message` while active and `followup_task` while idle.
+Communicate directly in both directions: lead assignments/rulings to the worker,
+worker reports/questions to the lead. Use an exposed task-message tool when
+available and authorized; check its schema and model-setting behavior. An active
+recipient receives compatible steering, not a duplicate turn. Native subagents
+use `send_message` while active and `followup_task` while idle.
 
-For an **existing same-host sidebar worker**, when the message tool is absent,
+For an **existing same-host sidebar pair**, when the message tool is absent,
 this installation has an established App Server Unix-socket route. The bundled
 [scripts/worker_turn.py](scripts/worker_turn.py) reuses it. It does not create
 threads or change model settings, permissions, cwd, or global configuration.
@@ -80,7 +85,7 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
   --lead-thread LEAD_UUID --worker-thread WORKER_UUID --cwd /absolute/worktree
 ```
 
-Only after an execution assignment is authorized, send its UTF-8 text file:
+Send an authorized assignment/ruling to the worker from a UTF-8 file:
 
 ```bash
 python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
@@ -88,30 +93,47 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
   --send --message /absolute/assignment.txt --receipt /absolute/dispatch.json
 ```
 
-The helper is model/effort-neutral and requires an idle or unloaded worker.
-It resumes an unloaded worker without setting overrides, checks again,
-and sends once. It refuses a reused receipt path. One dispatcher owns the pair;
-this preflight is not an atomic lock against another UI operator. User model
-and effort choices are assignment/prompt requirements, not transport allowlists.
-The lead checks them before dispatch and uses an authorized configuration route
-if needed; the helper never overrides them.
+The worker returns its self-contained report using the same pair and `--to lead`:
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
+  --lead-thread LEAD_UUID --worker-thread WORKER_UUID --cwd /absolute/worktree \
+  --to lead --send --message /absolute/report.txt --receipt /absolute/return.json
+```
+
+The default target is `worker`; `--to lead` reverses delivery without swapping
+roles. The helper preserves model/effort, resumes an unloaded recipient without
+overrides, and sends once. For an active recipient it reads only the latest turn
+metadata (`thread/turns/list`, `itemsView=notLoaded`) and calls `turn/steer` with
+the exact `expectedTurnId`. Otherwise it uses `turn/start` on an idle recipient.
+It refuses unavailable targets, changed recipient settings, and reused receipt
+paths. A stale active-turn precondition never falls back to starting another turn.
+Each message has one sender and one receipt; this is not an atomic lock against
+a concurrent UI operator. Model/effort choices remain assignment requirements,
+not hardcoded transport allowlists.
 
 A send timeout is **unknown delivery**, not permission to resend: inspect the
 receipt and target task before any retry. Do not run `codex exec resume` beside
 an App-owned active worker. If this local socket or its protocol is unavailable,
-return the ready assignment and the specific transport gap; do not invent a
-background runner. The helper is local-only, not a remote-host discovery layer.
+return the ready message and the specific transport gap; do not invent a
+background runner or silently substitute a watcher. The helper is local-only,
+not a remote-host discovery layer.
 
 ## Completion, acceptance and continued conversation
 
-Use compact `wait_threads` snapshots/events for a sidebar worker and native
-completion events for subagents. Keep current cursors. Do not poll logs or paste
-unchanged status. Continue independent lead discussion while execution runs.
+Agree the direct return route before the lead ends its turn. The worker sends
+its report to that task before ending at a checkpoint; an idle lead receives a
+new turn, while an active lead receives steering. Do not require wake-me-up,
+log markers, or a wake-then-read-chat chain for ordinary lead/worker exchange.
+When replacing an existing watcher, verify the worker received the direct-return
+instruction before cancelling that watcher to avoid a notification gap.
 
-If returning while work remains, discover and read the currently installed
-`codex-wake-me-up:wake-me-up` skill only when its trigger applies; verify an armed handoff before promising an
-automatic return. Otherwise state clearly that the lead must be resumed manually.
-Completion notifications, queue acceptance and `idle` are not scientific success.
+Continue independent lead discussion while the worker runs. Compact
+`wait_threads` events are optional for an active wait or delivery reconciliation;
+keep cursors and do not poll or fetch routine transcripts. Native subagents keep
+their native completion messages. If no direct route is available, report the
+limitation rather than promising an automatic return. Transport submission,
+completion notifications and `idle` are not scientific acceptance.
 
 Require a stable candidate. Inspect exact outputs/diffs and replay the smallest
 independent acceptance check. Worker reports use `candidate`, `NEEDS_CONTEXT`,

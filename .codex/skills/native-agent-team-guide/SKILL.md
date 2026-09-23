@@ -12,10 +12,13 @@ This skill grants neither extra agents nor research launches.
 ## Priority: no polling
 
 Use event-driven, long waits within actual tool and instruction limits, not
-status/log/sleep loops. Do useful independent work while waiting; when only a
-long external job remains, use the durable handoff below. Root owns wake-me-up;
-workers do not remain active solely to monitor. Reconcile existing monitors
-before transfer; never duplicate or silently abandon one.
+status/log/sleep loops. Lead and workers exchange assignments, rulings and
+self-contained reports directly; use native completion notifications for
+subagents and [lead-worker](../lead-worker/SKILL.md) for persistent sessions.
+Do useful independent work while waiting. Long external jobs use the durable
+handoff below; do not default to wake-me-up or a wake-then-read-chat chain.
+Reconcile any existing monitor when replacing its delivery route; never
+duplicate or silently abandon one.
 
 ## Main lead/thread
 
@@ -74,6 +77,10 @@ Before selecting models, effort or fork context, read
 [Agent topology and delegation](../../AGENTS.md#agent-topology-and-delegation).
 For pairing with a persistent worker and dispatching its assignment, read
 [lead-worker](../lead-worker/SKILL.md).
+When briefing Luna on inherited configuration, caller-sensitive checks or
+artifact compatibility, or repairing a misunderstanding at those boundaries,
+use the worked examples in [Luna delegation](references/luna-delegation.md).
+Routine mechanical assignments do not need this additional reference.
 
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over
@@ -163,10 +170,12 @@ If another correction is needed, notify the lead before editing, agree ownership
 then return the updated candidate with affected checks rerun. The lead may take
 over a bounded repair; never write concurrently with its acceptance work.
 
-Use send_message for active peers/parent. It does not start an idle thread;
-followup_task resumes a non-root worker. Roster lookup is for reconciliation,
-not polling. Interrupting an agent does not establish that its external job
-has stopped; reconcile process ownership before any replacement launch.
+For native subagents, use send_message for active peers/parent and followup_task
+to resume an idle non-root worker. For persistent sessions, send messages in
+both directions through the route in [lead-worker](../lead-worker/SKILL.md),
+including its idle-session delivery. Roster lookup is for reconciliation, not
+polling. Interrupting an agent does not establish that its external job has
+stopped; reconcile process ownership before any replacement launch.
 
 ## Durable job handoff
 
@@ -176,11 +185,14 @@ success. Use the existing durable runtime rather than building a new scheduler.
 
 Send root the exact command/run identity, PID and tmux/session identity, stable
 log and result locations, terminal success/failure signals, checks already done,
-and next action. Then return; job completion remains outstanding.
+and next action. Name the owner responsible for terminal inspection and the
+direct return route; job completion remains outstanding.
 
-Root verifies the handoff and arms one wake-me-up monitor for its own thread,
-covering success, failure and producer exit as supported. Confirm state=armed
-before ending the lead turn. If arming fails, resolve the handoff explicitly;
-do not claim that a wake will occur. Follow the plugin's delivery/status rules
-when awakened, inspect terminal artifacts, and accept or resume missing work.
+Root verifies process survival, ownership and the return route before ending
+its turn. The job owner uses the existing wait/completion mechanism, inspects
+terminal artifacts and sends the result or failure directly to root. A launch
+message alone is not a completion handoff. If no working return route exists,
+report that gap and retain explicit ownership; do not promise a notification
+or silently substitute a watcher. Root accepts or resumes missing work from
+the direct report and its bound evidence.
 Do not rerun completed units merely because the delivering agent returned.

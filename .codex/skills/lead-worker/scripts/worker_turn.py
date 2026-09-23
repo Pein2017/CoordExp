@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect, or dispatch once to, an existing same-host worker."""
+"""Inspect a same-host lead/worker pair, or send one direct message either way."""
 import argparse
 import asyncio
 import hashlib
@@ -18,8 +18,12 @@ def check_pair(lead, worker, args):
             raise ValueError('Thread identity or cwd mismatch')
     if lead['id'] == worker['id']:
         raise ValueError('Lead and worker must be different tasks')
-    if worker['status']['type'] not in {'idle', 'notLoaded'}:
-        raise ValueError('Worker is busy or unavailable; reconcile it before dispatch')
+    target = {'lead': lead, 'worker': worker}[getattr(args, 'to', 'worker')]
+    if target['status']['type'] not in {'idle', 'notLoaded', 'active'}:
+        raise ValueError('Target is unavailable; reconcile it before dispatch')
+    if target.get('canAcceptDirectInput') is False:
+        raise ValueError('Target cannot accept direct input')
+    return target
 
 
 async def operate(call, args):
@@ -30,15 +34,16 @@ async def operate(call, args):
         ]
 
     lead, worker = await pair()
-    check_pair(lead, worker, args)
+    target = check_pair(lead, worker, args)
     summary = {
-        'lead': {k: lead[k] for k in ('id', 'model', 'reasoningEffort')},
+        'lead': {k: lead[k] for k in ('id', 'model', 'reasoningEffort', 'status')},
         'worker': {k: worker[k] for k in ('id', 'model', 'reasoningEffort', 'status')},
+        'target': getattr(args, 'to', 'worker'), 'target_thread_id': target['id'],
         'cwd': str(args.cwd), 'status': 'inspected_only',
     }
     if not args.send:
         return summary
-    worker_settings = (worker['model'], worker['reasoningEffort'])
+    target_settings = (target['model'], target['reasoningEffort'])
     message = args.message.read_text(encoding='utf-8')
     if not message.strip():
         raise ValueError('Assignment is empty')
@@ -53,20 +58,35 @@ async def operate(call, args):
             receipt.flush()
         save('prepared', message_sha256=hashlib.sha256(message.encode()).hexdigest())
         try:
-            if worker['status']['type'] == 'notLoaded':
-                await call('thread/resume', {'threadId': args.worker_thread})
+            if target['status']['type'] == 'notLoaded':
+                await call('thread/resume', {'threadId': target['id']})
             lead, worker = await pair()
-            check_pair(lead, worker, args)
-            summary['lead'] = {k: lead[k] for k in ('id', 'model', 'reasoningEffort')}
+            target = check_pair(lead, worker, args)
+            summary['lead'] = {k: lead[k] for k in ('id', 'model', 'reasoningEffort', 'status')}
             summary['worker'] = {k: worker[k] for k in ('id', 'model', 'reasoningEffort', 'status')}
-            if (worker['model'], worker['reasoningEffort']) != worker_settings:
-                raise ValueError('Worker settings changed during preflight; reconcile before dispatch')
-            save('delivery_unknown')
-            result = await call('turn/start', {
-                'threadId': args.worker_thread,
-                'input': [{'type': 'text', 'text': message}],
-            })
-            save('submitted', turn_id=result['turn']['id'], turn_status=result['turn']['status'])
+            if (target['model'], target['reasoningEffort']) != target_settings:
+                raise ValueError('Target settings changed during preflight; reconcile before dispatch')
+            params = {'threadId': target['id'], 'input': [{'type': 'text', 'text': message}]}
+            if target['status']['type'] == 'active':
+                page = await call('thread/turns/list', {
+                    'threadId': target['id'], 'limit': 1, 'sortDirection': 'desc',
+                    'itemsView': 'notLoaded',
+                })
+                turns = page['data']
+                if len(turns) != 1 or turns[0]['status'] != 'inProgress' or not turns[0].get('id'):
+                    raise ValueError('Active target has no exact current turn; reconcile before dispatch')
+                params['expectedTurnId'] = turns[0]['id']
+                save('delivery_unknown', delivery_method='turn/steer')
+                result = await call('turn/steer', params)
+                if result['turnId'] != params['expectedTurnId']:
+                    raise ValueError('Unexpected steered turn; reconcile delivery')
+                save('submitted', turn_id=result['turnId'])
+            else:
+                if target['status']['type'] != 'idle':
+                    raise ValueError('Target did not become ready after resume')
+                save('delivery_unknown', delivery_method='turn/start')
+                result = await call('turn/start', params)
+                save('submitted', turn_id=result['turn']['id'], turn_status=result['turn']['status'])
         except Exception as exc:
             save(summary['status'], error_type=type(exc).__name__)
             raise
@@ -110,6 +130,7 @@ if __name__ == '__main__':
     parser.add_argument('--lead-thread', required=True, type=lambda s: str(UUID(s.removeprefix('codex://threads/'))))
     parser.add_argument('--worker-thread', required=True, type=lambda s: str(UUID(s.removeprefix('codex://threads/'))))
     parser.add_argument('--cwd', required=True, type=Path)
+    parser.add_argument('--to', choices=('worker', 'lead'), default='worker')
     parser.add_argument('--send', action='store_true')
     parser.add_argument('--message', type=Path)
     parser.add_argument('--receipt', type=Path)
