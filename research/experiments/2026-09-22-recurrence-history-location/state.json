@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-history-location",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Converged local causal boundary: matched content is location-sensitive; source/downstream cached states interact; exact old-row K/V duplication is insufficient for the native exit, while old-K replacement reverses it and old-V retains it.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-history-location/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-history-location/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-history-location/results.md",
+  "authorization": "User requested autonomous continuation without stopping before convergence; all GPUs authorized.",
+  "boundary": "One mature untied-axis val7511 state; same singleton x2 edit at four historical locations; conditional one cache partition.",
+  "next_action": "Closed at frozen convergence boundary; no active model job or automatic finer scan. Positional phase versus contextual key features remains a distinct unresolved question under the continuing user authorization.",
+  "continuation_protocol": "research/experiments/2026-09-22-recurrence-history-location/native-row-mass.md",
+  "stage_A_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-history-location/lead-checks/stage-A-readback.json",
+  "stage_B_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-history-location/lead-checks/stage-B-readback.json",
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-history-location/lead-acceptance.json",
+  "native_bridge_acceptance": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-history-location/lead-checks/native-bridge-readback.json",
+  "not_authorized": [
+    "publication",
+    "unrelated runtime cleanup"
+  ]
+}

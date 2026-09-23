@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-attention-mass",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Both-case mass-following global-winner prediction rejected; all eight cells qualified.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-attention-mass/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-attention-mass/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-attention-mass/results.md",
+  "authorization": "User explicitly requests continued autonomous analysis loops without stopping for permission.",
+  "boundary": "Two fixed previously exposed states, pure final phase/new pre-key throughout; all28layer head/query-wise log-normalizer/profile rules.",
+  "next_action": "Closed. Root proceeds to separately frozen position-correct whole-row cache sufficiency test.",
+  "not_authorized": [
+    "publication",
+    "unrelated runtime cleanup"
+  ],
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-attention-mass/lead-acceptance.json"
+}

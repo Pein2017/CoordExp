@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-positioned-duplicate",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Position-correct preceding-row joint K/V preserves both native winners; conditional local sufficiency accepted.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-positioned-duplicate/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-positioned-duplicate/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-positioned-duplicate/results.md",
+  "authorization": "User repeatedly instructs autonomous continued research loops and GPU use, without permission pauses.",
+  "boundary": "Two fixed native states; previous-row pre-K at actual new phase plus previous-row V, current S free.",
+  "next_action": "Closed; final fixed-first-template whole-history discriminator is separately frozen.",
+  "not_authorized": [
+    "publication",
+    "unrelated runtime cleanup"
+  ],
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-positioned-duplicate/lead-acceptance.json"
+}

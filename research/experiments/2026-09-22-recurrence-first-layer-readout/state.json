@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-first-layer-readout",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Primary00 restores global38; native/sham999 and both mixed cells38. Qualified local layer0 causal sensitivity, no exit-time prediction.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-first-layer-readout/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-first-layer-readout/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-first-layer-readout/results.md",
+  "authorization": "User explicitly continues owned research and requests improved Luna-max prompting.",
+  "boundary": "Single fixed val native exit; five cells patch only layer0 o_proj input at batch2/query2126.",
+  "next_action": "Reverse transfer of the accepted late layer0 state into earlier row42 is a distinct unlaunched context-sufficiency test.",
+  "not_authorized": [
+    "publication",
+    "unrelated runtime cleanup"
+  ],
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-first-layer-readout/lead-acceptance.json"
+}

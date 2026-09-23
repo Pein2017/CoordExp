@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-native-trajectory",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Rapid geometric settling rejected in val; conditional first-layer repeated-pool score prediction supported; supervised Luna-max package accepted.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-native-trajectory/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-native-trajectory/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-native-trajectory/results.md",
+  "authorization": "User explicitly continues autonomous research and selects Luna-max without Astra workers.",
+  "boundary": "Two original native histories; all28-layer repeated-row pre-K/V and selected coordinate readouts, no intervention.",
+  "next_action": "Closed native trajectory assay; fixed-anchor aging versus repeated-pool growth is the distinct next computation-level question, unlaunched.",
+  "not_authorized": [
+    "publication",
+    "unrelated runtime cleanup"
+  ],
+  "worker_model": "gpt-5.6-luna",
+  "worker_effort": "max",
+  "execution_ruling": "research/experiments/2026-09-22-recurrence-native-trajectory/execution-ruling.md",
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-native-trajectory/lead-acceptance.json"
+}

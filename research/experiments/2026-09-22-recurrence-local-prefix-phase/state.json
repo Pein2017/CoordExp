@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-22-recurrence-local-prefix-phase",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Local prefix phase alignment restores38; predecessor579 is sensitive to introduced local incoherence; late state plus phase/local alignment remains insufficient for999.",
+  "state_as_of": "2026-09-22",
+  "protocol": "research/experiments/2026-09-22-recurrence-local-prefix-phase/unit.md",
+  "result": "research/experiments/2026-09-22-recurrence-local-prefix-phase/results.md",
+  "state_source": "research/experiments/2026-09-22-recurrence-local-prefix-phase/results.md",
+  "boundary": "One native val7511 early query, target-query-only five-prefix-key rotary phase replacement.",
+  "authorization": "User authorizes autonomous continuation; larger data if necessary.",
+  "not_authorized": [
+    "publication",
+    "peer model work",
+    "unrelated runtime cleanup"
+  ],
+  "next_action": "Closed local coherence unit. Cross-image natural-history comparison is a distinct unlaunched direction; select episodes, not image EOS classes.",
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-acceptance.json",
+  "execution_ruling": "research/experiments/2026-09-22-recurrence-local-prefix-phase/repair-ruling-01.md"
+}
