@@ -110,6 +110,11 @@ frozen experimental records.
 
 ## Active-contract gate
 
+Open theoretical exploration may produce candidate models, conditional predictions,
+and unresolved questions without selecting an intervention yet. Apply the
+[mechanistic reasoning guidance](../../AGENTS.md#mechanistic-research-reasoning);
+the execution contract below becomes necessary when moving to a probe or training step.
+
 Before executing a probe or training step, freeze one current sentence:
 
 ```text

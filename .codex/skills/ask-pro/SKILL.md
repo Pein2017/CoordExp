@@ -70,9 +70,10 @@ restate the problem and map the key branches when it is still exploratory.
 
 ## Ask for a consequential reasoning result
 
-Match the scope of the user's decision: a focused bottleneck needs a sharp
+Match the user's intended research product: a focused bottleneck needs a sharp
 unresolved question; a program-level consultation needs the broader evidence
-and competing directions, not only the latest experiment. Use related
+and competing directions; open theory exploration may seek a better formulation
+or explanatory model before there is a concrete decision to make. Use related
 subquestions where they help resolve that decision. Take advantage of Pro's
 mathematical and complex-reasoning strength through the substance of the
 problem, not flattery, role assignments, or instructions such as "you are a
@@ -80,11 +81,23 @@ world-class expert."
 
 Use an open-ended, collegial voice: invite Pro to reinterpret the framing,
 disagree with both the user and Codex, and say when the evidence cannot decide.
-Always consider whether formalization through mathematics, statistics, causal
-identification, optimization, or LLM neural-network dynamics could sharpen the
-question. Invite a derivation, counterexample, or predictive consequence when
-that lens has decision value; do not force formalism or invent equations when it
-does not.
+For deep brainstorming or unexplained phenomena, invite Pro to develop promising
+mechanisms through a minimal model, conditional consequences, and new falsifiable
+predictions before choosing experiments. Let it replace the user's provisional
+variables and terminology, or conclude that similar observations have different
+causes. Do not prescribe a latent scalar, a theory vocabulary, or an immediate
+ablation plan. Use formalization when it exposes structure; ask for operational
+meanings and explicit assumptions rather than decorative equations or analogies.
+
+For AI/ML mechanisms, ask which links from objective and credit assignment to
+learned representation, inference computation, and observed behavior are supported
+versus assumed. Separate what the loss constrains from the algorithm we hope is
+learned. When representation evidence matters, distinguish information being
+present or probe-readable from being causally used, maintained, and correctly
+updated during generation. A toy calculation can establish possibility or test a
+derivation; transferring its explanation to the real model needs separate evidence.
+Invite lightweight calculations in Pro's available environment when useful, without
+assuming access to local models or authorizing new local experiments.
 
 Useful question shapes include:
 
@@ -99,9 +112,12 @@ Useful question shapes include:
 - If the user's direction is still abstract, what is the most useful precise
   formulation of it? What competing interpretations should be kept alive, and
   what is the cheapest evidence that would distinguish them?
+- What minimal model makes the observed structure intelligible? Under which
+  assumptions does it predict something not used to construct it, and what would
+  distinguish that prediction from the strongest alternative in the real system?
 
 These are examples, not a mandatory checklist. Ask for checkable conclusions,
-derivations, counterexamples or a prioritized decision as appropriate, rather
+derivations, explanatory models, counterexamples or a prioritized decision as appropriate, rather
 than a generic survey or a long unranked list of possible experiments. Make
 room for "the evidence cannot decide" and specify what additional information
 would then be useful. Do not force formalism where it adds no insight.

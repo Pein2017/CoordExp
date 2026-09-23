@@ -14,10 +14,10 @@ Reusable guidance loaded from local `AGENTS.md`. Nested `AGENTS.md` files specia
 
 ## Mechanistic research reasoning
 
-* Do not present a restatement of observed behavior as a mechanism. Saying that a repeated candidate wins and its output feeds back into another repetition does not explain why the model produces duplication bursts.
-* In mechanism discussions, take a position: rank concrete causal hypotheses, name the proposed computation, representation, or learning defect, and explain why it should occur in the affected inputs or sequence states. Explicitly labeled speculation is welcome even when it may be wrong; lack of proof is not a reason to retreat to descriptive summaries.
-* For each prioritized hypothesis, give a discriminating intervention, its predicted outcome versus the strongest alternative, and a result that would make the lead reject or materially downgrade it. More sensitivity, another escape example, or a better diagnostic plot is not mechanistic progress unless it changes that choice.
-* Keep observations, hypotheses, and established findings distinct. Evidence limits should bound claims without replacing a useful conjecture. Separate an intervention that treats the symptom from an experiment that identifies its cause.
+* Explain how concrete computations produce the observed structure; a familiar label or a restatement of behavior is not a mechanism. For each material causal link, distinguish established evidence, additional assumptions, and consequences derived under those assumptions.
+* In mechanism discussions, take a position on the most promising explanations and develop them beyond a hypothesis list. In open exploration, allow reframing and minimal explanatory models before converging on an experiment; do not presume a single latent variable or a shared cause for similar behaviors. Explicitly labeled speculation is welcome; evidence limits should bound claims without replacing useful conjectures.
+* Push promising explanations toward falsifiable predictions, especially consequences not used to construct them. Compare those predictions with the strongest alternative and identify an observation or intervention that would reject or materially weaken the explanation. Additional sensitivity measurements or symptom relief count as mechanistic progress only when they distinguish explanations.
+* Keep observations, hypotheses, conditional mathematical results, and established findings distinct. A toy model reproducing a phenomenon demonstrates a possible mechanism, not its operation in the real system. Separate symptom treatment from causal identification.
 
 ## Engineering discipline
 
