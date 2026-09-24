@@ -1,0 +1,88 @@
+{
+  "status": "lead-admitted-first-case-only",
+  "date": "2026-09-24",
+  "authority": "User ongoing autonomous recurrence research grant within 8 allocated GPU-hours; Sept24 request to investigate first revisit versus normal next owner.",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-history-read-protocol.md",
+    "sha256": "9ccece16a05d07aca61da9311ffea954382d306d23ad85f106baebe16ebd955c"
+  },
+  "cpu_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/lead-cpu-acceptance.json",
+    "sha256": "364804310d481f567dcda5f8f762c89d450e6b90e5ec6fe8173371ef1b4a2316"
+  },
+  "candidate_registry": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-window-candidates.json",
+    "sha256": "dcdc2f20a6dc64b6ec1110faf7cc2a7c4e4cf3dcbd4355c9ee2338b4c07996c4"
+  },
+  "admitted_cells": [
+    {
+      "state": "bowl-row1",
+      "condition": "native",
+      "image": "mature:313465:0",
+      "target_batch_index": 3,
+      "current_raw_query_span": [
+        10,
+        15
+      ],
+      "selected_raw_key_span": [
+        0,
+        10
+      ],
+      "old_token_id": 151675,
+      "new_token_id": 151827
+    },
+    {
+      "state": "bowl-row1",
+      "condition": "identity-mask-sham",
+      "image": "mature:313465:0",
+      "target_batch_index": 3,
+      "current_raw_query_span": [
+        10,
+        15
+      ],
+      "selected_raw_key_span": [
+        0,
+        10
+      ],
+      "old_token_id": 151675,
+      "new_token_id": 151827
+    },
+    {
+      "state": "bowl-row1",
+      "condition": "latest-row-mask",
+      "image": "mature:313465:0",
+      "target_batch_index": 3,
+      "current_raw_query_span": [
+        10,
+        15
+      ],
+      "selected_raw_key_span": [
+        0,
+        10
+      ],
+      "old_token_id": 151675,
+      "new_token_id": 151827
+    }
+  ],
+  "held_states": [
+    "bowl-row2 native/sham/latest-row/earlier-row",
+    "cow-row1 native/sham/latest-row"
+  ],
+  "max_model_forwards": 3,
+  "max_vision_forwards": 3,
+  "max_free_tokens": 0,
+  "first_case_cap_gpu_seconds": 360,
+  "proposed_panel_cap_gpu_seconds": 900,
+  "sequence_cap_gpu_hours": 8,
+  "prior_sequence_gpu_hours": 0.2381858424494664,
+  "prior_cost_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-y1-value-phase/supporting/stage2-three-case-ledger-v1.json",
+    "sha256": "2e49914de2cd0d38171adb76cf45b378f4d463006342b6ef309224639457991a"
+  },
+  "stop": "First 3-cell candidate with separate CPU readback, or first decision-bearing failure; no retry or held-cell launch.",
+  "raw_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001"
+}

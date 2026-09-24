@@ -1,0 +1,64 @@
+{
+  "status": "lead-accepted-cpu-feasibility-with-interpretation-narrowing",
+  "date": "2026-09-24",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-window-feasibility.md",
+    "sha256": "66dc59b1ece316a079ad5432232a1fcf8f003ffb6935751ec3a2607ee604152b"
+  },
+  "registry": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-window-candidates.json",
+    "sha256": "dcdc2f20a6dc64b6ec1110faf7cc2a7c4e4cf3dcbd4355c9ee2338b4c07996c4"
+  },
+  "original_design": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/unit.md",
+    "sha256": "7a3679dbf748c5a7a584de00283efb09dc29807e06d8aaca0a6a881e75c0c162"
+  },
+  "independent_check": {
+    "checks": [
+      {
+        "image": "mature:313465:0",
+        "bindings": 4,
+        "rows": 3,
+        "rank_as_in_registry": 92
+      },
+      {
+        "image": "mature:441325:4",
+        "bindings": 4,
+        "rows": 3,
+        "rank_as_in_registry": 117
+      },
+      {
+        "image": "mature:477415:4",
+        "bindings": 4,
+        "rows": 6,
+        "rank_as_in_registry": 17
+      },
+      {
+        "image": "mature:479075:0",
+        "bindings": 4,
+        "rows": 3,
+        "rank_as_in_registry": 124
+      },
+      {
+        "image": "new:151704:2",
+        "bindings": 4,
+        "rows": 7,
+        "rank_as_in_registry": 33
+      }
+    ],
+    "fixed_pair_forks_checked": 9,
+    "source_order": "mature event-selection-order then prospective new128.runtime.jsonl; split/image deduplicated"
+  },
+  "accepted": "Source-bound native rows, confirmed local owner windows, existing HOLDs and finite common-prefix forks.",
+  "narrowing": [
+    "Stored source ranks are not a pooled global rank: prospective book rank33 must remain after mature source population.",
+    "Cow and glass are unmatched normal-transition references, not a matched causal cohort.",
+    "Source chosen IDs equal raw global winners at the proposed forks; native pair winner directions are already known, although exact alternative logits are not.",
+    "Score-only 12-call proposal not admitted as a new mechanism discriminator."
+  ],
+  "next_decision": "Three-call native-position historical-read sign test at bowl first revisit, under separate exact admission.",
+  "model_calls": 0,
+  "vision_calls": 0,
+  "gpu_seconds": 0,
+  "lead_check_note": "Initial disposable lead check mistook native_target_tokens (count) for a token list; corrected schema read verified actual raw slices and chosen traces. No model call or artifact mutation resulted."
+}

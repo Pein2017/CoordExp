@@ -1,0 +1,1656 @@
+{
+  "chair_annotation_fallback": [
+    {
+      "bbox": [
+        510,
+        804,
+        618,
+        920
+      ],
+      "evidence_type": "reviewed_annotation_extent_not_native_emission",
+      "first_fork_row_offset": 4,
+      "longest_common_row_prefix_length": 4,
+      "owner_id": 1589003,
+      "row_token_ids": [
+        151646,
+        34196,
+        151647,
+        151648,
+        152180,
+        152474,
+        152288,
+        152590,
+        151649
+      ],
+      "status": "invalid_proposal_stratum_only"
+    },
+    {
+      "bbox": [
+        418,
+        878,
+        605,
+        998
+      ],
+      "evidence_type": "reviewed_annotation_extent_not_native_emission",
+      "first_fork_row_offset": 4,
+      "longest_common_row_prefix_length": 4,
+      "owner_id": 1586761,
+      "row_token_ids": [
+        151646,
+        34196,
+        151647,
+        151648,
+        152088,
+        152548,
+        152275,
+        152668,
+        151649
+      ],
+      "status": "invalid_proposal_stratum_only"
+    }
+  ],
+  "fixed_native_extent_contrasts": [
+    {
+      "comment": "B was emitted natively one row later; same state scoring at row1 is missing.",
+      "common_row_prefix_tokens": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648
+      ],
+      "event_row": 1,
+      "first_fork_absolute_native_offset": 15,
+      "first_fork_row_offset": 5,
+      "history_end_token": 10,
+      "image": "mature:313465:0",
+      "kind": "first_confirmed_A_revisit_vs_retrospective_unvisited_B",
+      "longest_common_row_prefix_length": 5,
+      "new_fork_token": 151827,
+      "new_row": 2,
+      "new_token_ids": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648,
+        151827,
+        151670,
+        152085,
+        151911,
+        151649
+      ],
+      "old_fork_token": 151675,
+      "old_row": 1,
+      "old_token_ids": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648,
+        151675,
+        151867,
+        151887,
+        152077,
+        151649
+      ],
+      "source_native_fork_logprob": -1.9316329956054688,
+      "source_native_fork_token": 151675,
+      "source_native_runnerup_token": 151671,
+      "status": "proposable"
+    },
+    {
+      "comment": "A row1 is prior visited owner; B is native new owner at row2 under a later history.",
+      "common_row_prefix_tokens": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648
+      ],
+      "event_row": 2,
+      "first_fork_absolute_native_offset": 25,
+      "first_fork_row_offset": 5,
+      "history_end_token": 20,
+      "image": "mature:313465:0",
+      "kind": "new_owner_after_A_A",
+      "longest_common_row_prefix_length": 5,
+      "new_fork_token": 151827,
+      "new_row": 2,
+      "new_token_ids": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648,
+        151827,
+        151670,
+        152085,
+        151911,
+        151649
+      ],
+      "old_fork_token": 151675,
+      "old_row": 1,
+      "old_token_ids": [
+        151646,
+        65,
+        9605,
+        151647,
+        151648,
+        151675,
+        151867,
+        151887,
+        152077,
+        151649
+      ],
+      "source_native_fork_logprob": -2.7960281372070312,
+      "source_native_fork_token": 151827,
+      "source_native_runnerup_token": 151829,
+      "status": "secondary_proposable"
+    },
+    {
+      "comment": "A and B are distinct reviewed books; target A does not recur.",
+      "common_row_prefix_tokens": [
+        151646,
+        2190,
+        151647,
+        151648
+      ],
+      "event_row": 3,
+      "first_fork_absolute_native_offset": 31,
+      "first_fork_row_offset": 4,
+      "history_end_token": 27,
+      "image": "new:151704:2",
+      "kind": "new_book_owner_after_A",
+      "longest_common_row_prefix_length": 4,
+      "new_fork_token": 151867,
+      "new_row": 3,
+      "new_token_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "old_fork_token": 151859,
+      "old_row": 2,
+      "old_token_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649
+      ],
+      "source_native_fork_logprob": -2.3244400024414062,
+      "source_native_fork_token": 151867,
+      "source_native_runnerup_token": 151870,
+      "status": "secondary_proposable"
+    },
+    {
+      "comment": "Both extents belong to visited B; this LCP is not an old-versus-unvisited-owner comparison.",
+      "common_row_prefix_tokens": [
+        151646,
+        2190,
+        151647,
+        151648
+      ],
+      "event_row": 4,
+      "first_fork_absolute_native_offset": 40,
+      "first_fork_row_offset": 4,
+      "history_end_token": 36,
+      "image": "new:151704:2",
+      "kind": "first_B_revisit_vs_prior_B_extent",
+      "longest_common_row_prefix_length": 4,
+      "new_fork_token": 151877,
+      "new_row": 4,
+      "new_token_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "old_fork_token": 151867,
+      "old_row": 3,
+      "old_token_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "source_native_fork_logprob": -3.136016845703125,
+      "source_native_fork_token": 151877,
+      "source_native_runnerup_token": 151873,
+      "status": "HOLD_for_old_vs_new"
+    },
+    {
+      "comment": "Person/bottle rows intervene; this is a target-nonreturn control, not scene health.",
+      "common_row_prefix_tokens": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648
+      ],
+      "event_row": 4,
+      "first_fork_absolute_native_offset": 43,
+      "first_fork_row_offset": 5,
+      "history_end_token": 38,
+      "image": "mature:441325:4",
+      "kind": "new_glass_owner_after_left_glass",
+      "longest_common_row_prefix_length": 5,
+      "new_fork_token": 152088,
+      "new_row": 4,
+      "new_token_ids": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648,
+        152088,
+        152311,
+        152262,
+        152669,
+        151649
+      ],
+      "old_fork_token": 151718,
+      "old_row": 2,
+      "old_token_ids": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648,
+        151718,
+        152274,
+        151824,
+        152477,
+        151649
+      ],
+      "source_native_fork_logprob": -2.225200653076172,
+      "source_native_fork_token": 152088,
+      "source_native_runnerup_token": 152090,
+      "status": "proposable"
+    },
+    {
+      "comment": "Earlier left and foreground glass owners are already visited.",
+      "common_row_prefix_tokens": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648
+      ],
+      "event_row": 7,
+      "first_fork_absolute_native_offset": 71,
+      "first_fork_row_offset": 5,
+      "history_end_token": 66,
+      "image": "mature:441325:4",
+      "kind": "later_new_right_glass",
+      "longest_common_row_prefix_length": 5,
+      "new_fork_token": 152498,
+      "new_row": 7,
+      "new_token_ids": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648,
+        152498,
+        152030,
+        152601,
+        152270,
+        151649
+      ],
+      "old_fork_token": 152088,
+      "old_row": 4,
+      "old_token_ids": [
+        151646,
+        71437,
+        8991,
+        151647,
+        151648,
+        152088,
+        152311,
+        152262,
+        152669,
+        151649
+      ],
+      "source_native_fork_logprob": -1.9624214172363281,
+      "source_native_fork_token": 152498,
+      "source_native_runnerup_token": 152499,
+      "status": "secondary_proposable"
+    },
+    {
+      "comment": "Immediate normal next-owner event, reviewed distinct cows.",
+      "common_row_prefix_tokens": [
+        151646,
+        18921,
+        151647,
+        151648
+      ],
+      "event_row": 1,
+      "first_fork_absolute_native_offset": 13,
+      "first_fork_row_offset": 4,
+      "history_end_token": 9,
+      "image": "mature:479075:0",
+      "kind": "new_cow_owner_after_A",
+      "longest_common_row_prefix_length": 4,
+      "new_fork_token": 151980,
+      "new_row": 1,
+      "new_token_ids": [
+        151646,
+        18921,
+        151647,
+        151648,
+        151980,
+        152156,
+        152045,
+        152237,
+        151649
+      ],
+      "old_fork_token": 151823,
+      "old_row": 0,
+      "old_token_ids": [
+        151646,
+        18921,
+        151647,
+        151648,
+        151823,
+        152142,
+        151864,
+        152242,
+        151649
+      ],
+      "source_native_fork_logprob": -1.4635372161865234,
+      "source_native_fork_token": 151980,
+      "source_native_runnerup_token": 151979,
+      "status": "proposable"
+    },
+    {
+      "comment": "Earlier A and B reviewed distinct; C native first arrival.",
+      "common_row_prefix_tokens": [
+        151646,
+        18921,
+        151647,
+        151648
+      ],
+      "event_row": 2,
+      "first_fork_absolute_native_offset": 22,
+      "first_fork_row_offset": 4,
+      "history_end_token": 18,
+      "image": "mature:479075:0",
+      "kind": "next_new_cow_owner_after_B",
+      "longest_common_row_prefix_length": 4,
+      "new_fork_token": 152067,
+      "new_row": 2,
+      "new_token_ids": [
+        151646,
+        18921,
+        151647,
+        151648,
+        152067,
+        152148,
+        152150,
+        152234,
+        151649
+      ],
+      "old_fork_token": 151980,
+      "old_row": 1,
+      "old_token_ids": [
+        151646,
+        18921,
+        151647,
+        151648,
+        151980,
+        152156,
+        152045,
+        152237,
+        151649
+      ],
+      "source_native_fork_logprob": -1.7156982421875,
+      "source_native_fork_token": 152067,
+      "source_native_runnerup_token": 152064,
+      "status": "secondary_proposable"
+    },
+    {
+      "comment": "Rows4/5 token-identical; no fork and no singleton physical owner. The computed trace value at following opener is not a coordinate fork.",
+      "common_row_prefix_tokens": [
+        151646,
+        34196,
+        151647,
+        151648,
+        151670,
+        152362,
+        152669,
+        152669,
+        151649
+      ],
+      "event_row": 5,
+      "first_fork_absolute_native_offset": null,
+      "first_fork_row_offset": null,
+      "history_end_token": 45,
+      "image": "mature:477415:4",
+      "kind": "invalid_multi_owner_exact_repeat",
+      "longest_common_row_prefix_length": 9,
+      "new_fork_token": null,
+      "new_row": 5,
+      "new_token_ids": [
+        151646,
+        34196,
+        151647,
+        151648,
+        151670,
+        152362,
+        152669,
+        152669,
+        151649
+      ],
+      "old_fork_token": null,
+      "old_row": 4,
+      "old_token_ids": [
+        151646,
+        34196,
+        151647,
+        151648,
+        151670,
+        152362,
+        152669,
+        152669,
+        151649
+      ],
+      "source_native_fork_logprob": null,
+      "source_native_fork_token": null,
+      "source_native_runnerup_token": null,
+      "status": "invalid_stratum_only"
+    }
+  ],
+  "gpu_hours": 0,
+  "hold": {
+    "book_row4": "No reviewed unvisited third book extent at first B revisit. Rows5-8 have unresolved physical owners; source annotation N=2141669 is B and already visited.",
+    "chair_rows4_5": "Physical singleton identity undefined; numerical repeat is separate invalid-proposal stratum.",
+    "source_trace": "Native chosen logits/logsumexp/top2 only; competing fork token and forced continuation full-vocabulary vectors absent at these exact event histories."
+  },
+  "images": {
+    "mature:313465:0": {
+      "all_row_descriptions": [
+        "bowl",
+        "bowl",
+        "bowl",
+        "scissors",
+        "carrot",
+        "carrot",
+        "carrot",
+        "carrot",
+        "carrot",
+        "carrot",
+        "person",
+        "knife",
+        "carrot",
+        "knife"
+      ],
+      "batch_index": 3,
+      "full_batch_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "full_batch_target_lengths": [
+        286,
+        109,
+        11,
+        138
+      ],
+      "group": "fresh-18",
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          54,
+          72
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "important_rows": {
+        "0": {
+          "bbox": [
+            0,
+            157,
+            277,
+            504
+          ],
+          "description": "bowl",
+          "proxy_owner": 716308,
+          "span": [
+            0,
+            10
+          ],
+          "token_ids": [
+            151646,
+            65,
+            9605,
+            151647,
+            151648,
+            151670,
+            151827,
+            151947,
+            152174,
+            151649
+          ],
+          "top_iou": 0.500817
+        },
+        "1": {
+          "bbox": [
+            5,
+            197,
+            217,
+            407
+          ],
+          "description": "bowl",
+          "proxy_owner": 716308,
+          "span": [
+            10,
+            20
+          ],
+          "token_ids": [
+            151646,
+            65,
+            9605,
+            151647,
+            151648,
+            151675,
+            151867,
+            151887,
+            152077,
+            151649
+          ],
+          "top_iou": 0.883752
+        },
+        "2": {
+          "bbox": [
+            157,
+            0,
+            415,
+            241
+          ],
+          "description": "bowl",
+          "proxy_owner": 715278,
+          "span": [
+            20,
+            30
+          ],
+          "token_ids": [
+            151646,
+            65,
+            9605,
+            151647,
+            151648,
+            151827,
+            151670,
+            152085,
+            151911,
+            151649
+          ],
+          "top_iou": 0.800669
+        }
+      },
+      "input_identity_sha256": "0a66c4e69bb29131c146dee41497efc8afe625b07b21b39ea030cc9f5389c502",
+      "lead_ruling": {
+        "arrivals": [
+          0,
+          1
+        ],
+        "candidate_annotation_ids": [
+          715278
+        ],
+        "candidates": "lead-admitted-for-these-landmarks",
+        "family": "mature:313465:0",
+        "native_label": "lead-admitted-first-valid-owner-revisit",
+        "reason": "Rows 0/1 refer to the same left foreground bowl; row 0 has loose localization that includes its surrounding pot. N is the separate upper bowl, unvisited before both landmarks; native row 2 subsequently visits it. Partial/loose localization is retained, not hallucination."
+      },
+      "model_identity": {
+        "attention": "sdpa",
+        "dtype": "fp32",
+        "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+        "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+        "model": "untied",
+        "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+        "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+        "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+        "shared_delta": false
+      },
+      "native_target_tokens": 138,
+      "request_ids": [
+        "coco2017_train_000000301110",
+        "coco2017_train_000000309264",
+        "coco2017_train_000000309694",
+        "coco2017_train_000000313465"
+      ],
+      "reviewed_physical_rulings": {
+        "0": "716308 left foreground bowl, loose surrounding-pot localization",
+        "1": "716308 same bowl, first confirmed physical revisit",
+        "2": "715278 separate upper bowl, first arrival"
+      },
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+          "sha256": "bc28ebbcd6ad8015d7097959539c5069d4c7f92fa4431665d893b3d4b74c7f4b"
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+          "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d"
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/receipt.json",
+          "sha256": "23e219bab7f87097f1f6342e723b32b2c2e03c8f57f5d0559fc4ffa55b9a5875"
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/trace.json",
+          "sha256": "eea6a5b2d5ea16f9c3ce63cefdc31331b399c0e61ec7432b36256644fb83b5f7"
+        }
+      },
+      "source_rank": 92
+    },
+    "mature:441325:4": {
+      "all_row_descriptions": [
+        "person",
+        "bottle",
+        "wine glass",
+        "person",
+        "wine glass",
+        "person",
+        "person",
+        "wine glass"
+      ],
+      "batch_index": 0,
+      "full_batch_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "full_batch_target_lengths": [
+        77,
+        41,
+        11,
+        58
+      ],
+      "group": "fresh-25",
+      "image_grids": [
+        [
+          1,
+          52,
+          70
+        ],
+        [
+          1,
+          52,
+          70
+        ],
+        [
+          1,
+          72,
+          52
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "important_rows": {
+        "2": {
+          "bbox": [
+            48,
+            604,
+            154,
+            807
+          ],
+          "description": "wine glass",
+          "proxy_owner": 665526,
+          "span": [
+            19,
+            29
+          ],
+          "token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151718,
+            152274,
+            151824,
+            152477,
+            151649
+          ],
+          "top_iou": 0.917216
+        },
+        "4": {
+          "bbox": [
+            418,
+            641,
+            592,
+            999
+          ],
+          "description": "wine glass",
+          "proxy_owner": 662717,
+          "span": [
+            38,
+            48
+          ],
+          "token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            152088,
+            152311,
+            152262,
+            152669,
+            151649
+          ],
+          "top_iou": 0.963366
+        },
+        "7": {
+          "bbox": [
+            828,
+            360,
+            931,
+            600
+          ],
+          "description": "wine glass",
+          "proxy_owner": 663217,
+          "span": [
+            66,
+            76
+          ],
+          "token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            152498,
+            152030,
+            152601,
+            152270,
+            151649
+          ],
+          "top_iou": 0.937962
+        }
+      },
+      "input_identity_sha256": "69d7abae01bd1cef4b48380c7f4cfcfe4cb20623ee736208b559787322e200e8",
+      "lead_ruling": {
+        "arrivals": [
+          4
+        ],
+        "candidate_annotation_ids": [
+          663217
+        ],
+        "candidates": "lead-admitted-at-row4",
+        "family": "mature:441325:4",
+        "native_label": "lead-admitted-local-target-nonreturn-control",
+        "reason": "The foreground wine glass is distinct from earlier left glass and later right glass. N is the unvisited right glass; EOS and full native target nonreturn were checked."
+      },
+      "model_identity": {
+        "attention": "sdpa",
+        "dtype": "fp32",
+        "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+        "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+        "model": "untied",
+        "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+        "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+        "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+        "shared_delta": false
+      },
+      "native_target_tokens": 77,
+      "request_ids": [
+        "coco2017_train_000000441325",
+        "coco2017_train_000000441425",
+        "coco2017_train_000000455769",
+        "coco2017_train_000000457796"
+      ],
+      "reviewed_physical_rulings": {
+        "2": "665526 left glass, first arrival",
+        "4": "662717 foreground glass, distinct new owner and target nonreturn",
+        "7": "663217 right glass, distinct later new owner"
+      },
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000441325.jpg",
+          "sha256": "abd7b4ca186db73ca1aace23e52b89740b0f0e5f508f189826e2644a963ce1db"
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/raw.json",
+          "sha256": "68ce81f4ccc53df3bb404910f1ee0d7cd2dc2c308d0d77b38dd863ff49f73e9f"
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/receipt.json",
+          "sha256": "b9f42e89181e28156debb71d41f3aa7307c64a8bf2ddea5ee9fbd6fd210303ce"
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/trace.json",
+          "sha256": "cb98c7443de5280cb137e71c7a85eaec9722ab30ae58c8048b09dbce6b49872a"
+        }
+      },
+      "source_rank": 117
+    },
+    "mature:477415:4": {
+      "all_row_descriptions": [
+        "person",
+        "chair",
+        "chair",
+        "chair",
+        "chair",
+        "chair",
+        "chair",
+        "person",
+        "tv",
+        "person",
+        "chair",
+        "person",
+        "chair",
+        "person",
+        "chair",
+        "person",
+        "person",
+        "person",
+        "chair",
+        "person",
+        "chair",
+        "person",
+        "chair",
+        "tie",
+        "person",
+        "person",
+        "person",
+        "person",
+        "chair",
+        "person",
+        "person"
+      ],
+      "batch_index": 0,
+      "full_batch_stops": [
+        "im_end"
+      ],
+      "full_batch_target_lengths": [
+        280
+      ],
+      "group": "refined-04",
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ]
+      ],
+      "important_rows": {
+        "1": {
+          "bbox": [
+            0,
+            795,
+            121,
+            999
+          ],
+          "description": "chair",
+          "proxy_owner": 1580313,
+          "span": [
+            9,
+            18
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151670,
+            152465,
+            151791,
+            152669,
+            151649
+          ],
+          "top_iou": 0.879192
+        },
+        "2": {
+          "bbox": [
+            0,
+            721,
+            0,
+            763
+          ],
+          "description": "chair",
+          "proxy_owner": null,
+          "span": [
+            18,
+            27
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151670,
+            152391,
+            151670,
+            152433,
+            151649
+          ],
+          "top_iou": 0.0
+        },
+        "3": {
+          "bbox": [
+            0,
+            999,
+            93,
+            999
+          ],
+          "description": "chair",
+          "proxy_owner": null,
+          "span": [
+            27,
+            36
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151670,
+            152669,
+            151763,
+            152669,
+            151649
+          ],
+          "top_iou": 0.0
+        },
+        "4": {
+          "bbox": [
+            0,
+            692,
+            999,
+            999
+          ],
+          "description": "chair",
+          "proxy_owner": null,
+          "span": [
+            36,
+            45
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151670,
+            152362,
+            152669,
+            152669,
+            151649
+          ],
+          "top_iou": 0.085558
+        },
+        "5": {
+          "bbox": [
+            0,
+            692,
+            999,
+            999
+          ],
+          "description": "chair",
+          "proxy_owner": null,
+          "span": [
+            45,
+            54
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151670,
+            152362,
+            152669,
+            152669,
+            151649
+          ],
+          "top_iou": 0.085558
+        },
+        "6": {
+          "bbox": [
+            98,
+            579,
+            170,
+            633
+          ],
+          "description": "chair",
+          "proxy_owner": -3032364130617015,
+          "span": [
+            54,
+            63
+          ],
+          "token_ids": [
+            151646,
+            34196,
+            151647,
+            151648,
+            151768,
+            152249,
+            151840,
+            152303,
+            151649
+          ],
+          "top_iou": 0.565116
+        }
+      },
+      "input_identity_sha256": "e5089b053f787d7ab0e98df1cb37cea8e86099bad6222a11163674b9200de7f5",
+      "lead_ruling": {
+        "arrivals": [
+          4,
+          5
+        ],
+        "candidate_annotation_ids": [
+          1589003,
+          1586761
+        ],
+        "candidates": "lead-admitted-for-these-landmarks",
+        "family": "mature:477415:4",
+        "native_label": "lead-admitted-first-invalid-multi-owner-proposal",
+        "reason": "The full-width chair proposal spans multiple distinct chairs. Both N boxes identify separate center-front chair backs, different from the earlier leftmost chair. Rows 2/3 are distinct singleton degenerate proposals; they are not earlier matches to this fixed erroneous-proposal family."
+      },
+      "model_identity": {
+        "attention": "sdpa",
+        "dtype": "fp32",
+        "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+        "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+        "model": "untied",
+        "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+        "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+        "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+        "shared_delta": false
+      },
+      "native_target_tokens": 280,
+      "request_ids": [
+        "coco2017_train_000000477415"
+      ],
+      "reviewed_physical_rulings": {
+        "1": "1580313 left singleton chair",
+        "2": "degenerate singleton proposal; no established owner",
+        "3": "degenerate singleton proposal; no established owner",
+        "4": "multi-owner full-width chair proposal, no singleton owner",
+        "5": "exact repeat of row4 proposal, no singleton owner",
+        "6": "separate smaller chair proposal; negative numerical proxy is not physical owner qualification"
+      },
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+          "sha256": "84a91098415dae8ddf0c5c911505df7a1883b9c6363e5d54a42d9217ab3c2596"
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+          "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c"
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+          "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d"
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+          "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f"
+        }
+      },
+      "source_rank": 17
+    },
+    "mature:479075:0": {
+      "all_row_descriptions": [
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow",
+        "cow"
+      ],
+      "batch_index": 3,
+      "full_batch_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "full_batch_target_lengths": [
+        21,
+        20,
+        19,
+        100
+      ],
+      "group": "fresh-26",
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          54,
+          72
+        ],
+        [
+          1,
+          54,
+          72
+        ],
+        [
+          1,
+          52,
+          78
+        ]
+      ],
+      "important_rows": {
+        "0": {
+          "bbox": [
+            153,
+            472,
+            194,
+            572
+          ],
+          "description": "cow",
+          "proxy_owner": 279275,
+          "span": [
+            0,
+            9
+          ],
+          "token_ids": [
+            151646,
+            18921,
+            151647,
+            151648,
+            151823,
+            152142,
+            151864,
+            152242,
+            151649
+          ],
+          "top_iou": 0.960784
+        },
+        "1": {
+          "bbox": [
+            310,
+            486,
+            375,
+            567
+          ],
+          "description": "cow",
+          "proxy_owner": 73239,
+          "span": [
+            9,
+            18
+          ],
+          "token_ids": [
+            151646,
+            18921,
+            151647,
+            151648,
+            151980,
+            152156,
+            152045,
+            152237,
+            151649
+          ],
+          "top_iou": 0.937327
+        },
+        "2": {
+          "bbox": [
+            397,
+            478,
+            480,
+            564
+          ],
+          "description": "cow",
+          "proxy_owner": 70106,
+          "span": [
+            18,
+            27
+          ],
+          "token_ids": [
+            151646,
+            18921,
+            151647,
+            151648,
+            152067,
+            152148,
+            152150,
+            152234,
+            151649
+          ],
+          "top_iou": 0.892473
+        }
+      },
+      "input_identity_sha256": "f12b2982bcf57fa34db0cc5292f6234b4c1be6d6e29acf0f87cf1fa9bad1fee2",
+      "lead_ruling": {
+        "arrivals": [
+          0
+        ],
+        "candidate_annotation_ids": [
+          73239,
+          70106
+        ],
+        "candidates": "lead-admitted-at-row0",
+        "family": "mature:479075:0",
+        "native_label": "lead-admitted-local-target-nonreturn-control",
+        "reason": "The target and two N cows are spatially separate and visually supported. Subsequent native rows move across other cows without a return to this target before EOS."
+      },
+      "model_identity": {
+        "attention": "sdpa",
+        "dtype": "fp32",
+        "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+        "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+        "model": "untied",
+        "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+        "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+        "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+        "shared_delta": false
+      },
+      "native_target_tokens": 100,
+      "request_ids": [
+        "coco2017_train_000000459064",
+        "coco2017_train_000000460240",
+        "coco2017_train_000000472865",
+        "coco2017_train_000000479075"
+      ],
+      "reviewed_physical_rulings": {
+        "0": "279275 cow target, first arrival and target nonreturn",
+        "1": "73239 distinct new cow",
+        "2": "70106 distinct new cow",
+        "3-10": "numerical proxy IDs only here; physical identities outside reviewed local controls not promoted"
+      },
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000479075.jpg",
+          "sha256": "504dc4621a9ea4f6c8afdb92e7dacd717735c1750a2097b4b57b9a6eb9772b46"
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/raw.json",
+          "sha256": "b20566533a3cf316e35d6e124ce59085a41f9a9d6f6b79194c46eba43782b96d"
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/receipt.json",
+          "sha256": "0bdfc96e08c0c7de8f50f8026120239147dce5cbb1eb28a3b876657e32b2d5bc"
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/trace.json",
+          "sha256": "fbaa31e6cb70e8452d53c74107ceee2320324f9eff15ca3c8b5936229d358af4"
+        }
+      },
+      "source_rank": 124
+    },
+    "new:151704:2": {
+      "all_row_descriptions": [
+        "person",
+        "chair",
+        "book",
+        "book",
+        "book",
+        "book",
+        "book",
+        "book",
+        "book",
+        "person",
+        "remote",
+        "couch",
+        "tv"
+      ],
+      "batch_index": 1,
+      "full_batch_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "full_batch_target_lengths": [
+        78,
+        119,
+        244,
+        174
+      ],
+      "group": "new-08",
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          72,
+          54
+        ],
+        [
+          1,
+          52,
+          72
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "important_rows": {
+        "2": {
+          "bbox": [
+            189,
+            768,
+            254,
+            814
+          ],
+          "description": "book",
+          "proxy_owner": 1652859,
+          "span": [
+            18,
+            27
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151859,
+            152438,
+            151924,
+            152484,
+            151649
+          ],
+          "top_iou": 0.684524
+        },
+        "3": {
+          "bbox": [
+            197,
+            829,
+            270,
+            859
+          ],
+          "description": "book",
+          "proxy_owner": 2141669,
+          "span": [
+            27,
+            36
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151867,
+            152499,
+            151940,
+            152529,
+            151649
+          ],
+          "top_iou": 0.60456
+        },
+        "4": {
+          "bbox": [
+            207,
+            829,
+            270,
+            852
+          ],
+          "description": "book",
+          "proxy_owner": 2141669,
+          "span": [
+            36,
+            45
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151877,
+            152499,
+            151940,
+            152522,
+            151649
+          ],
+          "top_iou": 0.529605
+        },
+        "5": {
+          "bbox": [
+            256,
+            676,
+            388,
+            751
+          ],
+          "description": "book",
+          "proxy_owner": null,
+          "span": [
+            45,
+            54
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151926,
+            152346,
+            152058,
+            152421,
+            151649
+          ],
+          "top_iou": 0.0
+        },
+        "6": {
+          "bbox": [
+            281,
+            774,
+            367,
+            814
+          ],
+          "description": "book",
+          "proxy_owner": null,
+          "span": [
+            54,
+            63
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151951,
+            152444,
+            152037,
+            152484,
+            151649
+          ],
+          "top_iou": 0.0
+        },
+        "7": {
+          "bbox": [
+            286,
+            768,
+            362,
+            813
+          ],
+          "description": "book",
+          "proxy_owner": null,
+          "span": [
+            63,
+            72
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151956,
+            152438,
+            152032,
+            152483,
+            151649
+          ],
+          "top_iou": 0.0
+        },
+        "8": {
+          "bbox": [
+            289,
+            833,
+            371,
+            861
+          ],
+          "description": "book",
+          "proxy_owner": null,
+          "span": [
+            72,
+            81
+          ],
+          "token_ids": [
+            151646,
+            2190,
+            151647,
+            151648,
+            151959,
+            152503,
+            152041,
+            152531,
+            151649
+          ],
+          "top_iou": 0.0
+        }
+      },
+      "input_identity_sha256": "ab022eb4d785e912c5a1d92202a9a8139eeb3ccc18838cd04822faeced06719e",
+      "lead_ruling": {
+        "arrivals": [
+          2
+        ],
+        "candidate_annotation_ids": [
+          2141669
+        ],
+        "candidates": "lead-admitted-at-row2",
+        "family": "new:151704:2",
+        "native_label": "lead-admitted-local-target-nonreturn-control",
+        "reason": "The target and N are separate items on the table. Native rows 3/4 revisit N, so this is only a control for target nonreturn, not a globally healthy scene. Matched recurrent family 356238 remains HOLD."
+      },
+      "model_identity": {
+        "attention": "sdpa",
+        "dtype": "fp32",
+        "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+        "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+        "model": "untied",
+        "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+        "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+        "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+        "shared_delta": false
+      },
+      "native_target_tokens": 119,
+      "request_ids": [
+        "coco2017_train_000000135237",
+        "coco2017_train_000000151704",
+        "coco2017_train_000000159714",
+        "coco2017_train_000000169872"
+      ],
+      "reviewed_physical_rulings": {
+        "2": "1652859 target book, first arrival; target never returns",
+        "3": "2141669 other book, first arrival",
+        "4": "2141669 same other book, first confirmed revisit",
+        "5-8": "book proposals with unresolved physical owners; do not infer novelty from null proxy"
+      },
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+          "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846"
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+          "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381"
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+          "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da"
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+          "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7"
+        }
+      },
+      "source_rank": 33
+    }
+  },
+  "minimal_future_panel": {
+    "nominal_calls_per_image": {
+      "full_source_teacher_forced": 1,
+      "model_forwards": 4,
+      "prefix_prefill": 1,
+      "two_complete_row_forced_readouts": 2,
+      "vision_forwards": 2
+    },
+    "nominal_total": {
+      "free_generation_tokens": 0,
+      "model_forwards": 12,
+      "vision_forwards": 6
+    },
+    "primary_events": [
+      "mature:313465:0 row1",
+      "mature:479075:0 row1",
+      "mature:441325:4 row4"
+    ],
+    "requires_before_launch": [
+      "lead freezes exact three event/extent pairs and primary decision",
+      "maintained full-batch parity and source-shape-aware runtime forecast",
+      "complete-prefix forced row scoring with opener/terminator and full-vocabulary fork/continuation vectors",
+      "actual consumer input/position/companion and cold-readback qualification"
+    ],
+    "status": "proposal_not_admitted"
+  },
+  "model_calls": 0,
+  "schema": "recurrence_first_revisit.native_window_cpu_feasibility.v1",
+  "selection": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-first-arrivals/selection.json",
+    "reviewed_families": 13,
+    "sha256": "435c333520f5f31078a44d2afb49d07a31c986d07198f9c8140cd8f3ddf47395",
+    "source_images": 273
+  },
+  "state_sha256_at_read": "b7d019c7107d6fa96cbcf9c61af9e28ba72543334786bc87529c31548e9f94bd",
+  "status": "candidate_CPU_only",
+  "unit_sha256": "7a3679dbf748c5a7a584de00283efb09dc29807e06d8aaca0a6a881e75c0c162",
+  "vision_calls": 0
+}
