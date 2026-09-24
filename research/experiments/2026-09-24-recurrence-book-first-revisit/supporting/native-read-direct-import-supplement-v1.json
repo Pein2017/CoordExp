@@ -1,0 +1,18 @@
+{
+  "status": "pre_gpu_direct_import_capture",
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/native-read-preflight-v1.json",
+    "sha256": "89aa4aaad7b982c3ab2621f00755de100e55ff4743b7ef531a58277b9d7b5bc0",
+    "size_bytes": 401182
+  },
+  "maintained": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/artifacts.py",
+    "sha256": "8a158c236723068fffa4930246d542c3635e3d123883a341e31fe878e7d8e4b4",
+    "size_bytes": 2064
+  },
+  "capture": {
+    "path": "/data/CoordExp/.worktrees/research-probes/reference/retained-sources/runs/2eea4609fc13f9ea509faa72e3367f8da3f4a16095c544f5b8b93b5cfe087342/probes/training_set_completion/artifacts.py",
+    "sha256": "8a158c236723068fffa4930246d542c3635e3d123883a341e31fe878e7d8e4b4",
+    "size_bytes": 2064
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "status": "lead-accepted-primary-physical-pair-secondary-exact-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/lead-native-read-verification-v1.json",
+    "sha256": "c33655afd3dfceafb83dda316aa441a265b46e6611302b9b280a5df35cdb010e"
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/native-read-candidate-results.md",
+    "sha256": "21af6893c31ed9a42b7607787bb6c468ca77f4ac3f07a116795ddd098552799d"
+  },
+  "summary": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/native-read-cold-summary-v1.json",
+    "sha256": "397c716bea482896a7afe9be23c1dc8cf901c2da9f81d7fe294478b00a7634b4"
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/native-read-protocol.md",
+    "sha256": "e74467fa451e157c5a8f118eb1069c0fa3d21251a83681df7292674a71a616aa",
+    "size_bytes": 11325
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-admission-v1.json",
+    "sha256": "08fc23ff2693d3597263a72fb3f8b7c57348ffed7b2f731e8ee9a328574284ea",
+    "size_bytes": 9675
+  },
+  "technical_ruling": "Both admitted states qualify; all52 raw vectors/actual consumers independently inspected. Two exact t0 reuses and full-prefix recomputation verified. No model replay needed for acceptance.",
+  "physical_ruling": {
+    "row3_native_sham": "B2141669",
+    "row3_mask": "A1652859",
+    "row4_native_sham": "B2141669",
+    "row4_mask": "B2141669",
+    "basis": "Independent lead inspection of both hash-bound overlays, source chronology and geometry; annotation IoU is descriptive."
+  },
+  "primary_prediction": "Accepted paired owner forecast: row3 mask-minus-native -2, row4 0; contrast+2 on the declared A/B categorical score.",
+  "secondary_prediction": "Both technically valid exact-row nonpasses: row3 x1=190 versus189; row4 x2=266 versus270.",
+  "claims": [
+    "Blocking current-row reading of the latest record disrupts the selected A-to-B transition.",
+    "B recurrence survives the same blocked path at the following first-revisit state after the native opener.",
+    "Exact coordinate copying is not needed for these masked physical-owner outcomes."
+  ],
+  "limits": [
+    "Native opener readout is reused and can carry information through identity; opener dependence is not ablated.",
+    "Masks change the effective readable prefix; image and older history remain.",
+    "Two histories/positions, one selected image; no unique onset mechanism, explicit coverage memory or population inference.",
+    "Persistence does not rule out copying contributions in other states or paths."
+  ],
+  "actual_model_forwards": 52,
+  "actual_vision_forwards": 52,
+  "logical_tokens": 54,
+  "reused_t0": 2,
+  "outer_gpu_seconds": 145.31027039140463,
+  "cumulative_sequence_gpu_hours": 0.3544195017876344,
+  "unit_disposition": "closed, no further call under this contract",
+  "next_decision": "Separate CPU-only same-owner extent feasibility; fixed B x1/y2 corners and single native row5 reference."
+}

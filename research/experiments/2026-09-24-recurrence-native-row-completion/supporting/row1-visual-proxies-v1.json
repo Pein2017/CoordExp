@@ -1,0 +1,158 @@
+{
+  "schema": "recurrence_native_row_completion.row1_visual_proxies.v1",
+  "status": "candidate_annotation_proxy_only",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-row1-admission-v1.json",
+    "sha256": "0796039847c1ed0532ff3b28ff512b3244802a61129bd09dae8fb80f5d979c21",
+    "size_bytes": 8755
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/readback.json",
+    "sha256": "87b810f604a34dde14d084dbb533cbb2b705c4f816f8e75c9ce9a19ac982e0e5",
+    "size_bytes": 12286
+  },
+  "annotation_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json",
+    "sha256": "968f6f7e7752ad68deb697d69690704cb94c2cd3d3ebd15c254d9cbb709bf40a",
+    "size_bytes": 1870712
+  },
+  "original_image": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+    "sha256": "bc28ebbcd6ad8015d7097959539c5069d4c7f92fa4431665d893b3d4b74c7f4b",
+    "size_bytes": 116004
+  },
+  "reviewed_bowls": [
+    {
+      "owner_id": 715278,
+      "bbox": [
+        161,
+        4,
+        415,
+        200
+      ]
+    },
+    {
+      "owner_id": 716308,
+      "bbox": [
+        10,
+        191,
+        223,
+        417
+      ]
+    }
+  ],
+  "arms": [
+    {
+      "arm": "native",
+      "category": "complete_valid_geometry",
+      "box": [
+        5,
+        197,
+        217,
+        407
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.883752134666992
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.001784651992861392
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/overlay-native.png",
+        "sha256": "b1b964a13ea43b5631e06ad246424a4e99c25c29927280e7906c73e5b0e80d94",
+        "size_bytes": 1179539
+      }
+    },
+    {
+      "arm": "identity-mask-sham",
+      "category": "complete_valid_geometry",
+      "box": [
+        5,
+        197,
+        217,
+        407
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.883752134666992
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.001784651992861392
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/overlay-identity-mask-sham.png",
+        "sha256": "eff6262eb35dd4695ea17912565e4acd11c1c214a59445a2faa5cc9cfad63071",
+        "size_bytes": 1180069
+      }
+    },
+    {
+      "arm": "latest-row-mask",
+      "category": "complete_valid_geometry",
+      "box": [
+        0,
+        157,
+        277,
+        504
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.5008166959706197
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.035397225277649644
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/overlay-latest-row-mask.png",
+        "sha256": "68bc4b8b0b6c96eebad7da402b2cf94f6632ebe0ed5d41edbe82d5c9f5add7fa",
+        "size_bytes": 1178997
+      }
+    }
+  ],
+  "physical_owner_verdict": "UNKNOWN pending lead visual review"
+}

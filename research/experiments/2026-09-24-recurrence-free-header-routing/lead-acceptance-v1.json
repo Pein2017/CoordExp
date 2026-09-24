@@ -1,0 +1,67 @@
+{
+  "status": "lead-accepted-prospective-free-scissors-row",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/supporting/lead-verification-v1.json",
+    "sha256": "cac5fe410e89626c607198d87e7e6900f35cab56c005d65249470b2116c3babd"
+  },
+  "bindings": {
+    "candidate": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/candidate-results.md",
+      "sha256": "74dfd6e53aeb0c1a4a9ac61c78842f211e4c974773cdc37e8cf9c36df2a9ee9b"
+    },
+    "admission": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/lead-admission-v1.json",
+      "sha256": "ea8b76470fba5f9804d02adb2249b31c88f5faf4293bc3c745084f74a369b742"
+    },
+    "protocol": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/unit.md",
+      "sha256": "1970681facd8afda15b346d17826333abc6dadb7d642aa452b0df847555e3d83"
+    },
+    "receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-free-header-routing/attempt-001/receipt.json",
+      "sha256": "2f7da8fa28e48a28318835a94d8ed9bd15cae7c69b8abde26931a36cdc7e1957"
+    },
+    "readback": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-free-header-routing/attempt-001/readback.json",
+      "sha256": "1f7678405ec8e8bc6fdb91a56b9fc0826631800ae6694ac30343b278b652cbec"
+    },
+    "outer_command": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-free-header-routing/attempt-001/outer-command.json",
+      "sha256": "f47ebacdafe64953172f59229fb5832be97b89a45d244e71c3d92dd951a03187"
+    },
+    "visual_proxies": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/supporting/attempt-001-visual-proxies.json",
+      "sha256": "d89e29ff89386d0af7624844e0e54b0c84f561e607e940f7c174bc64fe1f93d4"
+    },
+    "producer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_free_header_routing/run.py",
+      "sha256": "94ccacae2ca486d3596ca6f3b7c0703f813a9e05a4542dc7d6cf4388a936e378"
+    }
+  },
+  "technical_ruling": "Accept the sole finite attempt and cold readback; independent CPU inspection of all30 saved vectors and consumers passed without new model calls.",
+  "scientific_ruling": "Frozen complete scissors description and row forecast passes. Native/sham produce A1. B-only history freely produces visible scissors1157751, IoU0.8694839192221391.",
+  "conditional_bowl_reference": "inapplicable: free header is scissors, not bowl",
+  "physical_rulings": {
+    "native_and_sham": "inner bowl A1",
+    "B_donor": "visible scissors1157751",
+    "historical_A0": "pot/bowl extent UNKNOWN/HOLD retained"
+  },
+  "limits": [
+    "One selected counterfactual history; no natural-onset or population claim.",
+    "Original source scissors y2=414; new row y2=415. No exact coordinate forecast or trajectory equality.",
+    "Current category was supplied in the prior juicer/container outcome; that conditional result remains accepted.",
+    "No unique spatial cursor, owner ledger, copying circuit or largest-key-cause inference."
+  ],
+  "counts": {
+    "model_forwards": 30,
+    "vision_forwards": 30,
+    "emitted_target_tokens": 30
+  },
+  "outer_gpu_seconds": 81.712466598,
+  "cumulative_sequence_gpu_hours": 0.314055537790022,
+  "unit_disposition": "closed; no further bowl-scene model calls",
+  "next_decision": "CPU-only feasibility on existing reviewed book151704 first physical revisit; separate contract required for GPU."
+}

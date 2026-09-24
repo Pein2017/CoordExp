@@ -1,0 +1,185 @@
+{
+  "status": "lead_independent_CPU_and_visual_verification_passed",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/native-read-candidate-results.md",
+    "sha256": "21af6893c31ed9a42b7607787bb6c468ca77f4ac3f07a116795ddd098552799d"
+  },
+  "summary": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/native-read-cold-summary-v1.json",
+    "sha256": "397c716bea482896a7afe9be23c1dc8cf901c2da9f81d7fe294478b00a7634b4"
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/native-read-protocol.md",
+    "sha256": "e74467fa451e157c5a8f118eb1069c0fa3d21251a83681df7292674a71a616aa",
+    "size_bytes": 11325
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-admission-v1.json",
+    "sha256": "08fc23ff2693d3597263a72fb3f8b7c57348ffed7b2f731e8ee9a328574284ea",
+    "size_bytes": 9675
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_book_first_revisit/run.py",
+    "sha256": "eff7c5bb0903ac27d1eb400404d567d88e2289d8cdbe966cd91f5f160e307c91",
+    "size_bytes": 36068
+  },
+  "states": [
+    {
+      "state": "row4_first_B_revisit",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row4_first_B_revisit/receipt.json",
+        "sha256": "c516ffb85adba288d5766d44c42071571f8ffe9d957a7aeecb7dd6dc904ef54d",
+        "size_bytes": 285986
+      },
+      "readback": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row4_first_B_revisit/readback.json",
+        "sha256": "121e468a4ca8875b9191ee8b8e4240e73969e1d91e7393c83d60eeff97e2e94e",
+        "size_bytes": 18334
+      },
+      "outer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row4-outer.json",
+        "sha256": "53a7d3a60a1742ca46b19a08a521e8438463d7ec022e9929336c4e76bfb09390",
+        "size_bytes": 249
+      },
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row4_first_B_revisit/overlay.png",
+        "sha256": "0b43e7f6f502d688d78f93c65d780518688ad863d2904fe31bc0363e5cce58a8",
+        "size_bytes": 1226967
+      },
+      "emissions": {
+        "native": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151877,
+          152499,
+          151940,
+          152522,
+          151649
+        ],
+        "identity-mask-sham": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151877,
+          152499,
+          151940,
+          152522,
+          151649
+        ],
+        "latest-row-reading-mask": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151867,
+          152499,
+          151936,
+          152529,
+          151649
+        ]
+      },
+      "masked_box": [
+        197,
+        829,
+        266,
+        859
+      ],
+      "secondary_differing_token_slots": [
+        6
+      ],
+      "actual_calls": 26,
+      "logical_tokens": 27,
+      "outer_seconds": 72.94952116161585,
+      "physical_owner": 2141669
+    },
+    {
+      "state": "row3_new_B",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row3_new_B/receipt.json",
+        "sha256": "80b99cdd4f916156ef5bd31af638949afb37e00d3860f3c6e38164396c8b0193",
+        "size_bytes": 285452
+      },
+      "readback": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row3_new_B/readback.json",
+        "sha256": "640764f7e5551680e68fca4fa0edf045c177422b0963c3ffcb30ad00671fd368",
+        "size_bytes": 18014
+      },
+      "outer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row3-outer.json",
+        "sha256": "d0b6863fdc016e223f983b628a92ee5162a0f312723e17d9033cac0f9f325179",
+        "size_bytes": 249
+      },
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1/row3_new_B/overlay.png",
+        "sha256": "ab1fb5cde755d65d5ddf2a2775e1f36b25ca96f20ccfd21a1bfe19121681d800",
+        "size_bytes": 1226186
+      },
+      "emissions": {
+        "native": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151867,
+          152499,
+          151940,
+          152529,
+          151649
+        ],
+        "identity-mask-sham": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151867,
+          152499,
+          151940,
+          152529,
+          151649
+        ],
+        "latest-row-reading-mask": [
+          151646,
+          2190,
+          151647,
+          151648,
+          151860,
+          152438,
+          151924,
+          152484,
+          151649
+        ]
+      },
+      "masked_box": [
+        190,
+        768,
+        254,
+        814
+      ],
+      "secondary_differing_token_slots": [
+        4
+      ],
+      "actual_calls": 26,
+      "logical_tokens": 27,
+      "outer_seconds": 72.36074922978878,
+      "physical_owner": 1652859
+    }
+  ],
+  "actual_vectors_verified": 52,
+  "logical_tokens_verified": 54,
+  "source_trace_max_error": 8.58306884765625e-05,
+  "source_inputs_own_prefixes_native_positions_and_actual28_masks_verified": true,
+  "same_rectangle_complement_and9t_selection_verified": true,
+  "sham_history_companion_max_error": 0,
+  "t0_reuses_verified": 2,
+  "pre_GPU_direct_import_supplement_hash_and_mtime_verified": true,
+  "primary_physical_pair": "lead accepted A at masked row3, B at masked row4; score changes -2 and0, contrast+2",
+  "secondary_exact_pair": "Both valid nonpasses; one coordinate differs in each",
+  "physical_ruling_basis": "Lead independently viewed both bound overlays; distinct upper A and lower B, native/sham B. IoU remains descriptive.",
+  "outer_gpu_seconds": 145.31027039140463,
+  "cumulative_sequence_gpu_hours": 0.3544195017876344,
+  "new_model_or_CUDA_calls": 0,
+  "bounds": "After native opener, latest-row reading removal changes effective prefix. No literal copying, explicit owner ledger or unique natural-onset mechanism."
+}

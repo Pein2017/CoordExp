@@ -1,0 +1,27 @@
+{
+  "lead": {
+    "id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+    "model": "gpt-6-astra",
+    "reasoningEffort": "xhigh",
+    "status": {
+      "type": "idle"
+    }
+  },
+  "worker": {
+    "id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "xhigh",
+    "status": {
+      "type": "active",
+      "activeFlags": []
+    }
+  },
+  "target": "lead",
+  "target_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "cwd": "/data/CoordExp/.worktrees/research-probes",
+  "status": "submitted",
+  "message_sha256": "da7a026f21fc668b005d20853206146a4d0a8781defcb4edc4913567190405d3",
+  "delivery_method": "turn/start",
+  "turn_id": "01a0d1f8-bc1d-7503-82ef-0744728b7d5c",
+  "turn_status": "inProgress"
+}

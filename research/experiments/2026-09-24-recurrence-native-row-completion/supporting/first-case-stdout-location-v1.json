@@ -1,0 +1,9 @@
+{
+  "status": "lead-recorded-byte-preserving-log-relocation",
+  "reason": "Raw terminal stdout belongs under outputs; research knowledge checker rejects .log under research. Historical command strings and candidate evidence remain unchanged.",
+  "original_path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/first-case-gpu-stdout-v1.log",
+  "current_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/first-case-v1/first-case-gpu-stdout-v1.log",
+  "sha256": "097e2f8dab1c481f58fd1c045c4a01689c7f2f285610f7ef3418df149cf0f90b",
+  "size_bytes": 472,
+  "first_case_artifact_bytes_including_relocated_log": 126755739
+}

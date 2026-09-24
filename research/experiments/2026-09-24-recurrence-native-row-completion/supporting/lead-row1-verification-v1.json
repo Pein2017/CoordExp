@@ -1,0 +1,62 @@
+{
+  "status": "lead-independent-row1-CPU-verification-passed",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/native-row-row1-candidate-results.md",
+    "sha256": "0bedbbbe3fbbee3baa715571cf2150327a48709615951179250c1d04067cd5f9",
+    "size_bytes": 8046
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/receipt.json",
+    "sha256": "0307621ba02fdea0fb03745bb633bba0857f106345d5e072b0e0d4bf0956b25d",
+    "size_bytes": 154373
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/readback.json",
+    "sha256": "87b810f604a34dde14d084dbb533cbb2b705c4f816f8e75c9ce9a19ac982e0e5",
+    "size_bytes": 12286
+  },
+  "outer_command": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/outer-command.json",
+    "sha256": "20ab9cf31d02a7308dda068c577abfbfd703f70da98c45b7f2494fbd41eebe1d",
+    "size_bytes": 551
+  },
+  "checked_steps": 15,
+  "direct_source_captures": 15,
+  "observed_tails": {
+    "native": [
+      151675,
+      151867,
+      151887,
+      152077,
+      151649
+    ],
+    "identity-mask-sham": [
+      151675,
+      151867,
+      151887,
+      152077,
+      151649
+    ],
+    "latest-row-mask": [
+      151670,
+      151827,
+      151947,
+      152174,
+      151649
+    ]
+  },
+  "new_secondary_slots_exact": true,
+  "source_trace_max_error": 2.86102294921875e-05,
+  "numpy_torch_logprob_max_error": 2.1469818229437635e-15,
+  "all_step_sham_companion_prior_state_max_error": 0,
+  "accepted_step0_all_vector_max_error": 0,
+  "actual_all28_layer_mask_verified_each_step": true,
+  "independent_original_and_own_token_reconstruction": true,
+  "outer_gpu_seconds": 45.647101583,
+  "two_state_gpu_seconds": 92.401570162,
+  "cumulative_sequence_gpu_hours": 0.27526991273168866,
+  "raw_artifact_bytes": 92304227,
+  "row1_physical_owner_validity": "HOLD: broad A0 covers inner bowl and part of outer vessel; numerical prediction accepted separately",
+  "model_loads": 0,
+  "GPU_seconds": 0
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-free-header-routing",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Prospective free scissors complete-row prediction accepted; visible scissors rather than the supplied-bowl conditional branch. One selected history, no natural-onset claim.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-free-header-routing/unit.md",
+  "result": "research/experiments/2026-09-24-recurrence-free-header-routing/results.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-free-header-routing/lead-acceptance-v1.json",
+  "boundary": "30 model/30 vision/30 emitted tokens terminal; all rows complete. A0 pot/bowl identity remains HOLD.",
+  "not_authorized": [
+    "Extra donor, row, image, model forward or retry",
+    "Grammar/logit/mask/K/V/position intervention or supplied current opener/class/x1",
+    "Git, peer/shared-runtime, predecessor or lead-router writes",
+    "Self-acceptance or automatic successor"
+  ],
+  "next_action": "No further execution in this unit; separate CPU-only first-book-revisit feasibility.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "cumulative_sequence_gpu_hours": 0.314055537790022
+}

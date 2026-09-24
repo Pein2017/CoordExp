@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-same-owner-extent",
+  "lifecycle": "ready",
+  "evidence": "none",
+  "disposition": "CPU-only feasibility for fixed same-B x1/y2 historical extents and one immediate native successor reference.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-same-owner-extent/unit.md",
+  "result": null,
+  "state_source": "research/experiments/2026-09-24-recurrence-same-owner-extent/unit.md",
+  "boundary": "One existing source/prefix, four fixed same-owner corners; no model/CUDA/forward/generation or new producer.",
+  "not_authorized": [
+    "Model or GPU work",
+    "Alternative donor, image, owner or reference search",
+    "Git, predecessor, peer/shared-runtime or lead-router edits",
+    "Self-acceptance or successor"
+  ],
+  "next_action": "923-worker returns fixed geometry, visual attribution of corners/row5 and smallest feasible free-header contrast.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh"
+}

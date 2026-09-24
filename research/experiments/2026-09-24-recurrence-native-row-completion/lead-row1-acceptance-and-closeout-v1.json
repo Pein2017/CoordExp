@@ -1,0 +1,164 @@
+{
+  "status": "lead-accepted-technical-and-exact-numerical-prediction-physical-HOLD",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "bindings": {
+    "unit.md": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/unit.md",
+      "sha256": "260cdfa724fa0b65c2786c1b49d3021b1412328678d1bca645b5b6708bc316b3",
+      "size_bytes": 9633
+    },
+    "lead-row1-admission-v1.json": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-row1-admission-v1.json",
+      "sha256": "0796039847c1ed0532ff3b28ff512b3244802a61129bd09dae8fb80f5d979c21",
+      "size_bytes": 8755
+    },
+    "lead-row1-prediction-v1.md": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-row1-prediction-v1.md",
+      "sha256": "1e8089f0e5689b76041bc1d72fb949fd9b2973b64cd576ef8010834d81025c66",
+      "size_bytes": 2141
+    },
+    "lead-time-budget-update-v1.json": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-time-budget-update-v1.json",
+      "sha256": "d986f103d046b562b809389b23f291e76f84e3190ef57788a2d88f6beda84203",
+      "size_bytes": 978
+    },
+    "native-row-row1-candidate-results.md": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/native-row-row1-candidate-results.md",
+      "sha256": "0bedbbbe3fbbee3baa715571cf2150327a48709615951179250c1d04067cd5f9",
+      "size_bytes": 8046
+    },
+    "supporting/lead-row1-verification-v1.json": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/lead-row1-verification-v1.json",
+      "sha256": "d5fd196d50bbe013f0bf992c77226cb4f91f4ec6c9a884b715cca9ce5aeef863",
+      "size_bytes": 2240
+    },
+    "supporting/row1-cold-source-v1.json": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/row1-cold-source-v1.json",
+      "sha256": "2aa514796aeb6b1ef8e6d3e89529cf46634fe4f0e3a758df553ddc30ae8d5de4",
+      "size_bytes": 14802
+    },
+    "supporting/row1-visual-proxies-v1.json": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/row1-visual-proxies-v1.json",
+      "sha256": "5ff29602d7d2412aed24f8b597efbd7ac3f96127b79107de42e55b67d6367703",
+      "size_bytes": 4146
+    }
+  },
+  "raw_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/receipt.json",
+    "sha256": "0307621ba02fdea0fb03745bb633bba0857f106345d5e072b0e0d4bf0956b25d",
+    "size_bytes": 154373
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/readback.json",
+    "sha256": "87b810f604a34dde14d084dbb533cbb2b705c4f816f8e75c9ce9a19ac982e0e5",
+    "size_bytes": 12286
+  },
+  "outer_command": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/outer-command.json",
+    "sha256": "20ab9cf31d02a7308dda068c577abfbfd703f70da98c45b7f2494fbd41eebe1d",
+    "size_bytes": 551
+  },
+  "independent_check": {
+    "status": "lead-independent-row1-CPU-verification-passed",
+    "candidate": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/native-row-row1-candidate-results.md",
+      "sha256": "0bedbbbe3fbbee3baa715571cf2150327a48709615951179250c1d04067cd5f9",
+      "size_bytes": 8046
+    },
+    "receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/receipt.json",
+      "sha256": "0307621ba02fdea0fb03745bb633bba0857f106345d5e072b0e0d4bf0956b25d",
+      "size_bytes": 154373
+    },
+    "readback": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/readback.json",
+      "sha256": "87b810f604a34dde14d084dbb533cbb2b705c4f816f8e75c9ce9a19ac982e0e5",
+      "size_bytes": 12286
+    },
+    "outer_command": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/outer-command.json",
+      "sha256": "20ab9cf31d02a7308dda068c577abfbfd703f70da98c45b7f2494fbd41eebe1d",
+      "size_bytes": 551
+    },
+    "checked_steps": 15,
+    "direct_source_captures": 15,
+    "observed_tails": {
+      "native": [
+        151675,
+        151867,
+        151887,
+        152077,
+        151649
+      ],
+      "identity-mask-sham": [
+        151675,
+        151867,
+        151887,
+        152077,
+        151649
+      ],
+      "latest-row-mask": [
+        151670,
+        151827,
+        151947,
+        152174,
+        151649
+      ]
+    },
+    "new_secondary_slots_exact": true,
+    "source_trace_max_error": 2.86102294921875e-05,
+    "numpy_torch_logprob_max_error": 2.1469818229437635e-15,
+    "all_step_sham_companion_prior_state_max_error": 0,
+    "accepted_step0_all_vector_max_error": 0,
+    "actual_all28_layer_mask_verified_each_step": true,
+    "independent_original_and_own_token_reconstruction": true,
+    "outer_gpu_seconds": 45.647101583,
+    "two_state_gpu_seconds": 92.401570162,
+    "cumulative_sequence_gpu_hours": 0.27526991273168866,
+    "raw_artifact_bytes": 92304227,
+    "row1_physical_owner_validity": "HOLD: broad A0 covers inner bowl and part of outer vessel; numerical prediction accepted separately",
+    "model_loads": 0,
+    "GPU_seconds": 0
+  },
+  "physical_ruling": {
+    "native_sham": "A1: foreground inner white bowl716308; unchanged prior accepted attribution",
+    "masked_A0": "HOLD: broad box[0,157,277,504] contains inner bowl plus part of larger outer vessel. Loose singleton versus multiple/grouped objects unresolved. IoU0.500817 does not decide identity.",
+    "source_A0": "Same numerical box and same physical ambiguity as masked A0. Earlier A0-as-singleton-A attribution and row1-as-confirmed-first-physical-revisit are superseded by this HOLD. Frozen predecessors remain byte-unchanged.",
+    "row2_bridge_preserved": "Source row1 A1 is a definite foreground bowl. Native row2 realizes upper B; masked row2 realizes foreground A. This local physical return does not require a singleton source A0.",
+    "visuals": [
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/overlay-native.png",
+        "sha256": "b1b964a13ea43b5631e06ad246424a4e99c25c29927280e7906c73e5b0e80d94",
+        "size_bytes": 1179539
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/overlay-latest-row-mask.png",
+        "sha256": "68bc4b8b0b6c96eebad7da402b2cf94f6632ebe0ed5d41edbe82d5c9f5add7fa",
+        "size_bytes": 1178997
+      }
+    ]
+  },
+  "scientific_decision": {
+    "primary_row1_physical_owner_validity": "HOLD, retained as outcome",
+    "secondary_exact_remaining_tail_prediction": "supported: three previously unobserved coordinates157,277,504 and terminator151649 all match. x1=0 known before launch, no new credit.",
+    "interpretation": "Supports a selected-image numerical extent-reset prediction. Does not establish iterative algorithm, natural recurrence cause, literal copying or semantic visited-owner ledger.",
+    "strongest_alternative": "Blocking the sole prior row may restore effectively empty output history. A content-insensitive row-count/format effect and content-dependent reference or exclusion remain unresolved."
+  },
+  "counts": {
+    "row1_model": 15,
+    "row1_vision": 15,
+    "row1_emitted": 15,
+    "unit_model": 30,
+    "unit_vision": 30,
+    "unit_emitted": 30
+  },
+  "row1_outer_gpu_seconds": 45.647101583,
+  "unit_outer_gpu_seconds": 92.401570162,
+  "cumulative_sequence_gpu_hours": 0.27526991273168866,
+  "time_limits": "removed by user update; actual accounting retained",
+  "jobs": "both terminal, no live owned GPU job",
+  "unit_disposition": "closed: both finite states completed and reviewed; physical row1 HOLD is not a technical failure or an invitation to relabel/search",
+  "successor": "No additional call under this unit. A separate matched-history donor contrast requires a new lead contract."
+}

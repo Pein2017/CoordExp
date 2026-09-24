@@ -1,0 +1,284 @@
+{
+  "status": "lead-admitted-finite-two-state-native-reading-package",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "authority": "User autonomous research continuation; elapsed-time ceiling removed. Finite protocol/count/ownership boundaries remain.",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/native-read-protocol.md",
+    "sha256": "e74467fa451e157c5a8f118eb1069c0fa3d21251a83681df7292674a71a616aa",
+    "size_bytes": 11325
+  },
+  "cpu_protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/unit.md",
+    "sha256": "d102dab31259d90755e3cb2be45d363bf9c418a347355546b6dd0acfa2f0954e",
+    "size_bytes": 5359
+  },
+  "cpu_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-cpu-acceptance-v1.json",
+    "sha256": "e249b19c67df40d64c9d449f789f0a68bca3b159dc52992f43f9394a52dbb7a4",
+    "size_bytes": 3629
+  },
+  "cpu_candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/cpu-feasibility.md",
+    "sha256": "b412211198609706d045edaacbe52c0935ae42629c9dc39f8dbc86a948eee7bf",
+    "size_bytes": 8745
+  },
+  "cpu_bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/cpu-bindings.json",
+    "sha256": "30ec0788b6eb8088ffd6025dfcad2b4fdc61b1af863163ef7b7cd45478f91977",
+    "size_bytes": 26072
+  },
+  "source_bindings": {
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846",
+      "size_bytes": 111459
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+      "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+      "size_bytes": 18757
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+      "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+      "size_bytes": 188166
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+      "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+      "size_bytes": 262097
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/panel.json",
+    "sha256": "6b7df228570d2bdb4c3d5c79a1b8467f425186dddc6cddad658bca50a95f3569",
+    "size_bytes": 723630
+  },
+  "original_input_identity_sha256": "ab022eb4d785e912c5a1d92202a9a8139eeb3ccc18838cd04822faeced06719e",
+  "original_effective_identity_sha256": "1a8137996213510db9c67f13b41d80b4170c772ff495c083d4cd7097a0344e7c",
+  "model_identity": {
+    "attention": "sdpa",
+    "dtype": "fp32",
+    "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+    "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+    "model": "untied",
+    "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+    "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+    "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+    "shared_delta": false
+  },
+  "historical_loader_path_crosswalk": [
+    {
+      "historical": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+        "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+        "size_bytes": 51208
+      },
+      "maintained_path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  ],
+  "source_full_batch": {
+    "eos_id": 151645,
+    "group": "new-08",
+    "image_grids": [
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        72,
+        54
+      ],
+      [
+        1,
+        52,
+        72
+      ],
+      [
+        1,
+        54,
+        72
+      ]
+    ],
+    "left_padding": [
+      0,
+      42,
+      78,
+      42
+    ],
+    "pad_id": 151643,
+    "pixel_elements": 23924736,
+    "planning_replanned_image_plan": true,
+    "prompt_lengths": [
+      1362,
+      1320,
+      1284,
+      1320
+    ],
+    "prompt_width": 1362,
+    "raw_lengths": [
+      78,
+      119,
+      244,
+      174
+    ],
+    "request_ids": [
+      "coco2017_train_000000135237",
+      "coco2017_train_000000151704",
+      "coco2017_train_000000159714",
+      "coco2017_train_000000169872"
+    ],
+    "target_index": 1
+  },
+  "ordered_cases": [
+    {
+      "state_id": "row4_first_B_revisit",
+      "native_row": 4,
+      "prefix_end": 36,
+      "latest_raw_keys": [
+        27,
+        36
+      ],
+      "query_raw": [
+        36,
+        "prefix+t"
+      ],
+      "native_expected_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "native_owner": 2141669,
+      "masked_primary_expected_class_ids": [
+        2190
+      ],
+      "masked_primary_expected_owner": 2141669,
+      "masked_secondary_exact_expected_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "native_and_sham_max_tokens": 9,
+      "masked_max_logical_tokens": 16,
+      "max_model_forwards": 33,
+      "max_vision_forwards": 33,
+      "max_logical_emitted_tokens": 34
+    },
+    {
+      "state_id": "row3_new_B",
+      "native_row": 3,
+      "prefix_end": 27,
+      "latest_raw_keys": [
+        18,
+        27
+      ],
+      "query_raw": [
+        27,
+        "prefix+t"
+      ],
+      "native_expected_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "native_owner": 2141669,
+      "masked_primary_expected_class_ids": [
+        2190
+      ],
+      "masked_primary_expected_owner": 1652859,
+      "masked_secondary_exact_expected_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649
+      ],
+      "native_and_sham_max_tokens": 9,
+      "masked_max_logical_tokens": 16,
+      "max_model_forwards": 33,
+      "max_vision_forwards": 33,
+      "max_logical_emitted_tokens": 34
+    }
+  ],
+  "arms": [
+    "native",
+    "identity-mask-sham",
+    "latest-row-reading-mask"
+  ],
+  "first_state_gate": "Finish row4 source/native/sham/actual-mask/companion gates and separate cold readback before row3. Scientific nonpass does not cancel row3; any technical/source failure stops queue.",
+  "mask": {
+    "target_index": 1,
+    "layers": "all28",
+    "keys": "immediately preceding complete nine-token row",
+    "queries": "current row tokens only, empty t0 then every current token",
+    "positions_and_physical_slots": "native",
+    "native_t0_exact_reuse": true,
+    "t0_limit": "Native opener prediction reads history; no hidden-state carry and no opener-selection ablation.",
+    "decode": "full-vocabulary greedy, complete free class and coordinates; no grammar or supplied current token"
+  },
+  "primary_pair_prediction": {
+    "row3_masked": "complete canonical book A1652859",
+    "row4_masked": "complete canonical book B2141669",
+    "physical_score": {
+      "A": -1,
+      "B": 1,
+      "other_or_ambiguous": "unscored; retain class/geometry/identity separately"
+    },
+    "mask_minus_native": {
+      "row3": -2,
+      "row4": 0
+    },
+    "row4_minus_row3_effect": 2,
+    "scope": "signed categorical owner outcome, not probability/mass/statistical effect",
+    "UNKNOWN": "HOLD, not forced pass or nonpass",
+    "complete_other_class_or_malformed_or_stop": "strict forecast nonpass; physical attribution separate"
+  },
+  "secondary_prediction": "Each masked complete row equals its immediately preceding native nine-token row; exact all-token criterion, separate from physical primary.",
+  "max_model_forwards": 66,
+  "max_vision_forwards": 66,
+  "max_logical_emitted_tokens": 68,
+  "max_width": 1413,
+  "time_ceiling": null,
+  "prior_sequence_gpu_hours": 0.314055537790022,
+  "planning_outer_gpu_seconds": 376.38990204898795,
+  "artifact_planning_envelope_bytes": 1073741824,
+  "raw_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-book-first-revisit/native-read-v1",
+  "producer_write_root": "probes/training_set_completion/recurrence_book_first_revisit",
+  "stop": "First technical/source failure or both finite states complete; no retry/extra call/new sample/self-acceptance/successor.",
+  "worker_no_writes": [
+    "Git",
+    "captured predecessors",
+    "peer/shared runtime",
+    "lead state/catalog/index/acceptance"
+  ]
+}

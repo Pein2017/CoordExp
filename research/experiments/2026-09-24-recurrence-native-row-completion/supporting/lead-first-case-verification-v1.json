@@ -1,0 +1,262 @@
+{
+  "status": "lead-independent-technical-and-visual-verification-passed",
+  "date": "2026-09-24",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/native-row-first-case-candidate-results.md",
+    "sha256": "32be49b3bac3ed6058ac174d46fd2dd1d663ca55f1237e76a4324882570dd545"
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_native_row_completion/run.py",
+    "sha256": "c8560312d165611e33d0ee4a12110b2f9ab8816f5c35829a4eb621eec4fd5e00"
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/first-case-preflight-v1.json",
+    "sha256": "48b414478bea017e1c2b290e16f2ce0a81fc2ec5b4764f7888768400a5456e67"
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/first-case-v1/receipt.json",
+    "sha256": "66c1a6a07b0294ab636c6a48335f49b675cdae59e2ea9eba50b50a6594f35039"
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/first-case-v1/readback.json",
+    "sha256": "b7353fcf249df46bb39aca0306ce8e807f9d1053128bb82627541be223cf17b3"
+  },
+  "cold_source": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/first-case-cold-source-v1.json",
+    "sha256": "cbefa14268a8ec46890b0f84b1334c4074142b4238e365a2c8e40629d74f7130"
+  },
+  "visual_proxies": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/supporting/first-case-visual-proxies-v1.json",
+    "sha256": "6255bdc94e1c0bd8108f07f6254173e548d55db5ef274e05a7d4bdaf1309be36"
+  },
+  "direct_captures_verified": 15,
+  "steps_reconstructed": 15,
+  "max_source_trace_error": 3.337860107421875e-05,
+  "max_numpy_probability_logprob_error": 1.5543122344752192e-15,
+  "max_sham_history_companion_error": 0.0,
+  "counts": {
+    "model_forwards": 15,
+    "vision_forwards": 15,
+    "emitted_target_tokens": 15
+  },
+  "trajectories": [
+    {
+      "arm": "native",
+      "emitted": [
+        151827,
+        151670,
+        152085,
+        151911,
+        151649
+      ],
+      "bbox": [
+        157,
+        0,
+        415,
+        241
+      ],
+      "steps": [
+        {
+          "step": 0,
+          "chosen": 151827,
+          "top2": [
+            151827,
+            151829
+          ],
+          "logP": -2.7960539964134035,
+          "tie_count": 1
+        },
+        {
+          "step": 1,
+          "chosen": 151670,
+          "top2": [
+            151670,
+            151671
+          ],
+          "logP": -0.6078803502937556,
+          "tie_count": 1
+        },
+        {
+          "step": 2,
+          "chosen": 152085,
+          "top2": [
+            152085,
+            152084
+          ],
+          "logP": -1.7185053477697048,
+          "tie_count": 1
+        },
+        {
+          "step": 3,
+          "chosen": 151911,
+          "top2": [
+            151911,
+            151910
+          ],
+          "logP": -2.911039434643797,
+          "tie_count": 1
+        },
+        {
+          "step": 4,
+          "chosen": 151649,
+          "top2": [
+            151649,
+            50753
+          ],
+          "logP": -1.1583692142137563e-06,
+          "tie_count": 1
+        }
+      ]
+    },
+    {
+      "arm": "identity-mask-sham",
+      "emitted": [
+        151827,
+        151670,
+        152085,
+        151911,
+        151649
+      ],
+      "bbox": [
+        157,
+        0,
+        415,
+        241
+      ],
+      "steps": [
+        {
+          "step": 0,
+          "chosen": 151827,
+          "top2": [
+            151827,
+            151829
+          ],
+          "logP": -2.7960539964134035,
+          "tie_count": 1
+        },
+        {
+          "step": 1,
+          "chosen": 151670,
+          "top2": [
+            151670,
+            151671
+          ],
+          "logP": -0.6078803502937556,
+          "tie_count": 1
+        },
+        {
+          "step": 2,
+          "chosen": 152085,
+          "top2": [
+            152085,
+            152084
+          ],
+          "logP": -1.7185053477697048,
+          "tie_count": 1
+        },
+        {
+          "step": 3,
+          "chosen": 151911,
+          "top2": [
+            151911,
+            151910
+          ],
+          "logP": -2.911039434643797,
+          "tie_count": 1
+        },
+        {
+          "step": 4,
+          "chosen": 151649,
+          "top2": [
+            151649,
+            50753
+          ],
+          "logP": -1.1583692142137563e-06,
+          "tie_count": 1
+        }
+      ]
+    },
+    {
+      "arm": "latest-row-mask",
+      "emitted": [
+        151671,
+        151867,
+        151887,
+        152077,
+        151649
+      ],
+      "bbox": [
+        1,
+        197,
+        217,
+        407
+      ],
+      "steps": [
+        {
+          "step": 0,
+          "chosen": 151671,
+          "top2": [
+            151671,
+            151670
+          ],
+          "logP": -2.013427210231343,
+          "tie_count": 1
+        },
+        {
+          "step": 1,
+          "chosen": 151867,
+          "top2": [
+            151867,
+            151863
+          ],
+          "logP": -2.9840456001441407,
+          "tie_count": 1
+        },
+        {
+          "step": 2,
+          "chosen": 151887,
+          "top2": [
+            151887,
+            151888
+          ],
+          "logP": -2.5203583471650055,
+          "tie_count": 1
+        },
+        {
+          "step": 3,
+          "chosen": 152077,
+          "top2": [
+            152077,
+            152078
+          ],
+          "logP": -2.6347000919432073,
+          "tie_count": 1
+        },
+        {
+          "step": 4,
+          "chosen": 151649,
+          "top2": [
+            151649,
+            151646
+          ],
+          "logP": -1.446423031774157e-06,
+          "tie_count": 1
+        }
+      ]
+    }
+  ],
+  "lead_visual_owner_ruling": {
+    "native": 715278,
+    "identity-mask-sham": 715278,
+    "latest-row-mask": 716308
+  },
+  "visual_reason": "Native/sham match the upper carrot-filled bowl. The treatment box encloses the foreground white bowl previously reported as A, with valid geometry and without spanning the upper bowl. Visual attribution agrees with the independent IoU ranking.",
+  "literal_repeat": false,
+  "interpretation_limit": "One fixed-image native-prefix intervention produces an A return while native/sham advance to B. Continued whole-current-row masking changes later current Q/K/V; no natural-onset, copying, visited-owner-state or unique-circuit claim.",
+  "internal_timer_seconds": 41.26034469157457,
+  "outer_charge_status": "Worker clarification requested: producer timer begins inside run() after imports/preflight. Final cost acceptance uses a separate correction.",
+  "pid_absent": true,
+  "model_calls_in_lead_check": 0,
+  "GPU_seconds_in_lead_check": 0,
+  "parser_boundary_note": "Frozen stop_kind also accepts ID152670, which is outside the actual152670-column vocabulary and protocol coordinate range. None of the observed generated tokens is affected; independently checked exclusive bound. Correct only in a separately captured successor."
+}

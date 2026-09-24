@@ -1,0 +1,331 @@
+{
+  "schema": "recurrence_native_row_completion.row1_cold_source.v1",
+  "status": "independent_cpu_source_passed",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-row1-admission-v1.json",
+    "sha256": "0796039847c1ed0532ff3b28ff512b3244802a61129bd09dae8fb80f5d979c21",
+    "size_bytes": 8755
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/receipt.json",
+    "sha256": "0307621ba02fdea0fb03745bb633bba0857f106345d5e072b0e0d4bf0956b25d",
+    "size_bytes": 154373
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/readback.json",
+    "sha256": "87b810f604a34dde14d084dbb533cbb2b705c4f816f8e75c9ce9a19ac982e0e5",
+    "size_bytes": 12286
+  },
+  "original_raw": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+    "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d",
+    "size_bytes": 16062
+  },
+  "original_runtime_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/receipt.json",
+    "sha256": "23e219bab7f87097f1f6342e723b32b2c2e03c8f57f5d0559fc4ffa55b9a5875",
+    "size_bytes": 189037
+  },
+  "checks": [
+    {
+      "arm": "native",
+      "step": 0,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-native-step0.json",
+        "sha256": "6f282c0bb0c0072f4ce118b4fea31bf833e388ca5a756581c7f39b3552bc08b6",
+        "size_bytes": 342303
+      },
+      "input_hashes": {
+        "input_ids": "75f9e1c78042e56c0c80644f457cc004fc083231d7a0ef071fbdf48b409a25b2",
+        "attention_mask": "82fe2e39964f9b6775bf744e19d8113774b64d689824a61131f76150652e0e7a",
+        "position_ids": "fd9d6a1318b482d1c1e8d8933bae92e68bc92fc3787eaeae9d17c284a790e5c1",
+        "cache_position": "202702e545f9760ce61221f1a40741486e2951f5f087c045c15a74d7578554ec"
+      },
+      "ended_companion_pad_count": 4,
+      "consumed_own_previous_tokens": []
+    },
+    {
+      "arm": "identity-mask-sham",
+      "step": 0,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-identity-mask-sham-step0.json",
+        "sha256": "6f282c0bb0c0072f4ce118b4fea31bf833e388ca5a756581c7f39b3552bc08b6",
+        "size_bytes": 342303
+      },
+      "input_hashes": {
+        "input_ids": "75f9e1c78042e56c0c80644f457cc004fc083231d7a0ef071fbdf48b409a25b2",
+        "attention_mask": "82fe2e39964f9b6775bf744e19d8113774b64d689824a61131f76150652e0e7a",
+        "position_ids": "fd9d6a1318b482d1c1e8d8933bae92e68bc92fc3787eaeae9d17c284a790e5c1",
+        "cache_position": "202702e545f9760ce61221f1a40741486e2951f5f087c045c15a74d7578554ec"
+      },
+      "ended_companion_pad_count": 4,
+      "consumed_own_previous_tokens": []
+    },
+    {
+      "arm": "latest-row-mask",
+      "step": 0,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-latest-row-mask-step0.json",
+        "sha256": "6f282c0bb0c0072f4ce118b4fea31bf833e388ca5a756581c7f39b3552bc08b6",
+        "size_bytes": 342303
+      },
+      "input_hashes": {
+        "input_ids": "75f9e1c78042e56c0c80644f457cc004fc083231d7a0ef071fbdf48b409a25b2",
+        "attention_mask": "82fe2e39964f9b6775bf744e19d8113774b64d689824a61131f76150652e0e7a",
+        "position_ids": "fd9d6a1318b482d1c1e8d8933bae92e68bc92fc3787eaeae9d17c284a790e5c1",
+        "cache_position": "202702e545f9760ce61221f1a40741486e2951f5f087c045c15a74d7578554ec"
+      },
+      "ended_companion_pad_count": 4,
+      "consumed_own_previous_tokens": []
+    },
+    {
+      "arm": "native",
+      "step": 1,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-native-step1.json",
+        "sha256": "fab6bdfd35a717c89c8c2b9c69e8f73e4fb0dfe1da28d7f4db6fa34ffb34a2b9",
+        "size_bytes": 342561
+      },
+      "input_hashes": {
+        "input_ids": "93cf227f9429ed23c058c26eca77dc09240876a731aea5d98ea9796e3f9d39db",
+        "attention_mask": "ced9dbcb37557ae37d24ff13ec904eee662070c419ee1f6ca9d3edba31b3e43b",
+        "position_ids": "6b2fb601d4b874bc8661e51ca531acc5efdcf4c1d2fb33cbbd74664fd4c18ab3",
+        "cache_position": "d00246100015f23e834da2ec8d715e8f95e002adaae1971665d6328e6e0c5603"
+      },
+      "ended_companion_pad_count": 5,
+      "consumed_own_previous_tokens": [
+        151675
+      ]
+    },
+    {
+      "arm": "identity-mask-sham",
+      "step": 1,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-identity-mask-sham-step1.json",
+        "sha256": "fab6bdfd35a717c89c8c2b9c69e8f73e4fb0dfe1da28d7f4db6fa34ffb34a2b9",
+        "size_bytes": 342561
+      },
+      "input_hashes": {
+        "input_ids": "93cf227f9429ed23c058c26eca77dc09240876a731aea5d98ea9796e3f9d39db",
+        "attention_mask": "ced9dbcb37557ae37d24ff13ec904eee662070c419ee1f6ca9d3edba31b3e43b",
+        "position_ids": "6b2fb601d4b874bc8661e51ca531acc5efdcf4c1d2fb33cbbd74664fd4c18ab3",
+        "cache_position": "d00246100015f23e834da2ec8d715e8f95e002adaae1971665d6328e6e0c5603"
+      },
+      "ended_companion_pad_count": 5,
+      "consumed_own_previous_tokens": [
+        151675
+      ]
+    },
+    {
+      "arm": "latest-row-mask",
+      "step": 1,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-latest-row-mask-step1.json",
+        "sha256": "d766a032ca155bd9eeb57f8707fafd2c0cf7aeb6fc0702b9d1007da202eb054e",
+        "size_bytes": 342561
+      },
+      "input_hashes": {
+        "input_ids": "a71944c20ce1a6df6de02c4541cb7414d9c7eb2815c7a7fa020ed4bec483bf82",
+        "attention_mask": "ced9dbcb37557ae37d24ff13ec904eee662070c419ee1f6ca9d3edba31b3e43b",
+        "position_ids": "6b2fb601d4b874bc8661e51ca531acc5efdcf4c1d2fb33cbbd74664fd4c18ab3",
+        "cache_position": "d00246100015f23e834da2ec8d715e8f95e002adaae1971665d6328e6e0c5603"
+      },
+      "ended_companion_pad_count": 5,
+      "consumed_own_previous_tokens": [
+        151670
+      ]
+    },
+    {
+      "arm": "native",
+      "step": 2,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-native-step2.json",
+        "sha256": "9e34f5606e9955058233b279e5683007ae8f22e00bf65ce2a8e4158f378c20e0",
+        "size_bytes": 342819
+      },
+      "input_hashes": {
+        "input_ids": "6334cec8e155fd76dec62e0d225b6a3c3786746792e399e383d75cb93d42e63e",
+        "attention_mask": "85c5dfd770cfbc378412578a73610d774feaebfe2cd3427df743989464eac0ab",
+        "position_ids": "cb587184db319fd5dd331c64677be9f712d71d5d287ba859f57c6503f40dc238",
+        "cache_position": "d1d996555b3e6fee009f99a22d4cd0e6cb47c01da87cb75b2226f0719d2ac84c"
+      },
+      "ended_companion_pad_count": 6,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867
+      ]
+    },
+    {
+      "arm": "identity-mask-sham",
+      "step": 2,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-identity-mask-sham-step2.json",
+        "sha256": "9e34f5606e9955058233b279e5683007ae8f22e00bf65ce2a8e4158f378c20e0",
+        "size_bytes": 342819
+      },
+      "input_hashes": {
+        "input_ids": "6334cec8e155fd76dec62e0d225b6a3c3786746792e399e383d75cb93d42e63e",
+        "attention_mask": "85c5dfd770cfbc378412578a73610d774feaebfe2cd3427df743989464eac0ab",
+        "position_ids": "cb587184db319fd5dd331c64677be9f712d71d5d287ba859f57c6503f40dc238",
+        "cache_position": "d1d996555b3e6fee009f99a22d4cd0e6cb47c01da87cb75b2226f0719d2ac84c"
+      },
+      "ended_companion_pad_count": 6,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867
+      ]
+    },
+    {
+      "arm": "latest-row-mask",
+      "step": 2,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-latest-row-mask-step2.json",
+        "sha256": "fd539c7fcf69e4e91b949a8a1b4fb82ab123e800232ce2ba7ed570a7c89e8903",
+        "size_bytes": 342819
+      },
+      "input_hashes": {
+        "input_ids": "6a3be9e738fa2ac1b801d13c20b1f45c9c6d485016a8feeac5d8e4557eb78e2e",
+        "attention_mask": "85c5dfd770cfbc378412578a73610d774feaebfe2cd3427df743989464eac0ab",
+        "position_ids": "cb587184db319fd5dd331c64677be9f712d71d5d287ba859f57c6503f40dc238",
+        "cache_position": "d1d996555b3e6fee009f99a22d4cd0e6cb47c01da87cb75b2226f0719d2ac84c"
+      },
+      "ended_companion_pad_count": 6,
+      "consumed_own_previous_tokens": [
+        151670,
+        151827
+      ]
+    },
+    {
+      "arm": "native",
+      "step": 3,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-native-step3.json",
+        "sha256": "bc5d3a75003ad1a180632793b3bd3308151215e40a9e8c58f0604762e09b65fa",
+        "size_bytes": 343077
+      },
+      "input_hashes": {
+        "input_ids": "989445c5f04027f83bf076eb873bd077c635f315fde43eea2ee4ad27b0cd1643",
+        "attention_mask": "bedccff646e16f9fd836fc4c278ca9e771503caab8ac3adb34e24a71454fc0ab",
+        "position_ids": "26c0e6bc644c74951d621cc99d2fc708447751c13fe56b1cf4fd84c384b0bc24",
+        "cache_position": "2eda864a86c2d14f8ca6650941c2316747ba022c00ae55835c6a36ef2144ff25"
+      },
+      "ended_companion_pad_count": 7,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867,
+        151887
+      ]
+    },
+    {
+      "arm": "identity-mask-sham",
+      "step": 3,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-identity-mask-sham-step3.json",
+        "sha256": "bc5d3a75003ad1a180632793b3bd3308151215e40a9e8c58f0604762e09b65fa",
+        "size_bytes": 343077
+      },
+      "input_hashes": {
+        "input_ids": "989445c5f04027f83bf076eb873bd077c635f315fde43eea2ee4ad27b0cd1643",
+        "attention_mask": "bedccff646e16f9fd836fc4c278ca9e771503caab8ac3adb34e24a71454fc0ab",
+        "position_ids": "26c0e6bc644c74951d621cc99d2fc708447751c13fe56b1cf4fd84c384b0bc24",
+        "cache_position": "2eda864a86c2d14f8ca6650941c2316747ba022c00ae55835c6a36ef2144ff25"
+      },
+      "ended_companion_pad_count": 7,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867,
+        151887
+      ]
+    },
+    {
+      "arm": "latest-row-mask",
+      "step": 3,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-latest-row-mask-step3.json",
+        "sha256": "910ca82b7e2c34dfdddcec0dbb758617b075470e787a02deef1aeab09c574bf9",
+        "size_bytes": 343077
+      },
+      "input_hashes": {
+        "input_ids": "72f77987b5887145bd9200b4a22b25d67ae53482a9527e7d0b332753134a1e71",
+        "attention_mask": "bedccff646e16f9fd836fc4c278ca9e771503caab8ac3adb34e24a71454fc0ab",
+        "position_ids": "26c0e6bc644c74951d621cc99d2fc708447751c13fe56b1cf4fd84c384b0bc24",
+        "cache_position": "2eda864a86c2d14f8ca6650941c2316747ba022c00ae55835c6a36ef2144ff25"
+      },
+      "ended_companion_pad_count": 7,
+      "consumed_own_previous_tokens": [
+        151670,
+        151827,
+        151947
+      ]
+    },
+    {
+      "arm": "native",
+      "step": 4,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-native-step4.json",
+        "sha256": "8b2cdb58ad64cd563fad4f31d76a2a804d891fed4e9f309b851a68006499cd3a",
+        "size_bytes": 343335
+      },
+      "input_hashes": {
+        "input_ids": "a30e8feb0d2180aa8b5bd67b3baf1f84d75cd58fd78fe3992bfa3f87157b1f25",
+        "attention_mask": "863ce3fb1c2d7d22e2addf01355941fd8fdd5e27c204085fb488597638f294fa",
+        "position_ids": "91d08ae12bee443491f1ab450223bf6bfa86e057929a21b7961558133bbc962c",
+        "cache_position": "b7f60248239e0d68cde0c6d4cf3540b762c72fade3a21e9bf3a10317f1fc60a1"
+      },
+      "ended_companion_pad_count": 8,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867,
+        151887,
+        152077
+      ]
+    },
+    {
+      "arm": "identity-mask-sham",
+      "step": 4,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-identity-mask-sham-step4.json",
+        "sha256": "8b2cdb58ad64cd563fad4f31d76a2a804d891fed4e9f309b851a68006499cd3a",
+        "size_bytes": 343335
+      },
+      "input_hashes": {
+        "input_ids": "a30e8feb0d2180aa8b5bd67b3baf1f84d75cd58fd78fe3992bfa3f87157b1f25",
+        "attention_mask": "863ce3fb1c2d7d22e2addf01355941fd8fdd5e27c204085fb488597638f294fa",
+        "position_ids": "91d08ae12bee443491f1ab450223bf6bfa86e057929a21b7961558133bbc962c",
+        "cache_position": "b7f60248239e0d68cde0c6d4cf3540b762c72fade3a21e9bf3a10317f1fc60a1"
+      },
+      "ended_companion_pad_count": 8,
+      "consumed_own_previous_tokens": [
+        151675,
+        151867,
+        151887,
+        152077
+      ]
+    },
+    {
+      "arm": "latest-row-mask",
+      "step": 4,
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-native-row-completion/row1-v1/inputs-latest-row-mask-step4.json",
+        "sha256": "1a3ef41c871fb64ad9f6a3222f109806a6cfcff09cce1857a9c14332d5b9fb10",
+        "size_bytes": 343335
+      },
+      "input_hashes": {
+        "input_ids": "263b3ebea151c0514c98f5236efd83038a7fd6029e8da9e55b598ac7a72c4946",
+        "attention_mask": "863ce3fb1c2d7d22e2addf01355941fd8fdd5e27c204085fb488597638f294fa",
+        "position_ids": "91d08ae12bee443491f1ab450223bf6bfa86e057929a21b7961558133bbc962c",
+        "cache_position": "b7f60248239e0d68cde0c6d4cf3540b762c72fade3a21e9bf3a10317f1fc60a1"
+      },
+      "ended_companion_pad_count": 8,
+      "consumed_own_previous_tokens": [
+        151670,
+        151827,
+        151947,
+        152174
+      ]
+    }
+  ],
+  "model_loads": 0,
+  "vision_forwards": 0,
+  "GPU_seconds": 0
+}

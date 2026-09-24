@@ -1,0 +1,221 @@
+{
+  "status": "lead-admitted-three-free-header-trajectories",
+  "date": "2026-09-24",
+  "authority": "User autonomous continuation, no elapsed-time limits; lead-owned finite conditioning test after accepted fixed-bowl routing result.",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-free-header-routing/unit.md",
+    "sha256": "1970681facd8afda15b346d17826333abc6dadb7d642aa452b0df847555e3d83",
+    "size_bytes": 8982
+  },
+  "predecessor_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-owner-routing/lead-admission-v1.json",
+    "sha256": "41132cbefdbcd3eeb384b18a3b4c63c0a7e4f914c5050b605988e109b717049d",
+    "size_bytes": 8205
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-owner-routing/lead-acceptance-v1.json",
+    "sha256": "29065e21302eae460a3bf8e6a683e447d291105094fa6fae674fa6309f23aea0",
+    "size_bytes": 6413
+  },
+  "time_update": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-time-budget-update-v1.json",
+    "sha256": "d986f103d046b562b809389b23f291e76f84e3190ef57788a2d88f6beda84203",
+    "size_bytes": 978
+  },
+  "source_bindings": {
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+      "sha256": "bc28ebbcd6ad8015d7097959539c5069d4c7f92fa4431665d893b3d4b74c7f4b"
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+      "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d"
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/receipt.json",
+      "sha256": "23e219bab7f87097f1f6342e723b32b2c2e03c8f57f5d0559fc4ffa55b9a5875"
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/trace.json",
+      "sha256": "eea6a5b2d5ea16f9c3ce63cefdc31331b399c0e61ec7432b36256644fb83b5f7"
+    }
+  },
+  "model_identity": {
+    "attention": "sdpa",
+    "dtype": "fp32",
+    "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+    "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+    "model": "untied",
+    "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+    "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+    "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+    "shared_delta": false
+  },
+  "source_group": "fresh-18",
+  "target_batch_index": 3,
+  "full_batch_request_ids": [
+    "coco2017_train_000000301110",
+    "coco2017_train_000000309264",
+    "coco2017_train_000000309694",
+    "coco2017_train_000000313465"
+  ],
+  "source_full_native_lengths": [
+    286,
+    109,
+    11,
+    138
+  ],
+  "original_prefix_end": 10,
+  "coordinate_replacement_span": [
+    5,
+    9
+  ],
+  "initial_current_row_tokens_supplied": [],
+  "arms": [
+    {
+      "name": "native",
+      "history_coordinate_tokens": [
+        151670,
+        151827,
+        151947,
+        152174
+      ],
+      "max_tokens": 10
+    },
+    {
+      "name": "identity-write-sham",
+      "history_coordinate_tokens": [
+        151670,
+        151827,
+        151947,
+        152174
+      ],
+      "max_tokens": 10
+    },
+    {
+      "name": "B-donor",
+      "history_coordinate_tokens": [
+        151827,
+        151670,
+        152085,
+        151911
+      ],
+      "source_row": 2,
+      "owner": 715278,
+      "max_tokens": 16
+    }
+  ],
+  "native_expected_row": [
+    151646,
+    65,
+    9605,
+    151647,
+    151648,
+    151675,
+    151867,
+    151887,
+    152077,
+    151649
+  ],
+  "frozen_complete_row_class_prediction": {
+    "description": "scissors",
+    "description_token_ids": [
+      2388,
+      41622
+    ],
+    "origin": "original native source row3 immediately follows source B row2; prediction for a new B-only history endpoint, not a new observed result"
+  },
+  "native_suffix_reference_vectors": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/native-step0.pt",
+      "sha256": "00f2341d0f42be59d67599de7988b52dbfb3be478a01239e7d8fc7038643fedb",
+      "size_bytes": 5426830
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/native-step1.pt",
+      "sha256": "ad925077b19d2376b23d8c7cbe43b6725fe4594aaf9fd9ee3529f70cb2d43192",
+      "size_bytes": 5426830
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/native-step2.pt",
+      "sha256": "66842520f74768d932e205ae776c1e01c34e4fcdfcaaa594f1bb9d591a3414c4",
+      "size_bytes": 5426830
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/native-step3.pt",
+      "sha256": "d2611fd078928de5cbca2c9b9422f3b05141bbde97f106ff2c2c601923024dfe",
+      "size_bytes": 5426830
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/native-step4.pt",
+      "sha256": "3266a16f7ed1c8c10c3da4b4b2773d56b34140a67d6ae93d15519f7c04e44fe2",
+      "size_bytes": 5426830
+    }
+  ],
+  "conditional_bowl_header": [
+    151646,
+    65,
+    9605,
+    151647,
+    151648
+  ],
+  "conditional_B_bowl_suffix_reference_vectors": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/B-donor-step0.pt",
+      "sha256": "5bb7c46941737c44646061625d2483db39c3506e3191bb53cad9e5edc165100c",
+      "size_bytes": 5426839
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/B-donor-step1.pt",
+      "sha256": "ac30eade3a5ca217910a4cc88a84a9c7fc973e5fc32a1ca37255cae25e158b5f",
+      "size_bytes": 5426839
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/B-donor-step2.pt",
+      "sha256": "e48d2e3d7a1e5842e3a3a2e3765e29e47713f43259723f30cb4a7491fb1d4fdf",
+      "size_bytes": 5426839
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/B-donor-step3.pt",
+      "sha256": "c1c8ba093ef942467527c563366e28c81e24fcd18beff2d3b010614cf5c97cf5",
+      "size_bytes": 5426839
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/B-donor-step4.pt",
+      "sha256": "a88872bc6e485edbe0746692d64e0e0c4347b59587b539b75ff6c328c30cae2f",
+      "size_bytes": 5426839
+    }
+  ],
+  "conditional_B_bowl_tail": [
+    151847,
+    152106,
+    152130,
+    152498,
+    151649
+  ],
+  "reference_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/receipt.json",
+    "sha256": "fe0a01f85f7ec34cfc1bd4123780e2bf8c7530b51eb3812dcb84344562b9e7d5",
+    "size_bytes": 161942
+  },
+  "reference_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/readback.json",
+    "sha256": "614530d5de4213db98dbf228e0bec6a64feb59b4e5c7bd18301b7744a67b528d",
+    "size_bytes": 15571
+  },
+  "max_model_forwards": 36,
+  "max_vision_forwards": 36,
+  "max_emitted_target_tokens": 36,
+  "max_width": 1387,
+  "prior_sequence_gpu_hours": 0.29135763040168866,
+  "planning_outer_gpu_seconds": 208.4968210032,
+  "artifact_plan_bytes": 536870912,
+  "time_ceiling": null,
+  "raw_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-free-header-routing/attempt-001",
+  "stop": "First technical/source conflict or the exact three-arm candidate. No additional forward, retry or successor.",
+  "ownership": "New recurrence_free_header_routing maintained source, new supporting/candidate and admitted raw only. No Git/predecessor/peer/shared-runtime/lead-state/router edits."
+}

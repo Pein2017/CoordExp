@@ -1,0 +1,195 @@
+{
+  "schema": "history_owner_routing.visual_proxies.v1",
+  "status": "candidate_annotation_proxy_only",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-owner-routing/lead-admission-v1.json",
+    "sha256": "41132cbefdbcd3eeb384b18a3b4c63c0a7e4f914c5050b605988e109b717049d",
+    "size_bytes": 8205
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/readback.json",
+    "sha256": "614530d5de4213db98dbf228e0bec6a64feb59b4e5c7bd18301b7744a67b528d",
+    "size_bytes": 15571
+  },
+  "annotation_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json",
+    "sha256": "968f6f7e7752ad68deb697d69690704cb94c2cd3d3ebd15c254d9cbb709bf40a",
+    "size_bytes": 1870712
+  },
+  "original_image": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+    "sha256": "bc28ebbcd6ad8015d7097959539c5069d4c7f92fa4431665d893b3d4b74c7f4b",
+    "size_bytes": 116004
+  },
+  "reviewed_bowls": [
+    {
+      "owner_id": 715278,
+      "bbox": [
+        161,
+        4,
+        415,
+        200
+      ]
+    },
+    {
+      "owner_id": 716308,
+      "bbox": [
+        10,
+        191,
+        223,
+        417
+      ]
+    }
+  ],
+  "arms": [
+    {
+      "arm": "native",
+      "category": "complete_valid_geometry",
+      "box": [
+        5,
+        197,
+        217,
+        407
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.883752134666992
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.001784651992861392
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/overlay-native.png",
+        "sha256": "f74fd74c190f6d06ef6d4cdb085048ff9e5caeb7a301940e7cc36c7bb695b2f0",
+        "size_bytes": 1179595
+      }
+    },
+    {
+      "arm": "identity-write-sham",
+      "category": "complete_valid_geometry",
+      "box": [
+        5,
+        197,
+        217,
+        407
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.883752134666992
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.001784651992861392
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/overlay-identity-write-sham.png",
+        "sha256": "8b801d2a507c33a1c8e7324c75e7d7fa05e5537daf0e37374ed5121ece325778",
+        "size_bytes": 1180111
+      }
+    },
+    {
+      "arm": "A1-donor",
+      "category": "complete_valid_geometry",
+      "box": [
+        0,
+        157,
+        277,
+        502
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.5037199811646523
+        },
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.0355369368984262
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/overlay-A1-donor.png",
+        "sha256": "5bd9e0ddaa4e332b0c5599fd65a030c5fd75cb07e6c8c68c0f51743ae07c6bcd",
+        "size_bytes": 1178595
+      }
+    },
+    {
+      "arm": "B-donor",
+      "category": "complete_valid_geometry",
+      "box": [
+        177,
+        436,
+        460,
+        828
+      ],
+      "same_class_annotation_overlaps": [
+        {
+          "owner_id": 715278,
+          "bbox": [
+            161,
+            4,
+            415,
+            200
+          ],
+          "iou": 0.0
+        },
+        {
+          "owner_id": 716308,
+          "bbox": [
+            10,
+            191,
+            223,
+            417
+          ],
+          "iou": 0.0
+        }
+      ],
+      "overlay": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-owner-routing/attempt-001/overlay-B-donor.png",
+        "sha256": "9e94e330683f6a49939a38c765e79cd350a89121d80cc18497f64db5a257d3cd",
+        "size_bytes": 1178064
+      }
+    }
+  ],
+  "physical_owner_verdict": "UNKNOWN pending lead visual review"
+}

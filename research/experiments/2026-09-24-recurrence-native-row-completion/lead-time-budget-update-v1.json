@@ -1,0 +1,12 @@
+{
+  "status": "lead-recorded-user-time-budget-update",
+  "date": "2026-09-24",
+  "user_instruction": "不用考虑时间方面的开销!尽情释放!",
+  "scope": "Current authorized recurrence research sequence, including the already frozen row1 continuation.",
+  "decision": "Elapsed wall/GPU time and prior 8-GPU-hour sequence, 900-second unit and 360-second row1 time ceilings no longer require stopping or further user permission. Preserve measured actual cost accounting.",
+  "unchanged": "Exact frozen row1 identities, interventions, prospective prediction, at most15 model/15 vision calls, row termination, technical qualification and failure-return boundary. No additional scientific arm or automatic retry.",
+  "row1_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-native-row-completion/lead-row1-admission-v1.json",
+    "sha256": "0796039847c1ed0532ff3b28ff512b3244802a61129bd09dae8fb80f5d979c21"
+  }
+}
