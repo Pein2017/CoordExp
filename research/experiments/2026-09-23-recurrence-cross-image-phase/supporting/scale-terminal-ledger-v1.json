@@ -1,0 +1,359 @@
+{
+  "schema": "recurrence_cross_image_phase.scale_terminal_ledger.v1",
+  "status": "candidate_technical_stop",
+  "authority": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/lead-remaining-admission-v1.json",
+    "sha256": "74fd8ede6820b0f1c27c2c5f8008343605e27f554d5ab4cbceb9957cb51f96e4",
+    "size_bytes": 4814
+  },
+  "protocol": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/unit.md",
+    "sha256": "30f310c3adb5e2be63a5616e36726d000527bc3fafdb83a91108ae481b7197eb",
+    "size_bytes": 7890
+  },
+  "manifest": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/manifest.json",
+    "sha256": "1815e9e9cb5640876955d1f6b7b4bf2eb0d7d4ca4d292c60c2be374cef6201e0",
+    "size_bytes": 77726
+  },
+  "preflight": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/preflight.json",
+    "sha256": "a4fa0966317618e341a57996710c36b4f55e21b9caf8bbf429bce59ebf9b02ca",
+    "size_bytes": 947505
+  },
+  "producer": {
+    "path": "probes/training_set_completion/recurrence_cross_image_phase/scale.py",
+    "sha256": "cff77ec4b6ae3f129fa94c1710d7264810dc134cba4091668a2ab738b78238c4",
+    "size_bytes": 60667
+  },
+  "rows": [
+    {
+      "id": "mature:7511:5",
+      "cohort": "R",
+      "status": "lead_accepted",
+      "scientific_category": "selective_transfer",
+      "calls": {
+        "model": 9,
+        "vision": 4
+      },
+      "allocated_gpu_seconds": 64.7263178229332,
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-002/reduction.json",
+        "sha256": "ac406d6fb009a2d2e97e1de7d3a2f7afcfdd6e7ac2ba19a21fbcd2051c0de268",
+        "size_bytes": 4937
+      },
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-002/receipt.json",
+        "sha256": "89ebbb0aeb26b7a3a8d3067872da95b881f2c656b264166b938025e67d09eed5",
+        "size_bytes": 722
+      },
+      "acceptance": {
+        "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/lead-r1-acceptance.json",
+        "sha256": "0c48cc10ca1f98edffd786aff0d93f71033c731d33476c717ea44a155268f718",
+        "size_bytes": 2126
+      },
+      "baseline_tv": 0.13218201714195982,
+      "latest_ratio": 0.17237401175946945,
+      "earlier_ratio": 1.0654804193520804
+    },
+    {
+      "id": "mature:14038:10",
+      "cohort": "R",
+      "frozen_order": 2,
+      "target_index": 2,
+      "source_group": "refined-02",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 109.74828686992903,
+      "status": "candidate_complete",
+      "calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "allocated_gpu_seconds": 50.5597759783268,
+      "rss_peak_kib": 11629208,
+      "gpu_peak_allocated_bytes": 11315638784,
+      "gpu_peak_reserved_bytes": 12152995840,
+      "artifact_bytes": 16316990,
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/receipt.json",
+        "sha256": "93fe262524297d4cbdd6b6a697b21cac872117406aaefbec1945659f078b6f53",
+        "size_bytes": 666
+      },
+      "job_pid": 1519560,
+      "pid_absent": true,
+      "scientific_category": "selective_transfer",
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/reduction.json",
+        "sha256": "72f4288e0130a7c639720cb11564a66863e1516af149ac87bc54df0cbbd4e737",
+        "size_bytes": 5252
+      },
+      "baseline_tv": 0.26433680161712564,
+      "latest_ratio": 0.12584031217565078,
+      "earlier_ratio": 1.0176040487327243,
+      "full_cached_max_abs_by_row": [
+        0.00013959407806396484,
+        4.7206878662109375e-05,
+        2.002716064453125e-05,
+        8.869171142578125e-05
+      ],
+      "cold_readback_status": "passed"
+    },
+    {
+      "id": "mature:351017:5",
+      "cohort": "R",
+      "frozen_order": 3,
+      "target_index": 2,
+      "source_group": "refined-03",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 106.90636389419414,
+      "status": "candidate_complete",
+      "calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "allocated_gpu_seconds": 49.87719710171223,
+      "rss_peak_kib": 11552164,
+      "gpu_peak_allocated_bytes": 11235236864,
+      "gpu_peak_reserved_bytes": 12079595520,
+      "artifact_bytes": 16280612,
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/receipt.json",
+        "sha256": "5631ba162ea78a166778b763dadd3d8d3a74b7eba13b67589f061542842bf342",
+        "size_bytes": 667
+      },
+      "job_pid": 1521009,
+      "pid_absent": true,
+      "scientific_category": "selective_transfer",
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/reduction.json",
+        "sha256": "310cba60bc9e1940538a3163a080a44042f08afb2e7d5616a489ff7a4ff98db4",
+        "size_bytes": 5252
+      },
+      "baseline_tv": 0.2726771879547817,
+      "latest_ratio": 0.08376129882338283,
+      "earlier_ratio": 0.989094851933996,
+      "full_cached_max_abs_by_row": [
+        7.152557373046875e-05,
+        0.00017118453979492188,
+        2.6911497116088867e-05,
+        3.528594970703125e-05
+      ],
+      "cold_readback_status": "passed"
+    },
+    {
+      "id": "mature:99184:7",
+      "cohort": "R",
+      "frozen_order": 4,
+      "target_index": 1,
+      "source_group": "fresh-06",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/raw.json",
+        "sha256": "e727f0083d183c80a28e6ba14b94b705e2a633474ab5d4e43b74a262f75a9a8b",
+        "size_bytes": 90374
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 107.83481298436155,
+      "status": "technical_invalid",
+      "calls": {
+        "model": 3,
+        "vision": 2
+      },
+      "allocated_gpu_seconds": 21.416175059974194,
+      "rss_peak_kib": 11544672,
+      "gpu_peak_allocated_bytes": 11267109376,
+      "gpu_peak_reserved_bytes": 12108955648,
+      "artifact_bytes": 13347250,
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/receipt.json",
+        "sha256": "088cfd822f60cb48b61eb306f35e915c21baf13f2ff11e9f2b698e096ae8098a",
+        "size_bytes": 1314
+      },
+      "job_pid": 1522453,
+      "pid_absent": true,
+      "scientific_category": "unanswered_technical_invalid",
+      "error": "ValueError('cached/full native or companion vector mismatch')",
+      "full_cached_max_abs_by_row": [
+        0.00014019012451171875,
+        2.2411346435546875e-05,
+        0.00021266937255859375,
+        0.00016570091247558594
+      ],
+      "full_source_trace_status_by_row": [
+        "ended_before_source_step",
+        "active_trace_parity",
+        "ended_before_source_step",
+        "ended_before_source_step"
+      ],
+      "target_trace_passed": true,
+      "full_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/cells/01-full-native/full-batch-vocabulary.pt",
+        "sha256": "564a5d691863324d91f651a3a9be9388e8de5c779352da144c0d6e5f708c02d6",
+        "size_bytes": 2444363
+      },
+      "cached_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/cells/03-native/full-batch-vocabulary.pt",
+        "sha256": "8ac7bdd47dba45182f5edb8ed11bcda227f5a580c0f7538265e0fb3a37b1c344",
+        "size_bytes": 2444363
+      },
+      "cached_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/cells/03-native/consumer-raw.json",
+        "sha256": "a2c58918146e82dc2cd5b20bb73e5b29326febb2733d112f23a3f6e7932b5ba6",
+        "size_bytes": 92064
+      },
+      "completed_cell_records": [
+        {
+          "kind": "full_native",
+          "record": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/cells/01-full-native/cell.json",
+            "sha256": "5e077621224c7d72b43ce2188dcddbf87543d117626647d3096e90f6f7a46f10",
+            "size_bytes": 3327
+          }
+        }
+      ]
+    },
+    {
+      "id": "mature:1584:2",
+      "cohort": "D",
+      "frozen_order": 5,
+      "target_index": 0,
+      "source_group": "refined-00",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 100.85207996940225,
+      "status": "held_unrun_after_R4_technical_failure",
+      "scientific_category": "unanswered",
+      "calls": {
+        "model": 0,
+        "vision": 0
+      },
+      "allocated_gpu_seconds": 0
+    },
+    {
+      "id": "mature:2299:2",
+      "cohort": "D",
+      "frozen_order": 6,
+      "target_index": 1,
+      "source_group": "refined-00",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 100.85207996940225,
+      "status": "held_unrun_after_R4_technical_failure",
+      "scientific_category": "unanswered",
+      "calls": {
+        "model": 0,
+        "vision": 0
+      },
+      "allocated_gpu_seconds": 0
+    },
+    {
+      "id": "mature:2685:12",
+      "cohort": "D",
+      "frozen_order": 7,
+      "target_index": 2,
+      "source_group": "refined-00",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 108.00932435432759,
+      "status": "held_unrun_after_R4_technical_failure",
+      "scientific_category": "unanswered",
+      "calls": {
+        "model": 0,
+        "vision": 0
+      },
+      "allocated_gpu_seconds": 0
+    },
+    {
+      "id": "mature:4134:7",
+      "cohort": "D",
+      "frozen_order": 8,
+      "target_index": 3,
+      "source_group": "refined-00",
+      "source_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "planned_calls": {
+        "model": 7,
+        "vision": 2
+      },
+      "forecast_seconds_2x": 104.4668498607787,
+      "status": "held_unrun_after_R4_technical_failure",
+      "scientific_category": "unanswered",
+      "calls": {
+        "model": 0,
+        "vision": 0
+      },
+      "allocated_gpu_seconds": 0
+    }
+  ],
+  "queue_stop": {
+    "case_id": "mature:99184:7",
+    "stage": "cached_native_all_four_row_full_parity",
+    "tolerance": 0.0002,
+    "largest_row_index": 2,
+    "largest_row_max_abs": 0.00021266937255859375,
+    "target_row_index": 1,
+    "target_max_abs": 2.2411346435546875e-05,
+    "no_treatments_or_later_cases_launched": true
+  },
+  "cost": {
+    "prior_package_gpu_seconds": 64.7263178229332,
+    "new_gpu_seconds": 121.85314814001322,
+    "package_gpu_seconds": 186.57946596294641,
+    "package_gpu_hours": 0.051827629434151784,
+    "package_remaining_seconds": 3413.4205340370536,
+    "sequence_cumulative_gpu_hours": 0.1414889227644437,
+    "total_package_calls_including_prior_failure": {
+      "model": 26,
+      "vision": 10
+    },
+    "package_artifact_bytes": 66807956,
+    "package_artifact_limit_bytes": 1073741824
+  },
+  "prospective_verdict": {
+    "R": "candidate numerical threshold >=3/4 met by R1-R3; R4 technically unanswered in denominator",
+    "D": "unresolved; D1-D4 unrun",
+    "physical_recurrence": "not established by numerical history labels"
+  }
+}

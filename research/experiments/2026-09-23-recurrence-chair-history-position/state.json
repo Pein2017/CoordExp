@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-recurrence-chair-history-position",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Strict position-following, strict added-history following and shared B restoration predictions fail; position and content causally alter the first-y1 readout with interaction and third-mode winners.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-recurrence-chair-history-position/unit.md",
+  "result": "research/experiments/2026-09-23-recurrence-chair-history-position/results.md",
+  "state_source": "research/experiments/2026-09-23-recurrence-chair-history-position/unit.md",
+  "boundary": "One early invalid-chair transition, two previously fixed supplied-x1 probes, 12 first-y1 factorial readouts plus 6 qualification controls; no free generation.",
+  "authorization": "User explicitly renewed autonomous mechanism research with all eight GPUs available after first-arrivals closeout. Lead admits this bounded successor under the existing cumulative ceiling.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "manifest": "research/experiments/2026-09-23-recurrence-chair-history-position/manifest.json",
+  "incremental_gpu_hour_ceiling": 1,
+  "not_authorized": [
+    "new images/candidates, training or checkpoint changes",
+    "free generation, causal-mask/cache-order changes or blanket history-position shifts",
+    "layer/head/phase sweeps, extra controls selected after outcomes",
+    "peer/shared-runtime writes, Git publication, automatic successor"
+  ],
+  "next_action": "Closed factorial; separate next-history prediction contract, no additional calls under this unit.",
+  "dispatch_status": "complete-lead-accepted",
+  "dispatch": {
+    "receipt": "/tmp/923-worker-chair-history-position-dispatch.json",
+    "turn_id": "01a0cee4-65ef-7763-a1c8-198e7cc1350a",
+    "method": "turn/steer",
+    "message_sha256": "e579b7fb49912d3e91ff702a8feceeb27038df4ffcc36cf9042836082eea745b",
+    "worker_model": "gpt-6-sol",
+    "worker_effort": "xhigh",
+    "observed_lead_model": "gpt-6-astra",
+    "observed_lead_effort": "medium"
+  },
+  "batch_size_erratum": {
+    "old_protocol_sha256": "660edbd8798ea3250445059d2e1c8447abc8cba0aac7a63343489024efd4f170",
+    "corrected_protocol_sha256": "acd71e7484f18600000dd66343bd4abebba3f7c74ed16f5c08293d2087960efe",
+    "manifest_sha256_unchanged": "3410f250e0113f907a8fbd07d8e402a4aca6f41fd987569d48a884c3c65587d8",
+    "ruling": "Original refined-04 single-request full batch is authoritative, target index0; no companions may be added. Initial four-request phrase was a lead documentation error.",
+    "verified": "Lead rehashed frozen original raw and runtime receipt: one raw row and one request ID. No successor model calls preceded correction.",
+    "scope_change": false,
+    "dispatch_receipt": "/tmp/923-worker-chair-single-request-ruling-receipt.json",
+    "resume_turn_id": "01a0ceee-9923-7022-a3ac-8fc32f1985b6"
+  },
+  "acceptance": "research/experiments/2026-09-23-recurrence-chair-history-position/lead-acceptance.json"
+}

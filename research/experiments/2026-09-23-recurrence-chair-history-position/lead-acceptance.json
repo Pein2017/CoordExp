@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "status": "lead-accepted",
+  "date": "2026-09-23",
+  "protocol": {
+    "path": "research/experiments/2026-09-23-recurrence-chair-history-position/unit.md",
+    "sha256": "acd71e7484f18600000dd66343bd4abebba3f7c74ed16f5c08293d2087960efe",
+    "size_bytes": 9640
+  },
+  "manifest": {
+    "path": "research/experiments/2026-09-23-recurrence-chair-history-position/manifest.json",
+    "sha256": "3410f250e0113f907a8fbd07d8e402a4aca6f41fd987569d48a884c3c65587d8",
+    "size_bytes": 12994
+  },
+  "worker_candidate": {
+    "path": "research/experiments/2026-09-23-recurrence-chair-history-position/candidate-results.md",
+    "sha256": "422f1fad0017746e2c1540b663a4ff63d3ec03f2a958be315896a53074b7feb5",
+    "size_bytes": 8106
+  },
+  "reduction": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-chair-history-position/attempt-001/reduction.json",
+    "sha256": "67cf49b7cb5db778dfad6ab2ea0dcd598cee11ca3a6ecb4a0e59db4324fbcf99",
+    "size_bytes": 20372
+  },
+  "pilot": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-chair-history-position/attempt-001/pilot.json",
+    "sha256": "d4c2132f318d0ac59534a48528f6c96dbfc921b0be0d4252e6b34696810a15a8",
+    "size_bytes": 184821
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-chair-history-position/attempt-001/receipt.json",
+    "sha256": "951a8c372726e21044c8181facbfc83fec87a4f6b02ac11dd2960655fc9de96b",
+    "size_bytes": 689
+  },
+  "cold_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-chair-history-position/attempt-001/cold-readback.json",
+    "sha256": "09c7b806056f674b39ef5c7959ba71e8a6ee5b92a057e1b5965059b574707f31",
+    "size_bytes": 692
+  },
+  "technical_disposition": "18 qualified readouts; fresh cold readback and independent full-vector/input-position audit passed.",
+  "scientific_disposition": "Strict position-following, strict added-history following and shared B restoration predictions fail; position and content causally alter the first-y1 readout with interaction and third-mode winners.",
+  "checks": [
+    {
+      "probe": 1589003,
+      "matrix_and_contrasts_recomputed": true,
+      "actual_position_and_content_differences_verified": true
+    },
+    {
+      "probe": 1586761,
+      "matrix_and_contrasts_recomputed": true,
+      "actual_position_and_content_differences_verified": true
+    }
+  ],
+  "qualification": {
+    "source_control_max_error": 8.106231689453125e-06,
+    "stage2_reference_max_error": 0.0,
+    "identity_full_vector_max_error": 0.0,
+    "actual_consumer_crosschecks": [
+      {
+        "candidate_owner": 1589003,
+        "history": "E",
+        "S_only_position_difference_indices": [
+          1398,
+          1399,
+          1400,
+          1401,
+          1402
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1589003,
+        "history": "L_A",
+        "S_only_position_difference_indices": [
+          1407,
+          1408,
+          1409,
+          1410,
+          1411
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1589003,
+        "history": "L_B",
+        "S_only_position_difference_indices": [
+          1407,
+          1408,
+          1409,
+          1410,
+          1411
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1589003,
+        "positions": "E",
+        "A_to_B_only_physical_token_indices": [
+          1403,
+          1404
+        ],
+        "same_positions_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1589003,
+        "positions": "L",
+        "A_to_B_only_physical_token_indices": [
+          1403,
+          1404
+        ],
+        "same_positions_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1586761,
+        "history": "E",
+        "S_only_position_difference_indices": [
+          1398,
+          1399,
+          1400,
+          1401,
+          1402
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1586761,
+        "history": "L_A",
+        "S_only_position_difference_indices": [
+          1407,
+          1408,
+          1409,
+          1410,
+          1411
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1586761,
+        "history": "L_B",
+        "S_only_position_difference_indices": [
+          1407,
+          1408,
+          1409,
+          1410,
+          1411
+        ],
+        "same_physical_input_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1586761,
+        "positions": "E",
+        "A_to_B_only_physical_token_indices": [
+          1403,
+          1404
+        ],
+        "same_positions_mask_cache_order": true
+      },
+      {
+        "candidate_owner": 1586761,
+        "positions": "L",
+        "A_to_B_only_physical_token_indices": [
+          1403,
+          1404
+        ],
+        "same_positions_mask_cache_order": true
+      }
+    ],
+    "all_grid_gaps_over_0p001": true,
+    "numerical_contrast_guard": 0.0004
+  },
+  "probe_prediction_outcomes": [
+    {
+      "candidate_owner": 1589003,
+      "contrasts": {
+        "position_L_minus_E_by_history": {
+          "E": -4.994834899902344,
+          "L_A": -7.997617721557617,
+          "L_B": -4.541278839111328
+        },
+        "added_history_LA_minus_E_by_position": {
+          "E": 2.366347312927246,
+          "L": -0.6364355087280273
+        },
+        "content_LB_minus_LA_by_position": {
+          "E": 1.8525047302246094,
+          "L": 5.308843612670898
+        },
+        "history_by_position_interaction": -3.0027828216552734,
+        "content_by_position_interaction": 3.456338882446289
+      },
+      "prediction_checks": {
+        "strict_position_transport": false,
+        "strict_history_package_following": false,
+        "strict_B_content_restoration_at_L": false
+      }
+    },
+    {
+      "candidate_owner": 1586761,
+      "contrasts": {
+        "position_L_minus_E_by_history": {
+          "E": -1.6386680603027344,
+          "L_A": -3.055612564086914,
+          "L_B": -1.7193613052368164
+        },
+        "added_history_LA_minus_E_by_position": {
+          "E": 0.9519481658935547,
+          "L": -0.464996337890625
+        },
+        "content_LB_minus_LA_by_position": {
+          "E": 0.7151823043823242,
+          "L": 2.051433563232422
+        },
+        "history_by_position_interaction": -1.4169445037841797,
+        "content_by_position_interaction": 1.3362512588500977
+      },
+      "prediction_checks": {
+        "strict_position_transport": false,
+        "strict_history_package_following": false,
+        "strict_B_content_restoration_at_L": true
+      }
+    }
+  ],
+  "cost": {
+    "prior_sequence_gpu_hours": 0.057975090372065705,
+    "incremental_gpu_seconds": 19.931844994425774,
+    "incremental_gpu_hours": 0.005536623609562715,
+    "cumulative_gpu_hours": 0.06351171398162841,
+    "incremental_cap_gpu_hours": 1,
+    "sequence_cap_gpu_hours": 8,
+    "allocated_gpu_seconds": 19.931844994425774,
+    "rss_peak_kib": 11120372,
+    "gpu_peak_allocated_bytes": 9071465472,
+    "gpu_peak_reserved_bytes": 9518972928,
+    "model_forwards": 18,
+    "vision_forwards": 18
+  },
+  "terminal_pid_absent": 1268065,
+  "limits": [
+    "Single image, two supplied-coordinate probes; not two independent images.",
+    "Changing all five current-prefix positions changes contextual representations as well as rotary comparisons; crossed positions have intentional gaps/overlaps.",
+    "B changes preceding geometry and literal content together; no circuit, copy mechanism or abstract owner commitment identified.",
+    "Positive fixed-pair margin shifts do not imply the early candidate wins against the rest of the vocabulary.",
+    "No free generation or physical recovery; results concern conditional first-y1 under supplied x1."
+  ],
+  "stop_decision": "Close this factorial. No finer phase/row/layer sweep. Under renewed autonomous research authority, a separately frozen next-history predictive test may use these saved vectors without altering them."
+}

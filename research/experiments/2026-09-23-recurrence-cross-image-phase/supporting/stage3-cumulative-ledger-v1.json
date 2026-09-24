@@ -1,0 +1,487 @@
+{
+  "schema": "recurrence_cross_image_phase.stage3_cumulative_ledger.v1",
+  "status": "candidate_technical_stop_D3",
+  "authority": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/lead-D-continuation-v1.json",
+    "sha256": "b81588f28bda98c82a949a133be0faa1e4facdf99680b13b8f9cbbc2889c1b59",
+    "size_bytes": 3214
+  },
+  "r2_r3_acceptance_r4_ruling": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/lead-r2-r3-acceptance-and-r4-ruling.json",
+    "sha256": "e64d460697e4bf08302eba33ccc0a42820760ee1d679f16b1b110902f0a93d73",
+    "size_bytes": 3457
+  },
+  "old_scale_terminal_ledger": {
+    "path": "research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/scale-terminal-ledger-v1.json",
+    "sha256": "cad84062b5d6291ecbba4bbc078db4f4c80ca8dd557e11869b60714f4f974f1c",
+    "size_bytes": 13787
+  },
+  "old_scale_producer": {
+    "path": "probes/training_set_completion/recurrence_cross_image_phase/scale.py",
+    "sha256": "cff77ec4b6ae3f129fa94c1710d7264810dc134cba4091668a2ab738b78238c4",
+    "size_bytes": 60667
+  },
+  "continuation_producer": {
+    "path": "probes/training_set_completion/recurrence_cross_image_phase/continuation.py",
+    "sha256": "185c55f23d9aaa2d06dae4f344a44b0c3bb3ebb2dce067caf5f6e46cf96b455d",
+    "size_bytes": 12046
+  },
+  "continuation_preflight": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/preflight.json",
+    "sha256": "9a7e44bfcbd36c8515a1af4f0a917c2f44177ef1060a93e84857aa253744b513",
+    "size_bytes": 550072
+  },
+  "rows": [
+    {
+      "id": "mature:7511:5",
+      "cohort": "R",
+      "frozen_order": 1,
+      "source_group": "refined-01",
+      "source_batch_index": 2,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+        "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+        "size_bytes": 40378
+      },
+      "status": "lead_accepted",
+      "category": "selective_transfer",
+      "baseline_tv": 0.13218201714195982,
+      "latest_ratio": 0.17237401175946945,
+      "earlier_ratio": 1.0654804193520804,
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-002/reduction.json",
+        "sha256": "ac406d6fb009a2d2e97e1de7d3a2f7afcfdd6e7ac2ba19a21fbcd2051c0de268",
+        "size_bytes": 4937
+      },
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-002/receipt.json",
+        "sha256": "89ebbb0aeb26b7a3a8d3067872da95b881f2c656b264166b938025e67d09eed5",
+        "size_bytes": 722
+      },
+      "allocated_gpu_seconds_including_failure": 64.7263178229332
+    },
+    {
+      "id": "mature:14038:10",
+      "cohort": "R",
+      "frozen_order": 2,
+      "source_group": "refined-02",
+      "source_batch_index": 2,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "status": "lead_accepted",
+      "category": "selective_transfer",
+      "baseline_tv": 0.26433680161712564,
+      "latest_ratio": 0.12584031217565078,
+      "earlier_ratio": 1.0176040487327243,
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/reduction.json",
+        "sha256": "72f4288e0130a7c639720cb11564a66863e1516af149ac87bc54df0cbbd4e737",
+        "size_bytes": 5252
+      },
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/receipt.json",
+        "sha256": "93fe262524297d4cbdd6b6a697b21cac872117406aaefbec1945659f078b6f53",
+        "size_bytes": 666
+      },
+      "allocated_gpu_seconds": 50.5597759783268,
+      "cold_readback_status": "passed"
+    },
+    {
+      "id": "mature:351017:5",
+      "cohort": "R",
+      "frozen_order": 3,
+      "source_group": "refined-03",
+      "source_batch_index": 2,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "status": "lead_accepted",
+      "category": "selective_transfer",
+      "baseline_tv": 0.2726771879547817,
+      "latest_ratio": 0.08376129882338283,
+      "earlier_ratio": 0.989094851933996,
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/reduction.json",
+        "sha256": "310cba60bc9e1940538a3163a080a44042f08afb2e7d5616a489ff7a4ff98db4",
+        "size_bytes": 5252
+      },
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/receipt.json",
+        "sha256": "5631ba162ea78a166778b763dadd3d8d3a74b7eba13b67589f061542842bf342",
+        "size_bytes": 667
+      },
+      "allocated_gpu_seconds": 49.87719710171223,
+      "cold_readback_status": "passed"
+    },
+    {
+      "id": "mature:99184:7",
+      "cohort": "R",
+      "frozen_order": 4,
+      "source_group": "fresh-06",
+      "source_batch_index": 1,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/raw.json",
+        "sha256": "e727f0083d183c80a28e6ba14b94b705e2a633474ab5d4e43b74a262f75a9a8b",
+        "size_bytes": 90374
+      },
+      "status": "technical_invalid_unanswered",
+      "category": "unanswered",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/receipt.json",
+        "sha256": "088cfd822f60cb48b61eb306f35e915c21baf13f2ff11e9f2b698e096ae8098a",
+        "size_bytes": 1314
+      },
+      "allocated_gpu_seconds": 21.416175059974194,
+      "full_cached_max_abs_by_row": [
+        0.00014019012451171875,
+        2.2411346435546875e-05,
+        0.00021266937255859375,
+        0.00016570091247558594
+      ],
+      "failed_row": 2,
+      "gate": 0.0002
+    },
+    {
+      "id": "mature:1584:2",
+      "cohort": "D",
+      "frozen_order": 5,
+      "source_group": "refined-00",
+      "source_batch_index": 0,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/receipt.json",
+        "sha256": "b773bf7786abd12c5c2d21b694dca856056f02fc028c40006d0285df4d466f98",
+        "size_bytes": 669
+      },
+      "allocated_gpu_seconds": 49.806788586080074,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "rss_peak_kib": 11859276,
+      "gpu_peak_allocated_bytes": 11197420032,
+      "gpu_peak_reserved_bytes": 12010389504,
+      "pid": 1531562,
+      "pid_absent": true,
+      "artifact_bytes": 16266786,
+      "category": "selective_transfer",
+      "baseline_tv": 0.8738936138485881,
+      "latest_ratio": 0.015278563680410577,
+      "earlier_ratio": 0.9962173448638306,
+      "latest_tv_to_cross": 0.013351839229089784,
+      "earlier_tv_to_cross": 0.8705879756816981,
+      "cold_readback_status": "passed",
+      "full_cached_max_abs_by_row": [
+        7.2479248046875e-05,
+        4.5359134674072266e-05,
+        4.9173831939697266e-05,
+        3.4332275390625e-05
+      ],
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/reduction.json",
+        "sha256": "0bc96535b76175010e46e2e0ae01e33f91ab11302dd2d453b02acb9c23cfa057",
+        "size_bytes": 5282
+      },
+      "winners": {
+        "full_native": 152293,
+        "native": 152293,
+        "cross": 152311,
+        "sham": 152293,
+        "latest": 152311,
+        "earlier": 152293
+      }
+    },
+    {
+      "id": "mature:2299:2",
+      "cohort": "D",
+      "frozen_order": 6,
+      "source_group": "refined-00",
+      "source_batch_index": 1,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/receipt.json",
+        "sha256": "f2a5601b48458887ab395df981e11a1e90eca89ad88cdc67ad90d4530dc5b879",
+        "size_bytes": 667
+      },
+      "allocated_gpu_seconds": 49.52135568857193,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "rss_peak_kib": 9472024,
+      "gpu_peak_allocated_bytes": 11197420032,
+      "gpu_peak_reserved_bytes": 12010389504,
+      "pid": 1533007,
+      "pid_absent": true,
+      "artifact_bytes": 16266812,
+      "category": "selective_transfer",
+      "baseline_tv": 0.22831253308395377,
+      "latest_ratio": 0.29725263367596305,
+      "earlier_ratio": 1.0263886742914003,
+      "latest_tv_to_cross": 0.06786650176043571,
+      "earlier_tv_to_cross": 0.23433739815615082,
+      "cold_readback_status": "passed",
+      "full_cached_max_abs_by_row": [
+        7.2479248046875e-05,
+        4.5359134674072266e-05,
+        4.9173831939697266e-05,
+        3.4332275390625e-05
+      ],
+      "reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/reduction.json",
+        "sha256": "ca5f99641c5034a5476665c8872f72649a6ea7e6dfd06a07ddf6a7eb77b7532c",
+        "size_bytes": 5276
+      },
+      "winners": {
+        "full_native": 151778,
+        "native": 151778,
+        "cross": 151778,
+        "sham": 151778,
+        "latest": 151778,
+        "earlier": 151778
+      }
+    },
+    {
+      "id": "mature:2685:12",
+      "cohort": "D",
+      "frozen_order": 7,
+      "source_group": "refined-00",
+      "source_batch_index": 2,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "status": "technical_invalid_unanswered",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d3-2685-12/receipt.json",
+        "sha256": "8cafd670c02e80c7a0e27b4e96d74010d8412a8438c5fe3c8bb93d6a46338691",
+        "size_bytes": 1319
+      },
+      "allocated_gpu_seconds": 23.512117691338062,
+      "model_forwards": 3,
+      "vision_forwards": 2,
+      "rss_peak_kib": 11539092,
+      "gpu_peak_allocated_bytes": 11364276224,
+      "gpu_peak_reserved_bytes": 12012486656,
+      "pid": 1534452,
+      "pid_absent": true,
+      "artifact_bytes": 13384455,
+      "category": "unanswered",
+      "error": "ValueError('cached/full native or companion vector mismatch')",
+      "full_cached_max_abs_by_row": [
+        0.00021958351135253906,
+        3.7789344787597656e-05,
+        7.2479248046875e-05,
+        3.910064697265625e-05
+      ],
+      "failed_row": 0,
+      "gate": 0.0002,
+      "full_source_trace": [
+        {
+          "batch_index": 0,
+          "status": "ended_before_source_step",
+          "passed": null
+        },
+        {
+          "batch_index": 1,
+          "status": "active_trace_parity",
+          "passed": true
+        },
+        {
+          "batch_index": 2,
+          "status": "active_trace_parity",
+          "passed": true
+        },
+        {
+          "batch_index": 3,
+          "status": "active_trace_parity",
+          "passed": true
+        }
+      ],
+      "full_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d3-2685-12/cells/01-full-native/full-batch-vocabulary.pt",
+        "sha256": "f532e2d0b1c04901db01e7f0d5292761e9ab4c6bc5475f67fcefbb29b68474a7",
+        "size_bytes": 2444363
+      },
+      "cached_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d3-2685-12/cells/03-native/full-batch-vocabulary.pt",
+        "sha256": "6a25e01cb16e4840e1f167ae769ffdae931188cb7d3efc28621eb34bcd442e55",
+        "size_bytes": 2444363
+      },
+      "cached_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d3-2685-12/cells/03-native/consumer-raw.json",
+        "sha256": "431a8e21067d554e420b57499f658ec7639205d0651aacdef09242e377fda26f",
+        "size_bytes": 94364
+      }
+    },
+    {
+      "id": "mature:4134:7",
+      "cohort": "D",
+      "frozen_order": 8,
+      "source_group": "refined-00",
+      "source_batch_index": 3,
+      "source_raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+        "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+        "size_bytes": 21433
+      },
+      "status": "held_unrun_after_D3_technical_failure",
+      "category": "unanswered",
+      "allocated_gpu_seconds": 0,
+      "model_forwards": 0,
+      "vision_forwards": 0,
+      "forecast_seconds_2x": 104.4668498607787
+    }
+  ],
+  "jobs": [
+    {
+      "name": "attempt-001",
+      "status": "technical_invalid",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-001/receipt.json",
+        "sha256": "f2fff0bc94cdda193068bffed6eb6825732e4721ae82be4e07e0e5a93032ed39",
+        "size_bytes": 1412
+      },
+      "allocated_gpu_seconds": 14.241613768041134,
+      "model_forwards": 2,
+      "vision_forwards": 2,
+      "pid": 1495483,
+      "pid_absent": true
+    },
+    {
+      "name": "attempt-002",
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/attempt-002/receipt.json",
+        "sha256": "89ebbb0aeb26b7a3a8d3067872da95b881f2c656b264166b938025e67d09eed5",
+        "size_bytes": 722
+      },
+      "allocated_gpu_seconds": 50.48470405489206,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "pid": 1504229,
+      "pid_absent": true
+    },
+    {
+      "name": "remaining-v1/02-14038-10",
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/receipt.json",
+        "sha256": "93fe262524297d4cbdd6b6a697b21cac872117406aaefbec1945659f078b6f53",
+        "size_bytes": 666
+      },
+      "allocated_gpu_seconds": 50.5597759783268,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "pid": 1519560,
+      "pid_absent": true
+    },
+    {
+      "name": "remaining-v1/03-351017-5",
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/receipt.json",
+        "sha256": "5631ba162ea78a166778b763dadd3d8d3a74b7eba13b67589f061542842bf342",
+        "size_bytes": 667
+      },
+      "allocated_gpu_seconds": 49.87719710171223,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "pid": 1521009,
+      "pid_absent": true
+    },
+    {
+      "name": "remaining-v1/04-99184-7",
+      "status": "technical_invalid",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/04-99184-7/receipt.json",
+        "sha256": "088cfd822f60cb48b61eb306f35e915c21baf13f2ff11e9f2b698e096ae8098a",
+        "size_bytes": 1314
+      },
+      "allocated_gpu_seconds": 21.416175059974194,
+      "model_forwards": 3,
+      "vision_forwards": 2,
+      "pid": 1522453,
+      "pid_absent": true
+    },
+    {
+      "name": "d-continuation-v1/d1-1584-2",
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/receipt.json",
+        "sha256": "b773bf7786abd12c5c2d21b694dca856056f02fc028c40006d0285df4d466f98",
+        "size_bytes": 669
+      },
+      "allocated_gpu_seconds": 49.806788586080074,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "pid": 1531562,
+      "pid_absent": true
+    },
+    {
+      "name": "d-continuation-v1/d2-2299-2",
+      "status": "candidate_complete",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/receipt.json",
+        "sha256": "f2a5601b48458887ab395df981e11a1e90eca89ad88cdc67ad90d4530dc5b879",
+        "size_bytes": 667
+      },
+      "allocated_gpu_seconds": 49.52135568857193,
+      "model_forwards": 7,
+      "vision_forwards": 2,
+      "pid": 1533007,
+      "pid_absent": true
+    },
+    {
+      "name": "d-continuation-v1/d3-2685-12",
+      "status": "technical_invalid",
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d3-2685-12/receipt.json",
+        "sha256": "8cafd670c02e80c7a0e27b4e96d74010d8412a8438c5fe3c8bb93d6a46338691",
+        "size_bytes": 1319
+      },
+      "allocated_gpu_seconds": 23.512117691338062,
+      "model_forwards": 3,
+      "vision_forwards": 2,
+      "pid": 1534452,
+      "pid_absent": true
+    }
+  ],
+  "D_continuation": {
+    "completed_full_cases": 2,
+    "failed_case_id": "mature:2685:12",
+    "failed_gate": "all-four-row cached/full <=2e-4",
+    "no_D3_treatments_or_D4_calls": true,
+    "new_model_forwards": 17,
+    "new_vision_forwards": 6,
+    "new_gpu_seconds": 122.84026196599007,
+    "remaining_forecast_D4_seconds_2x": 104.4668498607787
+  },
+  "cumulative_cost": {
+    "allocated_gpu_seconds": 309.4197279289365,
+    "allocated_gpu_hours": 0.08594992442470457,
+    "sequence_cumulative_gpu_hours": 0.1756112177549965,
+    "remaining_package_seconds": 3290.5802720710635,
+    "model_forwards": 43,
+    "vision_forwards": 16,
+    "artifact_bytes": 113278768,
+    "artifact_limit_bytes": 1073741824
+  },
+  "candidate_verdict": {
+    "R": "lead-accepted at-least-3 threshold with three accepted selective R outcomes; R4 technically unanswered",
+    "D": "D1,D2 candidate selective, D3 technically unanswered, D4 unrun; at-least-3 threshold unresolved",
+    "physical": "Numerical D is not a healthy physical control or matched cohort"
+  }
+}

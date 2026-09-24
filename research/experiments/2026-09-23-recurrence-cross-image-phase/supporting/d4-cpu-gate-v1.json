@@ -1,0 +1,93 @@
+{
+  "schema": "recurrence_cross_image_phase.D4_cpu_gate.v1",
+  "status": "cpu_qualified_before_gpu",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-D4-admission-v1.json",
+    "sha256": "269eafd0b620a40f0ae7eecf53b6ef3cc3fdae9c31ee2a21e9cc2bc9d01f5247",
+    "size_bytes": 2484
+  },
+  "ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-D1-D2-acceptance-and-D3-ruling.json",
+    "sha256": "f500a545b5012347a65fd6039b7032620d1cdf3cd136ff5980df8b3e515cafaf",
+    "size_bytes": 3327
+  },
+  "prior_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/stage3-cumulative-ledger-v1.json",
+    "sha256": "4cbebb9508fc4cb458ec4c93bb2748cfd3bd738510dfd7eb33011bf04cb87174",
+    "size_bytes": 19926
+  },
+  "old_preflight": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/preflight.json",
+    "sha256": "9a7e44bfcbd36c8515a1af4f0a917c2f44177ef1060a93e84857aa253744b513",
+    "size_bytes": 550072
+  },
+  "new_preflight": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/preflight.json",
+    "sha256": "3496938eb81a4e14b7486b9e936a1a4075e08abbbad34beaf459edccf754891e",
+    "size_bytes": 151297
+  },
+  "new_producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_cross_image_phase/d4.py",
+    "sha256": "87dcd37886a017749e7560ceaa3c143944334543ce82e6fbccfb343bc300c1f9",
+    "size_bytes": 12483
+  },
+  "cpu_rejections": [
+    "other_case_R4",
+    "changed_R4_failure",
+    "changed_D3_failure",
+    "missing_D3_charge",
+    "missing_prior_charge",
+    "relaxed_D3_gate",
+    "actual_caller_other_case",
+    "actual_caller_wrong_output"
+  ],
+  "frozen_operation_code_objects": [
+    "run",
+    "cold",
+    "reduce"
+  ],
+  "prior_seconds": 309.4197279289365,
+  "forecast_seconds_2x": 104.4668498607787,
+  "captures": 24,
+  "command": {
+    "case_id": "mature:4134:7",
+    "output": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7",
+    "gpu": [
+      "python",
+      "-B",
+      "-m",
+      "probes.training_set_completion.recurrence_cross_image_phase.d4",
+      "run",
+      "--case",
+      "mature:4134:7",
+      "--output",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7",
+      "--device",
+      "cuda:0"
+    ],
+    "readback": [
+      "python",
+      "-B",
+      "-m",
+      "probes.training_set_completion.recurrence_cross_image_phase.d4",
+      "readback",
+      "--case",
+      "mature:4134:7",
+      "--output",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7"
+    ],
+    "reduce": [
+      "python",
+      "-B",
+      "-m",
+      "probes.training_set_completion.recurrence_cross_image_phase.d4",
+      "reduce",
+      "--case",
+      "mature:4134:7",
+      "--output",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7"
+    ]
+  },
+  "language_model_loads": 0,
+  "cuda_calls": 0
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "recurrence_first_arrivals.identity_diagnostic.v1",
+  "status": "path_only_source_capture_crosswalk",
+  "case": "mature:313465:0:arrival1",
+  "source_selection": "supporting/selection-attempt-004.json",
+  "saved_loader_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+  "fresh_loader_path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+  "comparison": "Recursive saved-versus-fresh load_model('untied', cuda:0) identity diff reported only loader_source.path; loader_source.sha256 and size_bytes, adapter identity, embedding payload identity, effective input/output row hashes and independent delta hashes matched.",
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "observed_load_seconds": 7.613,
+  "conservative_allocated_gpu_seconds_charged": 14.4,
+  "charged_basis": "Full tool wall interval, including Python startup, exceeds the measured load interval; no model forward was made."
+}

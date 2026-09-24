@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "lead-admitted-D-only-continuation",
+  "date": "2026-09-23",
+  "ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-r2-r3-acceptance-and-r4-ruling.json",
+    "sha256": "e64d460697e4bf08302eba33ccc0a42820760ee1d679f16b1b110902f0a93d73",
+    "size_bytes": 3457
+  },
+  "prior_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-remaining-admission-v1.json",
+    "sha256": "74fd8ede6820b0f1c27c2c5f8008343605e27f554d5ab4cbceb9957cb51f96e4",
+    "size_bytes": 4814
+  },
+  "terminal_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/scale-terminal-ledger-v1.json",
+    "sha256": "cad84062b5d6291ecbba4bbc078db4f4c80ca8dd557e11869b60714f4f974f1c",
+    "size_bytes": 13787
+  },
+  "case_ids": [
+    "mature:1584:2",
+    "mature:2299:2",
+    "mature:2685:12",
+    "mature:4134:7"
+  ],
+  "science": "Original seven-call per-case method, all-row2e-4 qualification and distribution thresholds unchanged. No R4 retry or alteration. D is numerical different-antecedent comparison, not healthy physical controls.",
+  "queue_reconciliation": "Existing scale.run rejects any earlier technical failure. Do not evade this by deleting receipt, pretending R4 passed or hiding its charge. Add smallest separate continuation entry/source that binds this ruling and exact R1/R2/R3/R4 receipts, explicitly recognizes only this known R4 terminal technical-invalid hold, then runs exact D1-D4 sequentially. Any new technical failure stops queue. Preserve scale.py and all earlier captured producers/reports byte-for-byte; no generic scheduler.",
+  "cpu_gate": "Before GPU, prove actual continuation admission rejects unknown/mutated failure receipt, missing cost, changed case order or selecting R4. Accept only bound known R4 HOLD and exact four D cases. Reuse old qualified batch preflight if unchanged, capture new continuation source/direct imports and commands, account all186.579465963s already spent. Preserve source/ended companion semantics and fresh per-case full/cache/consumer qualification.",
+  "budget": {
+    "charged_package_gpu_seconds": 186.57946596294641,
+    "additional_model_forwards_cap": 28,
+    "additional_vision_forwards_cap": 8,
+    "package_total_model_forwards_cap": 54,
+    "package_total_vision_forwards_cap": 18,
+    "remaining_package_seconds": 3413.4205340370536,
+    "package_gpu_hours_cap": 1,
+    "sequence_gpu_hours_cap": 8,
+    "sequence_prior_gpu_hours": 0.1414889227644437,
+    "artifact_limit_bytes": 1073741824
+  },
+  "output": "New continuation output root/captures and stage3-candidate-results.md, cumulative ledger including all8 identities and all failed attempts. Preserve stage2 candidate and ledger v1. Same owned source/package only; no Git/peer/shared-runtime write.",
+  "stop": "Run all four regardless valid scientific outcome. Stop on new qualification/semantic/cost failure, no automatic repair or substitution. Return directly to lead with full cohort candidate, no self-acceptance/successor."
+}

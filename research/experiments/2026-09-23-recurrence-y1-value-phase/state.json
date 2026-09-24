@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "state_as_of": "2026-09-23",
+  "authorization": "Renewed user autonomous mechanism-research grant; bounded lead admission within cumulative8 GPU-hours.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "ongoing_user_authorization": {
+    "date": "2026-09-23",
+    "instruction": "User is going to sleep; explicitly authorizes lead-selected subsequent experiments without a round-count limit or repeated permission, whenever scientifically worthwhile. Wait for current worker return first.",
+    "boundary": "Existing per-unit contracts and cumulative resource ceiling remain in force. Lead freezes each successor and independently accepts results; user grant does not authorize worker self-directed expansion.",
+    "notification": "Report decision-bearing progress/failure; do not send unchanged waiting updates."
+  },
+  "unit_id": "2026-09-23-recurrence-y1-value-phase",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "All3 technically qualified. Frozen shared-all3 directional amplification prediction fails on mature:2299:2, which is a valid scientific nonpass. Other2 per-case positives retained without threshold/slot/cohort adjustment.",
+  "protocol": "research/experiments/2026-09-23-recurrence-y1-value-phase/unit.md",
+  "result": "research/experiments/2026-09-23-recurrence-y1-value-phase/results.md",
+  "state_source": "research/experiments/2026-09-23-recurrence-y1-value-phase/lead-acceptance.json",
+  "boundary": "Original four-request native histories; whole latest K phase crossed with one historical y1 V donor, all28layers.",
+  "next_action": "Close this finite branch. No further slot/head/layer/donor/threshold search or model calls admitted.",
+  "not_authorized": [
+    "Other2 cases until technical admission; donor/slot/head/layer/threshold search",
+    "Extra calls/generation, Git, predecessor/peer/shared-runtime edits, automatic successor"
+  ],
+  "dispatch": {
+    "lead": {
+      "id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "medium",
+      "status": {
+        "type": "active",
+        "activeFlags": []
+      }
+    },
+    "worker": {
+      "id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "idle"
+      }
+    },
+    "target": "worker",
+    "target_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "status": "submitted",
+    "message_sha256": "95b2e5eb0af0816b2d052eb675ebc7e54d3ea6b31703c8303c3baf984c2b3683",
+    "delivery_method": "turn/start",
+    "turn_id": "01a0cfcb-67bd-7bf1-9f63-e36264079cf8",
+    "turn_status": "inProgress"
+  },
+  "first_case_acceptance": "lead-first-case-acceptance.json",
+  "remaining_dispatch": {
+    "lead": {
+      "id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "medium",
+      "status": {
+        "type": "active",
+        "activeFlags": []
+      }
+    },
+    "worker": {
+      "id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "idle"
+      }
+    },
+    "target": "worker",
+    "target_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "status": "submitted",
+    "message_sha256": "34729a9990cec4f18c2bde8c0b7d2ef7334ad2c1973b7a211bd5f53159acac53",
+    "delivery_method": "turn/start",
+    "turn_id": "01a0cfd9-6772-7ce1-8ccd-2e634365fe3d",
+    "turn_status": "inProgress"
+  }
+}

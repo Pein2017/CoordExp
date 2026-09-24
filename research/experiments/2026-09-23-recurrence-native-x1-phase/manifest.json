@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "status": "lead-frozen-before-native-x1-cross",
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-reverse-key-phase/lead-acceptance.json",
+    "sha256": "d6195d40b4b32bb1132efdb489830ff7d44c8913ecfc7fd7996b61be7f4dd95e",
+    "size_bytes": 2478
+  },
+  "predecessor_manifest": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-reverse-key-phase/manifest.json",
+    "sha256": "d746713cb34a726742102ac29c0a8cdfcf981ccfe948cf3b24105735c518bb6c",
+    "size_bytes": 9418
+  },
+  "predecessor_reduction": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-reverse-key-phase/attempt-001/reduction.json",
+    "sha256": "50112205f12a53011238e8880402c7c6337ad6fc27df3571856bfabb9fe84795",
+    "size_bytes": 12369
+  },
+  "source_bindings": {
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+      "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c",
+      "size_bytes": 8301
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+      "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f",
+      "size_bytes": 127664
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+      "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d",
+      "size_bytes": 126942
+    },
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+      "sha256": "84a91098415dae8ddf0c5c911505df7a1883b9c6363e5d54a42d9217ab3c2596",
+      "size_bytes": 103093
+    },
+    "source_identity": {
+      "model": "untied",
+      "shared_delta": false,
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "dtype": "fp32",
+      "attention": "sdpa"
+    },
+    "input_identity_sha256": "e5089b053f787d7ab0e98df1cb37cea8e86099bad6222a11163674b9200de7f5",
+    "input_identity_summary": {
+      "request_ids": [
+        "coco2017_train_000000477415"
+      ],
+      "media_sha256": [
+        "7447435191c4669cdfadd904be423561d98811e7f1f6d98bfaa17974356d6449"
+      ],
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ]
+      ],
+      "tensor_sha256": {
+        "attention_mask": "78216d9598c2de0868c5b13a39b0bbd8c75a43047d0435322bdc99ca721a8adf",
+        "image_grid_thw": "0081bb8eae4487da2b9691b8484453420e8b8696696fc4b596998c558fda6540",
+        "input_ids": "d5e1d7895df9822c4b9abd51cc4733893abfdc61cbcec0910ca778c69e83f984",
+        "pixel_values": "fb07a5fc259f96e35bb4d266d500c99bceb72e08c137a71c7878c640194eca91"
+      }
+    },
+    "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "loader_source": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  },
+  "source_group": "refined-04",
+  "batch_index": 0,
+  "request_id": "coco2017_train_000000477415",
+  "native_reference_cell": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/cell.json",
+    "sha256": "363210cea9d5229fb410aeb55b35d97739c9e710ce802ebe7edde59e913cd316",
+    "size_bytes": 1956
+  },
+  "native_reference_vector": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/vocabulary.pt",
+    "sha256": "cc26d38b6e0fb6b561f8f11d27e6794019e5dbed006a1bdc4876bf21be4dfb3d",
+    "size_bytes": 612222
+  },
+  "native_reference_consumer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/consumer-raw.json",
+    "sha256": "cab25fe5866b6f8f98bf53ab1c005b1b7dadd69404aa67b8e0d877b3bca40cf3",
+    "size_bytes": 139139
+  },
+  "native_x1_token": 151768,
+  "native_y1_token": 152249,
+  "geometry": {
+    "prompt_width": 1362,
+    "history_width": 1416,
+    "suffix_width": 5,
+    "earlier_raw": [
+      36,
+      45
+    ],
+    "latest_raw": [
+      45,
+      54
+    ],
+    "earlier_physical": [
+      1398,
+      1407
+    ],
+    "latest_physical": [
+      1407,
+      1416
+    ],
+    "earlier_phase": [
+      423,
+      424,
+      425,
+      426,
+      427,
+      428,
+      429,
+      430,
+      431
+    ],
+    "latest_phase": [
+      432,
+      433,
+      434,
+      435,
+      436,
+      437,
+      438,
+      439,
+      440
+    ],
+    "suffix_native_phase": [
+      441,
+      442,
+      443,
+      444,
+      445
+    ],
+    "suffix_crossed_phase": [
+      432,
+      433,
+      434,
+      435,
+      436
+    ],
+    "phase_shift": 9,
+    "earlier_destination_phase": [
+      432,
+      433,
+      434,
+      435,
+      436,
+      437,
+      438,
+      439,
+      440
+    ],
+    "latest_destination_phase": [
+      441,
+      442,
+      443,
+      444,
+      445,
+      446,
+      447,
+      448,
+      449
+    ],
+    "treatment_suffix_phase": [
+      441,
+      442,
+      443,
+      444,
+      445
+    ]
+  },
+  "decision": {
+    "target": "qualified crossed U/L full-vocabulary distribution",
+    "baseline": "TV(native,cross)",
+    "maximum_latest_error_over_baseline": 0.5,
+    "minimum_earlier_minus_latest_error_over_baseline": 0.1,
+    "numerical_boundary_guard": 1e-06,
+    "shared_requires": "one frozen native-x1 endpoint; no supplied-x1 replacements"
+  },
+  "budget": {
+    "prefill_model_forwards": 1,
+    "suffix_model_forwards": 5,
+    "vision_forwards": 1,
+    "free_tokens": 0,
+    "incremental_gpu_hours_cap": 0.25,
+    "sequence_gpu_hours_cap": 8,
+    "sequence_cumulative_prior_gpu_hours": 0.08544442862106695,
+    "artifact_planning_bytes": 67108864
+  }
+}

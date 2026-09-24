@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "status": "lead-accepted-R2-R3-and-R4-technical-disposition",
+  "date": "2026-09-23",
+  "worker_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/scale-terminal-ledger-v1.json",
+    "sha256": "cad84062b5d6291ecbba4bbc078db4f4c80ca8dd557e11869b60714f4f974f1c",
+    "size_bytes": 13787
+  },
+  "checks": {
+    "mature:14038:10": {
+      "cold": {
+        "status": "passed",
+        "pilot": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/pilot.json",
+          "sha256": "c783296514db6aa59b7895db6cd9cae2057d4e7470a3d385be0b9169063ff7e4",
+          "size_bytes": 109516
+        },
+        "terminal": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/02-14038-10/receipt.json",
+          "sha256": "93fe262524297d4cbdd6b6a697b21cac872117406aaefbec1945659f078b6f53",
+          "size_bytes": 666
+        },
+        "calls": 7,
+        "vision": 2,
+        "full_batch_native_max_abs_errors": [
+          0.00013959407806396484,
+          4.7206878662109375e-05,
+          2.002716064453125e-05,
+          8.869171142578125e-05
+        ],
+        "allocated_gpu_seconds": 50.5597759783268
+      },
+      "ratios": {
+        "latest": 0.12584031217565086,
+        "earlier": 1.0176040487327247
+      }
+    },
+    "mature:351017:5": {
+      "cold": {
+        "status": "passed",
+        "pilot": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/pilot.json",
+          "sha256": "7a24ed55f5638f098baae3f59ac72bbe499d618d47e9fb2715d68e7e33d30b41",
+          "size_bytes": 109517
+        },
+        "terminal": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/remaining-v1/03-351017-5/receipt.json",
+          "sha256": "5631ba162ea78a166778b763dadd3d8d3a74b7eba13b67589f061542842bf342",
+          "size_bytes": 667
+        },
+        "calls": 7,
+        "vision": 2,
+        "full_batch_native_max_abs_errors": [
+          7.152557373046875e-05,
+          0.00017118453979492188,
+          2.6911497116088867e-05,
+          3.528594970703125e-05
+        ],
+        "allocated_gpu_seconds": 49.87719710171223
+      },
+      "ratios": {
+        "latest": 0.08376129882338301,
+        "earlier": 0.9890948519339965
+      }
+    },
+    "R4": {
+      "full_cached_max_errors": [
+        0.00014019012451171875,
+        2.2411346435546875e-05,
+        0.00021266937255859375,
+        0.00016570091247558594
+      ],
+      "status": "technical_invalid_unanswered_no_gate_change"
+    },
+    "pids_absent": true
+  },
+  "accepted_case_ids": [
+    "mature:14038:10",
+    "mature:351017:5"
+  ],
+  "unanswered_case_id": "mature:99184:7",
+  "R_verdict": "At least3 of4 frozen R identities now have lead-accepted selective results; R4 remains technically unanswered, not a scientific nonpass. No empirical 3/4 pass-rate claim.",
+  "D_verdict": "Unresolved; all4 unrun.",
+  "R4_ruling": "Retain failed all-row2e-4 gate. No tolerance change/retry/replacement. Its unknown outcome cannot reverse the predeclared at-least3 R threshold; finish D discrimination first. Cause of numerical difference remains unestablished."
+}

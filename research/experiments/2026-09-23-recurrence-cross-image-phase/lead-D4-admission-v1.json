@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "lead-admitted-D4-only",
+  "date": "2026-09-23",
+  "ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-D1-D2-acceptance-and-D3-ruling.json",
+    "sha256": "f500a545b5012347a65fd6039b7032620d1cdf3cd136ff5980df8b3e515cafaf",
+    "size_bytes": 3327
+  },
+  "prior_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-D-continuation-v1.json",
+    "sha256": "b81588f28bda98c82a949a133be0faa1e4facdf99680b13b8f9cbbc2889c1b59",
+    "size_bytes": 3214
+  },
+  "cumulative_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/stage3-cumulative-ledger-v1.json",
+    "sha256": "4cbebb9508fc4cb458ec4c93bb2748cfd3bd738510dfd7eb33011bf04cb87174",
+    "size_bytes": 19926
+  },
+  "case_id": "mature:4134:7",
+  "science": "Original7model/2vision D4 contrast, full-batch/all-row2e-4 gates and distribution thresholds unchanged. No D3/R4 retry, new sample or phase offset.",
+  "execution": "Bind prior terminal receipts including R4/D3 known technical-invalid statuses and all charges. Small separate D4 continuation entry may reuse maintained scale/continuation operation-binding pattern; preserve captured scale.py/continuation.py and old reports. No generic queue framework, receipt deletion or false status. CPU caller gate rejects another case, missing charge, changed failure receipt or relaxed gate. Freeze new source/imports/preflight/commands before calls.",
+  "budget": {
+    "prior_package_gpu_seconds": 309.4197279289365,
+    "additional_model_forwards_cap": 7,
+    "additional_vision_forwards_cap": 2,
+    "package_total_model_forwards_cap": 50,
+    "package_total_vision_forwards_cap": 18,
+    "remaining_package_seconds": 3290.5802720710635,
+    "package_gpu_hours_cap": 1,
+    "sequence_gpu_hours_cap": 8,
+    "sequence_prior_gpu_hours": 0.1756112177549965,
+    "artifact_limit_bytes": 1073741824
+  },
+  "output": "New D4-only raw directory, stage4-candidate-results.md and final frozen8-case ledger. Preserve prior candidate/ledger bytes. Bind explicit continuation ruling, do not amend original science.",
+  "stop": "D4 only; new technical failure returns promptly, no retry. Return8case status/metric/denominator/cost/cold evidence; no self-acceptance/successor or Git/peer/shared-runtime writes."
+}

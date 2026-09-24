@@ -1,0 +1,496 @@
+{
+  "schema": "recurrence_next_history_prediction.worker_evidence.v1",
+  "status": "candidate_complete_pending_lead_acceptance",
+  "files": {
+    "preflight.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/preflight.json",
+      "sha256": "a1d20cf40bc2f1fe88d73146fc222a3cd914650a238ff298e837f8c77bd7054c",
+      "size_bytes": 87515
+    },
+    "launch.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/launch.json",
+      "sha256": "de7c940e835597e643bbf69bac01d0d13897edebef619d77729b5928fc51e497",
+      "size_bytes": 658
+    },
+    "pilot.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/pilot.json",
+      "sha256": "7b0fd6bd6d8b6a59859bbaf5f1412ffcf3a37097bb8c76da8d704cc1cf5313c4",
+      "size_bytes": 178298
+    },
+    "receipt.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/receipt.json",
+      "sha256": "aca7f0eb71b93a4ef5e432760eaaeb90991ec3bca221af78bbca34bd84849dd9",
+      "size_bytes": 627
+    },
+    "cold-readback.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cold-readback.json",
+      "sha256": "325ddc090e7689c16183472cc72de10367f1ecc41c2d83a15eea502fd250582f",
+      "size_bytes": 642
+    },
+    "reduction.json": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/reduction.json",
+      "sha256": "2a1d2e7dbb7a7e9a528c656ac5077d00eb41683bc2d3eff2f9db2a8357d51f02",
+      "size_bytes": 9388
+    },
+    "producer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_next_history_prediction/run.py",
+      "sha256": "c32ea762a967a8ad20e2aab20c0d9b51f5cc1d9b5248407d1480e4beed085e13",
+      "size_bytes": 31073
+    },
+    "protocol": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-next-history-prediction/unit.md",
+      "sha256": "7ed5b1a9791c2144d1d79f910e903443f9ece5f623d5a15ccf2b7fd559aab851",
+      "size_bytes": 6975
+    },
+    "manifest": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-next-history-prediction/prediction-manifest.json",
+      "sha256": "b4cfac3c89a7170f9ce6c3728c4bf2c88de9aa5f9ad2e1a2ad59db5454adc8ec",
+      "size_bytes": 9498
+    }
+  },
+  "source_bindings": {
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+      "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c",
+      "size_bytes": 8301
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+      "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f",
+      "size_bytes": 127664
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+      "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d",
+      "size_bytes": 126942
+    },
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+      "sha256": "84a91098415dae8ddf0c5c911505df7a1883b9c6363e5d54a42d9217ab3c2596",
+      "size_bytes": 103093
+    },
+    "source_identity": {
+      "model": "untied",
+      "shared_delta": false,
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "dtype": "fp32",
+      "attention": "sdpa"
+    },
+    "input_identity_sha256": "e5089b053f787d7ab0e98df1cb37cea8e86099bad6222a11163674b9200de7f5",
+    "input_identity_summary": {
+      "request_ids": [
+        "coco2017_train_000000477415"
+      ],
+      "media_sha256": [
+        "7447435191c4669cdfadd904be423561d98811e7f1f6d98bfaa17974356d6449"
+      ],
+      "image_grids": [
+        [
+          1,
+          52,
+          78
+        ]
+      ],
+      "tensor_sha256": {
+        "attention_mask": "78216d9598c2de0868c5b13a39b0bbd8c75a43047d0435322bdc99ca721a8adf",
+        "image_grid_thw": "0081bb8eae4487da2b9691b8484453420e8b8696696fc4b596998c558fda6540",
+        "input_ids": "d5e1d7895df9822c4b9abd51cc4733893abfdc61cbcec0910ca778c69e83f984",
+        "pixel_values": "fb07a5fc259f96e35bb4d266d500c99bceb72e08c137a71c7878c640194eca91"
+      }
+    },
+    "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "loader_source": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  },
+  "forecasts": {
+    "1589003": {
+      "persistence": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-persistence.pt",
+          "sha256": "d3da30c37cdf417ce8cf43226e5468812a395151269a16f9c7ba43fa854f5d3b",
+          "size_bytes": 1222973
+        },
+        "top2_token_ids": [
+          152083,
+          152078
+        ],
+        "top2_gap": 0.04091835021972656,
+        "vocabulary_size": 152670
+      },
+      "affine_native_step": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-affine_native_step.pt",
+          "sha256": "2b61155d6d9a1250b2654a6feb04a5d368a317b7f05dc34863f7cb8960095fa8",
+          "size_bytes": 1223150
+        },
+        "top2_token_ids": [
+          152083,
+          152082
+        ],
+        "top2_gap": 0.1535320281982422,
+        "vocabulary_size": 152670
+      },
+      "local_position_step": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-local_position_step.pt",
+          "sha256": "db5eaa196134f24402e64ef73c155b9d70122eca4edb5806c0e4cc66daf981c0",
+          "size_bytes": 1223157
+        },
+        "top2_token_ids": [
+          152078,
+          152083
+        ],
+        "top2_gap": 0.10589218139648438,
+        "vocabulary_size": 152670
+      }
+    },
+    "1586761": {
+      "persistence": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-persistence.pt",
+          "sha256": "405a9f3ea3d974e07d0c5e2ec8d834e40f6ea79a725cb10a1799b9e725fdd919",
+          "size_bytes": 1222973
+        },
+        "top2_token_ids": [
+          151670,
+          152669
+        ],
+        "top2_gap": 0.11068534851074219,
+        "vocabulary_size": 152670
+      },
+      "affine_native_step": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-affine_native_step.pt",
+          "sha256": "5921541b2ddc3f757e1337cdcbbcb8759294b200a5cb5f547d02e19f2e62dc36",
+          "size_bytes": 1223150
+        },
+        "top2_token_ids": [
+          151670,
+          152669
+        ],
+        "top2_gap": 0.6019983291625977,
+        "vocabulary_size": 152670
+      },
+      "local_position_step": {
+        "log_probability": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-local_position_step.pt",
+          "sha256": "8a210395edb6555560e11c1b3e6ad346bd1fc886ecfb3e27237d721683f8ab59",
+          "size_bytes": 1223157
+        },
+        "top2_token_ids": [
+          151670,
+          152195
+        ],
+        "top2_gap": 0.3036346435546875,
+        "vocabulary_size": 152670
+      }
+    }
+  },
+  "cells": [
+    {
+      "index": 1,
+      "mode": "unforced_native_U_source_control",
+      "owner": null,
+      "row": 6,
+      "x1_token": 151768,
+      "top2": [
+        152249,
+        152254
+      ],
+      "gap": 0.1267547607421875,
+      "record": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/cell.json",
+        "sha256": "363210cea9d5229fb410aeb55b35d97739c9e710ce802ebe7edde59e913cd316",
+        "size_bytes": 1956
+      },
+      "raw_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/vocabulary.pt",
+        "sha256": "cc26d38b6e0fb6b561f8f11d27e6794019e5dbed006a1bdc4876bf21be4dfb3d",
+        "size_bytes": 612222
+      },
+      "actual_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/01-unforced_native_U_source_control-native/consumer-raw.json",
+        "sha256": "cab25fe5866b6f8f98bf53ab1c005b1b7dadd69404aa67b8e0d877b3bca40cf3",
+        "size_bytes": 139139
+      },
+      "source_parity": {
+        "absolute_offset": 59,
+        "role": "native_y1",
+        "token_id": 152249,
+        "source_chosen_token_id": 152249,
+        "source_top2_token_ids": [
+          152249,
+          152254
+        ],
+        "current_top2_token_ids": [
+          152249,
+          152254
+        ],
+        "source_chosen_raw_logit": 17.284358978271484,
+        "source_logsumexp": 19.994958877563477,
+        "source_logprob": -2.710599899291992,
+        "current_chosen_logit": 17.284353256225586,
+        "current_logsumexp": 19.994953155517578,
+        "current_logprob": -2.710599184036255,
+        "chosen_logit_abs_error": 5.7220458984375e-06,
+        "logsumexp_abs_error": 5.7220458984375e-06,
+        "logprob_abs_error": 7.152557373046875e-07,
+        "top2_max_abs_error": 5.7220458984375e-06,
+        "winner_match": true,
+        "runnerup_match": true,
+        "chosen_token_match": true,
+        "passed": true,
+        "tolerance": 0.0002
+      },
+      "reference_max_abs_error": null
+    },
+    {
+      "index": 2,
+      "mode": "fresh_L_reference_full_vector",
+      "owner": 1589003,
+      "row": 5,
+      "x1_token": 152180,
+      "top2": [
+        152083,
+        152078
+      ],
+      "gap": 0.04091835021972656,
+      "record": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/02-fresh_L_reference_full_vector-1589003/cell.json",
+        "sha256": "181414c40f150eb286cc735ab9948afa223437e26b976423151702fddf61955d",
+        "size_bytes": 1119
+      },
+      "raw_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/02-fresh_L_reference_full_vector-1589003/vocabulary.pt",
+        "sha256": "938cd57801567d0f1955dea125d09c6c2fa523a07468d57ea01940fc1acd2455",
+        "size_bytes": 612222
+      },
+      "actual_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/02-fresh_L_reference_full_vector-1589003/consumer-raw.json",
+        "sha256": "efd25c6b9ec48ac849f674926c24259c19d18cd32246a31799c280cc890c87ac",
+        "size_bytes": 138231
+      },
+      "source_parity": null,
+      "reference_max_abs_error": 0.0
+    },
+    {
+      "index": 3,
+      "mode": "fresh_L_reference_full_vector",
+      "owner": 1586761,
+      "row": 5,
+      "x1_token": 152088,
+      "top2": [
+        151670,
+        152669
+      ],
+      "gap": 0.11068534851074219,
+      "record": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/03-fresh_L_reference_full_vector-1586761/cell.json",
+        "sha256": "af826089159064eb75ecfd354a5d1972e9e69e6c754aab5c8cbf3b51e995d181",
+        "size_bytes": 1121
+      },
+      "raw_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/03-fresh_L_reference_full_vector-1586761/vocabulary.pt",
+        "sha256": "ff92dfc75440623115192375387714695c94342d5ab859dc42384c4623382b63",
+        "size_bytes": 612222
+      },
+      "actual_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/03-fresh_L_reference_full_vector-1586761/consumer-raw.json",
+        "sha256": "cb9b24e827b02f9841aa8428b5e4089ed615ae298526ac5ac383b9fc22fac697",
+        "size_bytes": 138231
+      },
+      "source_parity": null,
+      "reference_max_abs_error": 0.0
+    },
+    {
+      "index": 4,
+      "mode": "held_out_U_y1",
+      "owner": 1589003,
+      "row": 6,
+      "x1_token": 152180,
+      "top2": [
+        152078,
+        152083
+      ],
+      "gap": 0.0049343109130859375,
+      "record": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/04-held_out_U_y1-1589003/cell.json",
+        "sha256": "01726c513941abdbca4b0345cb8b7f76219f53633976cd111e61b2d58130e3a9",
+        "size_bytes": 1040
+      },
+      "raw_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/04-held_out_U_y1-1589003/vocabulary.pt",
+        "sha256": "313a89db8cda843ae8873337c9f8dba3885f2e3360e2c97181f67e9ae325c427",
+        "size_bytes": 612222
+      },
+      "actual_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/04-held_out_U_y1-1589003/consumer-raw.json",
+        "sha256": "b25708d46600dd12eb6a8ae59032a712d8d70ad9372895638b4e3bb19c8cb51d",
+        "size_bytes": 139139
+      },
+      "source_parity": null,
+      "reference_max_abs_error": null
+    },
+    {
+      "index": 5,
+      "mode": "held_out_U_y1",
+      "owner": 1586761,
+      "row": 6,
+      "x1_token": 152088,
+      "top2": [
+        152669,
+        151670
+      ],
+      "gap": 0.053610801696777344,
+      "record": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/05-held_out_U_y1-1586761/cell.json",
+        "sha256": "d5d8138c0289797e5f1a155761adee904eda2599b93398ea59aa84c014df9674",
+        "size_bytes": 1040
+      },
+      "raw_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/05-held_out_U_y1-1586761/vocabulary.pt",
+        "sha256": "a74a4a28bf9732f01dd5051cc02cfeb74dd7d17f60670760481098a90f8840f1",
+        "size_bytes": 612222
+      },
+      "actual_consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/05-held_out_U_y1-1586761/consumer-raw.json",
+        "sha256": "ec169d4ee9256e39b8e58670dcb00f369d04952575e2f7f903041b733913c2e9",
+        "size_bytes": 139139
+      },
+      "source_parity": null,
+      "reference_max_abs_error": null
+    }
+  ],
+  "results": {
+    "1589003": {
+      "actual": {
+        "winner": 152078,
+        "runner": 152083,
+        "gap": 0.0049343109130859375,
+        "vector": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/04-held_out_U_y1-1589003/vocabulary.pt",
+          "sha256": "313a89db8cda843ae8873337c9f8dba3885f2e3360e2c97181f67e9ae325c427",
+          "size_bytes": 612222
+        }
+      },
+      "forecasts": {
+        "persistence": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-persistence.pt",
+            "sha256": "d3da30c37cdf417ce8cf43226e5468812a395151269a16f9c7ba43fa854f5d3b",
+            "size_bytes": 1222973
+          },
+          "winner": 152083,
+          "winner_match": false,
+          "kl_p_actual_q": 0.001789691229588822,
+          "probability_of_actual_winner": 0.02492586665662395
+        },
+        "affine_native_step": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-affine_native_step.pt",
+            "sha256": "2b61155d6d9a1250b2654a6feb04a5d368a317b7f05dc34863f7cb8960095fa8",
+            "size_bytes": 1223150
+          },
+          "winner": 152083,
+          "winner_match": false,
+          "kl_p_actual_q": 0.6994237162420117,
+          "probability_of_actual_winner": 0.06267482287630358
+        },
+        "local_position_step": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1589003-local_position_step.pt",
+            "sha256": "db5eaa196134f24402e64ef73c155b9d70122eca4edb5806c0e4cc66daf981c0",
+            "size_bytes": 1223157
+          },
+          "winner": 152078,
+          "winner_match": true,
+          "kl_p_actual_q": 1.7076917208189568,
+          "probability_of_actual_winner": 0.08417012194723202
+        }
+      },
+      "affine_kl_improvement_over_persistence": -0.6976340250124229,
+      "affine_strict_probe_pass": false,
+      "kl_numerical_guard": false
+    },
+    "1586761": {
+      "actual": {
+        "winner": 152669,
+        "runner": 151670,
+        "gap": 0.053610801696777344,
+        "vector": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/cells/05-held_out_U_y1-1586761/vocabulary.pt",
+          "sha256": "a74a4a28bf9732f01dd5051cc02cfeb74dd7d17f60670760481098a90f8840f1",
+          "size_bytes": 612222
+        }
+      },
+      "forecasts": {
+        "persistence": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-persistence.pt",
+            "sha256": "405a9f3ea3d974e07d0c5e2ec8d834e40f6ea79a725cb10a1799b9e725fdd919",
+            "size_bytes": 1222973
+          },
+          "winner": 151670,
+          "winner_match": false,
+          "kl_p_actual_q": 0.006102739556537166,
+          "probability_of_actual_winner": 0.013173814714512106
+        },
+        "affine_native_step": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-affine_native_step.pt",
+            "sha256": "5921541b2ddc3f757e1337cdcbbcb8759294b200a5cb5f547d02e19f2e62dc36",
+            "size_bytes": 1223150
+          },
+          "winner": 151670,
+          "winner_match": false,
+          "kl_p_actual_q": 0.3456212757601376,
+          "probability_of_actual_winner": 0.00751348039324748
+        },
+        "local_position_step": {
+          "forecast": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-next-history-prediction/attempt-001/forecasts/1586761-local_position_step.pt",
+            "sha256": "8a210395edb6555560e11c1b3e6ad346bd1fc886ecfb3e27237d721683f8ab59",
+            "size_bytes": 1223157
+          },
+          "winner": 151670,
+          "winner_match": false,
+          "kl_p_actual_q": 0.733019559754741,
+          "probability_of_actual_winner": 0.0036707944019259433
+        }
+      },
+      "affine_kl_improvement_over_persistence": -0.33951853620360045,
+      "affine_strict_probe_pass": false,
+      "kl_numerical_guard": false
+    }
+  },
+  "strict_shared_affine_prediction_pass": false,
+  "cost": {
+    "incremental_allocated_gpu_seconds": 10.508064985275269,
+    "incremental_gpu_hours": 0.0029189069403542413,
+    "cumulative_gpu_hours": 0.06643062092198265,
+    "peak_rss_kib": 11215908,
+    "peak_gpu_allocated_bytes": 9072883200,
+    "peak_gpu_reserved_bytes": 9523167232,
+    "model_forwards": 5,
+    "vision_forwards": 5,
+    "artifact_bytes_after_reduction": 11384971,
+    "gpu_job_shell_wall_seconds": 17.056627113
+  },
+  "terminal_job": {
+    "pid": 1319760,
+    "pid_absent": true,
+    "shell_exit_code": 0
+  },
+  "verification": {
+    "cold_readback": "passed",
+    "independent_cpu_kl_recompute": "passed_exact_to_1e-12"
+  }
+}

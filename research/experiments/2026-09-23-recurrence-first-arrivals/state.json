@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-recurrence-first-arrivals",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "No finite N-over-A complete-row mismatch witness in 10 fixed pairs. Conditional N realization is observed at recurrent and target-nonreturn states. Chair row4-to-row5 outcome changes at the first free y1; cause remains unidentified.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-recurrence-first-arrivals/unit.md",
+  "result": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-results.md",
+  "state_source": "research/experiments/2026-09-23-recurrence-first-arrivals/unit.md",
+  "boundary": "Mature untied+axis original-policy first three physical-owner arrivals or separately adjudicated false-proposal recurrences; finite row scores and minimal supplied-coordinate branches remain separate evidence.",
+  "authorization": "User-approved finite first-arrival package and exact Stage2 lead admission are complete. Broad autonomous research authority does not make a new model experiment implicit in this closed unit.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_title": "923-worker",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "task_profile": "research/experiments/2026-09-23-recurrence-first-arrivals/task-profile.md",
+  "gpu_hour_ceiling": 8,
+  "dispatch_status": "stage2-complete-lead-accepted",
+  "next_action": "No live model work. Finite first-arrival diagnostic is closed; any content-versus-position causal successor needs its own frozen contract.",
+  "not_authorized": [
+    "scientific GPU work before stage-0 lead admission",
+    "training or checkpoint/codebook changes",
+    "new natural-output cohort or outcome-driven candidate expansion",
+    "head/layer/phase rescue scans or automatic successor",
+    "peer writes, annotation rewrites, Git publication or unrelated cleanup"
+  ],
+  "worker_creation": {
+    "verified": true,
+    "model": "gpt-6-sol",
+    "effort": "xhigh",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "ephemeral": false,
+    "receipt": "/tmp/923-worker-create-start-sn_nys61.json",
+    "post_dispatch_readback": "Initial read raced rollout materialization; later Desktop snapshot observed the same turn active with worker commentary. No retry or duplicate turn."
+  },
+  "failed_dispatch_receipt": "/tmp/923-worker-dispatch-01a0ce46-b2c1-7830-8a0b-2d9393ad77ca.json",
+  "superseded_empty_worker": {
+    "thread_id": "01a0ce46-b2c1-7830-8a0b-2d9393ad77ca",
+    "reason": "No first turn or rollout; resume failed before dispatch. No model work started."
+  },
+  "worker_initial_turn_id": "01a0ce4b-a0fc-7880-90bc-b5777adf161d",
+  "dispatch_receipt": "/tmp/923-worker-dispatch-01a0ce4b-9b55-7392-8a25-6a76f9e12c3a.json",
+  "dispatch_message_sha256": "42f5964535c3975c094003a151120741008df02374dd28662daced8ffeeb6536",
+  "worker_entry_report": {
+    "received": true,
+    "worker_model": "gpt-6-sol",
+    "worker_effort": "xhigh",
+    "direct_return_verified": true,
+    "stage": "CPU-only Stage 0",
+    "scope_acknowledged": true
+  },
+  "stage0_rulings": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-stage0-rulings.json",
+  "stage0_admission": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-stage0-admission-v1.json",
+  "stage1_dispatch": {
+    "receipt": "/tmp/923-worker-stage1-admission-14660520-dispatch.json",
+    "status": "submitted",
+    "turn_id": "01a0ce90-46ef-7271-8d34-9ac096a0d9d8",
+    "message_sha256": "3e0acba54f2a937f7ad644dc4926295f4891941038b6367c1555eabdff220f4d",
+    "model": "gpt-6-sol",
+    "effort": "xhigh"
+  },
+  "stage1_acceptance": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-stage1-acceptance-v1.json",
+  "stage2_admission": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-stage2-admission-v1.json",
+  "stage2_dispatch": {
+    "receipt": "/tmp/923-worker-stage2-bfa62ff3-dispatch.json",
+    "message_sha256": "dab81ab325614bcec86676940e9c35644d22715484f576ad83af347a47eb26d7",
+    "turn_id": "01a0ceae-b718-7b83-931f-d850ca585089",
+    "status": "submitted",
+    "model": "gpt-6-sol",
+    "effort": "xhigh",
+    "active_snapshot_verified": true
+  },
+  "stage2_acceptance": "research/experiments/2026-09-23-recurrence-first-arrivals/lead-stage2-acceptance-v1.json",
+  "provenance_limit": "Three direct imports lack prelaunch byte hashes; actual-input/replay/score evidence accepted, complete prelaunch source freeze not claimed.",
+  "closure_cost_ledger": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-first-arrivals/stage2-pilot/attempt-001/stage2-ledger.json"
+}

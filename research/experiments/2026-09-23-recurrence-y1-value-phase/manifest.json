@@ -1,0 +1,1321 @@
+{
+  "schema_version": 1,
+  "status": "frozen-three-cases-first-only-admitted",
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/lead-acceptance.json",
+    "sha256": "223108b6a1bdff703b4cc3d6c1b90fdfcff1a87ae84cf1fcdffb6d06753b529c",
+    "size_bytes": 4106
+  },
+  "CPU_readout_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/coordinate-feedback-lead-acceptance.json",
+    "sha256": "541a322d1f403009dcae074bd346a60177442b383a6e23fa24ef22dfe42988ce",
+    "size_bytes": 1194
+  },
+  "feasibility": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-23-recurrence-cross-image-phase/supporting/y1-value-feasibility.md",
+    "sha256": "9a351815563fcaf83f0c9169879cfa1a3cd2d30c6f1bfe22af606ceb2434690d",
+    "size_bytes": 10899
+  },
+  "cases": [
+    {
+      "id": "mature:1584:2",
+      "frozen_source_case": {
+        "cohort": "D",
+        "id": "mature:1584:2",
+        "global_source_rank": 0,
+        "source_rank": 0,
+        "source": "mature",
+        "split": "val",
+        "image_id": 1584,
+        "group": "refined-00",
+        "batch_index": 0,
+        "request_id": "coco2017_val_000000001584",
+        "class": "person",
+        "antecedent_rows": [
+          0,
+          1
+        ],
+        "current_row": 2,
+        "antecedent_boxes": [
+          [
+            128,
+            615,
+            158,
+            705
+          ],
+          [
+            151,
+            641,
+            170,
+            695
+          ]
+        ],
+        "current_box": [
+          177,
+          623,
+          209,
+          704
+        ],
+        "current_equals_earlier": false,
+        "current_equals_latest": false,
+        "native_x1_token": 151847,
+        "native_y1_token": 152293,
+        "native_y1_trace_parity": true,
+        "native_termination": "im_end",
+        "native_token_count": 100,
+        "source_bindings": {
+          "raw": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+            "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+            "size_bytes": 21433
+          },
+          "trace": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/trace.json",
+            "sha256": "f77d8fc2ec9e0449b59da1fae942a04ccce5e5427c2c1d4da4b2385071ff7922",
+            "size_bytes": 262943
+          },
+          "runtime_receipt": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/receipt.json",
+            "sha256": "819fbc93e377b9b94c40b66c67bc244024ec743e972698125020cf1d26a4395b",
+            "size_bytes": 186410
+          },
+          "image": {
+            "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000001584.jpg",
+            "sha256": "06b9d29a50b896f1bec14a267a57016723e54e205a1d1a40088237d95ce91206",
+            "size_bytes": 104191
+          },
+          "source_identity": {
+            "model": "untied",
+            "shared_delta": false,
+            "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+            "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+            "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+            "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+            "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+            "dtype": "fp32",
+            "attention": "sdpa"
+          },
+          "input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+          "input_identity_summary": {
+            "request_ids": [
+              "coco2017_val_000000001584",
+              "coco2017_val_000000002299",
+              "coco2017_val_000000002685",
+              "coco2017_val_000000004134"
+            ],
+            "media_sha256": [
+              "0e0b9ab0039b6165e6e6e29fc713ae34590a7a421a26c6752bba812f6a9ee872",
+              "02e1d433f77eb2e4a7469c12aa0d795da42ad389614395698d1a4468b99a245e",
+              "7664d936fd86ff6acd81520df88bfa585d126439369c156b79dcb7997d879896",
+              "9aa1d2e4148baa817bf7761b293d5cdc116caddf5527d59fda2387203aca6eb8"
+            ],
+            "image_grids": [
+              [
+                1,
+                64,
+                64
+              ],
+              [
+                1,
+                46,
+                76
+              ],
+              [
+                1,
+                56,
+                64
+              ],
+              [
+                1,
+                52,
+                78
+              ]
+            ],
+            "tensor_sha256": {
+              "attention_mask": "4cb6115ae69b0eef69ada13f57dee6fcd04089054142325b5ab657bb2881ab4b",
+              "image_grid_thw": "cfce736bc0a56fd10e650d4007cfd76a72c39210b13896c58d5c87c08626d848",
+              "input_ids": "5f0a0174232506f5825aad8a9353c6e16efd08aa083f66a82315e63a62f52c35",
+              "pixel_values": "321d0f02c9a35f72f85efd240e1cbb0adfe64c562dcfb388dc3a3b803717e3c9"
+            }
+          },
+          "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+          "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+          "loader_source": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+            "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+            "size_bytes": 51208
+          }
+        },
+        "source_input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+        "batch_companions": [
+          {
+            "batch_index": 0,
+            "request_id": "coco2017_val_000000001584",
+            "image_id": 1584,
+            "native_token_count": 100,
+            "stop": "im_end",
+            "prompt_width": 1372,
+            "image_grid": [
+              1,
+              64,
+              64
+            ]
+          },
+          {
+            "batch_index": 1,
+            "request_id": "coco2017_val_000000002299",
+            "image_id": 2299,
+            "native_token_count": 244,
+            "stop": "im_end",
+            "prompt_width": 1222,
+            "image_grid": [
+              1,
+              46,
+              76
+            ]
+          },
+          {
+            "batch_index": 2,
+            "request_id": "coco2017_val_000000002685",
+            "image_id": 2685,
+            "native_token_count": 145,
+            "stop": "im_end",
+            "prompt_width": 1244,
+            "image_grid": [
+              1,
+              56,
+              64
+            ]
+          },
+          {
+            "batch_index": 3,
+            "request_id": "coco2017_val_000000004134",
+            "image_id": 4134,
+            "native_token_count": 235,
+            "stop": "im_end",
+            "prompt_width": 1362,
+            "image_grid": [
+              1,
+              52,
+              78
+            ]
+          }
+        ],
+        "pixel_elements_full_batch": 23396352,
+        "geometry": {
+          "prompt_width_target": 1372,
+          "history_raw_offset": 18,
+          "first_y1_raw_offset": 23,
+          "physical_unpadded": {
+            "earlier": [
+              1372,
+              1381
+            ],
+            "latest": [
+              1381,
+              1390
+            ],
+            "S": [
+              1390,
+              1395
+            ]
+          },
+          "physical_full_batch_padded": {
+            "earlier": [
+              1372,
+              1381
+            ],
+            "latest": [
+              1381,
+              1390
+            ],
+            "S": [
+              1390,
+              1395
+            ]
+          },
+          "rotary_position_ids": {
+            "earlier": [
+              [
+                380,
+                381,
+                382,
+                383,
+                384,
+                385,
+                386,
+                387,
+                388
+              ],
+              [
+                380,
+                381,
+                382,
+                383,
+                384,
+                385,
+                386,
+                387,
+                388
+              ],
+              [
+                380,
+                381,
+                382,
+                383,
+                384,
+                385,
+                386,
+                387,
+                388
+              ]
+            ],
+            "latest": [
+              [
+                389,
+                390,
+                391,
+                392,
+                393,
+                394,
+                395,
+                396,
+                397
+              ],
+              [
+                389,
+                390,
+                391,
+                392,
+                393,
+                394,
+                395,
+                396,
+                397
+              ],
+              [
+                389,
+                390,
+                391,
+                392,
+                393,
+                394,
+                395,
+                396,
+                397
+              ]
+            ],
+            "S": [
+              [
+                398,
+                399,
+                400,
+                401,
+                402
+              ],
+              [
+                398,
+                399,
+                400,
+                401,
+                402
+              ],
+              [
+                398,
+                399,
+                400,
+                401,
+                402
+              ]
+            ]
+          },
+          "source_step_full_batch_width": 1395,
+          "source_step_companion_tail_lengths": [
+            23,
+            23,
+            23,
+            23
+          ],
+          "left_pad_target": 0
+        },
+        "processor_planning": {
+          "replanned_image_plan": false
+        },
+        "existing_review_annotations": []
+      },
+      "roles": {
+        "earlier": {
+          "row_index": 0,
+          "box_xyxy": [
+            128,
+            615,
+            158,
+            705
+          ],
+          "y1_bin": 615,
+          "coordinate_token_id": 152285,
+          "raw_y1_offset": 5,
+          "source_trace_chosen_token_id": 152285,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151798,
+            152285,
+            151828,
+            152375,
+            151649
+          ]
+        },
+        "latest": {
+          "row_index": 1,
+          "box_xyxy": [
+            151,
+            641,
+            170,
+            695
+          ],
+          "y1_bin": 641,
+          "coordinate_token_id": 152311,
+          "raw_y1_offset": 14,
+          "source_trace_chosen_token_id": 152311,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151821,
+            152311,
+            151840,
+            152365,
+            151649
+          ]
+        },
+        "current": {
+          "row_index": 2,
+          "box_xyxy": [
+            177,
+            623,
+            209,
+            704
+          ],
+          "y1_bin": 623,
+          "coordinate_token_id": 152293,
+          "raw_y1_offset": 23,
+          "source_trace_chosen_token_id": 152293,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151847,
+            152293,
+            151879,
+            152374,
+            151649
+          ]
+        }
+      },
+      "donor_V_physical": 1377,
+      "destination_V_physical": 1386,
+      "V_row_offset": 5,
+      "prefill_blocks": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/prefill-blocks.pt",
+        "sha256": "0ab97c956cc4134d6d12c463491bb9953f35dbc0b2cee47e30cdf947418e90df",
+        "size_bytes": 6280857
+      },
+      "reference_reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/reduction.json",
+        "sha256": "0bc96535b76175010e46e2e0ae01e33f91ab11302dd2d453b02acb9c23cfa057",
+        "size_bytes": 5282
+      },
+      "reference_native_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/cells/03-native/vocabulary.pt",
+        "sha256": "60c50fd60f40d4cabb0cfd762b4cdd72fab526f9a1e407e4418f603948b278fb",
+        "size_bytes": 612222
+      },
+      "reference_phase_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d1-1584-2/cells/06-latest/vocabulary.pt",
+        "sha256": "da078c333c035415277224e465d97fa4988a11e4c0f4e574c2cc03dce8629d14",
+        "size_bytes": 612222
+      }
+    },
+    {
+      "id": "mature:2299:2",
+      "frozen_source_case": {
+        "cohort": "D",
+        "id": "mature:2299:2",
+        "global_source_rank": 1,
+        "source_rank": 1,
+        "source": "mature",
+        "split": "val",
+        "image_id": 2299,
+        "group": "refined-00",
+        "batch_index": 1,
+        "request_id": "coco2017_val_000000002299",
+        "class": "person",
+        "antecedent_rows": [
+          0,
+          1
+        ],
+        "current_row": 2,
+        "antecedent_boxes": [
+          [
+            0,
+            298,
+            97,
+            999
+          ],
+          [
+            85,
+            253,
+            186,
+            484
+          ]
+        ],
+        "current_box": [
+          120,
+          108,
+          226,
+          450
+        ],
+        "current_equals_earlier": false,
+        "current_equals_latest": false,
+        "native_x1_token": 151790,
+        "native_y1_token": 151778,
+        "native_y1_trace_parity": true,
+        "native_termination": "im_end",
+        "native_token_count": 244,
+        "source_bindings": {
+          "raw": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+            "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+            "size_bytes": 21433
+          },
+          "trace": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/trace.json",
+            "sha256": "f77d8fc2ec9e0449b59da1fae942a04ccce5e5427c2c1d4da4b2385071ff7922",
+            "size_bytes": 262943
+          },
+          "runtime_receipt": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/receipt.json",
+            "sha256": "819fbc93e377b9b94c40b66c67bc244024ec743e972698125020cf1d26a4395b",
+            "size_bytes": 186410
+          },
+          "image": {
+            "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000002299.jpg",
+            "sha256": "cd7199a37188c9ac6481520175866cbd78fa6fba35f4290bb0b60c78afcb2df3",
+            "size_bytes": 161467
+          },
+          "source_identity": {
+            "model": "untied",
+            "shared_delta": false,
+            "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+            "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+            "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+            "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+            "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+            "dtype": "fp32",
+            "attention": "sdpa"
+          },
+          "input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+          "input_identity_summary": {
+            "request_ids": [
+              "coco2017_val_000000001584",
+              "coco2017_val_000000002299",
+              "coco2017_val_000000002685",
+              "coco2017_val_000000004134"
+            ],
+            "media_sha256": [
+              "0e0b9ab0039b6165e6e6e29fc713ae34590a7a421a26c6752bba812f6a9ee872",
+              "02e1d433f77eb2e4a7469c12aa0d795da42ad389614395698d1a4468b99a245e",
+              "7664d936fd86ff6acd81520df88bfa585d126439369c156b79dcb7997d879896",
+              "9aa1d2e4148baa817bf7761b293d5cdc116caddf5527d59fda2387203aca6eb8"
+            ],
+            "image_grids": [
+              [
+                1,
+                64,
+                64
+              ],
+              [
+                1,
+                46,
+                76
+              ],
+              [
+                1,
+                56,
+                64
+              ],
+              [
+                1,
+                52,
+                78
+              ]
+            ],
+            "tensor_sha256": {
+              "attention_mask": "4cb6115ae69b0eef69ada13f57dee6fcd04089054142325b5ab657bb2881ab4b",
+              "image_grid_thw": "cfce736bc0a56fd10e650d4007cfd76a72c39210b13896c58d5c87c08626d848",
+              "input_ids": "5f0a0174232506f5825aad8a9353c6e16efd08aa083f66a82315e63a62f52c35",
+              "pixel_values": "321d0f02c9a35f72f85efd240e1cbb0adfe64c562dcfb388dc3a3b803717e3c9"
+            }
+          },
+          "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+          "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+          "loader_source": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+            "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+            "size_bytes": 51208
+          }
+        },
+        "source_input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+        "batch_companions": [
+          {
+            "batch_index": 0,
+            "request_id": "coco2017_val_000000001584",
+            "image_id": 1584,
+            "native_token_count": 100,
+            "stop": "im_end",
+            "prompt_width": 1372,
+            "image_grid": [
+              1,
+              64,
+              64
+            ]
+          },
+          {
+            "batch_index": 1,
+            "request_id": "coco2017_val_000000002299",
+            "image_id": 2299,
+            "native_token_count": 244,
+            "stop": "im_end",
+            "prompt_width": 1222,
+            "image_grid": [
+              1,
+              46,
+              76
+            ]
+          },
+          {
+            "batch_index": 2,
+            "request_id": "coco2017_val_000000002685",
+            "image_id": 2685,
+            "native_token_count": 145,
+            "stop": "im_end",
+            "prompt_width": 1244,
+            "image_grid": [
+              1,
+              56,
+              64
+            ]
+          },
+          {
+            "batch_index": 3,
+            "request_id": "coco2017_val_000000004134",
+            "image_id": 4134,
+            "native_token_count": 235,
+            "stop": "im_end",
+            "prompt_width": 1362,
+            "image_grid": [
+              1,
+              52,
+              78
+            ]
+          }
+        ],
+        "pixel_elements_full_batch": 23396352,
+        "geometry": {
+          "prompt_width_target": 1222,
+          "history_raw_offset": 18,
+          "first_y1_raw_offset": 23,
+          "physical_unpadded": {
+            "earlier": [
+              1222,
+              1231
+            ],
+            "latest": [
+              1231,
+              1240
+            ],
+            "S": [
+              1240,
+              1245
+            ]
+          },
+          "physical_full_batch_padded": {
+            "earlier": [
+              1372,
+              1381
+            ],
+            "latest": [
+              1381,
+              1390
+            ],
+            "S": [
+              1390,
+              1395
+            ]
+          },
+          "rotary_position_ids": {
+            "earlier": [
+              [
+                386,
+                387,
+                388,
+                389,
+                390,
+                391,
+                392,
+                393,
+                394
+              ],
+              [
+                386,
+                387,
+                388,
+                389,
+                390,
+                391,
+                392,
+                393,
+                394
+              ],
+              [
+                386,
+                387,
+                388,
+                389,
+                390,
+                391,
+                392,
+                393,
+                394
+              ]
+            ],
+            "latest": [
+              [
+                395,
+                396,
+                397,
+                398,
+                399,
+                400,
+                401,
+                402,
+                403
+              ],
+              [
+                395,
+                396,
+                397,
+                398,
+                399,
+                400,
+                401,
+                402,
+                403
+              ],
+              [
+                395,
+                396,
+                397,
+                398,
+                399,
+                400,
+                401,
+                402,
+                403
+              ]
+            ],
+            "S": [
+              [
+                404,
+                405,
+                406,
+                407,
+                408
+              ],
+              [
+                404,
+                405,
+                406,
+                407,
+                408
+              ],
+              [
+                404,
+                405,
+                406,
+                407,
+                408
+              ]
+            ]
+          },
+          "source_step_full_batch_width": 1395,
+          "source_step_companion_tail_lengths": [
+            23,
+            23,
+            23,
+            23
+          ],
+          "left_pad_target": 150
+        },
+        "processor_planning": {
+          "replanned_image_plan": false
+        },
+        "existing_review_annotations": []
+      },
+      "roles": {
+        "earlier": {
+          "row_index": 0,
+          "box_xyxy": [
+            0,
+            298,
+            97,
+            999
+          ],
+          "y1_bin": 298,
+          "coordinate_token_id": 151968,
+          "raw_y1_offset": 5,
+          "source_trace_chosen_token_id": 151968,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151670,
+            151968,
+            151767,
+            152669,
+            151649
+          ]
+        },
+        "latest": {
+          "row_index": 1,
+          "box_xyxy": [
+            85,
+            253,
+            186,
+            484
+          ],
+          "y1_bin": 253,
+          "coordinate_token_id": 151923,
+          "raw_y1_offset": 14,
+          "source_trace_chosen_token_id": 151923,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151755,
+            151923,
+            151856,
+            152154,
+            151649
+          ]
+        },
+        "current": {
+          "row_index": 2,
+          "box_xyxy": [
+            120,
+            108,
+            226,
+            450
+          ],
+          "y1_bin": 108,
+          "coordinate_token_id": 151778,
+          "raw_y1_offset": 23,
+          "source_trace_chosen_token_id": 151778,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151790,
+            151778,
+            151896,
+            152120,
+            151649
+          ]
+        }
+      },
+      "donor_V_physical": 1377,
+      "destination_V_physical": 1386,
+      "V_row_offset": 5,
+      "prefill_blocks": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/prefill-blocks.pt",
+        "sha256": "2c1d3debb64cc33857829ccac0699bd76087d83a8424bfb84b03bfd391daf0e0",
+        "size_bytes": 6280857
+      },
+      "reference_reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/reduction.json",
+        "sha256": "ca5f99641c5034a5476665c8872f72649a6ea7e6dfd06a07ddf6a7eb77b7532c",
+        "size_bytes": 5276
+      },
+      "reference_native_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/cells/03-native/vocabulary.pt",
+        "sha256": "d277f89c955fc7188dc234450e87df34789fe5cdfc2c89dc24b7a715d2308041",
+        "size_bytes": 612222
+      },
+      "reference_phase_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d-continuation-v1/d2-2299-2/cells/06-latest/vocabulary.pt",
+        "sha256": "767c9b1a7255bb15601f1828ca699eb15724b1b78d9d7f2d1b2ffc9ebd065e99",
+        "size_bytes": 612222
+      }
+    },
+    {
+      "id": "mature:4134:7",
+      "frozen_source_case": {
+        "cohort": "D",
+        "id": "mature:4134:7",
+        "global_source_rank": 3,
+        "source_rank": 3,
+        "source": "mature",
+        "split": "val",
+        "image_id": 4134,
+        "group": "refined-00",
+        "batch_index": 3,
+        "request_id": "coco2017_val_000000004134",
+        "class": "person",
+        "antecedent_rows": [
+          5,
+          6
+        ],
+        "current_row": 7,
+        "antecedent_boxes": [
+          [
+            68,
+            100,
+            461,
+            999
+          ],
+          [
+            105,
+            307,
+            154,
+            484
+          ]
+        ],
+        "current_box": [
+          295,
+          294,
+          362,
+          592
+        ],
+        "current_equals_earlier": false,
+        "current_equals_latest": false,
+        "native_x1_token": 151965,
+        "native_y1_token": 151964,
+        "native_y1_trace_parity": true,
+        "native_termination": "im_end",
+        "native_token_count": 235,
+        "source_bindings": {
+          "raw": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+            "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+            "size_bytes": 21433
+          },
+          "trace": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/trace.json",
+            "sha256": "f77d8fc2ec9e0449b59da1fae942a04ccce5e5427c2c1d4da4b2385071ff7922",
+            "size_bytes": 262943
+          },
+          "runtime_receipt": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/receipt.json",
+            "sha256": "819fbc93e377b9b94c40b66c67bc244024ec743e972698125020cf1d26a4395b",
+            "size_bytes": 186410
+          },
+          "image": {
+            "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000004134.jpg",
+            "sha256": "60dfd1369e0efa83dfa6c7d4035f4d9d66ca6ba9a0ec6b760349d0a0e30d7b34",
+            "size_bytes": 120556
+          },
+          "source_identity": {
+            "model": "untied",
+            "shared_delta": false,
+            "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+            "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+            "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+            "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+            "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+            "dtype": "fp32",
+            "attention": "sdpa"
+          },
+          "input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+          "input_identity_summary": {
+            "request_ids": [
+              "coco2017_val_000000001584",
+              "coco2017_val_000000002299",
+              "coco2017_val_000000002685",
+              "coco2017_val_000000004134"
+            ],
+            "media_sha256": [
+              "0e0b9ab0039b6165e6e6e29fc713ae34590a7a421a26c6752bba812f6a9ee872",
+              "02e1d433f77eb2e4a7469c12aa0d795da42ad389614395698d1a4468b99a245e",
+              "7664d936fd86ff6acd81520df88bfa585d126439369c156b79dcb7997d879896",
+              "9aa1d2e4148baa817bf7761b293d5cdc116caddf5527d59fda2387203aca6eb8"
+            ],
+            "image_grids": [
+              [
+                1,
+                64,
+                64
+              ],
+              [
+                1,
+                46,
+                76
+              ],
+              [
+                1,
+                56,
+                64
+              ],
+              [
+                1,
+                52,
+                78
+              ]
+            ],
+            "tensor_sha256": {
+              "attention_mask": "4cb6115ae69b0eef69ada13f57dee6fcd04089054142325b5ab657bb2881ab4b",
+              "image_grid_thw": "cfce736bc0a56fd10e650d4007cfd76a72c39210b13896c58d5c87c08626d848",
+              "input_ids": "5f0a0174232506f5825aad8a9353c6e16efd08aa083f66a82315e63a62f52c35",
+              "pixel_values": "321d0f02c9a35f72f85efd240e1cbb0adfe64c562dcfb388dc3a3b803717e3c9"
+            }
+          },
+          "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+          "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+          "loader_source": {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+            "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+            "size_bytes": 51208
+          }
+        },
+        "source_input_identity_sha256": "2856b08333a0d9082c4cfeafba868c0c1ca644c4b3f474add443ee48c2198a01",
+        "batch_companions": [
+          {
+            "batch_index": 0,
+            "request_id": "coco2017_val_000000001584",
+            "image_id": 1584,
+            "native_token_count": 100,
+            "stop": "im_end",
+            "prompt_width": 1372,
+            "image_grid": [
+              1,
+              64,
+              64
+            ]
+          },
+          {
+            "batch_index": 1,
+            "request_id": "coco2017_val_000000002299",
+            "image_id": 2299,
+            "native_token_count": 244,
+            "stop": "im_end",
+            "prompt_width": 1222,
+            "image_grid": [
+              1,
+              46,
+              76
+            ]
+          },
+          {
+            "batch_index": 2,
+            "request_id": "coco2017_val_000000002685",
+            "image_id": 2685,
+            "native_token_count": 145,
+            "stop": "im_end",
+            "prompt_width": 1244,
+            "image_grid": [
+              1,
+              56,
+              64
+            ]
+          },
+          {
+            "batch_index": 3,
+            "request_id": "coco2017_val_000000004134",
+            "image_id": 4134,
+            "native_token_count": 235,
+            "stop": "im_end",
+            "prompt_width": 1362,
+            "image_grid": [
+              1,
+              52,
+              78
+            ]
+          }
+        ],
+        "pixel_elements_full_batch": 23396352,
+        "geometry": {
+          "prompt_width_target": 1362,
+          "history_raw_offset": 68,
+          "first_y1_raw_offset": 73,
+          "physical_unpadded": {
+            "earlier": [
+              1412,
+              1421
+            ],
+            "latest": [
+              1421,
+              1430
+            ],
+            "S": [
+              1430,
+              1435
+            ]
+          },
+          "physical_full_batch_padded": {
+            "earlier": [
+              1422,
+              1431
+            ],
+            "latest": [
+              1431,
+              1440
+            ],
+            "S": [
+              1440,
+              1445
+            ]
+          },
+          "rotary_position_ids": {
+            "earlier": [
+              [
+                437,
+                438,
+                439,
+                440,
+                441,
+                442,
+                443,
+                444,
+                445
+              ],
+              [
+                437,
+                438,
+                439,
+                440,
+                441,
+                442,
+                443,
+                444,
+                445
+              ],
+              [
+                437,
+                438,
+                439,
+                440,
+                441,
+                442,
+                443,
+                444,
+                445
+              ]
+            ],
+            "latest": [
+              [
+                446,
+                447,
+                448,
+                449,
+                450,
+                451,
+                452,
+                453,
+                454
+              ],
+              [
+                446,
+                447,
+                448,
+                449,
+                450,
+                451,
+                452,
+                453,
+                454
+              ],
+              [
+                446,
+                447,
+                448,
+                449,
+                450,
+                451,
+                452,
+                453,
+                454
+              ]
+            ],
+            "S": [
+              [
+                455,
+                456,
+                457,
+                458,
+                459
+              ],
+              [
+                455,
+                456,
+                457,
+                458,
+                459
+              ],
+              [
+                455,
+                456,
+                457,
+                458,
+                459
+              ]
+            ]
+          },
+          "source_step_full_batch_width": 1445,
+          "source_step_companion_tail_lengths": [
+            73,
+            73,
+            73,
+            73
+          ],
+          "left_pad_target": 10
+        },
+        "processor_planning": {
+          "replanned_image_plan": false
+        },
+        "existing_review_annotations": []
+      },
+      "roles": {
+        "earlier": {
+          "row_index": 5,
+          "box_xyxy": [
+            68,
+            100,
+            461,
+            999
+          ],
+          "y1_bin": 100,
+          "coordinate_token_id": 151770,
+          "raw_y1_offset": 55,
+          "source_trace_chosen_token_id": 151770,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151738,
+            151770,
+            152131,
+            152669,
+            151649
+          ]
+        },
+        "latest": {
+          "row_index": 6,
+          "box_xyxy": [
+            105,
+            307,
+            154,
+            484
+          ],
+          "y1_bin": 307,
+          "coordinate_token_id": 151977,
+          "raw_y1_offset": 64,
+          "source_trace_chosen_token_id": 151977,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151775,
+            151977,
+            151824,
+            152154,
+            151649
+          ]
+        },
+        "current": {
+          "row_index": 7,
+          "box_xyxy": [
+            295,
+            294,
+            362,
+            592
+          ],
+          "y1_bin": 294,
+          "coordinate_token_id": 151964,
+          "raw_y1_offset": 73,
+          "source_trace_chosen_token_id": 151964,
+          "native_row_token_span": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151965,
+            151964,
+            152032,
+            152262,
+            151649
+          ]
+        }
+      },
+      "donor_V_physical": 1427,
+      "destination_V_physical": 1436,
+      "V_row_offset": 5,
+      "prefill_blocks": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7/prefill-blocks.pt",
+        "sha256": "f0fd926ebccfb6ba1f4ddfded9550ce51487a280f8337c9272a71c7ed82c5ec1",
+        "size_bytes": 6280857
+      },
+      "reference_reduction": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7/reduction.json",
+        "sha256": "ef88057cd464fb5f4680b9f373014978c8a73bcd5113b3cfd1f69cb3623f27ae",
+        "size_bytes": 5225
+      },
+      "reference_native_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7/cells/03-native/vocabulary.pt",
+        "sha256": "0c3846dee48d8e63a15df0d2736b5c73f2e6d8f19c62deb7357bcafcc52e07c2",
+        "size_bytes": 612222
+      },
+      "reference_phase_vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-23-recurrence-cross-image-phase/d4-only-v1/d4-4134-7/cells/06-latest/vocabulary.pt",
+        "sha256": "95d31e801f3328664c3fd1b4f2baff487f505add42a2a366fdaa7d9d72ae7f4f",
+        "size_bytes": 612222
+      }
+    }
+  ],
+  "admitted_case_ids": [
+    "mature:1584:2"
+  ],
+  "held_case_ids": [
+    "mature:2299:2",
+    "mature:4134:7"
+  ],
+  "decision": {
+    "margin": "z(earlier_y1)-z(latest_y1)",
+    "shifted_donor_effect_min_nats": 1.0,
+    "phase_by_V_interaction_min_nats": 0.5,
+    "numerical_guard_nats": 0.001,
+    "shared_prediction": "all3 frozen cases pass; technical unknown remains unanswered"
+  },
+  "budget": {
+    "model_forwards_per_case": 7,
+    "vision_forwards_per_case": 2,
+    "full_package_planned_model_forwards": 21,
+    "full_package_planned_vision_forwards": 6,
+    "admitted_model_forwards": 7,
+    "admitted_vision_forwards": 2,
+    "free_tokens": 0,
+    "first_case_gpu_hours_cap": 0.1,
+    "package_gpu_hours_cap": 0.25,
+    "sequence_gpu_hours_cap": 8,
+    "sequence_cumulative_prior_gpu_hours": 0.18968633946900568,
+    "artifact_planning_bytes": 134217728
+  }
+}

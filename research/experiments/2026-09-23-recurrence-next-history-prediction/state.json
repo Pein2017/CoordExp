@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-recurrence-next-history-prediction",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Strict shared affine prediction rejected on both probes. Persistence has smaller KL than both frozen alternatives while both global winners change. No natural-exit or physical-recovery inference.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-recurrence-next-history-prediction/unit.md",
+  "result": "research/experiments/2026-09-23-recurrence-next-history-prediction/results.md",
+  "state_source": "research/experiments/2026-09-23-recurrence-next-history-prediction/lead-acceptance.json",
+  "boundary": "One image, two fixed x1 probes at next native history U; five forwards including three qualification controls, no generation.",
+  "authorization": "Renewed user autonomous mechanism-research grant; bounded lead admission within cumulative8 GPU-hours.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "not_authorized": [
+    "new images/candidates, fitted coefficients or further horizons",
+    "free generation, history/position/cache interventions",
+    "peer/shared-runtime writes, Git actions or automatic successor"
+  ],
+  "next_action": "Closed; separate lead-owned same-transition cancellation discriminator.",
+  "dispatch_status": "submitted",
+  "dispatch": {
+    "receipt": "/tmp/923-next-history-dispatch.json",
+    "turn_id": "01a0cf0c-d469-73f1-93d5-da08a9d85584",
+    "message_sha256": "80764b5310d4b1eef5a123ef23efc89f20366bda1bd75c995a42bf4bffe77eef",
+    "worker_model": "gpt-6-sol",
+    "worker_effort": "xhigh"
+  },
+  "ongoing_user_authorization": {
+    "date": "2026-09-23",
+    "instruction": "User is going to sleep; explicitly authorizes lead-selected subsequent experiments without a round-count limit or repeated permission, whenever scientifically worthwhile. Wait for current worker return first.",
+    "boundary": "Existing per-unit contracts and cumulative resource ceiling remain in force. Lead freezes each successor and independently accepts results; user grant does not authorize worker self-directed expansion.",
+    "notification": "Report decision-bearing progress/failure; do not send unchanged waiting updates."
+  }
+}

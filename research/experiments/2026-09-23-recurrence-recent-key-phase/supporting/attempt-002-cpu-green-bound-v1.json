@@ -1,0 +1,15 @@
+{
+  "schema": "recurrence_recent_key_phase.cpu_green.v1",
+  "status": "GREEN_repaired",
+  "producer_sha256": "ed2439b23360aced8207f4740520e6445f30c5a41e6366ccccc5f7a4e3a59093",
+  "fixture": "DynamicCache 28 layers batch1 heads8 width18 dim128, inference tensors; actual patched caller context invoked outside inference_mode with WIDTH/SPANS fixture constants",
+  "normal_restored": true,
+  "forced_exception_restored": true,
+  "unchanged_V_and_unselected_K": true,
+  "inference_mode_inside_patch_body": true,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "prechange_red": "attempt-002-cpu-red.json",
+  "prior_green": "attempt-002-cpu-green-final.json"
+}
