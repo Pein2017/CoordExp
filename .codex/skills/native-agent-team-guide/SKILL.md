@@ -49,6 +49,10 @@ Assignments may change as facts emerge; make the new ownership explicit.
 For research or review assignments, name what next action each plausible result
 changes. If none changes, do not delegate; unresolved findings stay `HOLD` and
 do not become new mandatory gates.
+Between peer leads, prefer one decision-specific question with source pointers.
+Return the finding, strongest limit and effect on the requester's decision; send
+later results only when they change that decision or a shared input/owner.
+Neither side needs an acknowledgment-only reply or a copied full report.
 For an already frozen CoordExp probe, bind the assignment to the
 [Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md)
 rather than sending broad research history.
@@ -85,6 +89,10 @@ Routine mechanical assignments do not need this additional reference.
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over
 uncertain design instead of repeatedly returning the same misunderstanding.
+Use `followup_task` for a new bounded assignment to an idle child, not for a
+status check or acknowledgment. Bundle related corrections where possible; if
+the package or ownership has changed, reconsider whether that child's context
+still helps before resuming it.
 After a demonstrated semantic misunderstanding, clarify the governing invariant
 or take over the coupled part; increasing effort alone is not a correction.
 User-owned meaning still belongs with the user.
@@ -164,7 +172,8 @@ finding/result -> evidence path -> impact -> action needed (or none)
 
 Final return includes outcome, changed paths, checks, unresolved questions and
 any external job handoff. Native final completion already reaches the parent;
-do not duplicate it with an identical message. Keep raw logs in artifacts.
+do not duplicate it with an identical message. The parent need not acknowledge
+a finished child unless its next action changes. Keep raw logs in artifacts.
 After returning a candidate, stop writing so the lead reviews a stable target.
 If another correction is needed, notify the lead before editing, agree ownership,
 then return the updated candidate with affected checks rerun. The lead may take
