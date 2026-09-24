@@ -1,6 +1,6 @@
 ---
 name: lead-worker
-description: Exchange bounded assignments and direct reports between a research lead and persistent worker with user-selected model and effort. The lead invokes this workflow; the worker reads it for its role. Use for a lead/worker split or reuse of an existing worker; ordinary parallel subtasks do not require this skill.
+description: Create user-requested persistent workers and exchange bounded assignments or direct reports with user-selected model and effort. Use for a lead/worker split, reuse of an existing worker, or a same-host fallback when Codex App creation or messaging tools are absent; ordinary parallel subtasks do not require this skill.
 ---
 
 # Lead / Worker
@@ -32,6 +32,9 @@ Discuss alternatives, define the decision and answer the user in the lead.
 Delegate hands-on exploration, implementation, runtime operation and local
 checks as one coherent package. Direct lead work is appropriate for the small
 independent verification needed to accept the package.
+Give the user the changed evidence, decision and next action; link the retained
+report for details. Combine related progress into one update rather than
+relaying worker reports or narrating each check and handoff.
 
 The worker sends a self-contained report directly to the lead task at a
 decision-bearing checkpoint or completion. Include status, the result or exact
@@ -69,15 +72,49 @@ research-lead ruling needed before dependent work resumes.
 ## Dispatch using the smallest available transport
 
 Communicate directly in both directions: lead assignments/rulings to the worker,
-worker reports/questions to the lead. Use an exposed task-message tool when
-available and authorized; check its schema and model-setting behavior. An active
-recipient receives compatible steering, not a duplicate turn. Native subagents
-use `send_message` while active and `followup_task` while idle.
+worker reports/questions to the lead. First discover the relevant App tool:
+`create_thread` for an explicitly requested new task, `send_message_to_thread`
+for an existing task. Check its current schema and model-setting behavior.
+Native subagents use `send_message` while active and `followup_task` while idle.
 
-For an **existing same-host sidebar pair**, when the message tool is absent,
-this installation has an established App Server Unix-socket route. The bundled
-[scripts/worker_turn.py](scripts/worker_turn.py) reuses it. It does not create
-threads or change model settings, permissions, cwd, or global configuration.
+If the relevant App tool is absent or lacks a required capability, use the
+bundled [scripts/worker_turn.py](scripts/worker_turn.py) through this installation's
+same-host App Server socket. Missing wrappers do not establish missing backend
+capability; do not hand the user a manual copy/paste task before checking this
+route. A permission rejection or an ambiguous mutation is not a capability gap
+and must not trigger an alternate-path retry. This fallback does not discover
+other hosts, change global configuration, or replace a requested sidebar worker
+with a temporary subagent.
+
+### Create and start a requested worker
+
+Resolve the user-selected model and effort against the live model catalog; do
+not substitute defaults. Pass the ready assignment as a UTF-8 file:
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
+  --lead-thread LEAD_UUID --create --name WORKER_NAME \
+  --model MODEL_ID --effort EFFORT --cwd /absolute/worktree \
+  --send --message /absolute/assignment.txt --receipt /absolute/create.json
+```
+
+Creation and first input use **one connection**: `thread/start`, verify the
+returned settings, `thread/name/set`, then `turn/start`. A create-only empty
+task may have no saved rollout and cannot be resumed after disconnect. This
+helper therefore requires an initial message; it never changes the lead's model
+or silently reconfigures an existing worker. It appends the pair's task IDs and
+a direct-return command to the assignment, so the new worker can report back
+without reconstructing its identity. Record the returned UUID in the
+existing assignment/state owner. A receipt's `submitted` status means the first
+turn was accepted, not that the worker finished or research was accepted.
+
+After submission, use one bounded App snapshot or the worker's direct entry
+report to verify actual progress and visibility. Immediate `thread/read` can
+race initial rollout persistence; an empty-rollout read error does not undo a
+successful `turn/start` and never authorizes another creation or send.
+
+### Inspect or message an existing pair
+
 Inspect without starting anything:
 
 ```bash
@@ -113,11 +150,13 @@ a concurrent UI operator. Model/effort choices remain assignment requirements,
 not hardcoded transport allowlists.
 
 A send timeout is **unknown delivery**, not permission to resend: inspect the
-receipt and target task before any retry. Do not run `codex exec resume` beside
-an App-owned active worker. If this local socket or its protocol is unavailable,
-return the ready message and the specific transport gap; do not invent a
-background runner or silently substitute a watcher. The helper is local-only,
-not a remote-host discovery layer.
+receipt and target task before any retry. The same applies to a creation timeout:
+the task may exist even if its UUID was not returned. The creation receipt keeps
+any known UUID and the last phase; a naming or first-send failure is not license
+to create a replacement automatically. Do not run `codex exec resume` beside an
+App-owned active worker. If this local socket or its protocol is unavailable,
+return the ready message and the exact transport gap; do not invent a background
+runner or silently substitute a watcher.
 
 ## Completion, acceptance and continued conversation
 
@@ -141,7 +180,12 @@ independent acceptance check. Worker reports use `candidate`, `NEEDS_CONTEXT`,
 separate from whether a research hypothesis was supported. Use the existing
 research-flow or project contract for scientific scope, not a duplicate protocol.
 
-Then either close, send one bounded correction, or choose the next package inside
-the user's current authority. Stop at the declared stop condition, exhausted
-budget, convergence, or a material user-owned decision. Do not convert permission
-to execute one package into worker authority to run the research program.
+Record acceptance in the existing research record and receipt, then tell the
+user. If the worker has stopped at its package boundary, close without reopening
+it for a conclusion or acknowledgment. Send an active worker only rulings that
+change its next action; carry accepted results needed later as pointers and
+deltas in the next assignment. Chat is transport, not another progress ledger.
+Then close, send one bounded correction, or choose the next package inside the
+user's current authority. Stop at the declared stop condition, exhausted budget,
+convergence, or a material user-owned decision. Do not convert permission to
+execute one package into worker authority to run the research program.

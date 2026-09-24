@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Inspect a same-host lead/worker pair, or send one direct message either way."""
+"""Inspect, create, or send to a same-host lead/worker pair."""
 import argparse
 import asyncio
 import hashlib
 import json
+import shlex
 from pathlib import Path
 from uuid import UUID
 
@@ -27,6 +28,9 @@ def check_pair(lead, worker, args):
 
 
 async def operate(call, args):
+    if getattr(args, 'create', False):
+        return await create_worker(call, args)
+
     async def pair():
         return [
             (await call('thread/read', {'threadId': ident, 'includeTurns': False}))['thread']
@@ -93,6 +97,76 @@ async def operate(call, args):
     return summary
 
 
+async def create_worker(call, args):
+    lead = (await call('thread/read', {
+        'threadId': args.lead_thread, 'includeTurns': False,
+    }))['thread']
+    if lead['id'] != args.lead_thread or Path(lead['cwd']).resolve() != args.cwd:
+        raise ValueError('Lead identity or cwd mismatch')
+    if args.worker_thread is not None or args.to != 'worker' or not args.send:
+        raise ValueError('Creation requires --create, --to worker, and --send')
+    if not all(isinstance(value, str) and value.strip()
+               for value in (args.name, args.model, args.effort)):
+        raise ValueError('Creation requires nonempty name, model, and effort')
+    if args.message is None or args.receipt is None:
+        raise ValueError('Creation requires message and receipt paths')
+    message = args.message.read_text(encoding='utf-8')
+    if not message.strip():
+        raise ValueError('Assignment is empty')
+    summary = {
+        'lead': {k: lead[k] for k in ('id', 'model', 'reasoningEffort', 'status')},
+        'worker_name': args.name, 'requested_model': args.model,
+        'requested_effort': args.effort, 'cwd': str(args.cwd),
+    }
+    with args.receipt.open('x', encoding='utf-8') as receipt:
+        def save(status, **extra):
+            summary.update(status=status, **extra)
+            receipt.seek(0)
+            json.dump(summary, receipt, ensure_ascii=False, indent=2)
+            receipt.write('\n')
+            receipt.truncate()
+            receipt.flush()
+
+        save('creation_unknown', phase='thread/start',
+             message_sha256=hashlib.sha256(message.encode()).hexdigest())
+        try:
+            result = await call('thread/start', {
+                'model': args.model, 'cwd': str(args.cwd), 'ephemeral': False,
+                'config': {'model_reasoning_effort': args.effort},
+            })
+            worker = result['thread']
+            worker_id = worker['id']
+            save('created', phase='validate_worker', worker_thread_id=worker_id,
+                 worker={k: worker.get(k) for k in
+                         ('id', 'cwd', 'model', 'reasoningEffort', 'status')})
+            if (str(UUID(worker_id)) != worker_id or worker_id == lead['id']
+                    or Path(worker['cwd']).resolve() != args.cwd
+                    or worker['model'] != args.model
+                    or worker['reasoningEffort'] != args.effort):
+                raise ValueError('Created worker identity, cwd, or settings mismatch')
+            save('created', phase='thread/name/set')
+            await call('thread/name/set', {'threadId': worker_id, 'name': args.name})
+            return_command = shlex.join([
+                'python', str(Path(__file__).resolve()), '--lead-thread', lead['id'],
+                '--worker-thread', worker_id, '--cwd', str(args.cwd), '--to', 'lead',
+                '--send', '--message', 'REPORT_FILE', '--receipt', 'NEW_RECEIPT_FILE',
+            ])
+            assignment = (message + '\n\nTransport context: Lead task ' + lead['id']
+                          + '; worker task ' + worker_id
+                          + '. Return findings directly to the lead with `'
+                          + return_command + '`.')
+            save('delivery_unknown', phase='turn/start', delivery_method='turn/start',
+                 sent_sha256=hashlib.sha256(assignment.encode()).hexdigest())
+            turn = (await call('turn/start', {
+                'threadId': worker_id, 'input': [{'type': 'text', 'text': assignment}],
+            }))['turn']
+            save('submitted', phase='submitted', turn_id=turn['id'], turn_status=turn['status'])
+        except Exception as exc:
+            save(summary['status'], error_type=type(exc).__name__)
+            raise
+    return summary
+
+
 async def main(args):
     socket = HOME_DIR / 'app-server-control/app-server-control.sock'
     async with aiohttp.ClientSession(connector=aiohttp.UnixConnector(path=str(socket))) as session:
@@ -125,19 +199,35 @@ async def main(args):
             print(json.dumps(await operate(call, args), ensure_ascii=False, indent=2))
 
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lead-thread', required=True, type=lambda s: str(UUID(s.removeprefix('codex://threads/'))))
-    parser.add_argument('--worker-thread', required=True, type=lambda s: str(UUID(s.removeprefix('codex://threads/'))))
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--worker-thread', type=lambda s: str(UUID(s.removeprefix('codex://threads/'))))
+    mode.add_argument('--create', action='store_true')
     parser.add_argument('--cwd', required=True, type=Path)
     parser.add_argument('--to', choices=('worker', 'lead'), default='worker')
     parser.add_argument('--send', action='store_true')
     parser.add_argument('--message', type=Path)
     parser.add_argument('--receipt', type=Path)
-    args = parser.parse_args()
+    parser.add_argument('--name')
+    parser.add_argument('--model')
+    parser.add_argument('--effort')
+    args = parser.parse_args(argv)
     args.cwd = args.cwd.resolve(strict=True)
     if not args.cwd.is_dir():
         parser.error('--cwd must be an existing directory')
     if args.send and (args.message is None or args.receipt is None):
         parser.error('--send requires --message and a new --receipt path')
-    asyncio.run(main(args))
+    if args.create and (not args.send or args.to != 'worker' or
+                        not all(value and value.strip() for value in
+                                (args.name, args.model, args.effort))):
+        parser.error('--create requires --name, --model, --effort, --send, and --to worker')
+    if not args.create and any(value is not None for value in
+                               (args.name, args.model, args.effort)):
+        parser.error('--name, --model, and --effort require --create')
+    return args
+
+
+if __name__ == '__main__':
+    asyncio.run(main(parse_args()))
