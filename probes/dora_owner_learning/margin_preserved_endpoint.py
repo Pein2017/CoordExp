@@ -46,9 +46,6 @@ SOURCE_ROOT = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
     "2026-09-11-positive-branch-vs-repeat-event"
 )
-OLD_PRODUCER = Path(positive_branch_endpoint.__file__)
-# Current maintained engine identity; original producer bytes stay in the source archive.
-OLD_PRODUCER_SHA256 = "6269a0749d89469dfba0f18a2ddbef774d26fe37ec110c2f697560b2dbf3102b"
 OLD_PACKET = SOURCE_ROOT / "endpoint-preparation/packet.json"
 OLD_PACKET_SHA256 = "560006e73f3f0fc416e7d58751fe96c936aba9478fb6b320ab6118db2bcd5053"
 RETAINED_A_ROOT = SOURCE_ROOT / "endpoint-A"
@@ -118,7 +115,6 @@ def source(path: Path, sha256: str) -> dict[str, Any]:
 
 
 def old_endpoint() -> Any:
-    source(OLD_PRODUCER, OLD_PRODUCER_SHA256)
     return positive_branch_endpoint
 
 
@@ -126,7 +122,6 @@ def load_old_packet() -> dict[str, Any]:
     source(OLD_PACKET, OLD_PACKET_SHA256)
     return old_endpoint().read_retained_packet(
         OLD_PACKET, expected_sha256=OLD_PACKET_SHA256,
-        archive_manifest=Path("/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"),
     )
 
 
@@ -365,7 +360,6 @@ def pending_payload() -> dict[str, Any]:
         "status": "pending_actual_C32_receipt_and_cold_check",
         "unresolved": ["actual_C32_training_receipt", "actual_C32_cold_check"],
         "verified": {
-            "old_endpoint_producer": source(OLD_PRODUCER, OLD_PRODUCER_SHA256),
             "old_endpoint_packet": source(OLD_PACKET, OLD_PACKET_SHA256),
             "retained_A_consumer": source(RETAINED_A_CONSUMER, RETAINED_A_CONSUMER_SHA256),
             "retained_A_conditional": source(RETAINED_A_CONDITIONAL, RETAINED_A_CONDITIONAL_SHA256),
@@ -438,7 +432,6 @@ def cpu_preflight_payload() -> dict[str, Any]:
             file_hash(Path(__file__).with_name("tests") / "test_margin_preserved_endpoint.py"),
         ),
         "training_verifier_source": source(TRAINER_SOURCE, file_hash(TRAINER_SOURCE)),
-        "old_endpoint_producer_sha256": OLD_PRODUCER_SHA256,
         "old_endpoint_packet_sha256": OLD_PACKET_SHA256,
         "retained_A_consumer_sha256": RETAINED_A_CONSUMER_SHA256,
         "retained_A_checks": retained,
@@ -553,7 +546,6 @@ def build_packet_payload(receipt_path: Path, cold_path: Path) -> dict[str, Any]:
         sources={
             "producer": source(Path(__file__).resolve(), file_hash(Path(__file__).resolve())),
             "C_training_verifier": source(TRAINER_SOURCE, file_hash(TRAINER_SOURCE)),
-            "old_endpoint_producer": source(OLD_PRODUCER, OLD_PRODUCER_SHA256),
             "old_endpoint_packet": source(OLD_PACKET, OLD_PACKET_SHA256),
             "retained_A_consumer": source(RETAINED_A_CONSUMER, RETAINED_A_CONSUMER_SHA256),
             "retained_A_conditional": source(RETAINED_A_CONDITIONAL, RETAINED_A_CONDITIONAL_SHA256),

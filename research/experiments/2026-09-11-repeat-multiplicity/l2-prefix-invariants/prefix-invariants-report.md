@@ -24,10 +24,9 @@ has no strict-repeat reference in R.
 | 502725 | 38; row 5 | knife | 0 (`0:9`) | 2 (`18:27`) | 3 (`27:36`) | 9 | 45 |
 
 The spans are zero-based half-open offsets in each unchanged Stable50 action
-token array. Full source-row digests and coordinates are frozen in
-[`check_prefix_invariants.py`](../../../../reference/retained-sources/objects/a4/a40b451f39d27a455da47013ca0190e77b996eebc35b88c85e72b2c014368ff3.py); the selected rows
-are canonical, accepted, geometry-valid, four-coordinate rows, and pairwise
-strict-IoU distinct. Their pairwise native pixel IoUs are:
+token array. The selected rows are canonical, accepted, geometry-valid,
+four-coordinate rows, and pairwise strict-IoU distinct. Their pairwise native
+pixel IoUs are:
 
 | case | A/B | A/C | B/C |
 |---:|---:|---:|---:|

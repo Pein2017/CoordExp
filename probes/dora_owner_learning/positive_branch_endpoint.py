@@ -25,7 +25,6 @@ if str(WORKTREE) not in sys.path:
     sys.path.insert(0, str(WORKTREE))
 
 from src.artifacts import publish_json_exclusive  # noqa: E402
-from src.artifacts.source_archive import SourceArchive
 from probes.dora_owner_learning import escape_witness, escape_witness_reduce
 from src.adapters.dora import inspect_dora_adapter_payload  # noqa: E402
 from probes.dora_owner_learning.candidate_opportunity import (  # noqa: E402
@@ -280,16 +279,11 @@ def validate_packet(packet: Mapping[str, Any]) -> None:
     _validate_packet_population(packet)
 
 
-def read_retained_packet(path: Path, *, expected_sha256: str, archive_manifest: Path) -> dict[str, Any]:
-    """Verify one immutable historical packet without treating it as a launch gate.
-
-    The caller pins the entire original packet. Archived sources prove historical
-    bytes, not current execution identity. New execution still uses validate_packet.
-    """
+def read_retained_packet(path: Path, *, expected_sha256: str) -> dict[str, Any]:
+    """Read one retained result packet; current execution uses validate_packet."""
     require(file_hash(path) == expected_sha256, "retained endpoint packet bytes changed")
     packet = load_json(path)
     require(packet.get("schema") == "positive_branch_vs_repeat_event.endpoint_packet.v1", "wrong retained endpoint packet")
-    SourceArchive(archive_manifest).verify_bindings(packet["sources"])
     _validate_packet_population(packet)
     return packet
 

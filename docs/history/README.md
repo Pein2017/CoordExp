@@ -8,14 +8,14 @@ under `docs/`.
 
 The current research layout is owned by
 [research/CONVENTIONS.md](../../research/CONVENTIONS.md). Global behavior and
-engineering documentation remain in [docs/](../README.md); source-byte evidence
-is reference-only under [reference/](../../reference/README.md).
+engineering documentation remain in [docs/](../README.md); current-run source
+captures may remain local under [reference/](../../reference/README.md).
 
 ## Remaining salvage and exit conditions
 
 | Material | Residual use | Extraction or removal condition |
 |---|---|---|
-| `architecture/`, `engineering/`, `evaluation/` | Superseded global interfaces and historical behavior needed for contract comparisons; one source-study document is still hash-pinned by a legacy reader. | Integrate a decision-relevant distinction into the current global owner, or retire the exact reader; then remove the obsolete source document. |
+| `architecture/`, `engineering/`, `evaluation/` | Superseded global interfaces and historical behavior needed for contract comparisons. | Integrate a decision-relevant distinction into the current global owner, or remove the obsolete source document. |
 | `research-records/` | Unresolved alternatives, old synthesis context, immutable preservation manifests and frozen exposure JSON. Primary protocols/results now live under `research/experiments/`. | Extract only a genuinely missing scientific distinction into its question/unit. Remove consumed context rather than retaining another router. |
 | `worktree-retirements/`, `worktree-cleanup/`, `worktree-union/` | Unique branch-specific designs and retirement provenance not yet reconciled with current owners. Named research records and superseded global copies were separated from this material. | Resolve a concrete original-branch question, incorporate the remaining useful distinction, and delete the unneeded transport or snapshot. Do not regenerate these bulk intakes. |
 | `superpowers/`, `root-orphans/` | Unmatched legacy implementation plans and design context whose useful remainder is not yet established. They are not current execution instructions. | Find a real current consumer or scientific owner and integrate the useful portion; otherwise discard after provenance/reference checks. |
@@ -38,11 +38,10 @@ data store.
 
 ## Recovery and checks
 
-`manifests/documentation-layout.json` records each move, integration, duplicate
-removal and retained source hash. Original manifests and scientific receipts
-were not rewritten; the research-checkout source reader uses this location
-overlay. Git or exact content-addressed copies recover old bytes without
-reviving their old path as an import alias.
+`manifests/documentation-layout.json` now contains path routes only. It no longer
+claims recovery of old source bytes or verifies source-code hashes. The frozen
+exposure JSON files remain because a live consumer reads them; their data
+identity checks are separate from source-code snapshot retention.
 
 From the canonical research checkout, run:
 

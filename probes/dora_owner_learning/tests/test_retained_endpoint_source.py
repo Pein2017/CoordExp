@@ -23,5 +23,4 @@ def test_retained_reader_does_not_accept_a_different_packet(tmp_path):
     path = tmp_path / "packet.json"
     path.write_text("{}")
     with pytest.raises(ValueError, match="retained endpoint packet bytes changed"):
-        endpoint.read_retained_packet(path, expected_sha256=margin.OLD_PACKET_SHA256,
-                                      archive_manifest=tmp_path / "missing.json")
+        endpoint.read_retained_packet(path, expected_sha256=margin.OLD_PACKET_SHA256)

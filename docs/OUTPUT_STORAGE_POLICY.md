@@ -32,14 +32,11 @@ loose `.py`, `.md`, `.sh`, Python bytecode, virtual environments, vendor checkou
 or Git worktrees. Human-authored protocols, interpretation and current status
 belong to their research/document owners, not inside a run directory.
 
-Source captures are evidence, not implementation. Use
-`src.artifacts.source_provenance.preserve_source` for exact source copies outside
-outputs, below this checkout's `reference/retained-sources/`. Identical bytes share
-a content-addressed object; `runs/` holds read-only hard links for receipt-bound
-paths, not independent copies. It returns a verified
-path for the caller's existing receipt; it does not change scientific admission
-or create a second receipt hierarchy. Include newly used shared dependencies.
-Current runs bind current code. Existing sealed receipts remain immutable.
+Current runs may use `src.artifacts.source_provenance.preserve_source` to keep
+local source captures beside their receipts. These captures are not maintained
+implementation and are not tracked as a historical source library. Include newly
+used shared dependencies when the run requires them. Existing sealed receipts
+remain immutable.
 
 Generated PEFT cards are stored losslessly in `adapter/model_card.json` before
 atomic checkpoint publication. This is generated checkpoint metadata, not a place
@@ -51,20 +48,13 @@ Visualization descriptions are generated metadata in `manifest.json` under
 `summary`; `VisualizationResult.summary` returns that text. Renderers do not
 create a separate Markdown report in the output directory.
 
-## Historical recovery is not current execution validation
+## Historical source snapshots
 
-The September 21 migration map is
-`/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json`.
-`python -B -m src.artifacts.source_archive --manifest <map> --source <original>
---sha256 <expected>` verifies and locates original bytes without restoring or
-executing them. `--verify` checks the complete archive.
-
-Never replace an old receipt's hashes with today's hashes, resolve a current
-source failure by silently substituting an old snapshot, or infer permission to
-rerun from a preserved command. A reader explicitly consuming a checksum-pinned
-historical packet may verify archived sources; a new run must pass its current
-source checks and receive its own authorization. Recoverability and runnable
-original-context replay are different claims.
+Migration-time source-code recovery is retired. Conclusions, useful process
+details and necessary hyperparameters remain with their research owners; old
+implementation snapshots and their hashes are not required for interpreting
+those records. Keep sealed data, checkpoint and result receipts unchanged, and
+do not infer permission to rerun from a preserved command.
 
 Before moving/deleting a source or artifact, verify fresh Git, live consumers and
 holders, source/destination hashes, a recoverable backup, and a source-to-target
@@ -106,4 +96,9 @@ optimizer behavior, stage populations or natural evaluation gates.
 
 No implementation files, source snapshots, scripts, notebooks or code caches belong anywhere under `docs/`, including `docs/history/`. Inline explanatory examples in documentation are not executable source ownership. Useful research documents, including old or completed results, belong under `research/` according to its convention. Global documentation stays in `docs/`. History is a temporary salvage queue, not a date-based warehouse.
 
-Existing source copies have been deduplicated into `reference/retained-sources/objects/`. Their original path/hash identities remain in `manifests/documentation-layout.json`; future captures reuse those objects with receipt-bound hard links under `reference/retained-sources/runs/`. The evidence tree is excluded from ordinary source search and indexing. Retain a source only for a concrete consumer or evidence obligation; uniqueness or age alone is not a retention reason. Use the source-archive reader from this research checkout when verifying the September 21 root manifest: the original manifest is immutable, and the local location overlay supplies relocated exact bytes. This round does not modify the root checkout or authorize archive execution. A frozen historical document may be recoverable from its recorded Git blob even after its useful content is integrated elsewhere.
+The migration-time `reference/retained-sources/objects/` corpus is no longer
+tracked. `manifests/documentation-layout.json` keeps path routes for migrated
+documents, not source-byte identity. Current-run captures may remain local under
+`reference/retained-sources/runs/`; they are separate from maintained code and
+from the research conclusions, process notes and hyperparameters that remain in
+their owning records.

@@ -20,7 +20,6 @@ import traceback
 
 import torch
 
-from src.artifacts.source_archive import SourceArchive
 from src.artifacts.source_provenance import preserve_source
 
 from probes.parallel_owner_research.instance_state import (
@@ -281,13 +280,6 @@ def prepare():
         require(old_packet.is_file(), "completed gate predecessor packet missing")
         old_receipt = json.loads((gate_dir / "receipt.json").read_text())
         require(old_receipt["status"] == "complete" and old_receipt["packet_sha256"] == file_hash(old_packet), "completed gate predecessor mismatch")
-        if "runner_source" in old_receipt:
-            runner_sha256 = file_hash(old_receipt["runner_source"])
-            require(runner_sha256 == old_receipt["runner_sha256"], "completed gate runner changed")
-        else:
-            runner_sha256 = SourceArchive(Path(
-                "/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"
-            )).resolve(gate_dir / "runner.py", old_receipt["runner_sha256"])["sha256"]
         completed_gate = {
             "packet": str(old_packet),
             "packet_sha256": file_hash(old_packet),
@@ -295,7 +287,6 @@ def prepare():
             "gate_sha256": file_hash(gate_dir / "gate.json"),
             "receipt_sha256": file_hash(gate_dir / "receipt.json"),
             "consumer_sha256": file_hash(gate_dir / "consumer.json"),
-            "runner_sha256": runner_sha256,
             "case_ids": ["417044"],
         }
 

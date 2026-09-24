@@ -1,4 +1,4 @@
-"""Synthetic CPU contracts for the flat research tree and frozen-source reader."""
+"""Synthetic CPU contracts for the flat research tree and path-only migration resolver."""
 from __future__ import annotations
 
 import copy
@@ -29,7 +29,7 @@ class KnowledgeContracts(unittest.TestCase):
                         'archive_prefix': 'docs/history/first/research/investigations',
                         'files': [self.entry]}
         self.bundle = {'canonical_root': '/original/repo', 'captures': [self.capture],
-                       'retirements': [], 'exposure': {}}
+                       'exposure': {}}
         self.live = f'research/experiments/{self.unit}'
         self.state_path = self.live + '/state.json'
         self.result_path = self.live + '/results.md'
@@ -62,8 +62,7 @@ class KnowledgeContracts(unittest.TestCase):
 
     def snapshot(self, source: str, archive: str, text: str) -> dict:
         path = self.write(archive, text)
-        return {'source': source, 'archive': archive, 'sha256': CHECK.digest(path.read_bytes()),
-                'bytes': path.stat().st_size, 'git_tracked_at_capture': True}
+        return {'source': source, 'archive': archive}
 
     def save_state(self) -> None:
         self.write(self.state_path, json.dumps(self.state))
@@ -72,42 +71,8 @@ class KnowledgeContracts(unittest.TestCase):
         return CHECK.check_catalog(self.root, rows or [self.row], self.bundle)
 
     def test_clean_source_catalog_and_layout(self):
-        self.assertEqual(CHECK.check_sources(self.root, self.bundle), [])
         self.assertEqual(self.catalog_errors(), [])
         self.assertEqual(CHECK.check_layout(self.root), [])
-
-    def test_changed_source_bytes_fail(self):
-        self.write(self.archived, '# Rewritten question\n')
-        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
-
-    def test_duplicate_mapping_fails(self):
-        self.capture['files'].append(copy.deepcopy(self.entry))
-        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
-
-    def test_unexplained_missing_source_fails(self):
-        (self.root / self.archived).unlink()
-        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
-
-    def test_exact_retirement_is_reported_not_materialized(self):
-        (self.root / self.archived).unlink()
-        self.bundle['retirements'] = [{'path': self.archived, 'source': self.original,
-                                      'sha256': self.entry['sha256'],
-                                      'recovery_git_spec': 'a' * 40 + '^:' + self.archived}]
-        self.assertEqual(CHECK.check_sources(self.root, self.bundle), [])
-        ref = CHECK.resolve_reference(self.root, self.bundle, self.original, '#scope')
-        self.assertFalse(ref['exists'])
-        self.assertEqual(ref['availability'], 'git_recoverable_not_materialized')
-
-    def test_retirement_cannot_hide_modified_existing_file(self):
-        self.bundle['retirements'] = [{'path': self.archived, 'source': self.original,
-                                      'sha256': self.entry['sha256']}]
-        self.write(self.archived, '# Wrong\n')
-        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
-
-    def test_unknown_retirement_fails(self):
-        self.bundle['retirements'] = [{'path': 'docs/history/unknown', 'source': 'unknown',
-                                      'sha256': '0' * 64}]
-        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
 
     def test_historical_neighbor_uses_original_coordinates(self):
         source = str(Path(self.original).with_name('results.md'))

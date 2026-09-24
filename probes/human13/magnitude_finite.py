@@ -249,7 +249,6 @@ def _verify_materialization_files(
     materialization: Mapping[str, Any],
     *,
     stage: str,
-    archive_manifest: Path | None = None,
 ) -> tuple[dict[str, str], dict[str, Any]]:
     """Verify live model payloads separately from current or historical metadata."""
     payload_names = {"adapter_config.json", ADAPTER_TENSOR_NAME}
@@ -270,22 +269,6 @@ def _verify_materialization_files(
         if current != metadata:
             raise MechanicalInvalid("materialized metadata hashes differ")
         return observed, {"mode": "current_json", "files": current}
-    if version == f"human13_{stage}_dora_magnitude_materialization.v1":
-        if set(declared) != payload_names | {"README.md"}:
-            raise MechanicalInvalid("legacy materialization file names differ")
-        from src.artifacts.source_archive import SourceArchive
-
-        manifest = archive_manifest or Path(
-            "/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"
-        )
-        try:
-            metadata = SourceArchive(manifest).resolve(
-                adapter_path / "README.md", declared["README.md"]
-            )
-        except (OSError, ValueError) as exc:
-            raise MechanicalInvalid("retained materialization metadata is unavailable") from exc
-        # This is explicitly historical metadata, not a claim that README is live.
-        return observed, {"mode": "historical_markdown", "binding": metadata}
     raise MechanicalInvalid("unsupported materialization schema")
 
 

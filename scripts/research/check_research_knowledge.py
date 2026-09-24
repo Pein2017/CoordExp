@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Read-only research layout, catalog, source integrity and historical-link checks.
+"""Read-only research layout, catalog, path routing and exposure-data checks.
 
-This validates local knowledge plumbing, not scientific truth or model artifacts.
-No model imports, filesystem writes, alias creation, or automatic repair.
+This validates current knowledge plumbing, not scientific truth or model artifacts.
+It does not recover historical implementation sources. No model imports,
+filesystem writes, alias creation, or automatic repair.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import posixpath
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -64,13 +63,10 @@ def logical_relative(root: Path, name: str, bundle: dict) -> str | None:
 def load_bundle(root: Path) -> dict:
     latest = json.loads(local_path(root, str(CAPTURE / 'manifest.json')).read_text())
     previous_path = local_path(root, latest['previous_manifest'])
-    if digest(previous_path.read_bytes()) != latest['previous_manifest_sha256']:
-        raise ValueError('previous source manifest changed')
     previous = json.loads(previous_path.read_text())
     consumers = json.loads(local_path(root, str(CAPTURE / 'consumer-sources.json')).read_text())
     return {'canonical_root': latest['canonical_root'],
             'captures': [previous, latest, consumers],
-            'retirements': latest['preexisting_retirements'],
             'exposure': latest['research_json_exposure'], 'locations': SourceLocations(root)}
 
 
@@ -125,98 +121,9 @@ def resolve_reference(root: Path, bundle: dict, document: str, target: str) -> d
         exists = local_path(root, resolved).exists()
     except ValueError:
         return {'kind': 'invalid', 'logical_path': logical, 'exists': None}
-    retired = next((e for e in bundle.get('retirements', []) if e['path'] == resolved), None)
     result = {'kind': 'local', 'logical_path': logical, 'path': resolved,
               'fragment': parts.fragment, 'exists': exists}
-    if retired and not exists:
-        result['recovery_git_spec'] = retired['recovery_git_spec']
-        result['availability'] = 'git_recoverable_not_materialized'
-    elif not exists and 'locations' in bundle:
-        moved = bundle['locations'].entries.get(resolved)
-        if moved and moved.get('git_blob'):
-            # This is still a missing live link, but its exact historical bytes
-            # are independently verified by check_sources, not silently lost.
-            result['recovery_git_spec'] = moved['git_blob']
-            result['availability'] = 'git_recoverable_not_materialized'
     return result
-
-
-def check_sources(root: Path, bundle: dict) -> list[str]:
-    errors: list[str] = []
-    seen_archives: set[str] = set()
-    retirements = {e['path']: e for e in bundle.get('retirements', [])}
-    if len(retirements) != len(bundle.get('retirements', [])):
-        errors.append('duplicate retirement')
-    used_retirements = set()
-    for capture in bundle['captures']:
-        seen_sources = set()
-        for entry in capture['files']:
-            source, archived = entry['source'], entry['archive']
-            if source in seen_sources or archived in seen_archives:
-                errors.append(f'duplicate source mapping: {source}')
-            seen_sources.add(source)
-            seen_archives.add(archived)
-            try:
-                path = local_path(root, archived)
-                if not path.is_file() and archived in retirements:
-                    retired = retirements[archived]
-                    if retired['sha256'] != entry['sha256'] or retired['source'] != source:
-                        errors.append(f'retirement identity mismatch: {source}')
-                    used_retirements.add(archived)
-                    continue
-                data = (bundle['locations'].original_bytes(archived, entry['sha256'])
-                        if 'locations' in bundle else path.read_bytes())
-                if digest(data) != entry['sha256'] or len(data) != entry['bytes']:
-                    errors.append(f'source bytes changed: {archived}')
-            except (OSError, ValueError) as exc:
-                errors.append(f'source unavailable: {archived}: {exc}')
-    if used_retirements != set(retirements):
-        errors.append('retirement is not an exact missing captured source')
-    return errors
-
-
-def check_git_sources(root: Path, bundle: dict) -> list[str]:
-    """Compare capture claims with actual baseline Git blobs, not self-hashes alone."""
-    errors = []
-    requests = []
-    for capture in bundle['captures']:
-        baseline = capture['baseline_head']
-        if not re.fullmatch('[0-9a-f]{40}', baseline):
-            raise ValueError('invalid baseline commit')
-        prefix = capture.get('source_prefix')
-        if prefix:
-            tree = subprocess.check_output(['git', 'ls-tree', '-r', '-z', baseline, '--', prefix], cwd=root)
-            expected = {r.split(b'\t', 1)[1].decode() for r in tree.split(b'\0') if r
-                        and r.split(b' ', 1)[0] != b'120000'}
-            captured = {e['source'] for e in capture['files'] if e['git_tracked_at_capture']
-                        and (e['source'] == prefix or e['source'].startswith(prefix + '/'))}
-            if expected != captured:
-                errors.append(f'baseline source coverage mismatch: {prefix}')
-        requests.extend((f"{baseline}:{e['source']}", e) for e in capture['files']
-                        if e['git_tracked_at_capture'])
-    for retired in bundle.get('retirements', []):
-        commit, spec = retired['retired_commit'], retired['recovery_git_spec']
-        if not re.fullmatch('[0-9a-f]{40}', commit) or spec != commit + '^:' + retired['path']:
-            raise ValueError('invalid retirement recovery binding')
-        delta = subprocess.check_output(['git', 'diff-tree', '--no-commit-id', '--name-status',
-                                         '-r', commit, '--', retired['path']], cwd=root, text=True).strip()
-        if delta != 'D\t' + retired['path']:
-            errors.append(f'retirement is not a committed exact deletion: {retired["path"]}')
-        requests.append((spec, retired))
-    payload = ''.join(spec + '\n' for spec, _ in requests).encode()
-    result = subprocess.run(['git', 'cat-file', '--batch'], input=payload, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, cwd=root, check=True)
-    stream = io.BytesIO(result.stdout)
-    for spec, entry in requests:
-        header = stream.readline().decode().strip().split()
-        if len(header) != 3 or header[1] != 'blob':
-            errors.append(f'Git source unavailable: {spec}')
-            continue
-        data = stream.read(int(header[2]))
-        stream.read(1)
-        if digest(data) != entry['sha256']:
-            errors.append(f'Git source differs from capture: {spec}')
-    return errors
 
 
 def check_state(root: Path, path: str, unit_id: str) -> tuple[list[str], dict]:
@@ -362,8 +269,7 @@ def check_exposure(root: Path, bundle: dict) -> list[str]:
 
 def run_check(root: Path, bundle: dict) -> dict[str, Any]:
     rows = [json.loads(line) for line in local_path(root, str(CATALOG)).read_text().splitlines() if line.strip()]
-    errors = check_sources(root, bundle) + check_git_sources(root, bundle)
-    errors += check_layout(root) + check_catalog(root, rows, bundle) + check_exposure(root, bundle)
+    errors = check_layout(root) + check_catalog(root, rows, bundle) + check_exposure(root, bundle)
     all_documents = sorted((root / RESEARCH).rglob('*.md'))
     # Historical scientific records remain useful in research. They do not become
     # live frontiers merely by moving, and old unresolved citations stay disclosed.
@@ -371,38 +277,14 @@ def run_check(root: Path, bundle: dict) -> dict[str, Any]:
     documents = [p for p in all_documents if not any(p.is_relative_to(d) for d in historical_roots)]
     live_errors, valid_links, external = check_live_links(root, bundle, documents)
     errors += live_errors
-    gaps = []
-    for capture in bundle['captures']:
-        for entry in capture['files']:
-            path = local_path(root, entry['archive'])
-            if path.suffix != '.md':
-                continue
-            try:
-                original = (bundle['locations'].original_bytes(entry['archive'], entry['sha256']).decode()
-                            if 'locations' in bundle else path.read_text())
-            except (OSError, ValueError):
-                continue  # check_sources already reports any missing original bytes.
-            for target in links_in(original):
-                ref = resolve_reference(root, bundle, entry['archive'], target)
-                if ref['kind'] == 'local' and not ref['exists'] and 'recovery_git_spec' not in ref:
-                    gaps.append({'source': entry['source'], 'target': target})
-    total = sum(len(c['files']) for c in bundle['captures'])
-    git_only = sum(bool(bundle.get('locations') and e['archive'] in bundle['locations'].entries
-                        and not bundle['locations'].materialized(e['archive'], e['sha256'])
-                        and not local_path(root, e['archive']).is_file())
-                   for c in bundle['captures'] for e in c['files'])
-    return {'ok': not errors, 'errors': errors, 'source_versions': total,
-            'materialized_source_versions': total - len(bundle.get('retirements', [])) - git_only,
-            'relocated_originals_recoverable_from_git': git_only,
-            'git_recoverable_preexisting_retirements': len(bundle.get('retirements', [])),
+    return {'ok': not errors, 'errors': errors,
             'catalog_entries': len(rows), 'catalogued_protocols': sum(len(r['protocols']) for r in rows),
             'current_state_owners': sum(r['tracking'] == 'current' for r in rows),
             'live_documents': len(documents), 'retained_research_documents': len(all_documents) - len(documents),
             'valid_live_local_links': valid_links,
             'unverified_external_live_handles': external,
             'frozen_exposure_records': len(bundle['exposure']['records']),
-            'historical_unresolved_links': len(gaps), 'historical_gap_examples': gaps[:12],
-            'scope': 'Local knowledge plumbing/source identity only; no scientific replication, external-artifact certification, or authorization to resume.'}
+            'scope': 'Live research layout, catalog, links and frozen consumer data; no source-code recovery or scientific revalidation.'}
 
 
 def main() -> int:
@@ -420,7 +302,7 @@ def main() -> int:
                   resolve_reference(root, bundle, args.document, args.target))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return int(not result['ok']) if args.command == 'check' else 0
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
 

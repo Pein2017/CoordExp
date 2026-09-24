@@ -68,7 +68,7 @@ def test_native_im_end_is_canonical_eos_but_early_length_fails_closed():
         canonical_terminal_stop("cancelled", 100, 3064)
 
 
-def test_prepare_retains_completed_gate_after_source_migration(tmp_path, monkeypatch):
+def test_prepare_retains_completed_gate_without_archived_runner_source(tmp_path, monkeypatch):
     import json
     from pathlib import Path
     import shutil
@@ -83,28 +83,8 @@ def test_prepare_retains_completed_gate_after_source_migration(tmp_path, monkeyp
     monkeypatch.setattr(state, "_render_carrier_card", lambda case, output: {"case_id": case["case_id"]})
     result = state.prepare()
     packet = json.loads(Path(result["packet"]).read_text())
-    receipt = json.loads((tmp_path / "gate-v1/receipt.json").read_text())
-    assert packet["completed_gate"]["runner_sha256"] == receipt["runner_sha256"]
+    assert "runner_sha256" not in packet["completed_gate"]
     assert not (tmp_path / "gate-v1/runner.py").exists()
-
-    # New receipts name the external capture. A changed capture must not fall
-    # back to a matching historical source.
-    retained = state.SourceArchive(Path(
-        "/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json"
-    )).resolve(original_root / "gate-v1/runner.py", receipt["runner_sha256"])
-    capture = tmp_path / "source-capture.py"
-    shutil.copyfile(retained["path"], capture)
-    receipt["runner_source"] = str(capture)
-    (tmp_path / "gate-v1/receipt.json").write_text(json.dumps(receipt))
-    state.prepare()
-    capture.write_text("changed")
-    with pytest.raises(ValueError, match="completed gate runner changed"):
-        state.prepare()
-    del receipt["runner_source"]
-    receipt["runner_sha256"] = "0" * 64
-    (tmp_path / "gate-v1/receipt.json").write_text(json.dumps(receipt))
-    with pytest.raises(FileNotFoundError, match="no verified source bytes"):
-        state.prepare()
 
 
 @pytest.mark.parametrize("entry", ["native", "instance", "amplitude"])

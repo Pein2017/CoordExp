@@ -29,7 +29,7 @@ research/
 
 No `ideas/`, `decisions/`, `mechanisms/`, `investigations/`, `archive/`, `reports/`, `handoffs/`, or `progress/` buckets inside the active research root. Temporary migration staging must be emptied before closeout. A new question earns a page through a distinct scientific decision and evidence chain, not through a quota or a speculative future need. Reconsider a program layer only if an actually independent second topic exists.
 
-Maintained experimental code lives in `probes/<direction>/`. Existing `outputs/research/...` roots and immutable study/run identifiers remain unchanged: flattening the knowledge tree is not permission to rename model artifacts. Useful protocols, results, negative findings, source observations and consultations stay with their research unit regardless of age or completion. Code never belongs in `docs/`: maintained code has its `probes/` or `src/` owner; necessary immutable source bytes live in `reference/retained-sources/`. `docs/history/` is temporary salvage only for unsynthesized or superseded material with an explicit residual use and extraction/drop condition. Reusable public literature and its source material live in `literature/`; publication age or completed reading is not a reason to archive them.
+Maintained experimental code lives in `probes/<direction>/`. Existing `outputs/research/...` roots and immutable study/run identifiers remain unchanged: flattening the knowledge tree is not permission to rename model artifacts. Useful protocols, results, negative findings, source observations and consultations stay with their research unit regardless of age or completion. Code never belongs in `docs/`: maintained code has its `probes/` or `src/` owner. Migration-time source snapshots are not tracked; keep conclusions, useful process details and necessary hyperparameters with their research owner. `docs/history/` is temporary salvage only for unsynthesized or superseded material with an explicit residual use and extraction/drop condition. Reusable public literature and its source material live in `literature/`; publication age or completed reading is not a reason to archive them.
 
 ## Read for a task, not for a file count
 
@@ -55,7 +55,7 @@ This is targeted retrieval, not a mandatory whole-library review: reuse already 
 | Record identity and retrieval | `experiments/catalog.jsonl`; no live metrics or inferred process state |
 | Retained scientific sources and completed results | Their `research/experiments/<unit-id>/` owner; original evidence scope retained |
 | Reusable research checkpoints, datasets and panels | `assets.md`, linking original identities and unit evidence |
-| Exact old source bytes | Git or `reference/retained-sources/`, located by explicit hash-bound manifests |
+| Old source implementation | Retired; retain only a decision-relevant process summary or parameter in its research record |
 | Unresolved legacy salvage | `docs/history/` temporarily, with a named extraction or drop condition |
 
 Short attributed overlap is useful for catch-up; duplicated ledgers, full repeated backgrounds and separately edited volatile counters are not. A directory name, source code search result or tool success wrapper is not evidence of an accepted scientific claim.
@@ -94,7 +94,7 @@ Keep observations, supported inference, hypotheses and untested proposals distin
 
 ## Preservation and validation
 
-Before any move/removal, inspect fresh Git, current bytes, references and live consumers; preserve original bytes and logical coordinates. Use exact-source hashes, an explicit source-to-archive mapping and a bounded check. Never alter sealed receipts or source hashes to hide an identity break. Readable source recovery and runnable original-context replay are separate claims. Do not keep old-path aliases permanently: migrate demonstrated consumers, verify their decision-bearing behavior, and remove the alias. Historical links resolve through the source-aware read-only resolver, not by reviving the removed taxonomy.
+Before any move/removal, inspect fresh Git, references and live consumers. Keep a source snapshot only while a current consumer requires it; do not retain old implementation hashes for hypothetical replay. Preserve sealed data and result identities, and keep the decision-relevant process and parameters in the owning research record. Remove old-path aliases after demonstrated consumers have moved.
 
 From the verified research-probes checkout:
 
@@ -104,14 +104,14 @@ python -B -m unittest discover -s tests/research -p 'test_research_knowledge.py'
 git diff --check
 ```
 
-The single knowledge checker covers the live layout/links, catalog/state, original-source preservation and known retirement records. Consumer changes also need their focused CPU tests and an actual data-read equivalence check. Historical missing sources must be explicitly reported or bound to verified Git recovery, never ignored merely to pass. The obsolete decision-graph checker is retired, not left as a misleading zero-node success.
+The single knowledge checker covers the live layout/links, catalog/state and frozen consumer data. It no longer verifies retired source-code snapshots. Consumer changes also need their focused CPU tests and an actual data-read equivalence check. The obsolete decision-graph checker is retired, not left as a misleading zero-node success.
 
 Checks do not certify all scientific interpretations, external artifacts, every Markdown construct or model execution. No GPU run is needed for document restructuring. Report exact scope, source preservation, validation/gaps, Project/path/branch, remaining work and active jobs. Git publication, memory writes and research resumption remain separate authorizations.
 
 ## Source and artifact placement
 
-The source/output boundary is owned by [Output storage policy](../docs/OUTPUT_STORAGE_POLICY.md). Maintained Python and shell code never execute from outputs or historical archives. Frozen source bytes are preserved outside outputs with explicit hash-bound recovery; original scientific records and output data remain immutable.
+The source/output boundary is owned by [Output storage policy](../docs/OUTPUT_STORAGE_POLICY.md). Maintained Python and shell code never execute from outputs or historical archives. Current-run source captures may remain local to their receipts; migration-time code snapshots are not tracked or required for interpretation. Original scientific records and output data remain immutable.
 
 ## Documentation versus salvage
 
-`docs/` owns project-wide behavior, architecture, interfaces and operating guidance, not individual scientific results or copied code. The catalog keeps `tracking: historical` for retained scientific records without inventing a current state or a renewed execution grant. Unit-local `supporting/` and `sources.md` hold attributable observations required to audit the interpretation; they are not another frontier. The migration location index in `manifests/documentation-layout.json` records recovery and present owners, not scientific status.
+`docs/` owns project-wide behavior, architecture, interfaces and operating guidance, not individual scientific results or copied code. The catalog keeps `tracking: historical` for retained scientific records without inventing a current state or a renewed execution grant. Unit-local `supporting/` and `sources.md` hold attributable observations required to audit the interpretation; they are not another frontier. The path-only migration index in `manifests/documentation-layout.json` routes old document links to current owners; it does not bind source bytes or scientific status.

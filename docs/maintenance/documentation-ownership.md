@@ -13,8 +13,8 @@ publication, or service stop is part of this maintenance.
 | Useful research protocols, results, negative/invalid evidence and supporting observations, irrespective of age | `research/experiments/<unit-id>/` and the appropriate question |
 | Reusable research checkpoints, datasets and fixed panels | `research/assets.md` |
 | Maintained implementation | Existing `src/`, `probes/` and thin `scripts/` owners |
-| Necessary immutable source bytes | Git or `reference/retained-sources/objects/`; never an executable import root |
-| Future source capture | `reference/retained-sources/runs/` |
+| Conclusions, useful process and necessary hyperparameters | Owning `research/experiments/<unit>/` record |
+| Source capture for a current run | Local receipt inputs under `reference/retained-sources/runs/`; not a Git archive |
 | Unresolved legacy reference value | Temporary `docs/history/`, with extraction or deletion conditions |
 
 `run-sources` was a storage location for frozen provenance, not a functional
@@ -39,20 +39,18 @@ after this cleanup. `docs/catalog.yaml` remains documentation metadata.
 - Removed byte-identical document copies and superseded global snapshots, while
   preserving original-byte recovery. Research plans and named retired-worktree
   records were grouped with their matching scientific units.
-- Moved all frozen Python/shell sources and 228 YAML configuration copies out of
-  docs. Exact duplicate source bytes share one hash-addressed object, retaining
-  their original suffix. These objects are provenance only, not new modules.
+- Moved frozen Python/shell sources and YAML configuration copies out of docs.
+  The migration-time object corpus was later retired from Git; its implementation
+  snapshots are no longer required for interpreting the research records.
 - Preserved the conflicting existing curriculum unit; the divergent old unit
   remains separately named rather than overwriting current work.
 - Updated `research/CONVENTIONS.md`, storage policy and the history entry:
   completed work is not automatically history. Unique legacy content is not
   automatically valuable. Remaining salvage has explicit extraction/drop rules.
 
-The original 5,289 documentation files are classified in
-`manifests/documentation-layout.json`: 4,284 moves, 264 duplicate removals,
-48 integration-and-removals, 17 drops, and 676 retained locations. This mapping
-is source-location provenance, not a second research status ledger. Original
-sealed manifests and expected hashes were not rewritten.
+The original 5,289 documentation files were classified during migration. The
+current `manifests/documentation-layout.json` keeps only path routes to current
+owners; it no longer binds original bytes or supports source-code recovery.
 
 ## Verification
 
@@ -71,10 +69,9 @@ sealed manifests and expected hashes were not rewritten.
   historical unresolved links** are pre-existing, not silently converted to
   successful live links. Root/branch HEAD is unchanged; `git diff --check` passes.
 
-Tests are bounded CPU/file checks, not scientific revalidation, GPU numerical
-parity, or a claim that every old command runs unchanged from today's checkout.
-The root checkout's old reader was not modified: use the source reader from
-this research checkout when following relocated research-source mappings.
+These counts describe the 2026-09-22 migration checks, not current source
+retention. Source-code recovery was retired in the 2026-09-24 cleanup; current
+research interpretation lives in its unit records.
 
 ## Explicit residual salvage
 

@@ -28,7 +28,7 @@
 
 ## 二、root 本次从现有 artifacts 新确认的事实
 
-可复现读数：[retained_evidence.py](../../../../reference/retained-sources/objects/b8/b8d7aa6403a96d74f85af2294a0945c3c297eece5475dea6a586ab5ad5be2f59.py) → [root-retained-evidence.json](../../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/consultation-2026-09-14/root-retained-evidence.json)。只读已有输入及最终 receipt，没有加载模型。
+可复现读数保存在 [root-retained-evidence.json](../../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/consultation-2026-09-14/root-retained-evidence.json)：只读已有输入及最终 receipt，没有加载模型。一次性读数脚本已退役。
 
 1. 训练目录只有 A256、B256 和独立 smoke adapter；源码在训练循环结束后才保存 adapter，没有 A32/A128/B32/B128 或 optimizer snapshots。损失/refresh日志不能恢复这些状态。Pro的回溯剂量图目前不可直接做，不能用插值、smoke或重跑冒充既有读数。
 2. 69条正记录只有56个不同的图像＋完整prompt＋前缀条件，其中13个条件各有两条不同目标字符串。它们是候选下一行，不能要求69/69同时为同一确定性greedy下一行；这也不证明物理标签冲突。

@@ -1,4 +1,3 @@
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -48,4 +47,3 @@ def test_all_original_duplication_notes_are_owned_by_the_declared_synthesis():
         unit = Path(row["absorbed_into"]).stem
         assert current.startswith(f"research/experiments/{unit}/supporting/")
         assert (ROOT / current).is_file()
-        assert hashlib.sha256(locations.original_bytes(old, row["sha256"])).hexdigest() == row["sha256"]
