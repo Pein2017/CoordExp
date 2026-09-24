@@ -397,6 +397,50 @@ training-origin claim follows. Close this branch without rescue scans. A useful
 next question must predict natural transitions prospectively, instead of adding
 another fixed-state sensitivity measurement; that successor is unlaunched.
 
+## First arrivals: finite preference and conditional realization
+
+The [accepted first-arrival diagnostic](../experiments/2026-09-23-recurrence-first-arrivals/lead-results.md)
+finds no N-over-A complete-row mismatch witness in ten fixed pairs from five
+admitted families. Supplying one N x1 nevertheless realizes N in the recurrent
+bowl case and in glass/cow target-nonreturn controls. This separates available
+conditional realization from native finite-row preference and weakens a
+recurrence-specific reading of that response. Canonical rows do not measure
+total owner probability or exclude better alternative localizations.
+
+In the invalid multi-chair case, the same x1 supplies lead to the fixed chairs
+at the first proposal arrival, but a different-chair region or broad invalid
+box at the second. The first free y1 already changes. The repeated A row's
+absolute probability falls about 8.8-fold while greedy still repeats it,
+limiting monotonic absolute-probability reinforcement as a universal explanation.
+History content, contextual state and positions change together; their causal
+contributions and natural onset/exit prediction remain unresolved. Both admitted
+recurrent families leave their short native episodes without intervention.
+
+The package closes on its finite support, with no admitted third arrival and
+all physical/candidate HOLDs retained. Three direct imports have only postrun
+source captures; the accepted actual-input/replay/score evidence does not imply
+a complete prelaunch source freeze. A prospective content-versus-position
+discriminator needs a new contract and comparison with earlier findings; it is
+not launched by this result.
+
+## Chair y1: content-position interaction does not determine a binary winner
+
+The [accepted early chair crossing](../experiments/2026-09-23-recurrence-chair-history-position/results.md)
+separates the added-history package from current-prefix position changes and
+tests a same-length earlier-chair-row substitution. Every tested position
+advance moves the fixed early/late margin toward late y1; changing broad-row
+content to B moves it toward early y1. Added-history effects change sign across
+positions. Strict position transport, history following and shared B restoration
+all fail categorically: third y1 modes and probe-specific responses matter.
+
+This adds an early conditional-branch counterexample to binary winner accounts,
+not a new general discovery that content and position matter. Both contextual
+state changes and direct rotary comparisons remain within the intervention;
+content and geometry remain coupled. The factorial closes with18 qualified
+readouts and no free generation. A separately frozen next-history test asks
+whether measured logit displacement predicts an unseen conditional distribution
+better than persistence, rather than collecting a finer sensitivity grid.
+
 ## Retained selected-case source records
 
 The eight existing synthesis units now own their original 223 source records. This is provenance organization, not revalidation or mechanism promotion. Source proposals and historical running statuses do not authorize execution.
@@ -413,3 +457,28 @@ The eight existing synthesis units now own their original 223 source records. Th
 ## Corrected codebook gate: partial geometry progress, no AP or recurrence rescue
 
 The [accepted corrected paired2048 order gate](../experiments/2026-09-23-codebook-paired2048-ordergate/lead-results.md) replaces the earlier mean-coordinate hinge surrogate for the intended token-level constraint. Early invalid spans fall from 567 to 40, while AP is 0.462946 for source, 0.448846 for early, and 0.446772 for late; recurrence remains unresolved. This is partial geometry progress, not owner recovery or a burst-mechanism result. The codebook branch is CLOSED, with no outstanding successor.
+
+
+## Next-history forecast and crossed response (2026-09-23)
+
+[Forecast](../experiments/2026-09-23-recurrence-next-history-prediction/results.md) rejects a shared constant logit increment. [Same-transition crosses](../experiments/2026-09-23-recurrence-next-step-cancellation/results.md) show small native diagonal displacement can coexist with large, opposing conditional responses. Strict compensation passes only one of two probes; position sensitivity is much larger under U history than L. This does not establish a recurrence circuit. A matched recent-versus-earlier historical key-phase intervention is a possible discriminator of relative addressing versus broader contextual response.
+
+
+## Relative-key phase: prospective transfer boundary (2026-09-23)
+
+[Recent-row rescue](../experiments/2026-09-23-recurrence-recent-key-phase/results.md), [reverse prediction](../experiments/2026-09-23-recurrence-reverse-key-phase/results.md), and [native-x1 transfer](../experiments/2026-09-23-recurrence-native-x1-phase/results.md) now support selective latest-row relative-key-phase effects at three conditional readouts in one scene. Native-prefix transfer passes in distribution but misses the crossed winner. These do not establish repetition-specific causation: compare source-ordered repeated versus nonrepeated numerical histories across new images before further mechanistic localization. Exact-row repetition remains distinct from physical owner revisit and hallucination.
+
+
+## Cross-image phase transfer: accepted nonexclusive result (2026-09-23)
+
+[Finite cross-image package](../experiments/2026-09-23-recurrence-cross-image-phase/results.md) meets at-least3 thresholds in both exact-repeat and different-coordinate antecedent cohorts. Three accepted cases each, one technical unanswered each, no rate inference. Recent-row relative-key phase is a transferable conditional distribution carrier here, not a repetition-exclusive cause. The next missing link is whether this carrier preferentially supports the previous row coordinate rather than generic output redistribution; saved-vector inspection can test that before further GPU intervention.
+
+
+## Coordinate-token direction after phase transfer (2026-09-23)
+
+[Accepted retrospective CPU readout](../experiments/2026-09-23-recurrence-cross-image-phase/supporting/coordinate-feedback-lead-acceptance.json) verifies30 vectors. All3 informative D cases increase latest-y1 relative to current-y1 under the crossed/+9 intervention; native phase does not privilege copying in that directional comparison. All3 R cases alias earlier/latest/current y1 and cannot distinguish those roles. Hypothesis for a new discriminator: phase displacement makes historical y1 appear one rotary position ahead of current x1, potentially enabling use of that token value as continuation. This geometry is not proof of attention or copying; a fixed single-y1 V donor experiment needs separate admission.
+
+
+## Single-y1 value: accepted shared-prediction failure (2026-09-23)
+
+[Three-case result](../experiments/2026-09-23-recurrence-y1-value-phase/results.md) gives shifted donor-margin effects1.408/0.354/1.711nat versus native effects near zero. Frozen all3 effect-size criterion fails on2299; all3 technical qualifications pass. This links conditional phase effects to contextual value content with heterogeneous gain, without literal donor copying. The local branch closes. Natural first-arrival/revisit transitions remain a distinct unresolved question; another artificial fixed-state sensitivity would not identify their cause.
