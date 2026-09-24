@@ -1,0 +1,7 @@
+# Amendment v2: same-row y1-zero comparator
+
+Lead ruling 02 (2026-09-23) accepts the immutable v1 CPU HOLD and authorizes a changed comparator in this same unit. This amendment supersedes only the v1 requirement for historical y2=0 controls. At the four frozen 885/5586 late x2 queries, edit historical y1=0 versus x2=0 on exactly the same complete rows where both are zero. Use latest-one and all-eligible row subsets, replacements 1 and the frozen first-illegal best-legal bin 47, plus native replay/identity. No healthy control is eligible; it remains HOLD.
+
+The edited roles differ in axis, corner semantics and sequence location. Equal zero-token count and row membership do not equate their semantic effects; y1→47 may change synthetic geometry. Report separate effects for replacement 1 and 47, full-vocabulary winners and best-legal as well as frozen-bin margins. This is a fixed-prefix content intervention, not a natural rollout, owner, onset or endogenous-reinforcement test. No training, generation, decoder change or stage-2 continuation.
+
+Freeze all exact prefixes, edited token indices, condition hashes, accepted source bindings and source-capture identities before model entry. Run actual-caller causal index, same-row, position/RoPE, image/prompt and current-row checks. First new model-entry starts the common overnight wall clock; v1 spent no GPU time. Shared 6-wall-hour/16-GPU-hour and package 2-wall-hour/4-GPU-hour/1024-forward/2-GiB caps are unchanged. Stop at a stable v2 worker candidate and return to lead without self-acceptance.

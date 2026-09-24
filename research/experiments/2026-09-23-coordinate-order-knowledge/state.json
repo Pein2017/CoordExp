@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-23-coordinate-order-knowledge",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Inconsistent ordinal use on frozen source queries; universal knowledge absence and history-induced failure remain unidentified.",
+  "state_as_of": "2026-09-23",
+  "protocol": "research/experiments/2026-09-23-coordinate-order-knowledge/unit.md",
+  "result": "research/experiments/2026-09-23-coordinate-order-knowledge/lead-results.md",
+  "state_source": "research/experiments/2026-09-23-coordinate-order-knowledge/lead-results.md",
+  "boundary": "Source only; 12 images, 70 coordinate queries, 512 text cells; fixed-prefix diagnosis.",
+  "not_authorized": [
+    "training",
+    "decoder modification",
+    "successor launch"
+  ],
+  "next_action": "Discuss ordinal supervision versus deterministic decoding; no execution remains."
+}
