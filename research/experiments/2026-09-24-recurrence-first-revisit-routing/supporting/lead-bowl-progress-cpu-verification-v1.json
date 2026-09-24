@@ -1,0 +1,70 @@
+{
+  "status": "lead-independent-CPU-verification-passed",
+  "date": "2026-09-24",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-read-bowl-progress-cpu-candidate.md",
+    "sha256": "52ba6b68dadb94590968191570cab6869d075f9074216b35132b4f2eb6b5d4a7"
+  },
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-bowl-progress-cpu-readback-v1.json",
+    "sha256": "f25d4f15fe3dcf6e99ed9b6a1000e2694b8cd3125aafbf8a24c05ffdc029c0a9"
+  },
+  "reader": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_native_history_read/bowl_progress_cpu.py",
+    "sha256": "5be964b3921510a979445c4d28222624ad6b6c64f128cef0647955ca4920456b"
+  },
+  "rerun_method": "Replayed immutable CPU-only reader with DEST redirected to a fresh /tmp output; exact JSON and SHA256 match the worker readback. No captured-source execution or model/CUDA calls.",
+  "fresh_replay": {
+    "path": "/tmp/lead-bowl-progress-cpu-replay-20260924-v1.json",
+    "sha256": "f25d4f15fe3dcf6e99ed9b6a1000e2694b8cd3125aafbf8a24c05ffdc029c0a9"
+  },
+  "independent_numeric_method": "PyTorch FP64 log_softmax/probabilities/ranks/top2/raw-logit margins/TV recomputed from the three finalized raw tensors, compared with NumPy worker reduction.",
+  "max_probability_or_log_probability_error": 1.7763568394002505e-15,
+  "full_vocabulary_TV": 0.8477649094467551,
+  "deltas": {
+    "B_minus_A1": -9.97661304473877,
+    "B_minus_A0": -7.387984275817871
+  },
+  "row2_minus_row1": {
+    "B_minus_A1": -10.622529029846191,
+    "B_minus_A0": -6.53255558013916
+  },
+  "source_parity_max_error": 3.0517578125e-05,
+  "state_errors": {
+    "identity-mask-sham": {
+      "all_prior_history": 0.0,
+      "companion_last_hidden": 0.0,
+      "all_batch_logits": 0.0
+    },
+    "latest-row-mask": {
+      "all_prior_history": 0.0,
+      "companion_last_hidden": 0.0,
+      "companion_logits": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "fixed_seven_cell_denominator": {
+    "bowl_row2_native_sham_latest": "3 CPU-qualified candidate cells",
+    "bowl_row2_earlier": "1 executed technical-invalid/unanswered",
+    "cow_row1": "3 HOLD/unrun"
+  },
+  "cost": {
+    "model_forwards_this_attempt": 4,
+    "vision_forwards_this_attempt": 4,
+    "generated_tokens": 0,
+    "charge_gpu_seconds": 20.853504562,
+    "cumulative_panel_gpu_seconds": 41.101082854,
+    "cumulative_sequence_gpu_hours": 0.24960280990891084,
+    "CPU_assignment_max_model_calls": 0,
+    "CPU_assignment_max_GPU_seconds": 0,
+    "additional_model_forwards": 0,
+    "additional_vision_forwards": 0,
+    "additional_GPU_seconds": 0
+  },
+  "earlier_cell_tensor_loaded": false,
+  "model_calls": 0,
+  "GPU_seconds": 0
+}

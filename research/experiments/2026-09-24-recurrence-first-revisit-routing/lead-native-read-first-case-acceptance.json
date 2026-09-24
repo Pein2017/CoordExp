@@ -1,0 +1,51 @@
+{
+  "status": "lead-accepted",
+  "date": "2026-09-24",
+  "scope": "Exactly the first three bowl-row1 full-prefix native/sham/latest-row-mask cells.",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-read-candidate-results.md",
+    "sha256": "69799c722286935476ef3e563f1352806ab1bac544f4ad5fbe4deb0a1f1d69eb"
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_native_history_read/run.py",
+    "sha256": "0a76ecd3d37ad005ce6c6c905567e381ee1153842d6fa0c710dca9e74139db54"
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-history-read-protocol.md",
+    "sha256": "9ccece16a05d07aca61da9311ffea954382d306d23ad85f106baebe16ebd955c"
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/lead-native-read-admission-v1.json",
+    "sha256": "887875d1ccf7376881e2faddf74645ed560828a3d7a854df1bf96896a8576dab"
+  },
+  "independent_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/lead-native-read-verification-v1.json",
+    "sha256": "934d2691224ac32464153288fbcad6d14e9f419874dbba6f463d0875262af15b"
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/receipt.json",
+    "sha256": "ca4af87c3b134bb13bfc70ae44f1d84005b50a9be11981fabd4aba2bb35aef2e"
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/readback.json",
+    "sha256": "da0ea01e80cb0cf166213342effcf879a06affcff0a0e202ecbce1361d1a48dd"
+  },
+  "cost_audit": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-cost-audit-001.json",
+    "sha256": "e7358148c76567ca9010993c223d9c3c711c2290f50a17909e0bd847a1968f2e"
+  },
+  "technical": "Accepted: source/consumer parity, exact mask scope, unchanged historical and companion states, raw vectors and independent CPU reduction.",
+  "scientific": "Accepted local primary coordinate sign, with opposing secondary extent contrast; no owner-level anti-revisit or copying verdict.",
+  "primary_delta_nats": 0.6459159851074219,
+  "secondary_extent_delta_nats": -0.8554286956787109,
+  "full_vocabulary_TV": 0.2320539462712958,
+  "claim_correction": "Masked winner 151670 is the x1 token from another reviewed extent of bowl A. A coordinate alone does not identify a generated owner. No treatment row was completed.",
+  "counts": {
+    "model_forwards": 3,
+    "vision_forwards": 3,
+    "free_tokens": 0
+  },
+  "charged_gpu_seconds": 20.247578292,
+  "cumulative_sequence_gpu_hours": 0.24381016975279973,
+  "successor_authority": "Only the separately materialized lead-native-read-remaining-admission-v1.json can admit held cells."
+}

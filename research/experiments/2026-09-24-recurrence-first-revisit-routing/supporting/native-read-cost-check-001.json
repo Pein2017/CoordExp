@@ -1,0 +1,32 @@
+{
+  "schema": "recurrence_native_history_read.cost_check.v1",
+  "status": "fits_before_launch",
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-preflight-001.json",
+    "sha256": "0b43febe1a3e4ab0e229d8b5c7a11434ead97658c29ecdff358161f4a0191ade",
+    "size_bytes": 390252
+  },
+  "vocab_lower_bound": 152670,
+  "hidden_size": 2048,
+  "raw_tensor_bytes": 16273824,
+  "twofold_tensor_plus_2MB_bytes": 34547648,
+  "output_cap_bytes": 67108864,
+  "forecast_gpu_seconds": 170.81407792662057,
+  "gpu_cap_seconds": 360,
+  "commands": {
+    "gpu": [
+      "python",
+      "-B",
+      "-m",
+      "probes.training_set_completion.recurrence_native_history_read.run",
+      "run"
+    ],
+    "readback": [
+      "python",
+      "-B",
+      "-m",
+      "probes.training_set_completion.recurrence_native_history_read.run",
+      "readback"
+    ]
+  }
+}

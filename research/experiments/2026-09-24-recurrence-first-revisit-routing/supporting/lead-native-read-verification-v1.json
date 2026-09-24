@@ -1,0 +1,119 @@
+{
+  "status": "lead_cpu_verification_passed",
+  "date": "2026-09-24",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-read-candidate-results.md",
+    "sha256": "69799c722286935476ef3e563f1352806ab1bac544f4ad5fbe4deb0a1f1d69eb"
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_native_history_read/run.py",
+    "sha256": "0a76ecd3d37ad005ce6c6c905567e381ee1153842d6fa0c710dca9e74139db54"
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/receipt.json",
+    "sha256": "ca4af87c3b134bb13bfc70ae44f1d84005b50a9be11981fabd4aba2bb35aef2e"
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/readback.json",
+    "sha256": "da0ea01e80cb0cf166213342effcf879a06affcff0a0e202ecbce1361d1a48dd"
+  },
+  "cost_audit": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-cost-audit-001.json",
+    "sha256": "e7358148c76567ca9010993c223d9c3c711c2290f50a17909e0bd847a1968f2e"
+  },
+  "current_preflight_and_source_capture_bindings": "passed",
+  "direct_capture_count": 15,
+  "tensor_errors": {
+    "sham_all_vectors": 0.0,
+    "masked_companion_vectors": 0.0,
+    "history_row0_by_layer_identity-mask-sham": 0.0,
+    "history_row0_by_layer_latest-row-mask": 0.0,
+    "companion_last_by_layer_identity-mask-sham": 0.0,
+    "companion_last_by_layer_latest-row-mask": 0.0
+  },
+  "independent_causal_mask_reconstruction": "matched all three actual input hashes",
+  "changed_readable_mask_cells": 50,
+  "observed_layers_per_cell": 28,
+  "source_parity_max_error": 1.33514404296875e-05,
+  "numpy_fp64_max_error": 1.7763568394002505e-15,
+  "results": {
+    "native": {
+      "winner": 151675,
+      "B_minus_A1": -8.603378295898438,
+      "B_minus_A0": -8.410619735717773,
+      "tokens": {
+        "151670": {
+          "P": 0.11950568842005743,
+          "logP": -2.1243913069020186,
+          "rank": 4
+        },
+        "151675": {
+          "P": 0.14491140160570778,
+          "logP": -1.9316327467213543,
+          "rank": 1
+        },
+        "151827": {
+          "P": 2.658905102221582e-05,
+          "logP": -10.535011042619791,
+          "rank": 203
+        }
+      }
+    },
+    "identity-mask-sham": {
+      "winner": 151675,
+      "B_minus_A1": -8.603378295898438,
+      "B_minus_A0": -8.410619735717773,
+      "tokens": {
+        "151670": {
+          "P": 0.11950568842005743,
+          "logP": -2.1243913069020186,
+          "rank": 4
+        },
+        "151675": {
+          "P": 0.14491140160570778,
+          "logP": -1.9316327467213543,
+          "rank": 1
+        },
+        "151827": {
+          "P": 2.658905102221582e-05,
+          "logP": -10.535011042619791,
+          "rank": 203
+        }
+      }
+    },
+    "latest-row-mask": {
+      "winner": 151670,
+      "B_minus_A1": -7.957462310791016,
+      "B_minus_A0": -9.266048431396484,
+      "tokens": {
+        "151670": {
+          "P": 0.3230587615127128,
+          "logP": -1.1299210481177135,
+          "rank": 1
+        },
+        "151675": {
+          "P": 0.08729106507645372,
+          "logP": -2.4385071687231825,
+          "rank": 5
+        },
+        "151827": {
+          "P": 3.055538927633289e-05,
+          "logP": -10.395969479514198,
+          "rank": 162
+        }
+      }
+    }
+  },
+  "primary_delta": 0.6459159851074219,
+  "secondary_delta": -0.8554286956787109,
+  "full_vocabulary_TV": 0.2320539462712958,
+  "counts": {
+    "model_forwards": 3,
+    "vision_forwards": 3,
+    "free_tokens": 0
+  },
+  "charge_seconds": 20.247578292,
+  "cumulative_sequence_gpu_hours": 0.24381016975279973,
+  "pid_absent": true,
+  "claim_limit": "Coordinate tokens from reviewed extents are not physical-owner predictions; no completed treatment box exists."
+}

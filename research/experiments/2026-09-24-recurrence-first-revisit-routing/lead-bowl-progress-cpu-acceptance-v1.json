@@ -1,0 +1,77 @@
+{
+  "status": "lead-accepted-bounded-CPU-readback",
+  "date": "2026-09-24",
+  "scope": "Only the three finalized bowl-row2 native/sham/latest-row-mask cells, independently requalified from retained raw evidence. This does not accept or reopen the failed seven-cell attempt.",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/native-read-bowl-progress-cpu-candidate.md",
+    "sha256": "52ba6b68dadb94590968191570cab6869d075f9074216b35132b4f2eb6b5d4a7"
+  },
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-bowl-progress-cpu-readback-v1.json",
+    "sha256": "f25d4f15fe3dcf6e99ed9b6a1000e2694b8cd3125aafbf8a24c05ffdc029c0a9"
+  },
+  "reader": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_native_history_read/bowl_progress_cpu.py",
+    "sha256": "5be964b3921510a979445c4d28222624ad6b6c64f128cef0647955ca4920456b"
+  },
+  "independent_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/lead-bowl-progress-cpu-verification-v1.json",
+    "sha256": "9303a5bd6330c2841a4aa1e1a00aa7d3bb11398cd8c30b82991ed1bb5a5e5119"
+  },
+  "authority": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/lead-native-read-failure-ruling-v1.json",
+    "sha256": "2d6d85de592a5eb06fa807e0f303900f22e5e78deb2ee11c151d215287c544ea",
+    "size_bytes": 5797
+  },
+  "failed_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-remaining-v1/receipt.json",
+    "sha256": "087c476dc60ec0fcfb6991d296016657617f5c67f5062a371062e1b84d7e7248",
+    "size_bytes": 114158
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-read-remaining-preflight-v1.json",
+    "sha256": "307b3c4fbcfc13451a383c22051b69f333d4d1491e910fbcb2032c241e52eb67",
+    "size_bytes": 933344
+  },
+  "first_case_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/lead-native-read-first-case-acceptance.json",
+    "sha256": "6510d94649fc37db73ff362a012bcf396e7c5647bc441482bb32c4aedd1312c7"
+  },
+  "technical_disposition": "Subset qualified: current/captured source bindings, original full batch and observed inputs, finalized actual28-layer mask records, source/sham/companion/history parity and independent FP64 reduction passed.",
+  "scientific_disposition": "At the native successful bowl transition, removing latest-row reading lowers B relative to both reviewed A extents and removes B from global top1. Primary direction opposes the first-revisit state; secondary direction is negative in both states. This is conditional coordinate-level support for progression, not evidence of a completed owner return or a general copying mechanism.",
+  "deltas": {
+    "B_minus_A1": -9.97661304473877,
+    "B_minus_A0": -7.387984275817871
+  },
+  "row2_minus_row1": {
+    "B_minus_A1": -10.622529029846191,
+    "B_minus_A0": -6.53255558013916
+  },
+  "full_vocabulary_TV": 0.8477649094467551,
+  "limitations": [
+    "One image, distinct native histories/positions and distinct latest-row contents; state difference is not an isolated coveredness effect.",
+    "All-head/all-layer access removal changes normalization and downstream current-row Q/K/V; it does not isolate a key defect, value copy or semantic visited-owner signal.",
+    "No completed treatment box; x1 tokens and their finite alternatives are not owner probabilities.",
+    "Earlier-row comparator lacks finalized consumer receipt and remains technical-invalid/unanswered. Cow reference remains unrun."
+  ],
+  "fixed_seven_cell_denominator": {
+    "bowl_row2_native_sham_latest": "3 CPU-qualified candidate cells",
+    "bowl_row2_earlier": "1 executed technical-invalid/unanswered",
+    "cow_row1": "3 HOLD/unrun"
+  },
+  "cost": {
+    "model_forwards_this_attempt": 4,
+    "vision_forwards_this_attempt": 4,
+    "generated_tokens": 0,
+    "charge_gpu_seconds": 20.853504562,
+    "cumulative_panel_gpu_seconds": 41.101082854,
+    "cumulative_sequence_gpu_hours": 0.24960280990891084,
+    "CPU_assignment_max_model_calls": 0,
+    "CPU_assignment_max_GPU_seconds": 0,
+    "additional_model_forwards": 0,
+    "additional_vision_forwards": 0,
+    "additional_GPU_seconds": 0
+  },
+  "unit_disposition": "Close this finite panel with accepted bounded subsets and explicit missing controls at the no-retry boundary. No model execution or successor admitted.",
+  "next_action": "No worker work remains under the CPU ruling. A new causal or complete-row continuation would require a separate lead contract; no permission renewal is requested here."
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "recurrence_native_history_read.cost_audit.v1",
+  "status": "conservative_full_process_charge",
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/receipt.json",
+    "sha256": "ca4af87c3b134bb13bfc70ae44f1d84005b50a9be11981fabd4aba2bb35aef2e",
+    "size_bytes": 113037
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-revisit-routing/native-read-attempt-001/readback.json",
+    "sha256": "da0ea01e80cb0cf166213342effcf879a06affcff0a0e202ecbce1361d1a48dd",
+    "size_bytes": 6983
+  },
+  "allocated_device": "cuda:0",
+  "receipt_timer_seconds_including_model_load_and_forwards": 14.24331695586443,
+  "outer_exec_process_wall_seconds": 20.247578292,
+  "charge_seconds": 20.247578292,
+  "charge_basis": "exec_command wall_time_seconds includes Python import and all process setup; conservatively charge entire observed process interval",
+  "first_case_cap_seconds": 360,
+  "prior_sequence_gpu_hours": 0.2381858424494664,
+  "cumulative_sequence_gpu_hours_charged": 0.24381016975279973,
+  "output_bytes_current": 17078563,
+  "output_cap_bytes": 67108864,
+  "terminal_job_pid": 1698171,
+  "terminal_pid_absent": true
+}
