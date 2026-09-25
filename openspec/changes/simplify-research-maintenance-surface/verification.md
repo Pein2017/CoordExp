@@ -256,3 +256,32 @@ Git rewrite, push or worktree retirement was performed.
 
 Canonical/integration adoption remains task 6.6 until a freshly checked clean
 checkout accepts the appended correction commit by ff-only and verifies it.
+
+### Correction adoption completed
+
+Append-only correction commit:
+`4a2e1514c8b2444524f5d73d7646ce210142c0ef`, parent
+`0f5b505866525cf0dc9bf946a81c6acca280ebaf`.
+
+The existing isolated integration checkout accepted it by ff-only and independently
+ran the final suite: **1,519 passed / 1 skipped / 0 failures / 0 errors**. The
+extra passed test beyond the earlier target full suite is the final current-guide
+command-target regression; there are 33 new tests and no removed old tests.
+Integration OpenSpec strict (change 1/1, main 26/26), all ten recovery manifests,
+263-file Python parse, and 324-record/163-reference knowledge validation passed.
+The first static check succeeded but its scratch receipt write found an absent
+parent directory; a completed rerun recorded the same checks successfully.
+
+After rechecking all three exact worktree roots and clean HEADs, canonical
+`research-probes` ff-only accepted the same correction. Its branch was unchanged
+from the expected parent, and no unrelated dirty work existed. Target, canonical
+and the retained integration checkout aligned cleanly at the correction commit.
+This closeout and dependency clarification is documentation-only; no code, data,
+manifest identity or test semantics change. No push, amend/rebase, OpenSpec archive
+or worktree retirement occurred.
+
+Integration receipts: `.local/recovery-review/integration-suite.xml` and
+`integration-static.json` in the existing isolated checkout. The original target
+retains raw-input/reconstruction/materialization receipts. Full-production-image
+regeneration, second-node execution and remote mirror availability remain outside
+the evidence scope stated above.

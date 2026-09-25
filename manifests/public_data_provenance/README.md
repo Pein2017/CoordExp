@@ -47,7 +47,10 @@ the official source URLs recorded in `recovery.raw_archives`, or from a separate
 verified mirror. Their full SHA-256 and sizes are mandatory. No authentication
 material is stored here. The recovery command itself does not download anything.
 Install the exact Python/Pillow/libjpeg-turbo versions declared by the manifest.
-No legacy training config, mapping CSV, tokenizer or model checkpoint is needed.
+The contract checker additionally requires the `jsonschema` Python package; use
+the normal project Python environment for the production-reader smoke. `zipfile`,
+JSON and hashing use the Python standard library. No legacy training config,
+mapping CSV, tokenizer or model checkpoint is needed.
 
 From a checkout containing this implementation:
 

@@ -34,4 +34,4 @@
 - [x] 6.3 Reconcile all ten manifests and their schema/README: distinguish supported current recovery from historical identity, preserve old hashes via exact provenance, and test each declared command/dependency.
 - [x] 6.4 Consolidate storage policy and remove stale operational routes, including code blocks; update consumer links and regression tests.
 - [x] 6.5 Run focused recovery, complete CPU, imports/collection, OpenSpec/knowledge and full diff checks; correct earlier verification claims and record exact scope and limitations.
-- [ ] 6.6 Append a correction commit, independently verify it, then ff-only canonical and existing integration on unchanged clean roots; no push, archive or worktree cleanup.
+- [x] 6.6 Append a correction commit, independently verify it, then ff-only canonical and existing integration on unchanged clean roots; no push, archive or worktree cleanup.
