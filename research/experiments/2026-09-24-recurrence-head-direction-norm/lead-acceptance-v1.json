@@ -1,0 +1,162 @@
+{
+  "status": "lead-accepted-technical-and-scientific-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/unit.md",
+    "sha256": "60ccbb639cb1a86b0c663edc0454d7806089a703a9c2d51f72fef130d3d979c0",
+    "size_bytes": 9540
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/lead-admission-v1.json",
+    "sha256": "db2ead15457ee36ba2d7d1d732aa9aa0e451ae6ee0fd9157491f69914cfca317",
+    "size_bytes": 25865
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/candidate-attempt-002-complete-results.md",
+    "sha256": "368bcd602d3161b6e573fe5e0c3f65ba5148b28425de707c0cfd3a8168aad424",
+    "size_bytes": 5378
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm/run.py",
+    "sha256": "0c23821d24447c23d8672fea3ebfaaa15ab40c00dc664e19986a1ceb690bd7dc",
+    "size_bytes": 59208
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-preflight.json",
+    "sha256": "62aa0144edb1153d4a6c6c4f004100a2fa7a177056645eefbae9055b4ffb102b",
+    "size_bytes": 227229
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/attempt-002/receipt.json",
+    "sha256": "ef6dcdc43e4e564f5d94cfa2dae8d1b2db1e64c0214ebc69c6b79deb8057ea52",
+    "size_bytes": 166942
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/attempt-002/readback.json",
+    "sha256": "bd98f0cb78e4b0be281b881aa15d0a1c401ea4ac925f36c5fc2547244ac3b309",
+    "size_bytes": 98460
+  },
+  "final_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-final-ledger-v1.json",
+    "sha256": "250a488433373d0a9980ac7d013ae1d00406b78962c82045bc7999288a61ce95",
+    "size_bytes": 8548
+  },
+  "independent_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/lead-attempt-002-verification-v1.json",
+    "sha256": "39aa02d0a2c2f610b53e6f05d2e017a0b84e93a4db1036af1356c425aa7f9153",
+    "size_bytes": 69526
+  },
+  "technical_acceptance": {
+    "status": "pass",
+    "verified_bindings": 106,
+    "direct_source_captures": 34,
+    "frozen_computational_ASTs": 14,
+    "cells": 6,
+    "layers_per_cell": 28,
+    "actual_cold_source_reader_and_independent_NumPy_math": true,
+    "max_TV_reduction_difference": 2.220446049250313e-16,
+    "max_headout_bound_ratio": 0.08285411678854437,
+    "max_per_head_norm_relative_error": 4.290006085821449e-08,
+    "max_unit_direction_error": 2.5650455537373773e-08,
+    "consumer_location": "post-actuator pre-o_proj input; candidate wording post-o_proj is corrected here",
+    "fresh_anchor_reference_max_errors": [
+      0.0,
+      0.0,
+      5.412101745605469e-05,
+      0.0
+    ]
+  },
+  "scientific_acceptance": {
+    "B": 0.9640944370118282,
+    "ratios": {
+      "d_N_G": 0.9297761974760413,
+      "d_R_G": 0.9371107075941765,
+      "d_N_D": 0.9601407514818084,
+      "d_R_D": 0.39027897440811476
+    },
+    "TV_distances": {
+      "native_anchor": {
+        "to_N": 0.0,
+        "to_R": 0.9640944370118282
+      },
+      "remove_anchor": {
+        "to_N": 0.9640944370118282,
+        "to_R": 0.0
+      },
+      "native_identity": {
+        "to_N": 6.4506479779719716e-06,
+        "to_R": 0.964094746728484
+      },
+      "remove_identity": {
+        "to_N": 0.9640944370118282,
+        "to_R": 0.0
+      },
+      "gain_control": {
+        "to_N": 0.8963920596526624,
+        "to_R": 0.9034632200557635
+      },
+      "direction_control": {
+        "to_N": 0.9256663572519678,
+        "to_R": 0.3762657881095451
+      }
+    },
+    "TV_G_D": 0.8537746364168698,
+    "primary_pass": false,
+    "comparator_pass": false,
+    "decision": "mixed_or_other",
+    "minimum_boundary_distance": 0.09266548988186488
+  },
+  "claim": "Both frozen paired predictions fail at this one replayed x2 endpoint. G is far from N and R; D is relatively nearer R and satisfies only its direction-pair half. No winner-based rescue.",
+  "limits": [
+    "N and R are recomputed on each arm own incoming Q/K/V at every layer. Local direction/norm matches are not a common fixed activation factorial, global baseline norm clamp or perturbation-size match.",
+    "Gain-only local reweighting is active, but its endpoint does not reproduce historical-contribution removal. A shared direction-only account and the reverse shared norm-only account both fail their frozen tests.",
+    "No semantic-coordinate specificity, copying, unique K/head/layer, natural mediation share, free-row recovery or physical F/F2 owner conclusion.",
+    "Accepted historical-contribution selectivity remains valid; this experiment does not turn its broad distributional effect into root-cause identification."
+  ],
+  "counts": {
+    "generated_tokens": 0,
+    "model_forwards": 6,
+    "reused_calls": 0,
+    "vision_forwards": 6
+  },
+  "fixture_counts": {
+    "failed_fixture_invocations": 1,
+    "qualified_fixture_invocations": 1,
+    "pre_Python_shell_failures": 2,
+    "failed_model_attempts": 0
+  },
+  "accounting": {
+    "fixture_full_parent_seconds": "24.082",
+    "model_full_parent_seconds": "59.535",
+    "failed_fixture_seconds": 17.537483026,
+    "pre_Python_shell_failure_seconds": "6.1877e-05",
+    "cumulative_sequence_gpu_hours": "0.9602669383484082444444444444",
+    "authority": "Bound final ledger includes shell overhead omitted from immutable cold readback; native Bash milliseconds include declared +0.001 conservative allowance per new process."
+  },
+  "raw_payload_bytes": 1996777128,
+  "peak_RSS_KiB": 11243068,
+  "peak_GPU_allocated_bytes": 10260986880,
+  "peak_GPU_reserved_bytes": 11190403072,
+  "failed_records": [
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-001-failure-v1.json",
+      "sha256": "5abdf89f256b6fad274c8629c1b95517469c129b7a8013c7a01229b7ce3c080f",
+      "size_bytes": 3713
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-pre-fixture-failure-v1.json",
+      "sha256": "4e540bff5b7b2c4686c7fac32447b2fa993b46997d9f62ef7805a7fd877dd1b0",
+      "size_bytes": 2302
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-pre-fixture-command-failure-v2.json",
+      "sha256": "276f03f147977e16e21bc5db40acf1539626d31ab14606ce7c7c99fa05e59b9c",
+      "size_bytes": 2320
+    }
+  ],
+  "lead_verification_added_model_CUDA_calls": 0,
+  "no_live_model_job": true,
+  "disposition": "Close finite unit. No automatic gain/head/layer sweep or successor. Consolidate explanation and require a decision-changing complete-behavior or independent-case prediction before another model admission."
+}

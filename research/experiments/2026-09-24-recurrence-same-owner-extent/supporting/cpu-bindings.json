@@ -1,0 +1,502 @@
+{
+  "schema": "same_owner_extent.cpu_bindings.v1",
+  "status": "worker_cpu_candidate",
+  "unit": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/unit.md",
+    "sha256": "74e48285de2615bad0ab20f0a94cc4d9034de5b854a84e6dfd29c9d1477f0666",
+    "size_bytes": 4501
+  },
+  "state": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/state.json",
+    "sha256": "2a5f3378bd683ec4701a606bfcfdacba139e9cde2295693539cdda082cc0589f",
+    "size_bytes": 1135
+  },
+  "prior_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-native-read-acceptance-v1.json",
+    "sha256": "1b3d189b7de9c5be84581c700d8f2226f42d6268f172e6e13e9227a5c0f4f8ee",
+    "size_bytes": 3468
+  },
+  "prior_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-admission-v1.json",
+    "sha256": "08fc23ff2693d3597263a72fb3f8b7c57348ffed7b2f731e8ee9a328574284ea",
+    "size_bytes": 9675
+  },
+  "prior_cpu_bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/cpu-bindings.json",
+    "sha256": "30ec0788b6eb8088ffd6025dfcad2b4fdc61b1af863163ef7b7cd45478f91977",
+    "size_bytes": 26072
+  },
+  "prior_preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/native-read-preflight-v1.json",
+    "sha256": "89aa4aaad7b982c3ab2621f00755de100e55ff4743b7ef531a58277b9d7b5bc0",
+    "size_bytes": 401182
+  },
+  "source_bindings": {
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846",
+      "size_bytes": 111459
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+      "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+      "size_bytes": 18757
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+      "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+      "size_bytes": 188166
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+      "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+      "size_bytes": 262097
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/panel.json",
+    "sha256": "6b7df228570d2bdb4c3d5c79a1b8467f425186dddc6cddad658bca50a95f3569",
+    "size_bytes": 723630
+  },
+  "registry": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-revisit-routing/supporting/native-window-candidates.json",
+    "sha256": "dcdc2f20a6dc64b6ec1110faf7cc2a7c4e4cf3dcbd4355c9ee2338b4c07996c4",
+    "size_bytes": 43415
+  },
+  "checkpoint_paths": {
+    "adapter": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "base_model": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "embedding_delta": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "loader_source": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  },
+  "model_identity": {
+    "attention": "sdpa",
+    "dtype": "fp32",
+    "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+    "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+    "model": "untied",
+    "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+    "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+    "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+    "shared_delta": false
+  },
+  "source_geometry": {
+    "eos_id": 151645,
+    "group": "new-08",
+    "image_grids": [
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        72,
+        54
+      ],
+      [
+        1,
+        52,
+        72
+      ],
+      [
+        1,
+        54,
+        72
+      ]
+    ],
+    "left_padding": [
+      0,
+      42,
+      78,
+      42
+    ],
+    "pad_id": 151643,
+    "pixel_elements": 23924736,
+    "planning_replanned_image_plan": true,
+    "prompt_lengths": [
+      1362,
+      1320,
+      1284,
+      1320
+    ],
+    "prompt_width": 1362,
+    "raw_lengths": [
+      78,
+      119,
+      244,
+      174
+    ],
+    "request_ids": [
+      "coco2017_train_000000135237",
+      "coco2017_train_000000151704",
+      "coco2017_train_000000159714",
+      "coco2017_train_000000169872"
+    ],
+    "target_index": 1
+  },
+  "load_model": false,
+  "source_replayed_identity_equal_to_saved_receipt": true,
+  "target_index": 1,
+  "prefix_end": 36,
+  "historical_row_span": [
+    27,
+    36
+  ],
+  "coordinate_raw_slots": {
+    "x1": 31,
+    "y2": 34
+  },
+  "coordinate_physical_slots": {
+    "x1": 1393,
+    "y2": 1396
+  },
+  "corners": [
+    {
+      "name": "native",
+      "box": [
+        197,
+        829,
+        270,
+        859
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "76c598ed9e8ba846c3f4d71b50f85f8795d93d245be92746c00228cfb2fe1749",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.6045602605863192
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "x1_only",
+      "box": [
+        207,
+        829,
+        270,
+        859
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "20544e4c6a533266c7bb848858da6a056eec98d50b5003b69746908a8fa2115c",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.6527331189710611
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "y2_only",
+      "box": [
+        197,
+        829,
+        270,
+        852
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1396
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "ad6abe365c643db4b8efac99f6990b38c0d73e8decc3c401d955d6adfea1e92b",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.5001698946653075
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "both",
+      "box": [
+        207,
+        829,
+        270,
+        852
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ],
+        [
+          1,
+          1396
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "03d90bed504faec212f0e8df227d35ac04911cb8f125bc2877efc08f01bcbdc5",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.5296052631578947
+      },
+      "reviewed_physical_proposal": "B2141669"
+    }
+  ],
+  "row5": {
+    "raw_span": [
+      45,
+      54
+    ],
+    "token_ids": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151926,
+      152346,
+      152058,
+      152421,
+      151649
+    ],
+    "description_ids": [
+      2190
+    ],
+    "description": "book",
+    "box": [
+      256,
+      676,
+      388,
+      751
+    ],
+    "canonical_complete": true,
+    "source_trace": [
+      {
+        "offset": 45,
+        "chosen": 151646,
+        "winner": 151646,
+        "runnerup": 151645,
+        "top2_logits": [
+          29.199588775634766,
+          19.774574279785156
+        ],
+        "logsumexp": 29.199670791625977,
+        "chosen_raw_logit": 29.199588775634766
+      },
+      {
+        "offset": 46,
+        "chosen": 2190,
+        "winner": 2190,
+        "runnerup": 18147,
+        "top2_logits": [
+          42.05104446411133,
+          39.94221115112305
+        ],
+        "logsumexp": 42.24443054199219,
+        "chosen_raw_logit": 42.05104446411133
+      },
+      {
+        "offset": 47,
+        "chosen": 151647,
+        "winner": 151647,
+        "runnerup": 755,
+        "top2_logits": [
+          32.018733978271484,
+          17.153600692749023
+        ],
+        "logsumexp": 32.018733978271484,
+        "chosen_raw_logit": 32.018733978271484
+      },
+      {
+        "offset": 48,
+        "chosen": 151648,
+        "winner": 151648,
+        "runnerup": 151649,
+        "top2_logits": [
+          29.74613380432129,
+          12.944215774536133
+        ],
+        "logsumexp": 29.74613380432129,
+        "chosen_raw_logit": 29.74613380432129
+      },
+      {
+        "offset": 49,
+        "chosen": 151926,
+        "winner": 151926,
+        "runnerup": 151935,
+        "top2_logits": [
+          18.942846298217773,
+          18.802955627441406
+        ],
+        "logsumexp": 22.294878005981445,
+        "chosen_raw_logit": 18.942846298217773
+      },
+      {
+        "offset": 50,
+        "chosen": 152346,
+        "winner": 152346,
+        "runnerup": 152340,
+        "top2_logits": [
+          17.67140769958496,
+          17.659914016723633
+        ],
+        "logsumexp": 22.12445068359375,
+        "chosen_raw_logit": 17.67140769958496
+      },
+      {
+        "offset": 51,
+        "chosen": 152058,
+        "winner": 152058,
+        "runnerup": 152061,
+        "top2_logits": [
+          19.267494201660156,
+          19.108793258666992
+        ],
+        "logsumexp": 21.650714874267578,
+        "chosen_raw_logit": 19.267494201660156
+      },
+      {
+        "offset": 52,
+        "chosen": 152421,
+        "winner": 152421,
+        "runnerup": 152422,
+        "top2_logits": [
+          19.637975692749023,
+          19.474210739135742
+        ],
+        "logsumexp": 21.70730972290039,
+        "chosen_raw_logit": 19.637975692749023
+      },
+      {
+        "offset": 53,
+        "chosen": 151649,
+        "winner": 151649,
+        "runnerup": 47148,
+        "top2_logits": [
+          33.11439895629883,
+          16.215312957763672
+        ],
+        "logsumexp": 33.11439895629883,
+        "chosen_raw_logit": 33.11439895629883
+      }
+    ],
+    "registry_proxy_owner": null,
+    "reviewed_physical_owner": "UNKNOWN",
+    "annotation_iou": {
+      "A1652859": 0.0,
+      "B2141669": 0.0
+    },
+    "overlay": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-same-owner-extent/cpu-review/fixed-B-corners-and-native-row5.png",
+      "sha256": "fde3f6b24669ee0513e64e46867b2d5f5f6cbe5124ab4953a135070f8dcd9cf9",
+      "size_bytes": 1226441
+    },
+    "original_crop": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-same-owner-extent/cpu-review/native-row5-original-crop.png",
+      "sha256": "769226fd81586efb307b4b090576351209a3bcd2164d8814d73c8e0d57c27710",
+      "size_bytes": 474877
+    }
+  },
+  "route": {
+    "source": "maintained new-08 _source replan and exact_history_inputs",
+    "prefix": "original four-request raw[:36], target1",
+    "historical_write": "target1 raw row3 coordinate token slots31 and34 only",
+    "arms_in_consideration": [
+      "native",
+      "identity_write_sham",
+      "x1_only",
+      "y2_only",
+      "both"
+    ],
+    "current_token_supply": [],
+    "same_native_2d_mask_and_positions": true,
+    "t0_donor_reuse": false,
+    "native_sham_exact_accepted_row4_full_vector_reference_steps": 9,
+    "donor_reference": "native row5 numerical source only, not a matched prefix vector or verified owner"
+  },
+  "forecast": {
+    "basis_prior_row4_outer_seconds": 72.94952116161585,
+    "basis_prior_row4_actual_model_vision_forwards": 26,
+    "basis_prior_row4_artifact_bytes": 310654498,
+    "max_width": 1413,
+    "pixel_elements": 23924736,
+    "max_width_squared_ratio": 1.0215743520786902,
+    "single_full_extent_max_forwards": 34,
+    "single_full_extent_max_logical_tokens": 34,
+    "all_fixed_corners_plus_sham_max_forwards": 66,
+    "all_fixed_corners_plus_sham_max_vision_forwards": 66,
+    "all_fixed_corners_plus_sham_max_logical_tokens": 66,
+    "single_full_extent_2x_shape_aware_seconds": 194.90724874725893,
+    "all_fixed_corners_2x_shape_aware_seconds": 378.3493652152673,
+    "single_full_extent_2x_shape_aware_artifact_bytes": 830009745.8076265,
+    "all_fixed_corners_2x_shape_aware_artifact_bytes": 1611195388.9206867,
+    "prior_sequence_gpu_hours": 0.3544195017876344,
+    "time_ceiling": "none authorized; CPU forecast only, lead must admit any model work"
+  },
+  "B_corner_zoom_overlay": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-same-owner-extent/cpu-review/four-fixed-B-corners-zoom.png",
+    "sha256": "a6dbdfd4737521751847e21af7827dc1b16cf315040d5587586201f0c60b247d",
+    "size_bytes": 343234
+  }
+}

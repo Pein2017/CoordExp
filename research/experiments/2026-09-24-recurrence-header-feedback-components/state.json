@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-header-feedback-components",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Shared query-adaptation primary NONPASS, symmetric KV comparator NONPASS, shared both-collapse NONPASS and shared both-retain NONPASS. AF per-base query signature; FF per-base both-collapse. No threshold HOLD.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-header-feedback-components/unit.md",
+  "result": "research/experiments/2026-09-24-recurrence-header-feedback-components/results.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-header-feedback-components/lead-acceptance-v1.json",
+  "boundary": "Same AF/FF older-joint source;18 reference/identity calls then4 new partial-clamp treatments;22model/4vision/0generated.",
+  "not_authorized": [
+    "extra model/vision/generated call, automatic repair/retry or successor",
+    "new image/donor/head/layer/header-position/phase/current-token/grammar change",
+    "opposite-base current capture",
+    "unlisted current-axis mask or residual/MLP/o_proj/head clamp",
+    "editing accepted producer/receipts/raw",
+    "Git/index, peer/shared runtime, lead-owned files",
+    "model/effort change",
+    "self-acceptance"
+  ],
+  "next_action": "Close the global Q-versus-current-KV decomposition. No successor GPU admission and no automatic layer/head/header-position scan. A future research contract must change a decision about natural onset/progression or complete-row behavior; further sensitivity localization alone is insufficient.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "lead_static_contract_check": {
+    "status": "PASS",
+    "unique_live_bound_files": 77,
+    "historical_loader": "absent; accepted byte-identical maintained crosswalk verified",
+    "calls": 22,
+    "vision": 4,
+    "generated": 0,
+    "protocol_sha256": "1f291c4907e9c0139bbed3dc08d2b55193d5edeea4829e17f9736ee01b15e8a3",
+    "admission_sha256": "5c98685e3c5e945f81bd28c0b2a7a347d9741f8c1f58c0cd000ad3a299e62300"
+  },
+  "knowledge_check": {
+    "ok": true,
+    "errors": [],
+    "catalog_entries": 316,
+    "valid_live_local_links": 1242
+  },
+  "failure_ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-header-feedback-components/lead-repair-attempt-002.json",
+    "sha256": "623e5590992e6941f1db33a0866a716ac2afb0ec6bb08a787dfed97d5758d2e8",
+    "size_bytes": 12092
+  },
+  "failed_attempt": {
+    "receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-header-feedback-components/attempt-001/receipt.json",
+      "sha256": "129c5e9473b3f8113b5fda5dfadabf0a1f3e074bf7e054b166104ae8c43fcc08",
+      "size_bytes": 42387
+    },
+    "outer": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-header-feedback-components/attempt-001/outer.json",
+      "sha256": "d8558a95dbea20d8d33091146f8daec9813a24f6dcf847b4b6c8c9ca97bf8f99",
+      "size_bytes": 826
+    },
+    "counts": {
+      "model_forwards": 13,
+      "vision_forwards": 4,
+      "generated_tokens": 0
+    },
+    "outer_seconds": 109.01016633212566,
+    "cumulative_sequence_gpu_hours": 0.6744521129250974
+  },
+  "prior_dispatch": {
+    "lead": {
+      "id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "active",
+        "activeFlags": []
+      }
+    },
+    "worker": {
+      "id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "idle"
+      }
+    },
+    "target": "worker",
+    "target_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "status": "submitted",
+    "message_sha256": "f171608439cd740c452516e3deaf478e60febee33cea927f9d7c6bed3654cc56",
+    "delivery_method": "turn/start",
+    "turn_id": "01a0d381-9913-7d41-abc5-37a60da053ab",
+    "turn_status": "inProgress",
+    "assignment_path": "/tmp/923-header-feedback-components-assignment.txt"
+  },
+  "dispatch": {
+    "lead": {
+      "id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "active",
+        "activeFlags": []
+      }
+    },
+    "worker": {
+      "id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+      "model": "gpt-6-sol",
+      "reasoningEffort": "xhigh",
+      "status": {
+        "type": "idle"
+      }
+    },
+    "target": "worker",
+    "target_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "status": "submitted",
+    "message_sha256": "b84d4545799ee45cdafeb25e15b38d43ca363412365f6357b26772691003cd8b",
+    "delivery_method": "turn/start",
+    "turn_id": "01a0d394-bc6b-7b41-82b2-d4bbfba96015",
+    "turn_status": "inProgress",
+    "assignment_path": "/tmp/923-header-feedback-repair002.txt",
+    "completion_status": "candidate-returned-and-lead-accepted"
+  },
+  "acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-header-feedback-components/lead-acceptance-v1.json",
+    "sha256": "988fc4b0f0bd2bf5a650cd6e3e8e341b0dd5eeadf4b086b58893805272bff974",
+    "size_bytes": 8843
+  },
+  "counts": {
+    "model_forwards": 35,
+    "vision_forwards": 8,
+    "generated_tokens": 0
+  },
+  "cumulative_sequence_gpu_hours": 0.7265508404969789,
+  "no_live_owned_model_job": true
+}

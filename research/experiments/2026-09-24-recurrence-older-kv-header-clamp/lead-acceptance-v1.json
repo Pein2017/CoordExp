@@ -1,0 +1,115 @@
+{
+  "status": "lead-accepted-retention-nonpass-bidirectional-collapse",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-header-clamp/unit.md",
+    "sha256": "3d2ad946c4fe5560987fa14c4f9de364c0d7e8c7e0abe2c2a0a3f5b3418c1cbe",
+    "size_bytes": 13099
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-header-clamp/lead-admission-v1.json",
+    "sha256": "4cbaa75a831698324550c4b3d2dbc9a9e5636fcaff5c9c595cf97e205ff5cb77",
+    "size_bytes": 42969
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-header-clamp/candidate-results.md",
+    "sha256": "97c617ed18c32d4de87d601ae98231470b76caa414e29ae39e080dde3cb86783",
+    "size_bytes": 4497
+  },
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-header-clamp/supporting/lead-verification-v1.json",
+    "sha256": "bdc45381c9358e80f4ff24a53dc697b99e993a22fcf024aee970dfc319af2f4f",
+    "size_bytes": 27500
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/receipt.json",
+    "sha256": "32bf6a9f9be6bb884ffdb08530461fd45b223f5b4b6ee6cca2d69b3c61da89bb",
+    "size_bytes": 158605
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/readback.json",
+    "sha256": "6a7089b35776856aa602448cfc8ca41518d8755c3faa7765c9c692a5487e4036",
+    "size_bytes": 39861
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/outer.json",
+    "sha256": "f24b609c7e6c7d89f5c01b47e3f69b6bebf77093f87cff9604a6579c20212a43",
+    "size_bytes": 810
+  },
+  "prefill_origins": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/prefill-origins.json",
+    "sha256": "214d352f8bd842a99ebba3837b18ebf3745952d31674fec56e2615c9e795801b",
+    "size_bytes": 54712
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_older_kv_header_clamp/run.py",
+    "sha256": "f895be9d785d1e9c5b8be3d41cb5c402ae06f4f9b3aa2ee55fc829a87aad24ef",
+    "size_bytes": 72344
+  },
+  "captures": {
+    "AF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/captures/native-AF.pt",
+      "sha256": "b03107ee2b9a008b832c046ddf446ae1def1b1f3dd4b2fcf2724d156f57b60ce",
+      "size_bytes": 1858843
+    },
+    "FF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-kv-header-clamp/attempt-001/captures/native-FF.pt",
+      "sha256": "dd0c2d402059268ee23557aaa393fc660e017c6cd427c0a61b042484d536ff0e",
+      "size_bytes": 1858843
+    }
+  },
+  "technical": "All22 source/input/vector bindings,32 source captures, native source and counterfactual parity, all14 adaptive references, explicit native-clamp identities, per-axis older donors and latest/prompt/companion complements passed. Actual same-base target Q/K/V hashes and appended current K/V agree across28layers/4positions; full restoration and terminal counts checked. Lead recomputed504 saved headout errors/bounds; no independent full-SDPA replay was claimed.",
+  "scientific": "Bidirectional joint-endpoint retention primary NONPASS; bidirectional displacement-collapse comparator PASS. Secondary retained component pattern NONPASS. Both base-specific current-header Q/K/V clamps leave small native-to-joint displacements relative to adaptive joint displacement.",
+  "mechanism": "The large conditional older-joint effects depend on current-header Q/K/V adaptation under this whole-stack intervention. This weakens a sufficient fixed-read-state older K/V coupling explanation. Residual/MLP computations remain live; clamping all three axes does not separate query adaptation from current-token K/V routing. These are within-forward layer effects, not a measured multi-token recurrence process or natural mediation share.",
+  "boundary": "One native AF versus written-history FF, fixed observed common header, zero generation. Base-specific latest contextual caches and captures differ. F/F2 physical HOLD and two-record shared NONPASS unchanged; no unique layer/circuit, physical recovery, onset/exit or population claim.",
+  "primary_retention_pass": false,
+  "collapse_comparator_pass": true,
+  "component_pattern_retained": false,
+  "bases": {
+    "AF": {
+      "adaptive_D": 0.7824285543804291,
+      "clamped_D": 0.030320392023981558,
+      "endpoint_e": 0.9757085512009508,
+      "displacement_t": 0.038751643014857694,
+      "component_ratios": {
+        "r_V": 0.30416947156302077,
+        "r_K": 0.6926775153307785,
+        "n_V": 1.1214063993087482,
+        "n_K": 0.40811507489483284
+      },
+      "retention": false,
+      "collapse": true,
+      "component_pattern": false
+    },
+    "FF": {
+      "adaptive_D": 0.5301360281922906,
+      "clamped_D": 0.05434497838986883,
+      "endpoint_e": 0.9992698736242285,
+      "displacement_t": 0.10251138481415728,
+      "component_ratios": {
+        "r_V": 0.7872456326564718,
+        "r_K": 1.7380905975395617,
+        "n_V": 0.5079223072679152,
+        "n_K": 0.7691466355190152
+      },
+      "retention": false,
+      "collapse": true,
+      "component_pattern": false
+    }
+  },
+  "headout_gates": 504,
+  "worst_headout_error_to_bound": 0.10143548999033478,
+  "max_postK_error": 0.0,
+  "counts": {
+    "model_forwards": 22,
+    "vision_forwards": 4,
+    "generated_tokens": 0
+  },
+  "outer_gpu_seconds": 186.28016737103462,
+  "cumulative_sequence_gpu_hours": 0.6441715111661737,
+  "next_decision": "Close this unit. Separate global current-header Q-only versus K/V-only clamps can distinguish query-adaptation from current-header K/V dependence while retaining both original older-joint directions; no layer/head scan."
+}

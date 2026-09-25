@@ -1,0 +1,112 @@
+{
+  "status": "lead_CPU_source_geometry_verified",
+  "report_sha256": "a96f5e0f00fdf6a83540fffd7c95f1afc7eaab63f76ddbb3f0a4c561e7e0d2cf",
+  "readback_sha256": "4daed6d83adc9def604b0f13612de650a5d7b1ad1a785038d865ab526b9a83e5",
+  "fixed_source_ranks": [
+    6,
+    10,
+    15,
+    16,
+    36,
+    43
+  ],
+  "cases": [
+    {
+      "image_id": 7511,
+      "rows": 2,
+      "i": 0,
+      "j": 1,
+      "source_trace_and_projection": "passed"
+    },
+    {
+      "image_id": 14038,
+      "rows": 8,
+      "i": 6,
+      "j": 7,
+      "source_trace_and_projection": "passed"
+    },
+    {
+      "image_id": 351017,
+      "rows": 3,
+      "i": 1,
+      "j": 2,
+      "source_trace_and_projection": "passed"
+    },
+    {
+      "image_id": 417044,
+      "rows": 5,
+      "i": 3,
+      "j": 4,
+      "source_trace_and_projection": "passed"
+    },
+    {
+      "image_id": 71122,
+      "rows": 4,
+      "i": 1,
+      "j": 3,
+      "source_trace_and_projection": "passed"
+    },
+    {
+      "image_id": 99184,
+      "rows": 2,
+      "i": 0,
+      "j": 1,
+      "source_trace_and_projection": "passed"
+    }
+  ],
+  "displayed_rows": 24,
+  "unique_source_view_files": 44,
+  "projection": "maintained coord_bins_to_pixel_xyxy: round(bin*axis_pixels/1000)",
+  "verification_note": "An initial lead scratch check used (axis-1)/999 and failed one pixel on14038 row1; corrected to the maintained projection, without any worker/source/view edit.",
+  "files": {
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/trace.json": "8efc8bb91e7250e6ef73b389d53be352f8bd8167ba140251470a8ed4b38abdaf",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/receipt.json": "80f372759589cbb620dc45176b870239f46fa5d58179a07fff2e2fcd6266e11e",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg": "2843c07959515a93d2791183c998462d76b34100185e57a258d8949f112296e7",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank006-7511-detail.png": "70422911cdba7babe3a7914851fe7f81e71e241ddee5c919ad44d2f4527e4d5d",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank006-7511-pair.png": "126a492ad627ffc51f6b06300ca6368b0b6d64c179a82205fc39e32d2ebe24d7",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank006-7511-pair-crop.png": "8b7ffcaf0f5a4da186cfd17d5eb3caa3996bac285d680b205e2ac9bd95d2f0a9",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank006-7511-prefix-sheet.png": "faa28c69eafed86a684e43c8eb5136542eb88604381b72918dafeb0cd744cb38",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/trace.json": "0dba6a8172c84dc14e5c72442cd6a6c713110be437041c6d4e1222d0a5b8856a",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/receipt.json": "e0297cf4b701f70badf594fe29372b6795d2d2bb0f2d8f9196bc4fa77a86b82a",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000014038.jpg": "055f28bbd181590b7a7c4844bf488d7f1be752d39916e07034c279f5f387acd2",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank010-14038-detail.png": "235e600be32addbe156f9136de0bdfef68e0fc27f59df8b1719d6c3565216b03",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank010-14038-pair.png": "bfa52aed5e36455835270e307f29614189fdbf59c9c45c24e3e048bf61f87b90",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank010-14038-pair-crop.png": "ef5a5c5c66e8ed72245bfcab70d355ed6821b12d6b55defb0b819e1ab751629a",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank010-14038-prefix-sheet.png": "dc7c68b04d6419e74baafbed28f82ef4ff08f6ad7bbf4bdb9cbb2f39df5b5684",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank015-351017-pair.png": "b6b4bdf47b4f39eb50ad948ac841a4e60e25ed4c0bf48fcc1d84b6b5122b28c0",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank015-351017-pair-crop.png": "44bae76e04915c3649a23a68ee490ca4d0ac0b530f7ef0df9ff08dde098fc1f5",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank015-351017-prefix-sheet.png": "0a3b791cfd3125d3632f2ab4a4e96b58feffb47ceb248791ee139c6226714703",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg": "babd3b1132d5007428ac6202e23b0de6c3fd72c00271427cfdce9185f8231160",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank016-417044-chronology-detail.png": "7b5ddc42bfa7a0a46f5cfd7698463217ebdfa58e413e66fc778787f9efae6649",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank016-417044-detail.png": "aa7a460a9655c9810a4e989cb1c223ae20401619d5f3323cdab4bfc24ab2e096",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank016-417044-pair.png": "724edc3714d77d8ff9588a63aebaea037c80f87c8aabb90c37aeca1bda31723c",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank016-417044-pair-crop.png": "0832f0f93581342853e94f2fb985aa23c5371c03cb9e687bdee02019606ca414",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank016-417044-prefix-sheet.png": "52b74c776abafe282ed92d08fb3005648904f428a0f8a06fd33fe43183a62cf6",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/raw.json": "312856ccac49ae2f084174d6658494e2c88c0501e91b660eedcea48ec2c85bda",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/trace.json": "6322c205edf9a87e4dd6b9c736e9000c50b536b6cffc209d2f4de21a33919137",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/receipt.json": "f011b6e0a3513f5a66b9596eb034345ec208af5b64c05c1029bc4638f867220e",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000071122.jpg": "7485269eda98f013b7430b83d2bd0ae6d8667238dabbec5844f8b680377ac9eb",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank036-71122-pair.png": "2d83953e751c1b3807d646c7b05f3d2bf7dc2a141addae3d5f320a7795c80ca4",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank036-71122-pair-crop.png": "c3529c207e829ab4ec636965145af2f13edaf750cb86bfa09f31ee47ec11a72d",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank036-71122-prefix-sheet.png": "88e5909b614629221fede968a77f9bfcdc416120b1077882a762dbf74b70cf48",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/raw.json": "e727f0083d183c80a28e6ba14b94b705e2a633474ab5d4e43b74a262f75a9a8b",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/trace.json": "ab94cb74cf87f6ea96ada0d5f9e5f3ea1023db2b472e0cd117b76c53e2db8f16",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/receipt.json": "23c43469d7f52bdf040291688063d151ffc6140eed987825542ecd2229813353",
+    "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000099184.jpg": "4866b34d3632f9f1a05c5b7b2b813c7333d3713996106640d6417415ad8c421c",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank043-99184-detail.png": "5b4adda07f8d8cde64ad4eb6fbb90a596b1bd7eef01e9213627a5133d61c1343",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank043-99184-pair.png": "648b688cfe38be3b9bc37bd138887a323942e33ab9284495f865c69241a93e89",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank043-99184-pair-crop.png": "50502f01c125f78600087f440b1e6f690b1df203177428d3b16067ce045942f0",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-grounded-window-transfer/visual-review-v1/rank043-99184-prefix-sheet.png": "3d128b476caa3cc20852386fa52103e69235ee21a8004c7ecba0fa04c6d328e6"
+  },
+  "model_loads": 0,
+  "cuda_calls": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "gpu_seconds": 0
+}

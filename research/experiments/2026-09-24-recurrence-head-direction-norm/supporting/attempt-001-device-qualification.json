@@ -1,0 +1,47 @@
+{
+  "status": "technical_invalid",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/unit.md",
+    "sha256": "60ccbb639cb1a86b0c663edc0454d7806089a703a9c2d51f72fef130d3d979c0",
+    "size_bytes": 9540
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/lead-admission-v1.json",
+    "sha256": "db2ead15457ee36ba2d7d1d732aa9aa0e451ae6ee0fd9157491f69914cfca317",
+    "size_bytes": 25865
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-001-preflight.json",
+    "sha256": "b043d1d24182020f1b00f5346a0a633409361887915de49953314c46bfe0e8ec",
+    "size_bytes": 225636
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm/run.py",
+    "sha256": "0bedcf77b968c11faecae31465ed457c4964620901c2dbbcb960720c1f2dc6fd",
+    "size_bytes": 54232
+  },
+  "fixture_source": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm/device_fixture.py",
+    "sha256": "85939fedff6fcc73e13f87c28cce1606db361c14da8e8ee804a7226581a473f9",
+    "size_bytes": 8448
+  },
+  "plan": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v1/plan.json",
+    "sha256": "c7339d5f033ba7178a247b474000195c2153dddd8ba33bb4ea0f484c66a9d585",
+    "size_bytes": 1561
+  },
+  "stdout": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v1/stdout.log",
+    "sha256": "4f621c30f3ec9f57040c61df353470864c97c4929573541be8766c818b75adfc",
+    "size_bytes": 961
+  },
+  "child": null,
+  "outer_seconds": 10.09285619854927,
+  "returncode": 1,
+  "child_pid": 2473179,
+  "terminal": true,
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "generated_tokens": 0
+}

@@ -1,0 +1,100 @@
+{
+  "authority": {
+    "admission": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-admission-v1.json",
+      "sha256": "c4e9e3d856ea8a95e4e9d561ceb012a284caa7a47b1cf88b3d3e899ddcfbb56b",
+      "size_bytes": 15889
+    },
+    "protocol": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/unit.md",
+      "sha256": "76c1fabfbc05be19f97492888704805f6516c1810789d625812e14df3c23c5c3",
+      "size_bytes": 11860
+    }
+  },
+  "charged_cumulative_gpu_hours": 0.7718758937028996,
+  "counts": {
+    "emitted_target_tokens": 0,
+    "model_forwards": 1,
+    "reused_calls": 0,
+    "vision_forwards": 1
+  },
+  "failure": {
+    "all_remaining_arms": "unrun",
+    "message": "Expected all tensors to be on the same device, but got other is on cuda:0, different from other tensors on cpu (when checking argument in method wrapper_CUDA__equal)",
+    "online_caller_line": 537,
+    "scope": "CPU saved-input tensor compared with CUDA reconstructed input on first GPU step, before reference/trace/finalization",
+    "serialized_guard_line": 210,
+    "type": "RuntimeError"
+  },
+  "first_unfinalized_cell": {
+    "actual_layer_count": 28,
+    "arm": "native_A",
+    "chosen_uncredited": 151646,
+    "inputs": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/inputs-native_A-step0.json",
+      "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+      "size_bytes": 340836
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/native_A-step0.pt",
+      "sha256": "677ef3ff8fa376a6a465deb3a43d172c04a1bbb9f227eb7037cc5119421cf9c1",
+      "size_bytes": 12716323
+    },
+    "reference_vector_sha_matches_accepted_native_A_step0": true,
+    "selected_cells": 0,
+    "step": 0
+  },
+  "internal_seconds": 9.153169855475426,
+  "job": {
+    "exit_code": 1,
+    "pid": 2318149,
+    "pid_absent_after_exit": true,
+    "terminal": true
+  },
+  "launch": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/launch.json",
+    "sha256": "42de113e1d38e64a32798516a2486037963f5c691c702d185ddb350b9e33ab1b",
+    "size_bytes": 1026
+  },
+  "model_science": "unanswered",
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/outer.json",
+    "sha256": "8f5128852f137d9746f470bd46cf2a77673f1b1f3ecc0f6b4d5ffa41b104f353",
+    "size_bytes": 269
+  },
+  "outer_seconds": 15.32397124916315,
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/supporting/attempt-001-preflight.json",
+    "sha256": "425b0b51de01cda23ff44fdaa7318631cb9dba9ce9e073a2baeaaf4975b09c29",
+    "size_bytes": 160771
+  },
+  "prior_sequence_gpu_hours": 0.7676192350225765,
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py",
+    "sha256": "9577b772377baa87703ed503c46a65f730315e929a973083cf0569e5d93f30a6",
+    "size_bytes": 42023
+  },
+  "producer_capture": {
+    "path": "/data/CoordExp/.worktrees/research-probes/reference/retained-sources/runs/34ae9a2006e6bb5c7afa414aa486938ee73e099f98e08b2488b3c62bbf1c5aab/probes/training_set_completion/recurrence_history_read_stage/run.py",
+    "sha256": "9577b772377baa87703ed503c46a65f730315e929a973083cf0569e5d93f30a6",
+    "size_bytes": 42023
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/receipt.json",
+    "sha256": "af2740963a934daa58b40bf516441d32b488127ffda413ffa73dd5d3ae0ae6a6",
+    "size_bytes": 110895
+  },
+  "repair_proposal": "Lead may admit a fresh attempt after normalizing only the online serialized input comparison to a common device and proving CPU/GPU-boundary caller mutations; preserve attempt-001 and original contract.",
+  "resources": {
+    "artifact_bytes_at_terminal": 13058487,
+    "gpu_peak_allocated_bytes": 9945729536,
+    "gpu_peak_reserved_bytes": 10643046400,
+    "rss_peak_kib": 11643076
+  },
+  "status": "terminal_technical_invalid_science_unanswered",
+  "stdout": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-history-read-stage/attempt-001/stdout.log",
+    "sha256": "2466858940ccfe72b06d32f584eca958735af7b363a33a6d04feabbc93510172",
+    "size_bytes": 1641
+  }
+}

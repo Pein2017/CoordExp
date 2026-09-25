@@ -1,0 +1,52 @@
+{
+  "status": "lead-accepted-CPU-feasibility-only",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "report": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/supporting/y1-bridge-feasibility.md",
+    "sha256": "09f818a7eca8783a3b939c2263a1ae0c9b36f50190ef04ad756451a8b9c99264",
+    "size_bytes": 7447
+  },
+  "bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/supporting/y1-bridge-bindings.json",
+    "sha256": "ca476889703bf42e2959b70105e09f34f048f128d51c189267585f6462ad160a",
+    "size_bytes": 25157
+  },
+  "prior_science_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-acceptance-v1.json",
+    "sha256": "8c16854283e0d0c2b9433e9b7251576dc9762a7344a67879a644d2a102217c1e",
+    "size_bytes": 8517
+  },
+  "independent_checks": {
+    "unique_files_rehashed": 53,
+    "full_vectors_and_inputs_cpu_loaded": 18,
+    "mask_reconstructions": 18,
+    "same_full_inputs_t0_through_t5": true,
+    "sole_t6_input_difference": [
+      2,
+      1376,
+      151670,
+      151683
+    ],
+    "y1_rotary_axes": [
+      401,
+      401,
+      401
+    ],
+    "raw_y1_argmax_native_coordinate": [
+      151670,
+      151683
+    ],
+    "producer_verifier_ast_sha256": "86e6b4d9d39e432bde84eb2820b6e196cb13ad1f974f52b7924ea610bbcfe536",
+    "call_and_width_forecast_arithmetic": true
+  },
+  "decision": "Feasible. A separate finite six-arm unit may test reciprocal y1 policy writes with continuing same-mode masks. This receipt itself admits no model call. No new treatment endpoint measured.",
+  "scope_limit": "Source identity reused from closed accepted preparation; fresh production-shaped source/consumer qualification is required before treatment. No GPU or actual treatment qualification claimed.",
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "gpu_seconds": 0,
+  "prior_sequence_gpu_hours": 0.8574518933237164
+}

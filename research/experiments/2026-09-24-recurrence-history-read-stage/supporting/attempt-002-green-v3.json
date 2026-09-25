@@ -1,0 +1,142 @@
+{
+  "phase": "green",
+  "command": [
+    "/root/miniconda3/envs/ms/bin/python",
+    "-B",
+    "-m",
+    "probes.training_set_completion.recurrence_history_read_stage.boundary_fixture",
+    "green-child"
+  ],
+  "outer_seconds": 16.110273480415344,
+  "exit_code": 0,
+  "terminal": true,
+  "stderr": "`torch_dtype` is deprecated! Use `dtype` instead!\n",
+  "child_result": {
+    "phase": "green",
+    "producer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py",
+      "sha256": "415cef093f36a53665f34587dd89467536af992ad39f21c5cc4f165b5be46591",
+      "size_bytes": 42083
+    },
+    "fixture": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py",
+      "sha256": "618fbbcec57e4c425422a20345208702cf23fee732a59c0e3aa32ab245caa8c5",
+      "size_bytes": 9494
+    },
+    "ruling": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-repair-attempt-002.json",
+      "sha256": "ac8d04b9a85e5dd8c7e74b6153126555d40b3c48889651feef9178702363f1bc",
+      "size_bytes": 13170
+    },
+    "takeover": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-device-takeover-v3.json",
+      "sha256": "eb95a7ec41dc1979e2be94076db71d2a901d83491601497d4acf7d787779fb5e",
+      "size_bytes": 3730
+    },
+    "source_input_identity": "94d4ee001a7c36a4a598b96a5ace0cf1c04718c83025ee5aea18906c0c856150",
+    "cases": [
+      {
+        "case": "native_A_t0",
+        "selected_cells": 0,
+        "input_device": "cuda:0",
+        "saved_devices": [
+          "cpu",
+          "cpu"
+        ],
+        "mutations_rejected": [
+          "history",
+          "companion",
+          "position",
+          "own_prefix",
+          "complement"
+        ]
+      },
+      {
+        "case": "header_A_t5",
+        "selected_cells": 36,
+        "input_device": "cuda:0",
+        "saved_devices": [
+          "cpu",
+          "cpu"
+        ],
+        "mutations_rejected": [
+          "history",
+          "companion",
+          "position",
+          "own_prefix",
+          "complement",
+          "current_to_current",
+          "selected",
+          "wrong_rectangle"
+        ]
+      },
+      {
+        "case": "coordinate_F_t5",
+        "selected_cells": 9,
+        "input_device": "cuda:0",
+        "saved_devices": [
+          "cpu",
+          "cpu"
+        ],
+        "mutations_rejected": [
+          "history",
+          "companion",
+          "position",
+          "own_prefix",
+          "complement",
+          "current_to_current",
+          "selected",
+          "wrong_rectangle"
+        ]
+      },
+      {
+        "case": "header_F_t15",
+        "selected_cells": 36,
+        "input_device": "cuda:0",
+        "saved_devices": [
+          "cpu",
+          "cpu"
+        ],
+        "mutations_rejected": [
+          "history",
+          "companion",
+          "position",
+          "own_prefix",
+          "complement",
+          "current_to_current",
+          "selected",
+          "wrong_rectangle"
+        ]
+      },
+      {
+        "case": "coordinate_A_t15",
+        "selected_cells": 99,
+        "input_device": "cuda:0",
+        "saved_devices": [
+          "cpu",
+          "cpu"
+        ],
+        "mutations_rejected": [
+          "history",
+          "companion",
+          "position",
+          "own_prefix",
+          "complement",
+          "current_to_current",
+          "selected",
+          "wrong_rectangle"
+        ]
+      },
+      {
+        "case": "coordinate_F_t5_cold_cpu",
+        "selected_cells": 9,
+        "passed": true
+      }
+    ],
+    "cuda_used": true,
+    "model_loaded": false,
+    "model_forwards": 0,
+    "vision_forwards": 0,
+    "generated_tokens": 0
+  }
+}

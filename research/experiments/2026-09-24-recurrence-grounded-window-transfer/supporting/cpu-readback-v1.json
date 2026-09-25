@@ -1,0 +1,45 @@
+{
+  "counts": {
+    "D_eligible_images": 23,
+    "D_pattern_windows": 64,
+    "D_selected": 2,
+    "R_eligible_images": 0,
+    "R_pattern_windows": 0,
+    "R_selected": 0,
+    "all_sources": 273,
+    "chronology_HOLD_windows": 3,
+    "excluded_named_images": 3,
+    "mature": 145,
+    "prospective": 128,
+    "source_binding_HOLD": 0
+  },
+  "registry": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-grounded-window-transfer/supporting/cpu-candidate-registry.json",
+    "sha256": "e79234c7360427508d9846b6290087231ca1ea05d57f12e6246f14d3e054652d",
+    "size_bytes": 729027
+  },
+  "selected": [
+    [
+      "D",
+      "mature",
+      2299,
+      [
+        16,
+        17,
+        18
+      ]
+    ],
+    [
+      "D",
+      "mature",
+      5001,
+      [
+        12,
+        13,
+        14
+      ]
+    ]
+  ],
+  "source_order_sha256": "92f4d973b15da86b603f939f2776a6d72d7f97cd2816695b36ae07d156122d2e",
+  "status": "cold_readback_passed"
+}

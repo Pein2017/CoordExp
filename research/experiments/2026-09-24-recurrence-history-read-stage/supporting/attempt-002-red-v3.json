@@ -1,0 +1,64 @@
+{
+  "phase": "red",
+  "command": [
+    "/root/miniconda3/envs/ms/bin/python",
+    "-B",
+    "-m",
+    "probes.training_set_completion.recurrence_history_read_stage.boundary_fixture",
+    "red-child"
+  ],
+  "outer_seconds": 8.718354269862175,
+  "exit_code": 0,
+  "terminal": true,
+  "stderr": "`torch_dtype` is deprecated! Use `dtype` instead!\n",
+  "child_result": {
+    "phase": "red",
+    "producer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py",
+      "sha256": "9577b772377baa87703ed503c46a65f730315e929a973083cf0569e5d93f30a6",
+      "size_bytes": 42023
+    },
+    "fixture": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py",
+      "sha256": "618fbbcec57e4c425422a20345208702cf23fee732a59c0e3aa32ab245caa8c5",
+      "size_bytes": 9494
+    },
+    "ruling": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-repair-attempt-002.json",
+      "sha256": "ac8d04b9a85e5dd8c7e74b6153126555d40b3c48889651feef9178702363f1bc",
+      "size_bytes": 13170
+    },
+    "takeover": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/lead-device-takeover-v3.json",
+      "sha256": "eb95a7ec41dc1979e2be94076db71d2a901d83491601497d4acf7d787779fb5e",
+      "size_bytes": 3730
+    },
+    "source_input_identity": "94d4ee001a7c36a4a598b96a5ace0cf1c04718c83025ee5aea18906c0c856150",
+    "cases": [
+      {
+        "case": "native_A_t0",
+        "cpu_saved_cuda_expected_input_error": "Traceback (most recent call last):\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py\", line 77, in child\n    try:r.verify_serialized(model,batch,raw,pad,a,\"native_A\",[],entry,stored,payload)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py\", line 210, in verify_serialized\n    require(all(torch.equal(stored[k],expected[k]) for k in KEYS) and\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py\", line 210, in <genexpr>\n    require(all(torch.equal(stored[k],expected[k]) for k in KEYS) and\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: Expected all tensors to be on the same device, but got other is on cuda:0, different from other tensors on cpu (when checking argument in method wrapper_CUDA__equal)\n",
+        "cuda_saved_input_cpu_saved_mask_error": "Traceback (most recent call last):\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py\", line 85, in child\n    try:r.verify_serialized(model,batch,raw,pad,a,\"native_A\",[],entry,cuda_stored,payload)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/run.py\", line 214, in verify_serialized\n    torch.equal(payload[\"actual_mask\"],actual) and\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: Expected all tensors to be on the same device, but got other is on cuda:0, different from other tensors on cpu (when checking argument in method wrapper_CUDA__equal)\n",
+        "reconstructed_devices": {
+          "input_ids": "cuda:0",
+          "attention_mask": "cuda:0",
+          "position_ids": "cuda:0",
+          "cache_position": "cuda:0"
+        },
+        "actual_mask_device": "cuda:0",
+        "serialized_devices": {
+          "input_ids": "cpu",
+          "attention_mask": "cpu",
+          "position_ids": "cpu",
+          "cache_position": "cpu"
+        },
+        "saved_mask_device": "cpu"
+      }
+    ],
+    "cuda_used": true,
+    "model_loaded": false,
+    "model_forwards": 0,
+    "vision_forwards": 0,
+    "generated_tokens": 0
+  }
+}

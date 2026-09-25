@@ -1,0 +1,262 @@
+{
+  "status": "lead-independent-CPU-verification-passed",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-contextual-kv-carrier/candidate-results.md",
+    "sha256": "042b56f64369000f19882c1676483be572ea6b962a15c676ad53d090a6a5cc07",
+    "size_bytes": 5727
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/receipt.json",
+    "sha256": "d3a102fcfe5bd8adac4b8a00f7326d05095e1cf1559b6b1e1267472715f63357",
+    "size_bytes": 135281
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/readback.json",
+    "sha256": "3291a8f7343b9f100a38135e207bee3ba8d84c1d68b1936125270e2da58703ab",
+    "size_bytes": 17445
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/outer.json",
+    "sha256": "d6404a813f493cc878e6887eafe7170d69b0412ca31f30c2a3405ba29af5b7f2",
+    "size_bytes": 809
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-contextual-kv-carrier/supporting/attempt-001-preflight.json",
+    "sha256": "37c242f875e2eccaa2b3f8008858b6368328a1203e2ec634e5780d8915bda308",
+    "size_bytes": 210112
+  },
+  "prefill_origins": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/prefill-origins.json",
+    "sha256": "82c7ad4e2296d8aa818b1beee5e150ebe1d34077668f4b6ac2f9cec2211d4b81",
+    "size_bytes": 54815
+  },
+  "donor_blocks": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/historical-blocks.pt",
+    "sha256": "7f4e495d5bbf43d7d5f8f7eeb92d3345ba6e2d764a23ee55c66ad7f4969e345a",
+    "size_bytes": 8323323
+  },
+  "source_captures": 29,
+  "scope": "All10 saved vectors/inputs and consumer bindings; source prompts/own history/common header; full/reference/source trace, cache/sham parity; exact selected donor tensors and28-layer complement/companion/restoration records. Rotary numeric reconstruction relies on qualified worker path, with actual recorded native phase identity checked.",
+  "cells": [
+    {
+      "name": "full_AF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/01-full_AF/full-batch-vocabulary.pt",
+        "sha256": "f8b31d928a2209b757a9986d62e92d61ef482682039582e17556d8558dc6d7ea",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/01-full_AF/input.json",
+        "sha256": "1fde3a91668ddc57a12b096f436bfc3e2d6b940185a802ec42c57899c05a7237",
+        "size_bytes": 344171
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/01-full_AF/consumer.json",
+        "sha256": "0235d07816d18e891668ed60ca201ff40bd0bf1bcbac1fbdff2bbd2f79f91bd6",
+        "size_bytes": 9511
+      }
+    },
+    {
+      "name": "full_FF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/02-full_FF/full-batch-vocabulary.pt",
+        "sha256": "dc82b748a2028b6e034b046f932083bc472089813a1a7b1e5a3ad94f3f511011",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/02-full_FF/input.json",
+        "sha256": "9fa22432b731487b55cfa937983e27772dd9530560746ed151c32947b6797d3e",
+        "size_bytes": 344171
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/02-full_FF/consumer.json",
+        "sha256": "08b7307cb6f06e8df6f73b50c24eeb71e3c4771162d643bdd66d36ede4f418b9",
+        "size_bytes": 9511
+      }
+    },
+    {
+      "name": "prefill_AF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/03-prefill_AF/full-batch-vocabulary.pt",
+        "sha256": "d064a30b5dd44ce6c9b28c2e7df5635922006bcd7ee39eea96f981539b99e386",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/03-prefill_AF/input.json",
+        "sha256": "6beecc0b4aa5837cde03474d80a4fae464cefa95263c49264809ad4f4e75768a",
+        "size_bytes": 343148
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/03-prefill_AF/consumer.json",
+        "sha256": "1392a62339c0d61cef3c40f2d2613f26861c44e32fe08107ea416da83f30f0e0",
+        "size_bytes": 9517
+      }
+    },
+    {
+      "name": "prefill_FF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/04-prefill_FF/full-batch-vocabulary.pt",
+        "sha256": "89a7de097963a82453ba9129e96708a586aa9e62f5ceac8f23e0e0c0774fb7d7",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/04-prefill_FF/input.json",
+        "sha256": "c2ef74f7871be44b36b2d6c8d1cd4c9d4c30c570219ac8c4afac8505ec60b275",
+        "size_bytes": 343148
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/04-prefill_FF/consumer.json",
+        "sha256": "595922d8fc8141f71e29133d099303136b88c72f4be9beae9e407a6481c20b04",
+        "size_bytes": 9517
+      }
+    },
+    {
+      "name": "anchor_AF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/05-anchor_AF/full-batch-vocabulary.pt",
+        "sha256": "8bc02b7791219568638fa3b534c1415fbc9a1ade7390ebfd72feb4fdd220b2dd",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/05-anchor_AF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/05-anchor_AF/consumer.json",
+        "sha256": "0dcb279f7b4eae59b71a613c81c9af36eb5e0d69513c66df1e798ab0198f9170",
+        "size_bytes": 54195
+      }
+    },
+    {
+      "name": "anchor_FF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/06-anchor_FF/full-batch-vocabulary.pt",
+        "sha256": "b8a85b4cc3aee09f109def388ac1dcc6e20bc3f28c033398fc66a58f01ab0960",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/06-anchor_FF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/06-anchor_FF/consumer.json",
+        "sha256": "73083a67ee2e3f4b864bc91bb43c728ed3b3a2b0f7e48c6db8ddc690377a87ef",
+        "size_bytes": 54195
+      }
+    },
+    {
+      "name": "sham_AF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/07-sham_AF/full-batch-vocabulary.pt",
+        "sha256": "8bc02b7791219568638fa3b534c1415fbc9a1ade7390ebfd72feb4fdd220b2dd",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/07-sham_AF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/07-sham_AF/consumer.json",
+        "sha256": "cbb53a9bbafb22f08b8f330f40dd7674ffc3bb321dd51173271978c6fdd733d3",
+        "size_bytes": 54193
+      }
+    },
+    {
+      "name": "sham_FF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/08-sham_FF/full-batch-vocabulary.pt",
+        "sha256": "b8a85b4cc3aee09f109def388ac1dcc6e20bc3f28c033398fc66a58f01ab0960",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/08-sham_FF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/08-sham_FF/consumer.json",
+        "sha256": "740385e66bee1407ba46628643602f3031d08b7e81228c41f7be8107ef5957c8",
+        "size_bytes": 54193
+      }
+    },
+    {
+      "name": "hybrid_AF_FF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/09-hybrid_AF_FF/full-batch-vocabulary.pt",
+        "sha256": "b431b6eaa7718c056457f0979e955d6c4404cf9f21072993850111777cb957ae",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/09-hybrid_AF_FF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/09-hybrid_AF_FF/consumer.json",
+        "sha256": "1c6fe81d5d7a728f0324e4f8246a2d719de6fd2aff5a94cc5da3617b0719f54e",
+        "size_bytes": 54198
+      }
+    },
+    {
+      "name": "hybrid_FF_AF",
+      "vector": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/10-hybrid_FF_AF/full-batch-vocabulary.pt",
+        "sha256": "bff194783980b1660ea3bf564c2688566a3f48e4294baff9424b1fe58a221b3c",
+        "size_bytes": 2444363
+      },
+      "input": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/10-hybrid_FF_AF/input.json",
+        "sha256": "54b71331852d07d40d3b1e589f54264fbcf11c242e40a202e3a8f8a5ebf56823",
+        "size_bytes": 51127
+      },
+      "consumer": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-contextual-kv-carrier/attempt-001/cells/10-hybrid_FF_AF/consumer.json",
+        "sha256": "06a2a52f04fcc4af62624a1846543c5a3b907be98db741b9712418dd69b17c0b",
+        "size_bytes": 54198
+      }
+    }
+  ],
+  "max_errors": {
+    "full_AF_saved": 0.0,
+    "full_FF_saved": 0.0,
+    "anchor_AF_full": 5.340576171875e-05,
+    "anchor_FF_full": 5.7697296142578125e-05,
+    "sham_AF_companion": 0.0,
+    "sham_AF_anchor": 0.0,
+    "sham_FF_companion": 0.0,
+    "sham_FF_anchor": 0.0,
+    "hybrid_AF_FF_companion": 0.0,
+    "hybrid_FF_AF_companion": 0.0
+  },
+  "baseline_TV": 0.7934679513597854,
+  "hybrids": {
+    "hybrid_AF_FF": {
+      "TV_latest": 0.5301360281922906,
+      "TV_older": 0.3423659835777898,
+      "r_L": 0.6681253190929558,
+      "r_E": 0.431480544350996,
+      "winner": 151670
+    },
+    "hybrid_FF_AF": {
+      "TV_latest": 0.7824285543804291,
+      "TV_older": 0.09648080239147105,
+      "r_L": 0.9860871545467743,
+      "r_E": 0.12159382395486742,
+      "winner": 151670
+    }
+  },
+  "primary_latest_pass": false,
+  "older_comparator_pass": true,
+  "counts": {
+    "model_forwards": 10,
+    "vision_forwards": 4,
+    "generated_tokens": 0
+  },
+  "outer_gpu_seconds": 82.67631235718727,
+  "cumulative_sequence_gpu_hours": 0.560139886111397,
+  "lead_model_forwards": 0,
+  "lead_cuda_calls": 0
+}

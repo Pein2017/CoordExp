@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-y1-row-routing",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Technically valid; reciprocal primary and persistence comparator both NONPASS, mixed_or_other.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-y1-row-routing/unit.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-y1-row-routing/lead-acceptance-v1.json",
+  "result": "research/experiments/2026-09-24-recurrence-y1-row-routing/results.md",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/lead-admission-v1.json",
+    "sha256": "a05f595e8d16b61a89354bf26c1d28ee063e540bcc6ff616355555838d8ec5ea",
+    "size_bytes": 32893
+  },
+  "cpu_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/supporting/lead-y1-bridge-cpu-acceptance-v1.json",
+    "sha256": "c5287a76fa442b127b95f3c65ae12a5cb51ab21e69a00f99c970e2ade632eb0c",
+    "size_bytes": 2175
+  },
+  "boundary": "Original one-record A history, native versus continuing coordinate block, exactly one y1 policy write per sham/flip, one free current row.",
+  "execution_status": "Candidate independently accepted; terminal model child absent.",
+  "next_action": "Closed token bridge; new fixed-query distributional discriminator is separately admitted.",
+  "prior_sequence_gpu_hours": 0.8574518933237164,
+  "not_authorized": [
+    "predecessor/captured source edits",
+    "other image/history/coordinate token or stage",
+    "mask release, header/all block, grammar or hidden/cache/phase edit",
+    "Git/index, peer/shared-runtime, lead-owned state/synthesis edits",
+    "model/effort change",
+    "self-acceptance"
+  ],
+  "lead_contract_check": {
+    "status": "PASS",
+    "one_A_history": true,
+    "reciprocal_y1_writes_only": true,
+    "unchanged_same_mode_masks": true,
+    "max_model_vision_logical_tokens": 68,
+    "no_existing_raw_attempt": true
+  },
+  "dispatch": {
+    "target_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+    "status": "submitted",
+    "message_sha256": "3d749b8190342debb488f0bc73921037c5ff06a47222ec2cddd206a113519669",
+    "delivery_method": "turn/start",
+    "turn_id": "01a0d499-dfd8-7b93-a38e-db5070a4c652",
+    "turn_status": "inProgress",
+    "actual_lead_settings": {
+      "model": "gpt-6-astra",
+      "effort": "xhigh"
+    },
+    "actual_worker_settings": {
+      "model": "gpt-6-sol",
+      "effort": "xhigh"
+    },
+    "app_status": "active",
+    "app_cursor": "97f1c146-23ae-4679-b079-d618d7c03795:24",
+    "app_turn_verified": "01a0d499-dfd8-7b93-a38e-db5070a4c652",
+    "completion_status": "candidate-returned-and-lead-accepted"
+  },
+  "knowledge_check": {
+    "ok": true,
+    "errors": [],
+    "catalog_entries": 319,
+    "valid_live_local_links": 1298
+  },
+  "direct_return": "Stable candidate or decision-bearing failure directly to paired lead before worker stops; no automatic successor.",
+  "acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/lead-acceptance-v1.json",
+    "sha256": "27e1b68d2a8fbedb890e378552f1c7d25dc1fb42ae3a08570fcb67004b8e1ab2",
+    "size_bytes": 7968
+  },
+  "counts": {
+    "model": 54,
+    "vision": 54,
+    "logical_emissions": 54,
+    "raw_argmax_evaluations": 54,
+    "greedy_selected_emissions": 50,
+    "identity_writes": 2,
+    "flip_writes": 2,
+    "reused": 0,
+    "reference_cells": 48,
+    "actual_layer_masks": 1512,
+    "source_trace_comparisons": 186
+  },
+  "cumulative_sequence_gpu_hours": 0.9005328468261231,
+  "no_live_owned_model_job": true,
+  "next_unit": "research/experiments/2026-09-24-recurrence-coordinate-query-routing/state.json"
+}

@@ -1,0 +1,48 @@
+{
+  "status": "lead-accepted-CPU-route-with-corrected-reference-label",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/supporting/read-decomposition-feasibility.md",
+    "sha256": "046091899bb720cefac589adeefcb584c4ebf06ffe471fcf0501f3b9e6c6950b",
+    "size_bytes": 8356
+  },
+  "bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/supporting/read-decomposition-bindings.json",
+    "sha256": "dbe3202da01ebebbb1d26eba8dd61d453f18c4eb8755cdf5a0d3b00bf4dd5bf4",
+    "size_bytes": 16694
+  },
+  "authority": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/supporting/lead-read-decomposition-feasibility-v1.md",
+    "sha256": "4e5ed9bc51d473b23d51d6ff96ed14333b8e90c6fe98bf11c807d1a8c23c9fbd",
+    "size_bytes": 6227
+  },
+  "accepted_predecessor": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/lead-acceptance-v1.json",
+    "sha256": "a8f580804daab8a53783d2495df80051ec63b2a9a3e7bd57a31ecfbedc6542d1",
+    "size_bytes": 5556
+  },
+  "bindings_rehashed": 26,
+  "saved_input_bytes_identical": true,
+  "saved_QKV_headout_absent": true,
+  "correction": {
+    "field": "saved_evidence.accepted_B_TV_native_current_mask",
+    "reported": 0.9734647803791534,
+    "actually_identifies": "TV(native,both)",
+    "correct_native_to_current_mask": 0.9697091740894589,
+    "old_native_to_both": 0.9734647803791535,
+    "disposition": "Preserve candidate bytes; future contract uses fresh native/current-mask baseline, never this mislabeled scalar. No source/geometry/operation change."
+  },
+  "independent_CPU_algebra": {
+    "seed": 923024,
+    "dtype": "float64",
+    "native_max_error": 4.85722573273506e-16,
+    "masked_max_error": 1.6653345369377348e-16,
+    "local_factorial_identity_error": 1.3877787807814457e-17,
+    "wrong_full_mask_formula_rejected": true,
+    "history_boost40_remaining_mass": 6.457498468043215e-16
+  },
+  "implementation_scope": "Conditional full-prefix adaptation remains unqualified on the model. Native/identity and current-mask/bridge full-vector gates must pass before partials.",
+  "model_calls": 0,
+  "CUDA_calls": 0,
+  "GPU_seconds": 0,
+  "prior_sequence_GPU_hours": 0.9083011121599776
+}

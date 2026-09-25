@@ -1,0 +1,620 @@
+{
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "source_bindings": {
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846",
+      "size_bytes": 111459
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+      "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+      "size_bytes": 18757
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+      "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+      "size_bytes": 188166
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+      "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+      "size_bytes": 262097
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/panel.json",
+    "sha256": "6b7df228570d2bdb4c3d5c79a1b8467f425186dddc6cddad658bca50a95f3569",
+    "size_bytes": 723630
+  },
+  "model_identity": {
+    "attention": "sdpa",
+    "dtype": "fp32",
+    "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+    "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+    "model": "untied",
+    "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+    "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+    "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+    "shared_delta": false
+  },
+  "original_input_identity_sha256": "ab022eb4d785e912c5a1d92202a9a8139eeb3ccc18838cd04822faeced06719e",
+  "original_effective_identity_sha256": "1a8137996213510db9c67f13b41d80b4170c772ff495c083d4cd7097a0344e7c",
+  "historical_loader_path_crosswalk": [
+    {
+      "historical": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+        "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+        "size_bytes": 51208
+      },
+      "maintained_path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  ],
+  "source_full_batch": {
+    "eos_id": 151645,
+    "group": "new-08",
+    "image_grids": [
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        72,
+        54
+      ],
+      [
+        1,
+        52,
+        72
+      ],
+      [
+        1,
+        54,
+        72
+      ]
+    ],
+    "left_padding": [
+      0,
+      42,
+      78,
+      42
+    ],
+    "pad_id": 151643,
+    "pixel_elements": 23924736,
+    "planning_replanned_image_plan": true,
+    "prompt_lengths": [
+      1362,
+      1320,
+      1284,
+      1320
+    ],
+    "prompt_width": 1362,
+    "raw_lengths": [
+      78,
+      119,
+      244,
+      174
+    ],
+    "request_ids": [
+      "coco2017_train_000000135237",
+      "coco2017_train_000000151704",
+      "coco2017_train_000000159714",
+      "coco2017_train_000000169872"
+    ],
+    "target_index": 1
+  },
+  "status": "lead-admitted-finite-older-record-routing",
+  "date": "2026-09-24",
+  "authority": "User autonomous research continuation, all GPUs permitted, no elapsed-time ceiling. Preserve task settings.",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-record-routing/unit.md",
+    "sha256": "6735d7b151cb0b3f23b131c38fa5dc9b6145e260ca7d51ae6270b8307f2f4b4d",
+    "size_bytes": 10393
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/lead-extent-acceptance-v1.json",
+    "sha256": "235d852f5af846a53b88abbe6525430f4c17482ef415c766ece8bfa5723665d2",
+    "size_bytes": 3325
+  },
+  "predecessor_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/lead-admission-v1.json",
+    "sha256": "a6f02b13d9e5677bb1a58a01a874f272c2fa22d52044125fa168fdd91e5ce790",
+    "size_bytes": 12798
+  },
+  "target_index": 1,
+  "raw_prefix_end": 45,
+  "latest_row_raw_span": [
+    36,
+    45
+  ],
+  "writable_coordinate_raw_spans": [
+    [
+      22,
+      26
+    ],
+    [
+      31,
+      35
+    ]
+  ],
+  "ordered_arms": [
+    "native",
+    "identity_write_sham",
+    "earlier_A",
+    "earlier_B1",
+    "swap_earlier"
+  ],
+  "arms": [
+    {
+      "arm": "native",
+      "target_raw_history": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        152164,
+        151880,
+        152669,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        151770,
+        152170,
+        152131,
+        152669,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "changed_raw_indices": [],
+      "changed_full_input_indices": [],
+      "max_tokens": 9
+    },
+    {
+      "arm": "identity_write_sham",
+      "target_raw_history": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        152164,
+        151880,
+        152669,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        151770,
+        152170,
+        152131,
+        152669,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "changed_raw_indices": [],
+      "changed_full_input_indices": [],
+      "max_tokens": 9
+    },
+    {
+      "arm": "earlier_A",
+      "target_raw_history": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        152164,
+        151880,
+        152669,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        151770,
+        152170,
+        152131,
+        152669,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "changed_raw_indices": [
+        31,
+        32,
+        33,
+        34
+      ],
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ],
+        [
+          1,
+          1394
+        ],
+        [
+          1,
+          1395
+        ],
+        [
+          1,
+          1396
+        ]
+      ],
+      "max_tokens": 16
+    },
+    {
+      "arm": "earlier_B1",
+      "target_raw_history": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        152164,
+        151880,
+        152669,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        151770,
+        152170,
+        152131,
+        152669,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "changed_raw_indices": [
+        31,
+        34
+      ],
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ],
+        [
+          1,
+          1396
+        ]
+      ],
+      "max_tokens": 16
+    },
+    {
+      "arm": "swap_earlier",
+      "target_raw_history": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        152164,
+        151880,
+        152669,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        151770,
+        152170,
+        152131,
+        152669,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151859,
+        152438,
+        151924,
+        152484,
+        151649,
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "changed_raw_indices": [
+        22,
+        23,
+        24,
+        25,
+        31,
+        32,
+        33,
+        34
+      ],
+      "changed_full_input_indices": [
+        [
+          1,
+          1384
+        ],
+        [
+          1,
+          1385
+        ],
+        [
+          1,
+          1386
+        ],
+        [
+          1,
+          1387
+        ],
+        [
+          1,
+          1393
+        ],
+        [
+          1,
+          1394
+        ],
+        [
+          1,
+          1395
+        ],
+        [
+          1,
+          1396
+        ]
+      ],
+      "max_tokens": 16
+    }
+  ],
+  "native_reference": {
+    "kind": "original-source-trace-only; no pre-existing full vectors",
+    "raw_span": [
+      45,
+      54
+    ],
+    "tokens": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151926,
+      152346,
+      152058,
+      152421,
+      151649
+    ],
+    "tolerance": 0.0002
+  },
+  "primary": {
+    "expected": {
+      "native": "Q",
+      "identity_write_sham": "Q",
+      "earlier_A": "B",
+      "earlier_B1": "Q"
+    },
+    "B_reference_box": [
+      207,
+      829,
+      270,
+      852
+    ],
+    "Q_reference_box": [
+      256,
+      676,
+      388,
+      751
+    ],
+    "description_ids": [
+      2190
+    ],
+    "target_iou_min": 0.5,
+    "other_iou_max": 0.1,
+    "boundary_guard": 1e-06,
+    "Q_physical_owner": "UNKNOWN"
+  },
+  "order_discriminator": {
+    "requires_primary_pair": true,
+    "swap_Q": "consistent with total-B evidence/multiplicity",
+    "swap_B": "consistent with consecutive-B dependence",
+    "other": "neither simple profile established"
+  },
+  "secondary_exact": {
+    "earlier_A": {
+      "B1": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ]
+    },
+    "earlier_B1": {
+      "Q": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151926,
+        152346,
+        152058,
+        152421,
+        151649
+      ]
+    },
+    "swap_earlier": {
+      "B1": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "Q": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151926,
+        152346,
+        152058,
+        152421,
+        151649
+      ]
+    }
+  },
+  "production_gate": "Native/sham/earlier_A and separate CPU cold readback before earlier_B1/swap. Scientific nonpass does not cancel; technical failure stops without retry.",
+  "max_model_forwards": 66,
+  "max_vision_forwards": 66,
+  "max_emitted_tokens": 66,
+  "reused_calls": 0,
+  "max_width": 1422,
+  "forecast_outer_gpu_seconds": 478.9288666723713,
+  "artifact_planning_envelope_bytes": 2147483648,
+  "prior_sequence_gpu_hours": 0.39875775146149434,
+  "time_ceiling": null,
+  "raw_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-older-record-routing/attempt-001",
+  "producer_write_root": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_older_record_routing",
+  "stop": "First technical/source/consumer/operational failure or finite completion; no retry, extra arm/image/reference, self-acceptance or successor.",
+  "worker_no_writes": [
+    "Git/index",
+    "predecessor/captures",
+    "peer/shared-runtime",
+    "lead-owned state/catalog/index/acceptance"
+  ]
+}

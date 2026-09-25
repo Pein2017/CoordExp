@@ -1,0 +1,41 @@
+{
+  "status": "qualified_nonmodel_CUDA_GREEN",
+  "ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/lead-repair-attempt-002.json",
+    "sha256": "28cde4d38811513b18e3859c33e2b5b273754081acd8c85a118ca188b0b3087d",
+    "size_bytes": 10704
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_current_read_decomposition/run.py",
+    "sha256": "1d346e3e9534dc0ff1cd8949f1fc6736996cc4f458aa7bffb3554e3de7dfd0d4",
+    "size_bytes": 51722
+  },
+  "fixture_source": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_current_read_decomposition/device_fixture.py",
+    "sha256": "164f55f8cac76d60c35c3dc1847adee0fc0d246599178ec587b8b89e1e605ac9",
+    "size_bytes": 11942
+  },
+  "plan": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/attempt-002-device-plan.json",
+    "sha256": "0dfb92be61ee3ab6e06a04b955edeaad84f29e878620d4fd55c39fa82230c1c1",
+    "size_bytes": 3559
+  },
+  "stdout": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/attempt-002-device-stdout.log",
+    "sha256": "a16eab014607a401398bd5cd1e963f80ea080c5fd69415f3f48fd6f4946524e2",
+    "size_bytes": 283
+  },
+  "child": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/attempt-002-device-child.json",
+    "sha256": "313e39c41018fb237c21975710a064aa8694517d53ff02d3364690b30236ba07",
+    "size_bytes": 3602
+  },
+  "outer_seconds": 15.50219538807869,
+  "returncode": 0,
+  "child_pid": 2442531,
+  "terminal": true,
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "generated_tokens": 0
+}

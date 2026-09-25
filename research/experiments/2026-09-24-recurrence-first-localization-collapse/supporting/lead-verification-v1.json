@@ -1,0 +1,252 @@
+{
+  "status": "lead-independent-CPU-verification-passed",
+  "scope": "27 raw full vectors, original prompts/native history/companion tokens and own greedy prefixes, full causal masks and actual28-layer hashes, preserved positions/cache across arms, source traces, unchanged history/companions, all source captures, physical overlay reviewed. Native rotary construction relies on bound CPU/worker qualification; no new model/CUDA call.",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/candidate-results.md",
+    "sha256": "dea48142964054ab8802057ac95a28dca9bcd8154cfe32763908f53d0d1c4729",
+    "size_bytes": 5944
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/receipt.json",
+    "sha256": "31f4a39b69b0dbe845889a3c60215ec2a1ff65e4e85197638b4b92e2b5b5ac38",
+    "size_bytes": 334351
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/readback.json",
+    "sha256": "bbb7a44c0054fa1f6ca7243c0b7ca17c0cf7c2c5b66b23cc22ac84669cec4933",
+    "size_bytes": 21030
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/outer.json",
+    "sha256": "531067beb421f4fe77720fa7373b00a06fe3835d6cd132c20e6b14f31d1b7436",
+    "size_bytes": 248
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/supporting/attempt-001-preflight.json",
+    "sha256": "bf60e6268ed3c40a041004211062b0bf64fe87d852e214d2d5605bf848df7f73",
+    "size_bytes": 139261
+  },
+  "direct_captures": 25,
+  "raw_vectors": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step0.pt",
+      "sha256": "66265d5f03af1224c227fdac82ecfea331f7a0fe9c3816bb97122881456ea42b",
+      "size_bytes": 12716303
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step1.pt",
+      "sha256": "52b00a823af1dc03a353cdb2a7234638ac46915a247e7c4707fb61446ef11779",
+      "size_bytes": 12727311
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step2.pt",
+      "sha256": "af613a5f82577790d4633405eb3e53867323d5654e3988aab38a15c083424596",
+      "size_bytes": 12738255
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step3.pt",
+      "sha256": "c41df32575de727a803f326fd18685a4945c5db6abfa135ecd4eae01ece7a064",
+      "size_bytes": 12749263
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step4.pt",
+      "sha256": "7efe47e241603c00f01f4c04e33275cb2c7b6f24360cfdc8d020b8c8eb50c2d1",
+      "size_bytes": 12760271
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step5.pt",
+      "sha256": "331c09c370c70504408242079c982e6f14c3d90538ea1f6f853ae7ada11d802a",
+      "size_bytes": 12771279
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step6.pt",
+      "sha256": "dd80396e000d24bc1ad55814186087882ca56a6f56c2b686730a117821d4cc8e",
+      "size_bytes": 12782287
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step7.pt",
+      "sha256": "d8b9418d04eaa83cc77173511104e7735fca57f0a4b1137549cb1a5d81bd2df4",
+      "size_bytes": 12793295
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step8.pt",
+      "sha256": "e26a5b7208653e82190411aa0e451145cda3db7dd75bd49032e0999ce71b8c37",
+      "size_bytes": 12804303
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step0.pt",
+      "sha256": "1db9d13bec21b4e70d9fb5259ab5e405c844d114232d0d67bbb2abfb44bfba7d",
+      "size_bytes": 12716671
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step1.pt",
+      "sha256": "d0f585885c20ecc38d8508bbc6cf3d0be623df31fa38f65cfd5c4bd02915f915",
+      "size_bytes": 12727615
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step2.pt",
+      "sha256": "8822cbcd9d0e2bd4d1e7a50a06fe6426cebb4428b9289f4c974ba4864ba79ea6",
+      "size_bytes": 12738623
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step3.pt",
+      "sha256": "8cfbcec24edabcbc5ec2a0e7e33c70772de6a66e16e783508e94e5a2d1fed6fa",
+      "size_bytes": 12749567
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step4.pt",
+      "sha256": "b9863e896c05c1295ccf7b81e3c67f86566d74e073249982fcfff4dc6b9121a9",
+      "size_bytes": 12760575
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step5.pt",
+      "sha256": "686324a1c2fec5fa95948f9ccc59b9a01ef49039b2ad53eb87e7aebae3d9fbbb",
+      "size_bytes": 12771583
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step6.pt",
+      "sha256": "282b3a41b21e9a648fa1473175c07f2ecd217c3f9e05dfb60d588fe0ab5584bf",
+      "size_bytes": 12782591
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step7.pt",
+      "sha256": "40d372336ceaf25163308d1c32f57cc65f0bcda9a590485afb126dae11d77f48",
+      "size_bytes": 12793599
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/independent_identity_mask_sham-step8.pt",
+      "sha256": "62ba7e147bc50c727dc4c6a92777751af3f7ebed85abbd950564c76a2017054b",
+      "size_bytes": 12804671
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step0.pt",
+      "sha256": "5dd342cb042a6177634f054b3dd38c3f64f240decbcd0bfa0f12505b9873f0c6",
+      "size_bytes": 12716537
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step1.pt",
+      "sha256": "57e96a3b9236c514ab0586baa5ba5dd1eea13098ca9381dc41122a9ad764f301",
+      "size_bytes": 12727545
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step2.pt",
+      "sha256": "666b25b5277cc73870d91f75ea159c5a8ddaf956c5087afd73979448868f7750",
+      "size_bytes": 12738489
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step3.pt",
+      "sha256": "7af14c2fe718cfc3edca66b154ae99ebcc5fa268fb7f4830be19731293bc5217",
+      "size_bytes": 12749497
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step4.pt",
+      "sha256": "b8c5b5678d4055fc160ed23dfd4357bb0a2988cbf326b6c621bf9c612808c287",
+      "size_bytes": 12760505
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step5.pt",
+      "sha256": "7201f82bf953c8cb1ec2cb2faac43403c065222a3d68ae59510bd4c67cbfc393",
+      "size_bytes": 12771513
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step6.pt",
+      "sha256": "fdb46fdc12dca232eaebf851dcf49774b410124ede73ee1d902d495b44d24776",
+      "size_bytes": 12782521
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step7.pt",
+      "sha256": "b7226901707d7fa072859017f1b58d6ebc279ebd8c5551df801c3bb12e5a5a59",
+      "size_bytes": 12793529
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step8.pt",
+      "sha256": "f515f52e4522e575649d7d45db06904082c57dc85be2ad1a938f4046e9221030",
+      "size_bytes": 12804537
+    }
+  ],
+  "counts": {
+    "model_forwards": 27,
+    "vision_forwards": 27,
+    "emitted_target_tokens": 27,
+    "reused_calls": 0
+  },
+  "max_errors": {
+    "sham": 0.0,
+    "history": 0.0,
+    "companion_states": 0.0,
+    "companion_vectors": 0.0,
+    "t0": 0.0,
+    "source_trace": 3.814697265625e-05
+  },
+  "outcomes": [
+    {
+      "arm": "native",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ]
+    },
+    {
+      "arm": "independent_identity_mask_sham",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ]
+    },
+    {
+      "arm": "latest_record_read_mask",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        536,
+        999
+      ]
+    }
+  ],
+  "masked_iou_A": 1.0,
+  "masked_iou_F": 0.004554520962329253,
+  "primary_pass": true,
+  "secondary_exact_row0": true,
+  "first_native_masked_token_divergence_zero_based": 5,
+  "outer_gpu_seconds": 79.95819828659296,
+  "cumulative_sequence_gpu_hours": 0.4648794917405927,
+  "lead_model_calls": 0,
+  "lead_cuda_calls": 0
+}

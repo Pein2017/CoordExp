@@ -1,0 +1,252 @@
+{
+  "status": "lead-accepted-technically-valid-scientific-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/unit.md",
+    "sha256": "393b5246a05807f497fe9637211f710bd8c3ab1c658fa2c5eb93455228b9224a",
+    "size_bytes": 11603
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/lead-admission-v1.json",
+    "sha256": "a05f595e8d16b61a89354bf26c1d28ee063e540bcc6ff616355555838d8ec5ea",
+    "size_bytes": 32893
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/candidate-results.md",
+    "sha256": "6683eb99991158fb627388a2185d598ac6bd41c032799547b6b0994504fd4604",
+    "size_bytes": 7610
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_y1_row_routing/run.py",
+    "sha256": "462fa09831d7c4126d1bfb8ed9bbc5318729e1594d3b93dde427fc8cbf30a150",
+    "size_bytes": 45606
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/supporting/attempt-001-preflight.json",
+    "sha256": "f0c0904070523c290599fe5c3fec89c2aa8b5314b59806a05b2c69353a50b194",
+    "size_bytes": 221407
+  },
+  "raw_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/receipt.json",
+    "sha256": "c7f44f08c76e938ed6f9a151fa0e7e1d11bb521b7e06e2d38116f1945111c748",
+    "size_bytes": 571638
+  },
+  "cold_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/readback.json",
+    "sha256": "c1a4efd0a355aeae5a5038bdd16e85c3952e270fe48a98a30833cd5432020607",
+    "size_bytes": 43306
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/outer.json",
+    "sha256": "423dde2ef684192d868a78064a0d7fdb32d208d898d6df1930e30ff5556c6b17",
+    "size_bytes": 266
+  },
+  "independent_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/supporting/lead-attempt-001-verification-v1.json",
+    "sha256": "45fa4be1af656571fd1ec5d1f338fcf3f3f27b71a379e009f964b2eed8231912",
+    "size_bytes": 43570
+  },
+  "overlay": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/overlay.png",
+    "sha256": "73e9c1d550f99e77289cf0a9aa96dc4db94c39556df383b4aef2ea3e8e600d95",
+    "size_bytes": 1366803
+  },
+  "technical_acceptance": {
+    "source_capture_pairs": 28,
+    "raw_vectors_and_inputs": 54,
+    "full_reference_cells": 48,
+    "max_reference_error": 0.0,
+    "actual_layer_masks": 1512,
+    "source_trace_comparisons": 186,
+    "max_source_score_error": 3.814697265625e-05,
+    "policy_and_next_forward_consumption": true,
+    "sham_history_companion_equality": true,
+    "separate_CPU_readback": true,
+    "terminal_child_exit0_absent": true
+  },
+  "scientific_acceptance": {
+    "primary": "NONPASS",
+    "primary_clauses": {
+      "native_flip_broad_A": true,
+      "coordinate_flip_fragment_F": false
+    },
+    "comparator": "NONPASS",
+    "comparator_clauses": {
+      "native_flip_fragment_F": false,
+      "coordinate_flip_broad_A": true
+    },
+    "shared_decision": "mixed_or_other",
+    "outcomes": [
+      {
+        "arm": "native_A",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151670,
+          151703,
+          151756,
+          151649
+        ],
+        "box": [
+          0,
+          0,
+          33,
+          86
+        ],
+        "iou_A": 0.004554520962329253,
+        "iou_F": 1.0,
+        "region": "fragment_F"
+      },
+      {
+        "arm": "coordinate_A",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151683,
+          152206,
+          152669,
+          151649
+        ],
+        "box": [
+          0,
+          13,
+          536,
+          999
+        ],
+        "iou_A": 1.0,
+        "iou_F": 0.004554520962329253,
+        "region": "broad_A"
+      },
+      {
+        "arm": "native_sham",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151670,
+          151703,
+          151756,
+          151649
+        ],
+        "box": [
+          0,
+          0,
+          33,
+          86
+        ],
+        "iou_A": 0.004554520962329253,
+        "iou_F": 1.0,
+        "region": "fragment_F"
+      },
+      {
+        "arm": "coordinate_sham",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151683,
+          152206,
+          152669,
+          151649
+        ],
+        "box": [
+          0,
+          13,
+          536,
+          999
+        ],
+        "iou_A": 1.0,
+        "iou_F": 0.004554520962329253,
+        "region": "broad_A"
+      },
+      {
+        "arm": "native_flip",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151683,
+          152669,
+          152669,
+          151649
+        ],
+        "box": [
+          0,
+          13,
+          999,
+          999
+        ],
+        "iou_A": 0.5365365365365365,
+        "iou_F": 0.0024445858360148684,
+        "region": "broad_A"
+      },
+      {
+        "arm": "coordinate_flip",
+        "emitted": [
+          151646,
+          8987,
+          151647,
+          151648,
+          151670,
+          151670,
+          152206,
+          152669,
+          151649
+        ],
+        "box": [
+          0,
+          0,
+          536,
+          999
+        ],
+        "iou_A": 0.986986986986987,
+        "iou_F": 0.005300076195598583,
+        "region": "broad_A"
+      }
+    ],
+    "claim": "One-way numerical broad-region entry under native y1 replacement; no reciprocal one-token routing rule and no physical localization recovery.",
+    "physical_review": "Native-flip box [0,13,999,999] spans nearly the full image and several visible people. It qualifies numerically as broad_A at IoU 0.5365365, without singleton owner or recovery credit. F remains physical HOLD."
+  },
+  "exploratory_reanalysis": {
+    "scope": "Same saved x2 vectors, retrospective; no new frozen success criterion.",
+    "same_complete_prefix_at_each_y1": true,
+    "x2_full_vocabulary_TV_y0": 0.9734647803791783,
+    "x2_full_vocabulary_TV_y13": 0.9078584944682342,
+    "interpretation": "Read-mode dependence persists after matching y1. The emitted token has a causal effect under native reading, but cannot by itself account for the effect of coordinate-edge blocking."
+  },
+  "counts": {
+    "model": 54,
+    "vision": 54,
+    "logical_emissions": 54,
+    "raw_argmax_evaluations": 54,
+    "greedy_selected_emissions": 50,
+    "identity_writes": 2,
+    "flip_writes": 2,
+    "reused": 0,
+    "reference_cells": 48,
+    "actual_layer_masks": 1512,
+    "source_trace_comparisons": 186
+  },
+  "count_label_note": "The immutable raw receipt calls all54 argmax evaluations raw_greedy_selections. Actual selected emissions are50 greedy plus2 identity writes plus2 flips; no extra call or token.",
+  "outer_seconds": 155.09143260866404,
+  "cumulative_sequence_gpu_hours": 0.9005328468261231,
+  "validation_added_model_calls": 0,
+  "validation_added_cuda_calls": 0,
+  "raw_payload_bytes": 728197475,
+  "disposition": "Close the reciprocal y1 token bridge; no token/threshold scan. Any further route experiment needs its own finite contract.",
+  "no_live_model_job": true
+}

@@ -1,0 +1,440 @@
+{
+  "status": "lead-admitted-finite-five-arm-package",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "authority": "User autonomous research continuation, all GPUs permitted, no elapsed-time ceiling. No change to either task model/effort.",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/extent-protocol.md",
+    "sha256": "1dc907a4443794b3005d4b542dd7bf6ec2b5556134f73b5f02bcbbbbd1f7e0cd",
+    "size_bytes": 9500
+  },
+  "cpu_protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/unit.md",
+    "sha256": "74e48285de2615bad0ab20f0a94cc4d9034de5b854a84e6dfd29c9d1477f0666",
+    "size_bytes": 4501
+  },
+  "cpu_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/lead-cpu-acceptance-v1.json",
+    "sha256": "5dfda3da5bfb99291d13c3d3dfbcb233c14507efcd02ace3640e16bdc7edf3a6",
+    "size_bytes": 5853
+  },
+  "cpu_candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/supporting/cpu-feasibility.md",
+    "sha256": "237e9974b1c1d72e2ce80ae5008ca35b7a42e69b11afa24cff0170dbdb16ea99",
+    "size_bytes": 6861
+  },
+  "cpu_bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/supporting/cpu-bindings.json",
+    "sha256": "42a41d50fb9693beaf835a58deca1a081d80f2b7fa3b248a5f12f564c321db27",
+    "size_bytes": 15466
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-native-read-acceptance-v1.json",
+    "sha256": "1b3d189b7de9c5be84581c700d8f2226f42d6268f172e6e13e9227a5c0f4f8ee",
+    "size_bytes": 3468
+  },
+  "source_bindings": {
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846",
+      "size_bytes": 111459
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+      "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+      "size_bytes": 18757
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+      "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+      "size_bytes": 188166
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+      "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+      "size_bytes": 262097
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/panel.json",
+    "sha256": "6b7df228570d2bdb4c3d5c79a1b8467f425186dddc6cddad658bca50a95f3569",
+    "size_bytes": 723630
+  },
+  "model_identity": {
+    "attention": "sdpa",
+    "dtype": "fp32",
+    "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+    "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+    "model": "untied",
+    "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+    "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+    "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+    "shared_delta": false
+  },
+  "original_input_identity_sha256": "ab022eb4d785e912c5a1d92202a9a8139eeb3ccc18838cd04822faeced06719e",
+  "original_effective_identity_sha256": "1a8137996213510db9c67f13b41d80b4170c772ff495c083d4cd7097a0344e7c",
+  "historical_loader_path_crosswalk": [
+    {
+      "historical": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+        "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+        "size_bytes": 51208
+      },
+      "maintained_path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    }
+  ],
+  "source_full_batch": {
+    "eos_id": 151645,
+    "group": "new-08",
+    "image_grids": [
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        72,
+        54
+      ],
+      [
+        1,
+        52,
+        72
+      ],
+      [
+        1,
+        54,
+        72
+      ]
+    ],
+    "left_padding": [
+      0,
+      42,
+      78,
+      42
+    ],
+    "pad_id": 151643,
+    "pixel_elements": 23924736,
+    "planning_replanned_image_plan": true,
+    "prompt_lengths": [
+      1362,
+      1320,
+      1284,
+      1320
+    ],
+    "prompt_width": 1362,
+    "raw_lengths": [
+      78,
+      119,
+      244,
+      174
+    ],
+    "request_ids": [
+      "coco2017_train_000000135237",
+      "coco2017_train_000000151704",
+      "coco2017_train_000000159714",
+      "coco2017_train_000000169872"
+    ],
+    "target_index": 1
+  },
+  "target_index": 1,
+  "raw_prefix_end": 36,
+  "historical_row_raw_span": [
+    27,
+    36
+  ],
+  "changed_raw_slots": [
+    31,
+    34
+  ],
+  "changed_physical_slots": [
+    1393,
+    1396
+  ],
+  "corners": [
+    {
+      "name": "native",
+      "box": [
+        197,
+        829,
+        270,
+        859
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "76c598ed9e8ba846c3f4d71b50f85f8795d93d245be92746c00228cfb2fe1749",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.6045602605863192
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "x1_only",
+      "box": [
+        207,
+        829,
+        270,
+        859
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152529,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "20544e4c6a533266c7bb848858da6a056eec98d50b5003b69746908a8fa2115c",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.6527331189710611
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "y2_only",
+      "box": [
+        197,
+        829,
+        270,
+        852
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151867,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1396
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "ad6abe365c643db4b8efac99f6990b38c0d73e8decc3c401d955d6adfea1e92b",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.5001698946653075
+      },
+      "reviewed_physical_proposal": "B2141669"
+    },
+    {
+      "name": "both",
+      "box": [
+        207,
+        829,
+        270,
+        852
+      ],
+      "historical_row_tokens": [
+        151646,
+        2190,
+        151647,
+        151648,
+        151877,
+        152499,
+        151940,
+        152522,
+        151649
+      ],
+      "full_width": 1398,
+      "changed_full_input_indices": [
+        [
+          1,
+          1393
+        ],
+        [
+          1,
+          1396
+        ]
+      ],
+      "native_prompt_and_companions_identical": true,
+      "attention_position_cache_identical": true,
+      "input_ids_sha256": "03d90bed504faec212f0e8df227d35ac04911cb8f125bc2877efc08f01bcbdc5",
+      "position_ids_sha256": "08f37ddd82fd332f2a1f5a1e9dc56e7c0d5ce4a91271b8aff9ac3ffaee4557f8",
+      "attention_mask_sha256": "5b51170659830a2228b96459d20df3c6c0e852c1605c72894c794798c9a85806",
+      "iou": {
+        "A1652859": 0.0,
+        "B2141669": 0.5296052631578947
+      },
+      "reviewed_physical_proposal": "B2141669"
+    }
+  ],
+  "ordered_arms": [
+    "native",
+    "identity_write_sham",
+    "both",
+    "x1_only",
+    "y2_only"
+  ],
+  "production_gate": "Complete native/sham/both actual consumer checks and separate-process CPU cold readback before x1_only/y2_only. Scientific nonpass does not stop the admitted queue. Technical failure stops without retry.",
+  "native_reference": {
+    "summary": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/supporting/native-read-cold-summary-v1.json",
+      "sha256": "397c716bea482896a7afe9be23c1dc8cf901c2da9f81d7fe294478b00a7634b4"
+    },
+    "state": "row4_first_B_revisit",
+    "steps": 9,
+    "tolerance": 0.0002,
+    "tokens": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151877,
+      152499,
+      151940,
+      152522,
+      151649
+    ]
+  },
+  "numerical_reference_Q": {
+    "tokens": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151926,
+      152346,
+      152058,
+      152421,
+      151649
+    ],
+    "box": [
+      256,
+      676,
+      388,
+      751
+    ],
+    "physical_owner": "UNKNOWN",
+    "matched_vector_reference": false
+  },
+  "primary": {
+    "name": "x1-dependent numerical routing pattern",
+    "B_reference_box": [
+      207,
+      829,
+      270,
+      852
+    ],
+    "Q_reference_box": [
+      256,
+      676,
+      388,
+      751
+    ],
+    "same_description_ids": [
+      2190
+    ],
+    "region_target_min_iou": 0.5,
+    "region_other_max_iou": 0.1,
+    "boundary_guard": 1e-06,
+    "expected_regions": {
+      "native": "B",
+      "identity_write_sham": "B",
+      "both": "Q",
+      "x1_only": "Q",
+      "y2_only": "B"
+    },
+    "physical_claim": "None from Q-region match; separate visual review required."
+  },
+  "secondary_exact": {
+    "x1_only": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151926,
+      152346,
+      152058,
+      152421,
+      151649
+    ],
+    "both": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151926,
+      152346,
+      152058,
+      152421,
+      151649
+    ],
+    "y2_only": [
+      151646,
+      2190,
+      151647,
+      151648,
+      151877,
+      152499,
+      151940,
+      152522,
+      151649
+    ]
+  },
+  "max_model_forwards": 66,
+  "max_vision_forwards": 66,
+  "max_emitted_tokens": 66,
+  "treatment_reused_calls": 0,
+  "max_width": 1413,
+  "time_ceiling": null,
+  "prior_sequence_gpu_hours": 0.3544195017876344,
+  "forecast_outer_gpu_seconds": 378.3493652152673,
+  "artifact_planning_envelope_bytes": 2147483648,
+  "raw_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-same-owner-extent/extent-v1",
+  "producer_write_root": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_same_owner_extent",
+  "worker_no_writes": [
+    "Git/index",
+    "predecessor/captures",
+    "peer/shared-runtime",
+    "lead state/catalog/index/acceptance"
+  ],
+  "stop": "First technical/source/consumer/operational conflict, or completion of finite five arms. No retry, additional image/reference/corner, self-acceptance or successor."
+}

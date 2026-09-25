@@ -1,0 +1,85 @@
+{
+  "status": "lead-source-geometry-checked",
+  "source_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/lead-acceptance-v1.json",
+    "sha256": "27e1b68d2a8fbedb890e378552f1c7d25dc1fb42ae3a08570fcb67004b8e1ab2",
+    "size_bytes": 7968
+  },
+  "same_full_input": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step6.json",
+    "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+    "size_bytes": 342374
+  },
+  "native_and_both_input_equal": true,
+  "references": {
+    "native": {
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step6.pt",
+        "sha256": "2724a31b70f70ebed8707b897711a3c12b09d446844ac546960e6b973718cce1",
+        "size_bytes": 12782307
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step6.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "accepted_arm": "native_A"
+    },
+    "both": {
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step6.pt",
+        "sha256": "b5dcb53b21396d510623f619b64e926cdef45924274a226fb9497a66fd9ed4b5",
+        "size_bytes": 12782377
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step6.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "accepted_arm": "coordinate_flip"
+    }
+  },
+  "width": 1377,
+  "target": 2,
+  "history_raw": [
+    0,
+    9
+  ],
+  "current_raw": [
+    9,
+    15
+  ],
+  "history_keys_physical": [
+    1362,
+    1371
+  ],
+  "earlier_x1_query_physical": [
+    1375,
+    1376
+  ],
+  "current_y1_query_physical": [
+    1376,
+    1377
+  ],
+  "rotary_earlier": [
+    400,
+    400,
+    400
+  ],
+  "rotary_current": [
+    401,
+    401,
+    401
+  ],
+  "selected_edges_earlier_current_both": [
+    9,
+    9,
+    18
+  ],
+  "both_saved_mask_equals_union": true,
+  "new_partial_output_vectors_computed": false,
+  "model_calls": 0,
+  "cuda_calls": 0
+}

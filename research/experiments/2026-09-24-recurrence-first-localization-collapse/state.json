@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-first-localization-collapse",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Frozen numerical primary and exact-row0 secondary pass; broad localization return also repeats an already emitted proposal.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-first-localization-collapse/unit.md",
+  "result": "research/experiments/2026-09-24-recurrence-first-localization-collapse/results.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-first-localization-collapse/lead-acceptance-v1.json",
+  "boundary": "Closed one-source27-call package. Native F ownerHOLD; no repetition-remediation or population claim.",
+  "not_authorized": [
+    "Git",
+    "predecessor/peer/shared-runtime/lead-state edits",
+    "model/effort changes",
+    "self-acceptance",
+    "extra call/arm/source/retry/successor"
+  ],
+  "next_action": "Separate written-coordinate content by read-access contrast; no additional execution under this contract.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "dispatch": {
+    "turn_id": "01a0d2d0-7c24-7ac2-bcf1-d480e1180b9e",
+    "message_sha256": "43d516b26ce6d6170d1ccff7ac8984251a0188cc87c09eb8856844f9aee7da81",
+    "receipt": "/tmp/923-first-localization-collapse-sep24-dispatch.json",
+    "status": "submitted"
+  }
+}

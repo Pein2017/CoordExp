@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-collapse-two-record-routing",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "CPU-recovered production accepted; frozen shared FF/AA/FA prediction fails at AA. Earlier-content dependence retained.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-collapse-two-record-routing/unit.md",
+  "result": "research/experiments/2026-09-24-recurrence-collapse-two-record-routing/results.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-acceptance-v1.json",
+  "boundary": "45 original calls accepted with separate CPU sidecar; no GPU retry. AA distinct-person localization; tiny F/F2 physical owner HOLD.",
+  "not_authorized": [
+    "Git",
+    "GPU/model/vision/CUDA calls",
+    "original producer/preflight/raw/receipt/failure edits",
+    "executing historical source captures",
+    "global monkeypatch/hash bypass",
+    "peer/shared-runtime/lead-state changes",
+    "self-acceptance or successor"
+  ],
+  "next_action": "Closed. Separate contextual-kv-carrier unit admits10 calls; predecessor bytes and scientific nonpass preserved.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "production_cost": {
+    "outer_seconds": 129.19039377570152,
+    "cumulative_sequence_gpu_hours": 0.537174243789956,
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/receipt.json"
+  },
+  "previous_gpu_dispatch": {
+    "turn_id": "01a0d2fa-63a5-7180-a947-e2ed0f96742e",
+    "message_sha256": "c6c3330d4cd0a8fbd797c5ca2c0b66e1986be203fdacd672ae08b1cbbfa631e1",
+    "receipt": "/tmp/923-collapse-two-record-sep24-dispatch.json",
+    "status": "submitted"
+  },
+  "dispatch": {
+    "turn_id": "01a0d30a-2cf0-76a1-b616-caff476c1b85",
+    "message_sha256": "2d924d4ddfd46e98559d9e5cad2b83a59a5b86760f1b182f968146f673b63d21",
+    "receipt": "/tmp/923-two-record-cpu-recovery-sep24-dispatch.json",
+    "status": "candidate-returned-and-lead-accepted",
+    "scope": "CPU-only versioned readback recovery"
+  },
+  "cpu_followup": {
+    "scope": "AF/FF older-cache versus latest-context carrier feasibility only",
+    "brief": "research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/context-relay-feasibility-brief.md",
+    "brief_sha256": "3bf5a6f696a11df3f09f4a15c770c91c5c3752f8dc2687bed16b8ec0ab9ff808",
+    "receipt": "/tmp/923-context-relay-cpu-sep24-dispatch.json",
+    "turn_id": "01a0d31c-13ac-7ab1-86b0-8351efd9411c",
+    "message_sha256": "844e5b9690cb6b4781600d303c712e93a748943271375754e8523f727418f996",
+    "status": "lead-accepted-CPU-feasibility",
+    "max_model_calls": 0,
+    "max_cuda_calls": 0,
+    "acceptance": "research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-context-relay-cpu-acceptance-v1.json"
+  }
+}

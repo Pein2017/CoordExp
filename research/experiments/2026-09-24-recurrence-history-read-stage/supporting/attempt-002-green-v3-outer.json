@@ -1,0 +1,19 @@
+{
+  "command": [
+    "python",
+    "-B",
+    "-m",
+    "probes.training_set_completion.recurrence_history_read_stage.boundary_fixture",
+    "green"
+  ],
+  "child_pid": 2352695,
+  "returncode": 0,
+  "outer_seconds": 21.660006679594517,
+  "terminal": true,
+  "stdout": "{\"phase\": \"green\", \"exit_code\": 0, \"outer_seconds\": 16.110273480415344, \"cases\": 6, \"receipt\": \"/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-history-read-stage/supporting/attempt-002-green-v3.json\"}\n",
+  "stderr": "",
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "generated_tokens": 0,
+  "cuda_kind": "non-model fixture"
+}

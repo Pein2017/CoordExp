@@ -1,0 +1,15 @@
+{
+  "phase": "red",
+  "command": [
+    "/root/miniconda3/envs/ms/bin/python",
+    "-B",
+    "-m",
+    "probes.training_set_completion.recurrence_history_read_stage.boundary_fixture",
+    "red-child"
+  ],
+  "outer_seconds": 9.288427695631981,
+  "exit_code": 1,
+  "terminal": true,
+  "stderr": "`torch_dtype` is deprecated! Use `dtype` instead!\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py\", line 141, in <module>\n    if __name__==\"__main__\":main()\n                            ^^^^^^\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py\", line 125, in main\n    print(json.dumps(child(phase.removesuffix(\"-child\"))))\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_history_read_stage/boundary_fixture.py\", line 61, in child\n    else:raise AssertionError(\"old input comparison did not fail\")\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: old input comparison did not fail\n",
+  "child_result": null
+}

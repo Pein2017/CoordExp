@@ -1,0 +1,390 @@
+{
+  "status": "lead-independent-CPU-verification-passed",
+  "scope": "All45 raw full vectors/source prompt+history writes+own prefixes; actual28-layer full masks/rectangle complements; active source traces; same-history and companion states;18 prior reference vectors; source captures and terminal receipt. Native rotary source construction relies on bound CPU/worker qualification, cross-arm positions directly equal.",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/candidate-results.md",
+    "sha256": "3e82f45f12b63d0be38497a80cd2c3b6968f90ff1909af1473a26a318204c063",
+    "size_bytes": 8037
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/receipt.json",
+    "sha256": "53d83bb0fa8e6d0c9a9d6cd31c462fd3a6de83f4d8a98441e69327a0a5babb58",
+    "size_bytes": 481049
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/readback.json",
+    "sha256": "222ab60da1e855f4cbd6060a16de576edd25405cb9aa9e881bf3c8df2febd333",
+    "size_bytes": 33817
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/outer.json",
+    "sha256": "01488a53a6a2b822bc81071c542ef0eaa73c9d34ab9a39540a3a58dcffeb7d5f",
+    "size_bytes": 246
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/supporting/attempt-001-preflight.json",
+    "sha256": "936a2bda117aedf039518744f07bdcea4ec4a1000fa79ae501cc9a5d7c52d7ba",
+    "size_bytes": 145948
+  },
+  "direct_captures": 26,
+  "raw_vectors": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step0.pt",
+      "sha256": "677ef3ff8fa376a6a465deb3a43d172c04a1bbb9f227eb7037cc5119421cf9c1",
+      "size_bytes": 12716323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step1.pt",
+      "sha256": "f4ae1ea16d608ea97b7ab54eaee6b3d89a083a7ef311aefc2f1121a37c0c484f",
+      "size_bytes": 12727331
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step2.pt",
+      "sha256": "0a33235ab01f7c67c61e365d6bb8254800c640387ae4f979145a43d997d66ea5",
+      "size_bytes": 12738275
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step3.pt",
+      "sha256": "6991a8f0441e30764c9b4e384d4ea6b8ca1fb0d8cd74ee500ab4ff210bb412fa",
+      "size_bytes": 12749283
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step4.pt",
+      "sha256": "07bc01bb7d1a8abff201fe3169ae188714f58f4b17e075381f90a3ca50ddfea6",
+      "size_bytes": 12760291
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step5.pt",
+      "sha256": "0a90b0f9de137f8ceec456010dc2f8e28401e8822f41b97038ba2ce301170cf3",
+      "size_bytes": 12771299
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step6.pt",
+      "sha256": "2724a31b70f70ebed8707b897711a3c12b09d446844ac546960e6b973718cce1",
+      "size_bytes": 12782307
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step7.pt",
+      "sha256": "7e9dee28b8468ea17b20ff20106e95d57109b5bac59005a3baf2c3b1198685d0",
+      "size_bytes": 12793315
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_A-step8.pt",
+      "sha256": "038cae02e12d000204c63280db0e89e927afa1ba474c7af3af229e4f1e422574",
+      "size_bytes": 12804323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step0.pt",
+      "sha256": "2d0aa97d1ee6cffa7d3b89d3deb80ce588f48ecbd0a1adec251dfc6fab27c759",
+      "size_bytes": 12716467
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step1.pt",
+      "sha256": "864fac6a6fcd1e790a143ffd5d66974824cf65557ad1e7e3d65af80684fb70fc",
+      "size_bytes": 12727475
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step2.pt",
+      "sha256": "1db5bcbd32a9235ff3c0ef54d8d4ffd3ea6ade007ea89ff54b9a16f76929adc6",
+      "size_bytes": 12738419
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step3.pt",
+      "sha256": "1eb54346b7301f4035539bc64bd580dd536595b622d63b64dd44e5202c0ba41c",
+      "size_bytes": 12749427
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step4.pt",
+      "sha256": "dd000dc6a6e37d4f91aef6d8fb7c4c7549a4188573748083d65a9a987e9af663",
+      "size_bytes": 12760435
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step5.pt",
+      "sha256": "f00790a147abd4bcacb846fc3088eebc377193ef1c5de4a1842695d267834a3f",
+      "size_bytes": 12771443
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step6.pt",
+      "sha256": "280fbd52680aa52260cc30533881465fb3f9705f09017edd9a896998f8b53bfd",
+      "size_bytes": 12782451
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step7.pt",
+      "sha256": "d31a80575a12d4c847605f45ffe2a4eb47870cdcaa7190750c28ab7b5762fc7f",
+      "size_bytes": 12793459
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/identity_write_A-step8.pt",
+      "sha256": "2c672e04fc07479e1fe69ee635cae7475a55987582649f374815ea9f50b71796",
+      "size_bytes": 12804467
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step0.pt",
+      "sha256": "532556ee6347c96fa508292c66c5f033f909b5b365a9f2ef0f281589023d8561",
+      "size_bytes": 12716323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step1.pt",
+      "sha256": "8810d9e9b4530bc191d470e1bcc4d7aabfd09d6900bde32e034f47a6bc58e69a",
+      "size_bytes": 12727331
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step2.pt",
+      "sha256": "8a7579c3411e8b29fce665c77700dcf9c9be1721d7f69400a9d5350d7a6445eb",
+      "size_bytes": 12738275
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step3.pt",
+      "sha256": "151e443867289ec8a056ffd928de74ac61198a513cab6b226e6e71f05ec0e4ba",
+      "size_bytes": 12749283
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step4.pt",
+      "sha256": "29c748b7081e8f95a8f5e7f30e27c3423843ec849b9a31d87930d32a20ebc16e",
+      "size_bytes": 12760291
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step5.pt",
+      "sha256": "2269ad4692078f0915faa53142a5342fce8bd41561a182c1b9b44094fae1c2bd",
+      "size_bytes": 12771299
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step6.pt",
+      "sha256": "10a11d3cc478d405162ef048ab81c8edc0cac1918b3503e511ab82a5653a6221",
+      "size_bytes": 12782307
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step7.pt",
+      "sha256": "18f4d84b7389b4f965b049182ff58aa9218d148cf96d444e9bca4e4884090450",
+      "size_bytes": 12793315
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_A-step8.pt",
+      "sha256": "fbf9700682055bb20bf75433e8ff4ec1c4aa6c6b174be015ddefbf1f21a9252b",
+      "size_bytes": 12804323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step0.pt",
+      "sha256": "be34f93d61e49e8f9abd43079039302a47ba58c417f68a4f2dc4d801c7cece9b",
+      "size_bytes": 12716323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step1.pt",
+      "sha256": "28444e038102736255be4689f73e3dc60a65b33a081150202ebcb4edf8e75c73",
+      "size_bytes": 12727331
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step2.pt",
+      "sha256": "2d85ec2fc5edcbe908255279488dfd0dbb7d98a903c324a670e5c9dc01a8285c",
+      "size_bytes": 12738275
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step3.pt",
+      "sha256": "659042e3f8badf3cbe64e5ef5a89b068a2d5f49ef1cbc098c66f4d44cbcbc647",
+      "size_bytes": 12749283
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step4.pt",
+      "sha256": "247e6f372468a59aec3b9fb2ff248f9d38571b4c6e79811e247016013994112d",
+      "size_bytes": 12760291
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step5.pt",
+      "sha256": "225f176274b3e0ae6822aa2c2cbe3c425ce4c33fc1d5aafb0ce66dae54ee5baa",
+      "size_bytes": 12771299
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step6.pt",
+      "sha256": "7775f8d2717475621bac9584b8e5302fbe0588662b83cc7acf13b3a18b1631c0",
+      "size_bytes": 12782307
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step7.pt",
+      "sha256": "806ad95c210851155de152502151581e41929b434bb0742312fd27632dd9352d",
+      "size_bytes": 12793315
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/native_F-step8.pt",
+      "sha256": "166146a9a6abffa1ee789597bf2bcdf1528a816e95545fca96ece90426815773",
+      "size_bytes": 12804323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step0.pt",
+      "sha256": "c1bf762b7f24180fdf3a103da0cf762d69adb211f1e08526d7ec41bb3e4ff64d",
+      "size_bytes": 12716323
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step1.pt",
+      "sha256": "b512d758970d6abc98387bf39527d5630e9896434b009bed6daed4f04bb53a68",
+      "size_bytes": 12727331
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step2.pt",
+      "sha256": "0def3296892928999069e4d7a07bde02c92fa47aaac0906276a85b2ae058d792",
+      "size_bytes": 12738275
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step3.pt",
+      "sha256": "0f8cff957488ad490c110c2223dd948079c2957da8c6bda9d435e383ae2618bb",
+      "size_bytes": 12749283
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step4.pt",
+      "sha256": "aca956b4a2634024e7b8fd26a35882063817fd5c873ff450045a2f913f72dec2",
+      "size_bytes": 12760291
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step5.pt",
+      "sha256": "28ccb3e292dfff3db696477db084101f13bb93b0e02ef0d6ef46465fc7546314",
+      "size_bytes": 12771299
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step6.pt",
+      "sha256": "55e4a60065f7eb80efc3eef1f2bdcbabb876c9c04874c071849c03c01902836c",
+      "size_bytes": 12782307
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step7.pt",
+      "sha256": "3d50dcd7bcbad674bf7e0cd9a3c4126703c2feeb83bd28f915b19b823079872b",
+      "size_bytes": 12793315
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/masked_F-step8.pt",
+      "sha256": "affbed425a8492b617711623d11a1a5ccc4729d6701b9f3caa0db44b47ceec71",
+      "size_bytes": 12804323
+    }
+  ],
+  "counts": {
+    "model_forwards": 45,
+    "vision_forwards": 45,
+    "emitted_target_tokens": 45,
+    "reused_calls": 0
+  },
+  "max_errors": {
+    "accepted_refs": 0.0,
+    "sham": 0.0,
+    "same_history": 0.0,
+    "companion_states": 0.0,
+    "companion_vectors": 0.0,
+    "masked_equal_prefix": 0.0,
+    "F_t0": 0.0,
+    "source_trace": 3.814697265625e-05,
+    "positions": 0.0
+  },
+  "outcomes": [
+    {
+      "arm": "native_A",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ]
+    },
+    {
+      "arm": "identity_write_A",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ]
+    },
+    {
+      "arm": "masked_A",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        536,
+        999
+      ]
+    },
+    {
+      "arm": "native_F",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151671,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        1,
+        13,
+        536,
+        999
+      ]
+    },
+    {
+      "arm": "masked_F",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        536,
+        999
+      ]
+    }
+  ],
+  "native_F_iou_A": 0.9981343283582089,
+  "native_F_iou_F": 0.004424141875563434,
+  "primary_pass": true,
+  "secondary_exact_row0": false,
+  "same_prefix_native_A_vs_F_TV": {
+    "0": 0.00012344346112886913,
+    "1": 0.6221220827897574,
+    "4": 0.9134509968746103
+  },
+  "physical_review": "Broad F-native and both masked outputs identify left foreground person; F donor/fragment physical identity remainsHOLD.",
+  "outer_gpu_seconds": 131.07071360200644,
+  "cumulative_sequence_gpu_hours": 0.5012880232967056,
+  "lead_model_calls": 0,
+  "lead_cuda_calls": 0
+}

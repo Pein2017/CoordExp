@@ -1,0 +1,397 @@
+{
+  "authority": {
+    "accepted_prior": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-acceptance-v1.json",
+      "sha256": "a34c0e472a793fd44d666e619a566260c34121fd8f231317db70b493929cc77e",
+      "size_bytes": 7574
+    },
+    "admission_source": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-admission-v1.json",
+      "sha256": "0c44d25fd542043ef543eb31fa284549edd07dd5d0fd05dd796a3093d7b53668",
+      "size_bytes": 11398
+    },
+    "brief": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/context-relay-feasibility-brief.md",
+      "sha256": "3bf5a6f696a11df3f09f4a15c770c91c5c3752f8dc2687bed16b8ec0ab9ff808",
+      "size_bytes": 7582
+    },
+    "prior_cpu_readback": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/cpu-readback-v1/readback.json",
+      "sha256": "ab307c062112a236d1a439e2537fa4359d5b2c3e187073fb4e5e122565f37b28",
+      "size_bytes": 50446
+    },
+    "prior_preflight": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/attempt-001-preflight.json",
+      "sha256": "77f19245d84d880bc07428d985bd48ef4a50727c4a21f5f98a9ce4462a56fd54",
+      "size_bytes": 147525
+    },
+    "prior_production_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/receipt.json",
+      "sha256": "0c1132a8efe2ebde2ddc3ae180d84d13de66f0c4f1cf5329ec4cbcc4b484a974",
+      "size_bytes": 467696
+    }
+  },
+  "gates_to_freeze_on_future_admission": [
+    "fresh source and all input/position/mask parity",
+    "two fresh full vectors versus saved AF/FF all-four references; AF source trace only",
+    "fresh AF and FF prefills with two retained or safely snapshotted 28-layer caches",
+    "all-four-row cached/full <=2e-4 anchors",
+    "both executed latest-nine K/V identity shams with all-four-row agreement",
+    "per-layer selected donor K/V and unchanged older/prompt/companion K/V at actual attention consumer",
+    "suffix causal mask, slots, three-axis positions, original companion tokens and media semantics",
+    "per-layer after-suffix historical invariance, companion suffix K/V, finally crop+K/V restoration including forced exception",
+    "save raw full-vocabulary vectors and consumer evidence before TV reduction; independent CPU cold readback"
+  ],
+  "limitations": [
+    "No fresh cached/full parity or K/V donor consumer proof exists yet; feasibility is CPU only.",
+    "Saved historical hidden-state differences do not identify K/V mediation or prove a latest cache effect.",
+    "Cross-world cache is artificial; latest-origin-following is not a natural mediation percentage.",
+    "No exact TV threshold or GPU admission is set here."
+  ],
+  "maintained_route": {
+    "accepted_full_prefix_producer_reference": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_collapse_two_record_routing/run.py",
+      "sha256": "0e701dea6634f2dcc39f11b64d99f990b4af1b406cd7c258bee9396d6cd9f943",
+      "size_bytes": 41517
+    },
+    "full_prefix_and_cache_consumer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_cross_image_phase/run.py",
+      "sha256": "1545524d2db5b4e3b62747af6d647f72e8111ab6125d69f5492a0abce7f6d3c9",
+      "size_bytes": 63354
+    },
+    "future_direct_import_capture_required": true,
+    "inference_mode_joint_K_V_patch_and_restore": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_y1_value_phase/run.py",
+      "sha256": "6e606141af0efae208151b07c1f662937743891d2be7f52813da1b32860a309e",
+      "size_bytes": 54693
+    }
+  },
+  "observed_saved_input_check": {
+    "all_four_active_at_suffix": true,
+    "all_four_attention_and_three_axis_positions_equal": true,
+    "cache_position": [
+      0,
+      1384
+    ],
+    "common_header_tokens": [
+      151646,
+      8987,
+      151647,
+      151648
+    ],
+    "companion_saved_history_states_equal": true,
+    "latest_F_tokens_equal": true,
+    "physical_header": [
+      1380,
+      1384
+    ],
+    "physical_latest": [
+      1371,
+      1380
+    ],
+    "physical_older": [
+      1362,
+      1371
+    ],
+    "rotary_header_first_last": [
+      405,
+      408
+    ],
+    "rotary_latest_first_last": [
+      396,
+      404
+    ],
+    "rotary_older_first_last": [
+      387,
+      395
+    ],
+    "saved_historical_state_max_abs_diff": {
+      "all": 1250.4158935546875,
+      "latest": 1250.4158935546875,
+      "latest_layer0": 0.040997982025146484,
+      "latest_layer27": 1250.4158935546875,
+      "older": 421.91650390625
+    },
+    "shape_attention_mask": [
+      4,
+      1384
+    ],
+    "shape_input_ids": [
+      4,
+      1384
+    ],
+    "shape_position_ids": [
+      3,
+      4,
+      1384
+    ],
+    "target_input_differences_AF_to_FF": [
+      [
+        2,
+        1367
+      ],
+      [
+        2,
+        1368
+      ],
+      [
+        2,
+        1369
+      ]
+    ],
+    "target_x1_full_reference_winners": {
+      "AF": 151670,
+      "FF": 151671
+    }
+  },
+  "proposed_cells": [
+    {
+      "E": "AF",
+      "L": "AF",
+      "call": 1,
+      "kind": "full_reference",
+      "name": "full_AF",
+      "vision": 1
+    },
+    {
+      "E": "FF",
+      "L": "FF",
+      "call": 2,
+      "kind": "full_reference",
+      "name": "full_FF",
+      "vision": 1
+    },
+    {
+      "E": "AF",
+      "L": "AF",
+      "call": 3,
+      "kind": "historical_prefill",
+      "name": "prefill_AF",
+      "vision": 1
+    },
+    {
+      "E": "FF",
+      "L": "FF",
+      "call": 4,
+      "kind": "historical_prefill",
+      "name": "prefill_FF",
+      "vision": 1
+    },
+    {
+      "E": "AF",
+      "L": "AF",
+      "call": 5,
+      "kind": "cached_anchor",
+      "name": "anchor_AF",
+      "vision": 0
+    },
+    {
+      "E": "FF",
+      "L": "FF",
+      "call": 6,
+      "kind": "cached_anchor",
+      "name": "anchor_FF",
+      "vision": 0
+    },
+    {
+      "E": "AF",
+      "L": "AF",
+      "call": 7,
+      "kind": "identity_KV_sham",
+      "name": "sham_AF",
+      "vision": 0
+    },
+    {
+      "E": "FF",
+      "L": "FF",
+      "call": 8,
+      "kind": "identity_KV_sham",
+      "name": "sham_FF",
+      "vision": 0
+    },
+    {
+      "E": "AF",
+      "L": "FF",
+      "call": 9,
+      "kind": "hybrid",
+      "name": "hybrid_AF_FF",
+      "vision": 0
+    },
+    {
+      "E": "FF",
+      "L": "AF",
+      "call": 10,
+      "kind": "hybrid",
+      "name": "hybrid_FF_AF",
+      "vision": 0
+    }
+  ],
+  "proposed_resources": {
+    "both_latest_9_position_KV_snapshots_bytes": 4128768,
+    "elapsed_cap": "none; future lead admission required",
+    "full_batch_fp32_vectors_10_bytes": 24427200,
+    "generated_tokens": 0,
+    "gpu_seconds_this_assignment": 0,
+    "linear_10call_twofold_seconds": 57.417952789200676,
+    "model_forwards": 10,
+    "one_cache_bytes": 1266155520,
+    "planning_seconds_rounded": 90,
+    "prior_45call_outer_seconds": 129.19039377570152,
+    "prior_gpu_peak_allocated_bytes": 9952862720,
+    "prior_gpu_peak_reserved_bytes": 11075059712,
+    "prior_sequence_gpu_hours": 0.537174243789956,
+    "raw_artifact_planning_bytes": 268435456,
+    "two_caches_bytes": 2532311040,
+    "vision_forwards": 4
+  },
+  "proposed_shape": {
+    "actual_suffix_sdpa_mask": [
+      4,
+      1,
+      4,
+      1384
+    ],
+    "cache_dtype": "float32",
+    "cache_heads": 8,
+    "cache_layers": 28,
+    "cached_suffix_attention_mask": [
+      4,
+      1384
+    ],
+    "cached_suffix_cache_position": [
+      1380,
+      1384
+    ],
+    "cached_suffix_input_ids": [
+      4,
+      4
+    ],
+    "cached_suffix_position_ids": [
+      3,
+      4,
+      4
+    ],
+    "full": [
+      4,
+      1384
+    ],
+    "head_dim": 128,
+    "prefill": [
+      4,
+      1380
+    ],
+    "target_index": 2,
+    "vocabulary_size": 152670
+  },
+  "saved_full_vector_references": {
+    "FF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/FF-step4.pt",
+      "sha256": "2696fd63da892fddea0534a6cb375ae318a7a917961b03b9df21746044dd8011",
+      "size_bytes": 14923943
+    },
+    "native_AF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/native_AF-step4.pt",
+      "sha256": "53f3887776fb70eb3b9c450f1e2bcbe93e77de2d58a6bfad2eb33b199ea1b5b4",
+      "size_bytes": 14924013
+    }
+  },
+  "saved_inputs": {
+    "FF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/inputs-FF-step4.json",
+      "sha256": "9fa22432b731487b55cfa937983e27772dd9530560746ed151c32947b6797d3e",
+      "size_bytes": 344171
+    },
+    "native_AF": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/inputs-native_AF-step4.json",
+      "sha256": "1fde3a91668ddc57a12b096f436bfc3e2d6b940185a802ec42c57899c05a7237",
+      "size_bytes": 344171
+    }
+  },
+  "scope": "AF/FF same native common header before x1; hypothetical 2x2 older/latest post-RoPE K/V recombination",
+  "source": {
+    "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "case_id": "mature:351017:2",
+    "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "group": "refined-03",
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+      "sha256": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+      "size_bytes": 154193
+    },
+    "image_grids": [
+      [
+        1,
+        52,
+        76
+      ],
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        52,
+        78
+      ],
+      [
+        1,
+        54,
+        72
+      ]
+    ],
+    "maintained_loader": {
+      "path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "model_identity": {
+      "attention": "sdpa",
+      "dtype": "fp32",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "model": "untied",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "shared_delta": false
+    },
+    "pixel_elements": 24502272,
+    "prompt_lengths": [
+      1336,
+      1362,
+      1362,
+      1320
+    ],
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+      "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+      "size_bytes": 179870
+    },
+    "raw_lengths": [
+      255,
+      37,
+      3084,
+      3084
+    ],
+    "request_ids": [
+      "coco2017_val_000000016228",
+      "coco2017_train_000000007116",
+      "coco2017_train_000000351017",
+      "coco2017_train_000000417044"
+    ],
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+      "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+      "size_bytes": 189302
+    },
+    "source_input_identity_sha256": "94d4ee001a7c36a4a598b96a5ace0cf1c04718c83025ee5aea18906c0c856150",
+    "target_index": 2,
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+      "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+      "size_bytes": 3312523
+    }
+  },
+  "status": "candidate_cpu_feasible_no_model_admission"
+}

@@ -1,0 +1,61 @@
+{
+  "status": "lead-accepted-technical-primary-positive-secondary-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/unit.md",
+    "sha256": "38afdc7ccca4a74997b6833faa17022a2d1bd1f5bc21bc94c383fd62df7ef0de",
+    "size_bytes": 10106
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/lead-admission-v1.json",
+    "sha256": "66bb641d9c04a233e9f91566835b4ea123aaf6b77fd727aeb7b17194fb5f106b",
+    "size_bytes": 15889
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/candidate-results.md",
+    "sha256": "3e82f45f12b63d0be38497a80cd2c3b6968f90ff1909af1473a26a318204c063",
+    "size_bytes": 8037
+  },
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/supporting/lead-verification-v1.json",
+    "sha256": "cd3b42ee535b9e0bd9e9af852d09da2ffd0a97f9276d9065aba4f28f041b552b",
+    "size_bytes": 16830
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/receipt.json",
+    "sha256": "53d83bb0fa8e6d0c9a9d6cd31c462fd3a6de83f4d8a98441e69327a0a5babb58",
+    "size_bytes": 481049
+  },
+  "cold_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/readback.json",
+    "sha256": "222ab60da1e855f4cbd6060a16de576edd25405cb9aa9e881bf3c8df2febd333",
+    "size_bytes": 33817
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/outer.json",
+    "sha256": "01488a53a6a2b822bc81071c542ef0eaa73c9d34ab9a39540a3a58dcffeb7d5f",
+    "size_bytes": 246
+  },
+  "overlay": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001/overlay.png",
+    "sha256": "fe8aa1d4741a0bfa58914975b9b89f834d24c8f243a5a57b83ab572538562120",
+    "size_bytes": 1377472
+  },
+  "technical": "All45 raw full vectors, source prompt/history-coordinate writes/own greedy prefixes, actual28-layer masks, same-rectangle complements, source traces, within-history and companion states independently checked;18 accepted reference vectors exact. All recorded comparisons0 except source max3.814697265625e-5. Bound source/capture/terminal identity qualifies.",
+  "scientific": "At fixed single-record history length/current position, readable A producesF; readableF producesperson[1,13,536,999]. Frozen broad-A primary passes, exact-row0 secondary fails at x1 by1bin. Masked A/F target vectors t1..8 exactly equal under same opener/own prefixes, structural isolation control only.",
+  "physical": "Original-image overlay confirms F-native broad box is the left foreground person. F physical identity remainsHOLD. A return under rewrittenF history is a counterfactual selection; it is not a natural physical recurrence or demonstrated new-owner-progress result.",
+  "mechanism_boundary": "Specific written-coordinate content causally changes selected output at this source/prefix, beyond content-insensitive readable-record/count/position account. Does not isolate a semantic owner exclusion ledger, field, key/value carrier or general copying/repetition mechanism. Whole-prefix recomputation propagates changed historical content across later states.",
+  "counts": {
+    "model_forwards": 45,
+    "vision_forwards": 45,
+    "emitted_target_tokens": 45,
+    "reused_calls": 0
+  },
+  "outer_gpu_seconds": 131.07071360200644,
+  "cumulative_sequence_gpu_hours": 0.5012880232967056,
+  "next_decision": "Separate two-record fixed-position contrast: native[A,F] continues numerical fragment at row2, unlike rewritten[F] at row1; distinguish older-content contribution from the changed position/history length. No further call under this unit."
+}

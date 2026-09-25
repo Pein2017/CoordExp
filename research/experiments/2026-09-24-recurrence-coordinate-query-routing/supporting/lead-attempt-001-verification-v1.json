@@ -1,0 +1,193 @@
+{
+  "status": "lead_independent_verification_passed",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/candidate-results.md",
+    "sha256": "591d5c57052050ff09efd38dbf9963e47056c323da02107bbc277a3581119c50",
+    "size_bytes": 7101
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/unit.md",
+    "sha256": "cb8abfdcf8266ffb92266542c987e7c2c5d97605e45a41dfbf70b5f847acc4b6",
+    "size_bytes": 9579
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/lead-admission-v1.json",
+    "sha256": "27c52b8bfe6f27b50c9d5d5dfb4fe1d24f96f0d6240ac3c78d3c0d57b5a95803",
+    "size_bytes": 16501
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_coordinate_query_routing/run.py",
+    "sha256": "2aabdf5a34cebe7bf78e80a20af4b85e3ebcf021f45d9eea57f265402311fd4f",
+    "size_bytes": 35332
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/supporting/attempt-001-preflight.json",
+    "sha256": "e65d048518cdc64156aa489fa3c9ce5f038be4c2165bdd973a67482bab107962",
+    "size_bytes": 224131
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/receipt.json",
+    "sha256": "1b5fa8a4cf37b5b8a266d5fcec6fdea1083472dbd0379a9cbd66651fa16b4b11",
+    "size_bytes": 151397
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/readback.json",
+    "sha256": "cd7049f4e97e54ebbfb2e24ab369367162ba1a5ac47ea0095fe48878d348e240",
+    "size_bytes": 9947
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/outer.json",
+    "sha256": "77d17098cfcf42943ee468abd3347b6fbb1fd5b6f1342a1f90c6bcf96ae0f270",
+    "size_bytes": 276
+  },
+  "source_capture_pairs_rehashed": 30,
+  "file_bindings_rehashed": 84,
+  "cells": [
+    {
+      "arm": "native",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/native.pt",
+        "sha256": "be30e52122b45819c8383cfbda746d4e6c26ebd5b542f0edb46639b6c386ee21",
+        "size_bytes": 14158542
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-native.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 0,
+      "winner": 151703
+    },
+    {
+      "arm": "both",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/both.pt",
+        "sha256": "4c8d3ed98f0a24033c1626175822f4efff8524d1251f8b22480a5c42bc22b1bf",
+        "size_bytes": 14158520
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-both.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 18,
+      "winner": 152206
+    },
+    {
+      "arm": "native_sham",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/native_sham.pt",
+        "sha256": "93278310936d9c9cc857f5249238ac1d651edd40b10b3707f5e3dcf53f18526f",
+        "size_bytes": 14158789
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-native_sham.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 0,
+      "winner": 151703
+    },
+    {
+      "arm": "both_sham",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/both_sham.pt",
+        "sha256": "52d720e1b7352365821335552acde3a9093feba7d70e4b6730af47553d42b970",
+        "size_bytes": 14158767
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-both_sham.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 18,
+      "winner": 152206
+    },
+    {
+      "arm": "earlier_only",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/earlier_only.pt",
+        "sha256": "f68b2529186fb8939c08819ae8e646c0548f4d53633535d7f654a484e44cf631",
+        "size_bytes": 14158800
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-earlier_only.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 9,
+      "winner": 152669
+    },
+    {
+      "arm": "current_only",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/current_only.pt",
+        "sha256": "c0b9322a2242b47e4be165154de74f0214bf9bf16cb8b3ba6c7f296538910131",
+        "size_bytes": 14158800
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-coordinate-query-routing/attempt-001/inputs-current_only.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "selected_cells_per_layer": 9,
+      "winner": 152206
+    }
+  ],
+  "counts": {
+    "model_forwards": 6,
+    "vision_forwards": 6,
+    "generated_tokens": 0,
+    "reused_calls": 0
+  },
+  "reference_cells": 4,
+  "actual_layer_masks": 168,
+  "source_trace_comparisons": 20,
+  "maximum_reference_error": 0.0,
+  "maximum_invariant_state_error": 0.0,
+  "maximum_source_score_error": 2.86102294921875e-05,
+  "TV_native_both": 0.9734647803791534,
+  "TV_distances": {
+    "native": {
+      "to_native": 0.0,
+      "to_both": 0.9734647803791534
+    },
+    "both": {
+      "to_native": 0.9734647803791534,
+      "to_both": 0.0
+    },
+    "native_sham": {
+      "to_native": 0.0,
+      "to_both": 0.9734647803791534
+    },
+    "both_sham": {
+      "to_native": 0.9734647803791534,
+      "to_both": 0.0
+    },
+    "earlier_only": {
+      "to_native": 0.7967823014410659,
+      "to_both": 0.8920299772588247
+    },
+    "current_only": {
+      "to_native": 0.9697091740894588,
+      "to_both": 0.050161021109251636
+    }
+  },
+  "r_current": 0.05152833684410697,
+  "r_earlier": 0.916345403797135,
+  "difference": 0.8648170669530281,
+  "primary_pass": true,
+  "comparator_pass": false,
+  "decision": "current_query_selective",
+  "outer_seconds": 27.965755201876163,
+  "cumulative_sequence_gpu_hours": 0.9083011121599776,
+  "artifact_bytes_after_readback": 87964718,
+  "limits": [
+    "Same replayed native x1=0,y1=0 prefix; x2 distribution only.",
+    "Earlier-only also strongly changes native distribution; no exclusive channel claim.",
+    "Mask removes history values and renormalizes other attention weights; these are unresolved mechanisms.",
+    "No free row, physical owner, natural mediation percentage, head or layer attribution."
+  ],
+  "validation_added_model_calls": 0,
+  "validation_added_cuda_calls": 0
+}

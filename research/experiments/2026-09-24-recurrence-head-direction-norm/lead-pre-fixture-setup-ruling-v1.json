@@ -1,0 +1,54 @@
+{
+  "status": "lead-authorized-exact-directory-setup-and-resume",
+  "date": "2026-09-24",
+  "parent_ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/lead-repair-qualification-v2.json",
+    "sha256": "24e6a7d8883f2bade152204e6b326fee25150c2384cc204f18e03261a0cd4a25",
+    "size_bytes": 9757
+  },
+  "failure": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-pre-fixture-failure-v1.json",
+    "sha256": "4e540bff5b7b2c4686c7fac32447b2fa993b46997d9f62ef7805a7fd877dd1b0",
+    "size_bytes": 2302
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-preflight.json",
+    "sha256": "62aa0144edb1153d4a6c6c4f004100a2fa7a177056645eefbae9055b4ffb102b",
+    "size_bytes": 227229
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm/run.py",
+    "sha256": "0c23821d24447c23d8672fea3ebfaaa15ab40c00dc664e19986a1ceb690bd7dc",
+    "size_bytes": 59208
+  },
+  "fixture_source": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm/device_fixture.py",
+    "sha256": "390135c767e13c64d8b104f8b3312bc697c4cbf0a790910cf7de4f55e7d3139c",
+    "size_bytes": 8955
+  },
+  "lead_verified": {
+    "source_captures": 34,
+    "unchanged_computational_AST_count": 14,
+    "cold_CPU_paths": 7,
+    "fixture_root_absent": true,
+    "fixture_receipt_absent": true,
+    "model_launch_receipt_absent": true
+  },
+  "decision": "Create only qualification-v2 directory, then reissue the identical frozen fixture_enclosing command. No fixture child started in the failed shell invocation; the one device qualification and conditional six-call model allowance remain available. Original stop on unexpected failure applies thereafter.",
+  "directory": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v2",
+  "fixture_command": "/usr/bin/time -f '%e' -o /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v2/full-parent-seconds.txt python -B -m probes.training_set_completion.recurrence_head_direction_norm.device_fixture > /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v2/parent-stdout.log 2>&1",
+  "source_preflight_edits_authorized": false,
+  "model_continuation": "Only after this fixture qualifies, execute the already admitted original six-call attempt002 and separate CPU readback. Existing command, source, cell/threshold/gate and artifact envelope unchanged.",
+  "accounting": {
+    "prior_before_shell_failure_gpu_hours": 0.9370399767159082,
+    "failed_shell_seconds": 1.8997e-05,
+    "charged_before_resume_gpu_hours": 0.9370399819928527,
+    "rule": "Add new fixture and model full enclosing charges. Preserve frozen preflight prior; carry the 0.000018997-second shell overhead in final ledger/candidate sidecar rather than editing captured source or preflight. Machine failure record arithmetic controls the last decimal, not rounded chat text."
+  },
+  "no_changes": [
+    "protocol/admission/parent ruling/failed evidence",
+    "model or scientific code",
+    "Git/index/peer/runtime",
+    "extra fixture/model retry, cell, scan or successor"
+  ]
+}

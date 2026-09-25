@@ -1,0 +1,24 @@
+{
+  "status": "technical_hold_cold_readback_not_qualified",
+  "command": [
+    "python",
+    "-B",
+    "-m",
+    "probes.training_set_completion.recurrence_collapse_two_record_routing.run",
+    "readback"
+  ],
+  "returncode": 1,
+  "command_wall_time_seconds": 6.789390466,
+  "error_type": "ValueError",
+  "error_message": "cold written donors changed",
+  "failing_location": "probes/training_set_completion/recurrence_collapse_two_record_routing/run.py:517",
+  "cause": "receipt JSON written_records is a list; PATTERNS[arm] is a tuple",
+  "first_record_written_records": ["A", "F"],
+  "vectors_reached": 0,
+  "model_calls_in_readback": 0,
+  "gpu_calls_in_readback": 0,
+  "readback_json_written": false,
+  "overlay_written": false,
+  "source_receipt_sha256": "0c1132a8efe2ebde2ddc3ae180d84d13de66f0c4f1cf5329ec4cbcc4b484a974",
+  "captured_producer_sha256": "0e701dea6634f2dcc39f11b64d99f990b4af1b406cd7c258bee9396d6cd9f943"
+}

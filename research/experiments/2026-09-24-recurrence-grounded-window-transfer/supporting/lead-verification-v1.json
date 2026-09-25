@@ -1,0 +1,77 @@
+{
+  "status": "lead_cpu_replay_passed",
+  "bound_sha256": {
+    "unit.md": "71a369966dfe8fe5a73719fb5fd4cf1f734ba08f77f71e41c338d3ecfbdf5353",
+    "supporting/source-screen-freeze-v1.json": "d17da9af0e727449e8f65f0390057bc34eb1d5ea8ae49688f05e084184beaae9",
+    "supporting/cpu-candidate-registry.json": "e79234c7360427508d9846b6290087231ca1ea05d57f12e6246f14d3e054652d",
+    "supporting/cpu-readback-v3.json": "2e86c156289f4ec9a9903b44f71284a9e9db3e42905671d879a71af1b4843c55",
+    "supporting/selected-source-shapes-v1.json": "b056fe4ed05bb1c83f5658265bb3a4531719725ba0b457c796f6415e06b52790",
+    "supporting/overlay-bindings-v1.json": "e6fdca50d5e7a3c15991b87f1c36971d74a080c43f4d8173c9aaf488688a2e50"
+  },
+  "helper_sha256": "cb135f584db3309b594ec041cb63132e932727b74e6fc8e88d369cc48ea7d1e8",
+  "counts": {
+    "all_sources": 273,
+    "mature": 145,
+    "prospective": 128,
+    "excluded_named_images": 3,
+    "source_binding_HOLD": 0,
+    "R_eligible_images": 0,
+    "D_eligible_images": 23,
+    "R_pattern_windows": 0,
+    "D_pattern_windows": 64,
+    "chronology_HOLD_windows": 3,
+    "R_selected": 0,
+    "D_selected": 2
+  },
+  "selected": [
+    [
+      "D",
+      "mature",
+      2299,
+      [
+        16,
+        17,
+        18
+      ]
+    ],
+    [
+      "D",
+      "mature",
+      5001,
+      [
+        12,
+        13,
+        14
+      ]
+    ]
+  ],
+  "selfcheck_rejections": [
+    "earlier_proxy_visit",
+    "ambiguous_annotation",
+    "malformed_prior_object",
+    "raw_gap",
+    "class_mismatch",
+    "R_then_D_priority",
+    "wrong_source_order"
+  ],
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "gpu_seconds": 0,
+  "additional_binding_check_count": 14,
+  "ordered_source_digest": "92f4d973b15da86b603f939f2776a6d72d7f97cd2816695b36ae07d156122d2e",
+  "aggregate_first_rejection_counts": {
+    "ambiguous_or_missing_high_confidence_annotation": 1179,
+    "class_mismatch": 883,
+    "earlier_proxy_overlap": 27,
+    "invalid_geometry": 838,
+    "chronology_HOLD": 3
+  },
+  "canonical_adjacent_triples": 2964,
+  "passed_D_windows_before_image_priority": 34,
+  "visual_review": {
+    "2299": "Selected A/B/C proposals visibly localize three distinct children. Full prior-owner chronology not established by current three-row/immediate-previous overlay.",
+    "5001": "Selected A/B/C proposals visibly localize the woman with glasses, foreground man, and red-hat woman respectively. Full prior-owner chronology not established by current three-row/immediate-previous overlay."
+  }
+}

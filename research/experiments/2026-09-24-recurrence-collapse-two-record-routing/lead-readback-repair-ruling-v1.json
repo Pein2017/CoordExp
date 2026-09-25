@@ -1,0 +1,83 @@
+{
+  "status": "lead-admitted-CPU-only-versioned-readback-repair",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/unit.md",
+    "sha256": "cf4f84f9f4142fdbfad5a07a9db3ae0de7d007ccdac846fca283f7d4c94ded40",
+    "size_bytes": 9228
+  },
+  "original_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-admission-v1.json",
+    "sha256": "0c44d25fd542043ef543eb31fa284549edd07dd5d0fd05dd796a3093d7b53668",
+    "size_bytes": 11398
+  },
+  "failure_report": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/attempt-001-readback-failure.md",
+    "sha256": "ef14730d28c774c04742c44e64f82e3ebcb63049cdff72ac23035781b4849942",
+    "size_bytes": 3675
+  },
+  "failure_receipt": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/attempt-001-readback-failure.json",
+    "sha256": "6974c9a48638f9d3ad20887325cfa98aca7c5b6c22bc2acb8c58fc93de3c381f",
+    "size_bytes": 926
+  },
+  "lead_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/lead-readback-failure-verification-v1.json",
+    "sha256": "a79da3177723e522390e0c60943d02d5b19efe44cbddfdf585fb3382e599d93e",
+    "size_bytes": 2406
+  },
+  "frozen_producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_collapse_two_record_routing/run.py",
+    "sha256": "0e701dea6634f2dcc39f11b64d99f990b4af1b406cd7c258bee9396d6cd9f943",
+    "size_bytes": 41517
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/attempt-001-preflight.json",
+    "sha256": "77f19245d84d880bc07428d985bd48ef4a50727c4a21f5f98a9ce4462a56fd54",
+    "size_bytes": 147525
+  },
+  "production_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/receipt.json",
+    "sha256": "0c1132a8efe2ebde2ddc3ae180d84d13de66f0c4f1cf5329ec4cbcc4b484a974",
+    "size_bytes": 467696
+  },
+  "production_outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/outer.json",
+    "sha256": "6eee4194dc16ddebc671029651759a8409069a30b7c3bef74b79d1ed73d038ce",
+    "size_bytes": 249
+  },
+  "ruling": "The exact metadata guard at maintained run.py:517 rejects JSON lists solely against frozen tuple patterns. Root reproduced all five metadata failures without loading/scoring any vector. Production raw eligibility remains unqualified until unchanged cold gates pass; this is not model failure or a scientific nonpass.",
+  "authorized_repair": "A new maintained CPU-only readback entrypoint using original qualified helpers; normalize expected donor tuple to an ordered list at the failing comparison, preserving exact value/order/length/type semantics. No mutation of original producer, global patterns, frozen hashes or raw receipts. Reuse unchanged other cold gates and frozen numerical criteria. New reader code/command/import identity captured separately from original production code.",
+  "red_green": "Reproduce old saved-JSON list-versus-tuple failure in actual guard path. New actual reader guard accepts exact five serialized pairs and rejects swapped/dropped/extra/wrong donor/wrong container fixtures. Preserve downstream actual input/donor/hash/mask/source/parser/count sensitivity. Do not fabricate a GPU RED or execute model code.",
+  "qualification_scope": "Load all45 existing CPU-mapped raw full vectors and90 vector/input bindings; rehash/reconstruct original full-batch source and declared history writes/own prefixes; enforce all28 masks, positions, source/sham/companion/state/parser/count gates. No dropped arm or changed thresholds. Complete original FF/AA/FA conjunction and each component only after technical qualification. Draw overlay from unchanged raw outcomes for lead physical review.",
+  "new_code_path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_collapse_two_record_routing/readback_cpu_v1.py",
+  "new_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/cpu-readback-v1",
+  "worker_record_paths": [
+    "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting",
+    "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/candidate-results.md"
+  ],
+  "immutable": "Original attempt-001 tree, producer run.py, preflight, protocol/admission, failure reports, predecessors and peer files remain byte-identical; no synthetic attempt-001/readback.json or overlay. Recovered sidecar binds original execution and failed reader plus new CPU identity.",
+  "max_model_loads": 0,
+  "max_model_forwards": 0,
+  "max_vision_forwards": 0,
+  "max_cuda_calls": 0,
+  "max_gpu_seconds": 0,
+  "allowed_processor_only": "Maintained tokenizer/processor/config preparation with load_model=False and CPU tensors is allowed.",
+  "cost": "Keep original45model/45vision/45emitted/0reuse and all129.19039377570152 outer seconds charged; recovery adds0GPU.",
+  "cumulative_sequence_gpu_hours": 0.537174243789956,
+  "scientific_status": "HOLD/unanswered until versioned CPU qualification and lead acceptance. Visible provisional tokens do not permit changed predictions.",
+  "stop": "One bounded CPU recovery candidate or decision-bearing conflict; no model retry, source reselection, new scientific arm, threshold/gate relaxation, automatic further repair or successor.",
+  "not_authorized": [
+    "Git",
+    "GPU/model/vision/CUDA calls",
+    "original producer/preflight/raw/receipt/failure edits",
+    "executing historical source captures",
+    "global monkeypatch/hash bypass",
+    "peer/shared-runtime/lead-state changes",
+    "self-acceptance or successor"
+  ]
+}

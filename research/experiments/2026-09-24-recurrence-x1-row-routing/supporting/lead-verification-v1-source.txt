@@ -1,0 +1,78 @@
+from pathlib import Path
+import json,hashlib,math,sys
+sys.path.insert(0,str(Path.cwd()))
+import numpy as np
+import torch
+from probes.training_set_completion.recurrence_x1_row_routing import run as maintained
+
+torch.set_num_threads(2)
+root=Path.cwd(); u=root/'research/experiments/2026-09-24-recurrence-x1-row-routing'; out=Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration')/u.name/'attempt-001'
+def read(p):return json.loads(Path(p).read_text())
+def bind(p):
+ p=Path(p);b=p.read_bytes();return {'path':str(p),'sha256':hashlib.sha256(b).hexdigest(),'size_bytes':len(b)}
+checked={}
+def check(b):
+ if b['path'] not in checked:assert bind(b['path'])==b,b['path'];checked[b['path']]=b
+ return b
+ad=read(u/'lead-admission-v1.json');pre=read(u/'supporting/attempt-001-preflight-v3.json'); rec=read(out/'receipt.json'); cold=read(out/'readback.json'); outer=read(out/'outer.json')
+for owner in [ad,pre,rec,cold]:
+ for v in owner.values():
+  if isinstance(v,dict) and set(['path','sha256','size_bytes'])<=set(v):check(v)
+for c in pre['direct_source_captures']:check(c['maintained']);check(c['capture']);assert c['maintained']['sha256']==c['capture']['sha256']
+for k in ['raw','trace','runtime_receipt','image']:check(ad['source_bindings'][k])
+check(ad['source_panel']);check(ad['loader_crosswalk']['maintained'])
+for k,v in ad['source_bindings']['source_identity'].items():assert rec['effective_identity'][k]==v,k
+raw=read(ad['source_bindings']['raw']['path'])['rows']; trace=read(ad['source_bindings']['trace']['path'])['steps']; refs={}; native={}; matched={}; selected=[]; outrows=[];paritymax=0.;refmax=0.;shammax=0.;compmax=0.;histmax=0.; counts={'greedy':0,'identity_write':0,'flip_write':0}
+for history,rr in ad['references'].items():
+ for e in rr['steps']:
+  check(e['raw']);check(e['inputs']);refs[history,e['step']]=(torch.load(e['raw']['path'],map_location='cpu',weights_only=True)['logits'],read(e['inputs']['path']))
+assert [x['arm'] for x in rec['arms']]==[x['name'] for x in ad['arms']]
+def iou(a,b):
+ inter=max(0,min(a[2],b[2])-max(a[0],b[0]))*max(0,min(a[3],b[3])-max(a[1],b[1]));return inter/((a[2]-a[0])*(a[3]-a[1])+(b[2]-b[0])*(b[3]-b[1])-inter)
+for arm,config,coldarm in zip(rec['arms'],ad['arms'],cold['arms'],strict=True):
+ name=arm['arm'];h=config['history'];own=[];assert arm['history']==h and len(arm['steps'])==9
+ for t,s in enumerate(arm['steps']):
+  check(s['raw']);check(s['inputs']);p=torch.load(s['raw']['path'],map_location='cpu',weights_only=True);inp=read(s['inputs']['path']); z=p['logits'];z_np=z.numpy().astype(np.float64); expected=json.loads(json.dumps(refs[h,t][1]));expected['input_ids'][2][1380:]=own
+  assert inp==expected and p['arm']==name and p['step']==s['step']==t
+  for j in range(4):
+   tail=(ad['source']['A_tokens']+ad['source']['F_tokens'] if h=='AF' else ad['source']['F_tokens']*2)+own if j==2 else raw[j]['token_ids'][:18+t]
+   assert inp['input_ids'][j][1362:]==tail
+  tensors={k:torch.tensor(v,dtype=torch.long) for k,v in inp.items()};hashes={k:maintained.base.tensor_hash(v) for k,v in tensors.items()};assert hashes==s['actual_input']
+  w=1380+t; mask=torch.tril(torch.ones(w,w,dtype=torch.bool))[None,None]&tensors['attention_mask'][:,None,None,:].bool()
+  assert torch.equal(mask,p['actual_mask']) and s['actual_layers']==list(range(28))
+  mh=maintained.base.tensor_hash(mask); assert s['layer_mask_hashes']==[mh]*28 and s['native_mask_hash']==mh and s['rotary_positions_hash']==hashes['position_ids']
+  assert z.shape==(4,152670) and np.isfinite(z_np).all()
+  g=int(z_np[2].argmax()); token=config['override_token'] if t==4 and config['override_token'] is not None else g; policy='identity_write' if t==4 and config['override_token']==g else 'flip_write' if t==4 and config['override_token'] is not None else 'greedy'
+  assert s['raw_argmax']==g and s['selected']==token and s['policy']==policy and s['consumed_previous']==(own[-1] if own else None)
+  if t:assert inp['input_ids'][2][-1]==own[-1]
+  if t<=4:assert own==ad['references'][h]['tokens'][:t]
+  counts[policy]+=1;selected.append((name,t,token,policy)); own.append(token)
+  logp=z_np[2]-np.log(np.exp(z_np[2]-z_np[2].max()).sum())-z_np[2].max();cs=coldarm['steps'][t];assert abs(logp[token]-cs['selected_logprob'])<1e-12
+  for j in (range(4) if name=='AF_native' else [0,1,3]):
+   tr=trace[18+t];assert tr['offset']==18+t; top=np.argsort(z_np[j])[-2:][::-1].tolist();assert top==[tr['raw_winners'][j],tr['raw_runnerups'][j]]
+   tok=tr['chosen'][j];m=float(z_np[j].max());lse=float(m+np.log(np.exp(z_np[j]-m).sum()));err=max(abs(z_np[j,tok]-tr['chosen_raw_logits'][j]),abs(lse-tr['logsumexp'][j]));assert err<2e-4;paritymax=max(paritymax,err)
+  if name.endswith('native') or name.endswith('sham') or t<=4:
+   e=float((z-refs[h,t][0]).abs().max());assert e<2e-4;refmax=max(refmax,e)
+  if name.endswith('native'):native[h,t]=p
+  else:
+   n=native[h,t];he=float((p['historical_by_layer']-n['historical_by_layer']).abs().max());ce=max(float((p['companions_by_layer']-n['companions_by_layer']).abs().max()),float((z[[0,1,3]]-n['logits'][[0,1,3]]).abs().max()));assert he==ce==0;histmax=max(histmax,he);compmax=max(compmax,ce)
+   if name.endswith('sham'):se=float((z-n['logits']).abs().max());assert se==0;shammax=max(shammax,se)
+  if t==5:matched[name]={'vector':z_np[2], 'inputs':inp}
+ assert own==arm['emitted']==coldarm['emitted'] and own[:4]==ad['current_override']['native_header'] and own[-1]==151649
+ assert all(151670<=x<152670 for x in own[4:8]);box=[x-151670 for x in own[4:8]];assert box[0]<box[2] and box[1]<box[3]
+ ia,iff=iou(box,ad['primary']['A']),iou(box,ad['primary']['F']);region='broad_A' if ia>=.5 and iff<=.1 else 'fragment_F' if iff>=.5 and ia<=.1 else 'neither';assert min(abs(ia-.5),abs(iff-.1),abs(iff-.5),abs(ia-.1))>1e-6
+ assert box==coldarm['box'] and region==coldarm['region'] and abs(ia-coldarm['iou_A'])<1e-14 and abs(iff-coldarm['iou_F'])<1e-14
+ outrows.append({'arm':name,'tokens':own,'box':box,'iou_A':ia,'iou_F':iff,'region':region})
+assert counts=={'greedy':50,'identity_write':2,'flip_write':2} and rec['counts']==cold['counts'] and rec['counts']['model_forwards']==rec['counts']['vision_forwards']==rec['counts']['logical_emitted_tokens']==54
+assert outer['returncode']==0 and outer['terminal'] and not Path('/proc') .joinpath(str(outer['child_pid'])).exists()
+charge=ad['prior_sequence_gpu_hours']+outer['outer_seconds']/3600;assert abs(charge-cold['charged_sequence_gpu_hours'])<1e-12
+primary={n:next(x for x in outrows if x['arm']==n)['region']==ad['primary'][n] for n in ['AF_flip','FF_flip']};secondary={n:next(x for x in outrows if x['arm']==n)['tokens'][5:]==ad['secondary'][n+'_free_suffix'] for n in primary};assert {n+'_'+ad['primary'][n]:v for n,v in primary.items()}==cold['primary_components'] and {n+'_free_suffix':v for n,v in secondary.items()}==cold['secondary_components']
+# Retrospective matched-current-prefix readout, explicitly not a prospective criterion.
+def prob(z):z=z-z.max();e=np.exp(z);return e/e.sum()
+explore=[]
+for token,n1,n2 in [(151670,'AF_native','FF_flip'),(151671,'AF_flip','FF_native')]:
+ a,b=matched[n1],matched[n2];diff=[i for i,(x,y) in enumerate(zip(a['inputs']['input_ids'][2],b['inputs']['input_ids'][2])) if x!=y];assert diff==[1367,1368,1369] and a['inputs']['input_ids'][2][-1]==b['inputs']['input_ids'][2][-1]==token
+ assert all(a['inputs'][k]==b['inputs'][k] for k in ['attention_mask','position_ids','cache_position'])
+ explore.append({'current_x1':token,'AF_arm':n1,'FF_arm':n2,'only_target_input_differences':diff,'y1_TV_AF_FF':float(abs(prob(a['vector'])-prob(b['vector'])).sum()/2),'AF_margin_y13_minus_y0':float(a['vector'][151683]-a['vector'][151670]),'FF_margin_y13_minus_y0':float(b['vector'][151683]-b['vector'][151670])})
+verification={'status':'PASS','scope':'Independent lead CPU saved-evidence verification; zero model/GPU calls. No physical attribution added.','protocol':bind(u/'unit.md'),'admission':bind(u/'lead-admission-v1.json'),'candidate':bind(u/'candidate-results.md'),'preflight':bind(u/'supporting/attempt-001-preflight-v3.json'),'receipt':bind(out/'receipt.json'),'cold_readback':bind(out/'readback.json'),'outer':bind(out/'outer.json'),'checked_bindings':list(checked.values()),'checks':{'raw_vectors':54,'actual_inputs':54,'attention_entries':54*28,'reference_steps':18,'cpu_preflight_mutations':len(pre['checks']),'captures':len(pre['direct_source_captures']),'source_trace_max_error':paritymax,'accepted_vector_max_error':refmax,'sham_max_error':shammax,'historical_state_max_error':histmax,'companion_max_error':compmax,'reciprocal_override_and_consumption':True,'all_complete_person_valid_geometry':True,'terminal_child_absent':True},'outcomes':outrows,'primary_components':primary,'shared_primary_pass':all(primary.values()),'secondary_components':secondary,'shared_secondary_pass':all(secondary.values()),'counts':rec['counts'],'outer_seconds':outer['outer_seconds'],'cumulative_sequence_gpu_hours':charge,'exploratory_matched_current_prefix_y1':explore,'verification_script':bind(Path(__file__))}
+p=u/'supporting/lead-verification-v1.json';assert not p.exists();p.write_text(json.dumps(verification,indent=2)+'\n');print(json.dumps({k:verification[k] for k in ['checks','primary_components','secondary_components','counts','cumulative_sequence_gpu_hours','exploratory_matched_current_prefix_y1']},indent=2));print('verification',bind(p))

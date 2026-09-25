@@ -1,0 +1,50 @@
+{
+  "status": "actual_reference_caller_passed",
+  "checks": [
+    "positive_native_distinct_path",
+    "positive_both_distinct_path",
+    "reject_wrong_reference_alias_native",
+    "reject_wrong_reference_alias_both"
+  ],
+  "native_reference": {
+    "step": 6,
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step6.pt",
+      "sha256": "2724a31b70f70ebed8707b897711a3c12b09d446844ac546960e6b973718cce1",
+      "size_bytes": 12782307
+    },
+    "inputs": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step6.json",
+      "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+      "size_bytes": 342374
+    },
+    "accepted_arm": "native_A"
+  },
+  "both_reference": {
+    "step": 6,
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step6.pt",
+      "sha256": "b5dcb53b21396d510623f619b64e926cdef45924274a226fb9497a66fd9ed4b5",
+      "size_bytes": 12782377
+    },
+    "inputs": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step6.json",
+      "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+      "size_bytes": 342374
+    },
+    "accepted_arm": "coordinate_flip"
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-coordinate-query-routing/supporting/attempt-001-preflight.json",
+    "sha256": "e65d048518cdc64156aa489fa3c9ce5f038be4c2165bdd973a67482bab107962",
+    "size_bytes": 224131
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_coordinate_query_routing/run.py",
+    "sha256": "2aabdf5a34cebe7bf78e80a20af4b85e3ebcf021f45d9eea57f265402311fd4f",
+    "size_bytes": 35332
+  },
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0
+}

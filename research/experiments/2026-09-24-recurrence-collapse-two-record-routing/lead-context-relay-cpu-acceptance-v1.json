@@ -1,0 +1,25 @@
+{
+  "status": "lead-accepted-CPU-feasibility-no-model-qualification",
+  "date": "2026-09-24",
+  "report": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/context-relay-feasibility.md",
+    "sha256": "8e67ce1e75e586a5e45c1f37d9a56fb9c92787ec8a182e5894448a67bbfa0ffd",
+    "size_bytes": 7652
+  },
+  "bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/context-relay-bindings.json",
+    "sha256": "3728e5da987ef07f1fb324a9adf4a79ef14baeb019d2462c5d6145ddb1adf50e",
+    "size_bytes": 12701
+  },
+  "unique_file_bindings_rehashed": 18,
+  "source_and_saved_fork_check": "Two all-four reference vectors/inputs loaded CPU; only target older raw5/6/7 differs. Same four naturally emitted header IDs; latest F and all mask/position/cache slots equal; three-axis spans confirmed. Companions active; saved companion states equal.10 proposed model/4vision counts and cache bytes recomputed.",
+  "hidden_state_semantics": "Original run.py lines398-403 records decoder-layer output. Reported latest_layer0 difference is after decoder block0, not incoming layer0 or cached K/V; no K/V equality or mechanism inferred.",
+  "conditioning": "Future suffix evaluates the fixed header observed naturally in both histories. It does not generate that header in this experiment and is not unconditional free-row selection.",
+  "remaining_gate": "Fresh full/source/model identity, prefills, all-four cached/full parity, actual KV consumer and shams remain unqualified; separate prospective admission required.",
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "gpu_seconds": 0,
+  "prior_sequence_gpu_hours": 0.537174243789956
+}

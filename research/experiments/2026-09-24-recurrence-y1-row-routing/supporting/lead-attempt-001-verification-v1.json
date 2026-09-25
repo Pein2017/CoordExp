@@ -1,0 +1,1052 @@
+{
+  "status": "lead_independent_verification_passed",
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/candidate-results.md",
+    "sha256": "6683eb99991158fb627388a2185d598ac6bd41c032799547b6b0994504fd4604",
+    "size_bytes": 7610
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/unit.md",
+    "sha256": "393b5246a05807f497fe9637211f710bd8c3ab1c658fa2c5eb93455228b9224a",
+    "size_bytes": 11603
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/lead-admission-v1.json",
+    "sha256": "a05f595e8d16b61a89354bf26c1d28ee063e540bcc6ff616355555838d8ec5ea",
+    "size_bytes": 32893
+  },
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_y1_row_routing/run.py",
+    "sha256": "462fa09831d7c4126d1bfb8ed9bbc5318729e1594d3b93dde427fc8cbf30a150",
+    "size_bytes": 45606
+  },
+  "preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-y1-row-routing/supporting/attempt-001-preflight.json",
+    "sha256": "f0c0904070523c290599fe5c3fec89c2aa8b5314b59806a05b2c69353a50b194",
+    "size_bytes": 221407
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/receipt.json",
+    "sha256": "c7f44f08c76e938ed6f9a151fa0e7e1d11bb521b7e06e2d38116f1945111c748",
+    "size_bytes": 571638
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/readback.json",
+    "sha256": "c1a4efd0a355aeae5a5038bdd16e85c3952e270fe48a98a30833cd5432020607",
+    "size_bytes": 43306
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/outer.json",
+    "sha256": "423dde2ef684192d868a78064a0d7fdb32d208d898d6df1930e30ff5556c6b17",
+    "size_bytes": 266
+  },
+  "source_capture_pairs_rehashed": 28,
+  "file_bindings_rehashed": 207,
+  "raw_cells": [
+    {
+      "arm": "native_A",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step0.pt",
+        "sha256": "677ef3ff8fa376a6a465deb3a43d172c04a1bbb9f227eb7037cc5119421cf9c1",
+        "size_bytes": 12716323
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step1.pt",
+        "sha256": "f4ae1ea16d608ea97b7ab54eaee6b3d89a083a7ef311aefc2f1121a37c0c484f",
+        "size_bytes": 12727331
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step2.pt",
+        "sha256": "0a33235ab01f7c67c61e365d6bb8254800c640387ae4f979145a43d997d66ea5",
+        "size_bytes": 12738275
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step3.pt",
+        "sha256": "6991a8f0441e30764c9b4e384d4ea6b8ca1fb0d8cd74ee500ab4ff210bb412fa",
+        "size_bytes": 12749283
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step4.pt",
+        "sha256": "07bc01bb7d1a8abff201fe3169ae188714f58f4b17e075381f90a3ca50ddfea6",
+        "size_bytes": 12760291
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step5.pt",
+        "sha256": "0a90b0f9de137f8ceec456010dc2f8e28401e8822f41b97038ba2ce301170cf3",
+        "size_bytes": 12771299
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step6.pt",
+        "sha256": "2724a31b70f70ebed8707b897711a3c12b09d446844ac546960e6b973718cce1",
+        "size_bytes": 12782307
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step6.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step7.pt",
+        "sha256": "7e9dee28b8468ea17b20ff20106e95d57109b5bac59005a3baf2c3b1198685d0",
+        "size_bytes": 12793315
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step7.json",
+        "sha256": "acd462e6130c202a3dba97c323efc4dfd9acf957dd91d61b16d8681eef92f291",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "native_A",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_A-step8.pt",
+        "sha256": "038cae02e12d000204c63280db0e89e927afa1ba474c7af3af229e4f1e422574",
+        "size_bytes": 12804323
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step8.json",
+        "sha256": "cd60a287beac3293a3aaae11e72c92b6b4c9d8e9f6210028de85c45c71c20345",
+        "size_bytes": 342890
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step0.pt",
+        "sha256": "8fb87c620a448aa7b6c104a385eaddfff5aee7f2726f4f4097e4586c5313a14f",
+        "size_bytes": 12716363
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step1.pt",
+        "sha256": "1099346b65717b66c39240349aecd6a71ce4dea76815b1eee45437d086956dbe",
+        "size_bytes": 12727371
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step2.pt",
+        "sha256": "059a3e3e59363129ea7159602f482aa77c5c7cc127a48cfbd34ee1cde204464b",
+        "size_bytes": 12738315
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step3.pt",
+        "sha256": "7c5c8501ccad0cb98e53b53a24b9611c533e0254c1949c51f20e37d34bcb45b1",
+        "size_bytes": 12749323
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step4.pt",
+        "sha256": "0e80efb90cfc5168b78f0ba1683cffdd62b2d0a40c23a2c07c3430d51f4dda14",
+        "size_bytes": 12760331
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step5.pt",
+        "sha256": "20d04e0fb9c53ec00f1660af7cf1a52ba32cb59dbf6042f254be5e71f34e729a",
+        "size_bytes": 12771339
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step6.pt",
+        "sha256": "fb6899e5a1f445dedee0501da5e4829ee20d37ec1125c55c58d9e1e5062dada2",
+        "size_bytes": 12782347
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step6.json",
+        "sha256": "4fa179f342e8c471e84d6079947eed4030a60df0535fe03f5d4d5773bb44ba8b",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step7.pt",
+        "sha256": "e2065227f689d53af900b131b8ebc994f5666ba81abbe0fbcc9e909496d51d7c",
+        "size_bytes": 12793355
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step7.json",
+        "sha256": "77064581750311fe42a0be91f8c9c196700e50d50ca1c99457d24c142c12c5a1",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "coordinate_A",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_A-step8.pt",
+        "sha256": "6fdc75d6e1410ae3f73317e9714bf4fb95084c40d92525bb928834792165dbc6",
+        "size_bytes": 12804363
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step8.json",
+        "sha256": "04cb8f7899d2b44d11ae30d414812708101288a07de5e1eeffdb42c7f313126b",
+        "size_bytes": 342890
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step0.pt",
+        "sha256": "3ff6777e5f4d97080d29b9eb8946979c77f01094fc49d93491187d01df641bdd",
+        "size_bytes": 12716353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step1.pt",
+        "sha256": "7b51a4bc91ad9ea8b1f730cd2f32d0bb82c296161591501ea28d3657374de748",
+        "size_bytes": 12727361
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step2.pt",
+        "sha256": "b6a33cf9c0d02fd454b6e2acb68c44e2e11c1e36a610ad60f117fbf2802da528",
+        "size_bytes": 12738305
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step3.pt",
+        "sha256": "bd70a32c6470cb8800b537a696670e545f3f92b4c9cbeeb733241c402c933e07",
+        "size_bytes": 12749313
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step4.pt",
+        "sha256": "571821290bd4fdfb9cdc6f4b63a4f60017703666362df0ffcac940d0b55a3d55",
+        "size_bytes": 12760321
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step5.pt",
+        "sha256": "c4b92722bb2df9dae208c0eff41f6e3c72e53e0b9d82958267af280172578d14",
+        "size_bytes": 12771329
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step6.pt",
+        "sha256": "79498c6da7fbff8a912a30dd92eee34e0b24bff804c69e010e9af2bc9cb86d80",
+        "size_bytes": 12782337
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step6.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step7.pt",
+        "sha256": "7b9eb74f10900c4bade24297bcac41ca260e0baeebb03d849cebb65ead14fb53",
+        "size_bytes": 12793345
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step7.json",
+        "sha256": "acd462e6130c202a3dba97c323efc4dfd9acf957dd91d61b16d8681eef92f291",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "native_sham",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_sham-step8.pt",
+        "sha256": "5ccd37d39f4368d836f58a7811f8c047aa4ef84e0afca5763cdeeee720c81352",
+        "size_bytes": 12804353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_sham-step8.json",
+        "sha256": "cd60a287beac3293a3aaae11e72c92b6b4c9d8e9f6210028de85c45c71c20345",
+        "size_bytes": 342890
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step0.pt",
+        "sha256": "9bcf0d133b9d06b2f0784e1559aaae13a7c21e89ed058c26d0f81b6850d7dfa6",
+        "size_bytes": 12716393
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step1.pt",
+        "sha256": "071f8281a24a1c46f9dc15cd092a72930225d036f008663466203ef952bf9f47",
+        "size_bytes": 12727401
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step2.pt",
+        "sha256": "0a6daed8745810012733138bcd05682a54809f54f3d5c6f07a61cdfb41944b31",
+        "size_bytes": 12738345
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step3.pt",
+        "sha256": "4c14da52c8ab949074885fc4026ccf5317df40512829389e8163bcff5fa0796b",
+        "size_bytes": 12749353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step4.pt",
+        "sha256": "55af351891e3039e5e3632a22985623f2b8e636a387693f02f4d59acf177e298",
+        "size_bytes": 12760361
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step5.pt",
+        "sha256": "492c633f20385f714cc2fdf16ece6c7e0f880ef1b4eb9e52cfde7fc61fa40e30",
+        "size_bytes": 12771369
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step6.pt",
+        "sha256": "c6b3b9cad40b118f9bbf10220044f6e7ebb7329073d79cabeae0ad1d2611f52c",
+        "size_bytes": 12782377
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step6.json",
+        "sha256": "4fa179f342e8c471e84d6079947eed4030a60df0535fe03f5d4d5773bb44ba8b",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step7.pt",
+        "sha256": "3b0be99d01e57be976bdc783174715ca8585cf8f4bf52649b22d52932fb2b6ae",
+        "size_bytes": 12793385
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step7.json",
+        "sha256": "77064581750311fe42a0be91f8c9c196700e50d50ca1c99457d24c142c12c5a1",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "coordinate_sham",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_sham-step8.pt",
+        "sha256": "f47d2fb3cd18e281300edfcefb220db4d45108b4e58818b3da8992dfadafd7d7",
+        "size_bytes": 12804393
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_sham-step8.json",
+        "sha256": "04cb8f7899d2b44d11ae30d414812708101288a07de5e1eeffdb42c7f313126b",
+        "size_bytes": 342890
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step0.pt",
+        "sha256": "cf8810ee4252b936e81991dce5cfdaf7d252f5d11ea22128679d5b987269e108",
+        "size_bytes": 12716353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step1.pt",
+        "sha256": "9f8cc9bdd3b4c88db0b81e94ffce293bfae187f4dd4db62ab06f46ce26fafa2d",
+        "size_bytes": 12727361
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step2.pt",
+        "sha256": "57e37ef0ae32a45b74da3ba650516514832a5aa066626e7849f7413cccd29b9e",
+        "size_bytes": 12738305
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step3.pt",
+        "sha256": "f4f92033e9529f4aeda85d7feb6fba736fd6b912439db1efd20296727180486f",
+        "size_bytes": 12749313
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step4.pt",
+        "sha256": "de56c0c1d2c332433e422cf33de6124e8e215ede6029daa339f05e8952a43a2d",
+        "size_bytes": 12760321
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step5.pt",
+        "sha256": "4eaf05185dcdc2a7b46dc45679eac59cd29e0ae276934ec558ef6189243d8380",
+        "size_bytes": 12771329
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step6.pt",
+        "sha256": "a8e8f2bce51f187576ffa54ad520f90a2ca3d7b3746c2798aa9a85a53d72d28a",
+        "size_bytes": 12782337
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step6.json",
+        "sha256": "4fa179f342e8c471e84d6079947eed4030a60df0535fe03f5d4d5773bb44ba8b",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step7.pt",
+        "sha256": "f0d741ee130acce887158773a9054d10ea8b4d28364dd620da2f501bc257bdcb",
+        "size_bytes": 12793345
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step7.json",
+        "sha256": "e6a62ff071f04e50ed9556a2e91f29de334063bb9a6cce45f8cf18dd0b7a681e",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "native_flip",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/native_flip-step8.pt",
+        "sha256": "069a854d724aab4fba461d518b0f7937c9abf8c5a400cddf409f7075040aa0f9",
+        "size_bytes": 12804353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step8.json",
+        "sha256": "c20a7568e2a8e5df2e0abaf27727cd057a13579bfb906f7aea6a8165beed382f",
+        "size_bytes": 342890
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 0,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step0.pt",
+        "sha256": "b1f0e8e7e0ccaac456cc4eaddeb0e741a8b5f49f81d31c86674b28ec6987df73",
+        "size_bytes": 12716393
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step0.json",
+        "sha256": "b1c666222575f219bbb11257e29bb11bf6898e4dbd19e34c685ee29a5c037aba",
+        "size_bytes": 340836
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 1,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step1.pt",
+        "sha256": "c9265ca2d169f4a89f932c1e3e2c256f3d62b397738206f1ae1f14e79f4e25c7",
+        "size_bytes": 12727401
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step1.json",
+        "sha256": "369ee27f3b833c9039c1a1209c6bdc218dbc2f548f9bb038e65e1c9865070c54",
+        "size_bytes": 341094
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 2,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step2.pt",
+        "sha256": "038a363950e61c6347638fbfeebac2485f5bd30836a8b5e9b1f6256a76b793d7",
+        "size_bytes": 12738345
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step2.json",
+        "sha256": "85f084a3523b765c7fd75e780faae0bb42f2eaf834c353d42d798fea1d38be11",
+        "size_bytes": 341345
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 3,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step3.pt",
+        "sha256": "485f3236c45ebaa1c9f00ae0b67e5d4dd001f1908954bf8e842c4f4ff7070786",
+        "size_bytes": 12749353
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step3.json",
+        "sha256": "a1cdd0e433eb8ea1e1ddecdfaf6b886cb47e7b7394d4d59f80e0c9d024c5593b",
+        "size_bytes": 341600
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 4,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step4.pt",
+        "sha256": "4e1538fdcfb92304e2fe09602bb349217915efaa875feab5a3e2b786faa9c86f",
+        "size_bytes": 12760361
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step4.json",
+        "sha256": "998ca5672823d51656b26c7e072867d33b640d53fe480c3d1dc8c731aa9a3038",
+        "size_bytes": 341858
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 5,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step5.pt",
+        "sha256": "cd074f4ba5787e98c4bf9151c952c3d16e2ac479c99dca0a64b321d16fdf9578",
+        "size_bytes": 12771369
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step5.json",
+        "sha256": "7c51507e324c52995ed5a350e3bb32d56f9206e5aafa2c25dddaea29212c1724",
+        "size_bytes": 342116
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 6,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step6.pt",
+        "sha256": "b5dcb53b21396d510623f619b64e926cdef45924274a226fb9497a66fd9ed4b5",
+        "size_bytes": 12782377
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step6.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 7,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step7.pt",
+        "sha256": "66eb550d2372b7ba738473bd7475186291f5393efa4e90a44a7096ca8d4c529f",
+        "size_bytes": 12793385
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step7.json",
+        "sha256": "09134b4f87dd55ab098c018dfa819d749e51b2b2cd0bce2c02b05457c4663706",
+        "size_bytes": 342632
+      }
+    },
+    {
+      "arm": "coordinate_flip",
+      "step": 8,
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/coordinate_flip-step8.pt",
+        "sha256": "10ebf2e903c82293d6f30fb100db96893918d25eb12fbafa9441c995208f2543",
+        "size_bytes": 12804393
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step8.json",
+        "sha256": "451c923ea0454ba4098dc16e885133237eba32ea8896917425557b31115bd1e4",
+        "size_bytes": 342890
+      }
+    }
+  ],
+  "counts": {
+    "model": 54,
+    "vision": 54,
+    "logical_emissions": 54,
+    "raw_argmax_evaluations": 54,
+    "greedy_selected_emissions": 50,
+    "identity_writes": 2,
+    "flip_writes": 2,
+    "reused": 0,
+    "reference_cells": 48,
+    "actual_layer_masks": 1512,
+    "source_trace_comparisons": 186
+  },
+  "maximum_reference_error": 0.0,
+  "maximum_source_score_error": 3.814697265625e-05,
+  "outcomes": [
+    {
+      "arm": "native_A",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ],
+      "iou_A": 0.004554520962329253,
+      "iou_F": 1.0,
+      "region": "fragment_F"
+    },
+    {
+      "arm": "coordinate_A",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        536,
+        999
+      ],
+      "iou_A": 1.0,
+      "iou_F": 0.004554520962329253,
+      "region": "broad_A"
+    },
+    {
+      "arm": "native_sham",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151703,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        33,
+        86
+      ],
+      "iou_A": 0.004554520962329253,
+      "iou_F": 1.0,
+      "region": "fragment_F"
+    },
+    {
+      "arm": "coordinate_sham",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        536,
+        999
+      ],
+      "iou_A": 1.0,
+      "iou_F": 0.004554520962329253,
+      "region": "broad_A"
+    },
+    {
+      "arm": "native_flip",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151683,
+        152669,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        13,
+        999,
+        999
+      ],
+      "iou_A": 0.5365365365365365,
+      "iou_F": 0.0024445858360148684,
+      "region": "broad_A"
+    },
+    {
+      "arm": "coordinate_flip",
+      "emitted": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        536,
+        999
+      ],
+      "iou_A": 0.986986986986987,
+      "iou_F": 0.005300076195598583,
+      "region": "broad_A"
+    }
+  ],
+  "primary_pass": false,
+  "comparator_pass": false,
+  "shared_decision": "mixed_or_other",
+  "outer_seconds": 155.09143260866404,
+  "cumulative_sequence_gpu_hours": 0.9005328468261231,
+  "exploratory_x2": {
+    "scope": "Retrospective; full vocabulary FP64, same actual input per y1 across native/coordinate masks. No new prospective threshold or test.",
+    "cells": {
+      "native_A": {
+        "input": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_A-step6.json",
+          "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+          "size_bytes": 342374
+        },
+        "selected_y1": 151670,
+        "x2_winner": 151703,
+        "z33_minus_z536": 4.627126693725586,
+        "z999_minus_z536": 3.5496788024902344,
+        "probabilities_33_536_999": [
+          0.02087486825121783,
+          0.00020421524183710768,
+          0.007107126891770711
+        ]
+      },
+      "coordinate_flip": {
+        "input": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_flip-step6.json",
+          "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+          "size_bytes": 342374
+        },
+        "selected_y1": 151670,
+        "x2_winner": 152206,
+        "z33_minus_z536": -6.776994705200195,
+        "z999_minus_z536": -4.689121246337891,
+        "probabilities_33_536_999": [
+          8.299186982483509e-05,
+          0.07281937612110341,
+          0.0006695568716281702
+        ]
+      },
+      "native_flip": {
+        "input": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-native_flip-step6.json",
+          "sha256": "4fa179f342e8c471e84d6079947eed4030a60df0535fe03f5d4d5773bb44ba8b",
+          "size_bytes": 342374
+        },
+        "selected_y1": 151683,
+        "x2_winner": 152669,
+        "z33_minus_z536": 0.46578216552734375,
+        "z999_minus_z536": 4.725551605224609,
+        "probabilities_33_536_999": [
+          0.0008876082511635045,
+          0.0005571019857861078,
+          0.06283703618240635
+        ]
+      },
+      "coordinate_A": {
+        "input": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-y1-row-routing/attempt-001/inputs-coordinate_A-step6.json",
+          "sha256": "4fa179f342e8c471e84d6079947eed4030a60df0535fe03f5d4d5773bb44ba8b",
+          "size_bytes": 342374
+        },
+        "selected_y1": 151683,
+        "x2_winner": 152206,
+        "z33_minus_z536": -7.452210426330566,
+        "z999_minus_z536": -5.3903303146362305,
+        "probabilities_33_536_999": [
+          4.0549841268411203e-05,
+          0.06989450357345384,
+          0.00031875155592124695
+        ]
+      }
+    },
+    "matched_pairs": [
+      {
+        "native": "native_A",
+        "coordinate": "coordinate_flip",
+        "full_input_equal": true,
+        "y1": 0,
+        "x2_full_vocabulary_TV": 0.9734647803791783
+      },
+      {
+        "native": "native_flip",
+        "coordinate": "coordinate_A",
+        "full_input_equal": true,
+        "y1": 13,
+        "x2_full_vocabulary_TV": 0.9078584944682342
+      }
+    ],
+    "y1_by_mode_margin_interaction_nats": -3.486128807067871
+  },
+  "physical_boundary": "native_flip is nearly image-wide and includes multiple visible people; broad_A is numerical IoU classification only. No recovered singleton localization. F physical owner remains HOLD.",
+  "validation_added_model_calls": 0,
+  "validation_added_cuda_calls": 0
+}

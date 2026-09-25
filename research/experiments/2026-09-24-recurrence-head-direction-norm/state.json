@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-head-direction-norm",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-head-direction-norm/unit.md",
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/lead-admission-v1.json",
+    "sha256": "db2ead15457ee36ba2d7d1d732aa9aa0e451ae6ee0fd9157491f69914cfca317",
+    "size_bytes": 25865
+  },
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "state_source": "research/experiments/2026-09-24-recurrence-head-direction-norm/lead-acceptance-v1.json",
+  "result": "research/experiments/2026-09-24-recurrence-head-direction-norm/results.md",
+  "acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/lead-acceptance-v1.json",
+    "sha256": "6f2ed63a2e9b840b8085f19c9c277960fbfdf6c5b0b6cd7bc55c32b031ed4ce3",
+    "size_bytes": 7512
+  },
+  "disposition": "Both paired predictions are qualified NONPASS; mixed_or_other. D meets only its direction-pair half; G far from both anchors.",
+  "boundary": "One replayed x2 distribution under adaptive all-layer per-head pre-o_proj writes; F/F2 physical owner HOLD.",
+  "next_action": "No model successor admitted. Consolidated question owns the next decision; reopen only for a distinguishing complete-behavior or independent-case prediction.",
+  "execution_status": "All fixture/model jobs terminal and PIDs absent.",
+  "science_status": "lead-accepted paired primary/comparator nonpass",
+  "charged_sequence_gpu_hours": "0.9602669383484082444444444444",
+  "final_ledger": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-final-ledger-v1.json",
+    "sha256": "250a488433373d0a9980ac7d013ae1d00406b78962c82045bc7999288a61ce95",
+    "size_bytes": 8548
+  },
+  "counts": {
+    "generated_tokens": 0,
+    "model_forwards": 6,
+    "reused_calls": 0,
+    "vision_forwards": 6
+  },
+  "failed_records": [
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-001-failure-v1.json",
+      "sha256": "5abdf89f256b6fad274c8629c1b95517469c129b7a8013c7a01229b7ce3c080f",
+      "size_bytes": 3713
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-pre-fixture-failure-v1.json",
+      "sha256": "4e540bff5b7b2c4686c7fac32447b2fa993b46997d9f62ef7805a7fd877dd1b0",
+      "size_bytes": 2302
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting/attempt-002-pre-fixture-command-failure-v2.json",
+      "sha256": "276f03f147977e16e21bc5db40acf1539626d31ab14606ce7c7c99fa05e59b9c",
+      "size_bytes": 2320
+    }
+  ],
+  "not_authorized": [
+    "automatic retry or successor",
+    "head/layer/query/gain or normalization search",
+    "physical/copying/unique-mechanism claims",
+    "predecessor evidence or unrelated work edits"
+  ],
+  "knowledge_check": {
+    "ok": false,
+    "errors": [
+      "executable/cache/alias in research: research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/attempt-002-device-stdout.log"
+    ],
+    "catalog_entries": 322,
+    "valid_live_local_links": 1368
+  },
+  "archival_note": "Only knowledge-check error is the previously recorded immutable predecessor fixture stdout log under research. Preserved at bound path; no checker relaxation or scientific impact. New unit links/state/catalog and whitespace checks pass."
+}

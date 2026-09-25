@@ -1,0 +1,200 @@
+{
+  "status": "lead-accepted-CPU-recovered-technical-shared-primary-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/unit.md",
+    "sha256": "cf4f84f9f4142fdbfad5a07a9db3ae0de7d007ccdac846fca283f7d4c94ded40",
+    "size_bytes": 9228
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-admission-v1.json",
+    "sha256": "0c44d25fd542043ef543eb31fa284549edd07dd5d0fd05dd796a3093d7b53668",
+    "size_bytes": 11398
+  },
+  "repair_ruling": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/lead-readback-repair-ruling-v1.json",
+    "sha256": "958e4a1de44a6a648ad6d1d812b812576e10c10ed0fe8e9711e4dde887119da1",
+    "size_bytes": 6498
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/candidate-results.md",
+    "sha256": "cdf1198234c38be6bae27dc95174084823dd5ef03dba35403ae955e0596220c3",
+    "size_bytes": 8717
+  },
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/lead-verification-v1.json",
+    "sha256": "b428802ab29817d8c7fba1d6f4306b847087406ee643c3462faa3b8b4fcc418f",
+    "size_bytes": 17640
+  },
+  "production_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/receipt.json",
+    "sha256": "0c1132a8efe2ebde2ddc3ae180d84d13de66f0c4f1cf5329ec4cbcc4b484a974",
+    "size_bytes": 467696
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/attempt-001/outer.json",
+    "sha256": "6eee4194dc16ddebc671029651759a8409069a30b7c3bef74b79d1ed73d038ce",
+    "size_bytes": 249
+  },
+  "original_failure": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/attempt-001-readback-failure.json",
+    "sha256": "6974c9a48638f9d3ad20887325cfa98aca7c5b6c22bc2acb8c58fc93de3c381f",
+    "size_bytes": 926
+  },
+  "recovered_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/cpu-readback-v1/readback.json",
+    "sha256": "ab307c062112a236d1a439e2537fa4359d5b2c3e187073fb4e5e122565f37b28",
+    "size_bytes": 50446
+  },
+  "recovery_preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-two-record-routing/supporting/cpu-readback-v1-preflight.json",
+    "sha256": "c10f37a50f8ea3f77cae710005d95ba8bf9eb4c791497c8bcaa79128b09d9423",
+    "size_bytes": 9150
+  },
+  "overlay": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-two-record-routing/cpu-readback-v1/overlay.png",
+    "sha256": "9359388e1730e2ccd3adf4b1a1a520849aff3f5df933d75ab1cadbc524b442ab",
+    "size_bytes": 1371762
+  },
+  "technical": "Accepted 45-vector production evidence through the separate CPU-only versioned reader. Original failed reader/producer/preflight/raw/failure unchanged; no retroactive original readback. Lead independently checked all45 vectors, source/history/own-prefix inputs, native28-layer masks, source traces, sham/companion states, capture hashes, terminal count/cost and28 guard mutations. Source trace max error5.340576171875e-5; sham and companion differences0.",
+  "scientific": "Frozen FF broad-A, AA fragment-F, FA fragment-F conjunction is NONPASS: FF broad-A passes, AA neither region fails, FA fragment-F passes. No exact-token secondary was declared. AF versus FF at identical latest F tokens/count/positions identifies earlier-written-content influence; later F contextual representations may mediate. AF versus FA matching fragment regions is not distributional order invariance.",
+  "physical": "AA [205,105,407,499] localizes the distinct dark-haired man leaning forward at center-left; usable visible-person proposal, not full-body accuracy. FF localizes A, the left foreground person. F/F2/FA physical identity remains UNKNOWN/HOLD. AA is distinct from A intended owner but lies geometrically inside the broad A rectangle; do not infer an explicit visited-owner representation or nonoverlap policy.",
+  "mechanism_boundary": "Reject the frozen presence-of-A-implies-fragment pattern and latest-token-only sufficiency here. No direct older-row attention, unique circuit, natural two-cycle, generic onset/exit, population recovery or training-origin claim. Replacing all earlier content can alter the later record and current computations.",
+  "outcomes": [
+    {
+      "arm": "native_AF",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151699,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        29,
+        86
+      ],
+      "iou_A": 0.004002851346164391,
+      "iou_F": 0.8787878787878788,
+      "region": "fragment_F"
+    },
+    {
+      "arm": "identity_write_AF",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151699,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        29,
+        86
+      ],
+      "iou_A": 0.004002851346164391,
+      "iou_F": 0.8787878787878788,
+      "region": "fragment_F"
+    },
+    {
+      "arm": "FF",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151671,
+        151683,
+        152206,
+        152669,
+        151649
+      ],
+      "box": [
+        1,
+        13,
+        536,
+        999
+      ],
+      "iou_A": 0.9981343283582089,
+      "iou_F": 0.004424141875563434,
+      "region": "broad_A"
+    },
+    {
+      "arm": "AA",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151875,
+        151775,
+        152077,
+        152169,
+        151649
+      ],
+      "box": [
+        205,
+        105,
+        407,
+        499
+      ],
+      "iou_A": 0.1505933819745088,
+      "iou_F": 0.0,
+      "region": "neither_region"
+    },
+    {
+      "arm": "FA",
+      "tokens": [
+        151646,
+        8987,
+        151647,
+        151648,
+        151670,
+        151670,
+        151717,
+        151756,
+        151649
+      ],
+      "box": [
+        0,
+        0,
+        47,
+        86
+      ],
+      "iou_A": 0.006484510694434207,
+      "iou_F": 0.7021276595744681,
+      "region": "fragment_F"
+    }
+  ],
+  "primary_components": {
+    "FF_broad_A": true,
+    "AA_fragment_F": false,
+    "FA_fragment_F": true
+  },
+  "shared_primary_pass": false,
+  "counts": {
+    "model_forwards": 45,
+    "vision_forwards": 45,
+    "emitted_target_tokens": 45,
+    "reused_calls": 0
+  },
+  "outer_gpu_seconds": 129.19039377570152,
+  "cumulative_sequence_gpu_hours": 0.537174243789956,
+  "recovery_gpu_seconds": 0,
+  "next_decision": "CPU-only feasibility of matched AF/FF historical-cache recombination to distinguish older-row direct availability from later-row contextual relay; no further model call under this unit."
+}

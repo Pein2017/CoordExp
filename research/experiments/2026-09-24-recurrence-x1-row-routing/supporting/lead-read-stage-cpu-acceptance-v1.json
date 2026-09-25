@@ -1,0 +1,128 @@
+{
+  "status": "lead-accepted-CPU-feasible-not-model-qualified",
+  "date": "2026-09-24",
+  "brief": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-x1-row-routing/supporting/lead-read-stage-feasibility-v1.md",
+    "sha256": "e21bf77e163d54c2c6e02aa7395b2cf2c2a981e9d98b82029c0cee43c9417b3a",
+    "size_bytes": 6086
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-x1-row-routing/supporting/read-stage-feasibility.md",
+    "sha256": "d6f7d2de96389ee379966e2d17b34ba9cb82deffe9dd85cc849a082fb94f6544",
+    "size_bytes": 8018
+  },
+  "bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-x1-row-routing/supporting/read-stage-bindings.json",
+    "sha256": "89012bca91e04e318ff3a761dd58d871c0ae79a226ea7bb0b06e8d21c37d745e",
+    "size_bytes": 47067
+  },
+  "closed_x1_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-x1-row-routing/lead-acceptance-v1.json",
+    "sha256": "0b0c26a387fc6d39368a0745e8c42455cc45f3f29db47f60929cd81305fdfdcc",
+    "size_bytes": 7453
+  },
+  "one_record_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/lead-acceptance-v1.json",
+    "sha256": "0f97ffd31b3ab7483785ebdbaecb5b86ace6e7b8ce0a24c2847c00677c0ae179",
+    "size_bytes": 4321
+  },
+  "lead_checks": {
+    "bound_files": 86,
+    "raw_vectors_inputs_and_masks_reloaded": 36,
+    "partition_steps": 16,
+    "partition_counts": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        9,
+        0
+      ],
+      [
+        2,
+        18,
+        0
+      ],
+      [
+        3,
+        27,
+        0
+      ],
+      [
+        4,
+        36,
+        0
+      ],
+      [
+        5,
+        36,
+        9
+      ],
+      [
+        6,
+        36,
+        18
+      ],
+      [
+        7,
+        36,
+        27
+      ],
+      [
+        8,
+        36,
+        36
+      ],
+      [
+        9,
+        36,
+        45
+      ],
+      [
+        10,
+        36,
+        54
+      ],
+      [
+        11,
+        36,
+        63
+      ],
+      [
+        12,
+        36,
+        72
+      ],
+      [
+        13,
+        36,
+        81
+      ],
+      [
+        14,
+        36,
+        90
+      ],
+      [
+        15,
+        36,
+        99
+      ]
+    ],
+    "all_block_A_F_target_vectors_equal_t1_to_8": true,
+    "nominal_calls": 90,
+    "max_calls": 118,
+    "artifact_forecast_within_4GiB": true
+  },
+  "resource_added": {
+    "model_loads": 0,
+    "model_forwards": 0,
+    "vision_forwards": 0,
+    "CUDA_operations": 0,
+    "GPU_seconds": 0
+  },
+  "limit": "Source/geometry feasibility only. Does not qualify a partial-mask model consumer or establish a scientific endpoint. Any new model launch needs its separately frozen unit/admission."
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-24-recurrence-collapse-history-content",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "Written-coordinate causal dependence accepted; broad-A primary passes, exact-row secondary differs atx1 by1bin.",
+  "state_as_of": "2026-09-24",
+  "protocol": "research/experiments/2026-09-24-recurrence-collapse-history-content/unit.md",
+  "result": "research/experiments/2026-09-24-recurrence-collapse-history-content/results.md",
+  "state_source": "research/experiments/2026-09-24-recurrence-collapse-history-content/lead-acceptance-v1.json",
+  "boundary": "Closed45-call single-record factorial. F physical identityHOLD; masked equality structural, not new science credit.",
+  "not_authorized": [
+    "Git",
+    "model/effort changes",
+    "accepted predecessor/peer/shared-runtime/lead-owned files",
+    "extra source/arm/model call/retry",
+    "self-acceptance or successor"
+  ],
+  "next_action": "Separate fixed-two-record contrast of older content and order; no additional call here.",
+  "lead_thread_id": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread_id": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "dispatch": {
+    "turn_id": "01a0d2e6-3761-70e0-a629-44b7394810d2",
+    "message_sha256": "4be1000081f411c5f7b879a7a70aa3d455f36236b9be9f828ffb5cfa007a6ce0",
+    "receipt": "/tmp/923-collapse-history-content-sep24-dispatch.json",
+    "status": "submitted"
+  }
+}

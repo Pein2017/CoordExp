@@ -1,0 +1,94 @@
+{
+  "status": "lead_fresh_CPU_replay_passed",
+  "bindings": {
+    "supporting/lead-attrition-brief-v1.md": "d7e0754bc05caee29b732dfec756e40dbcc533e522d03d638df0e2aa0b2f98fd",
+    "supporting/numerical-return-attrition-v1.json": "6313558c0a84ca42861ed32a7afd7821d00ce347f5fea016370e99d4f7e1bac8",
+    "supporting/numerical-return-attrition-verify-v1.json": "1c3e88fcf11911e6372a6c0800e1409fb9393c8b20887a390d5e0f3a1ebb31b8"
+  },
+  "helper_sha256": "2162a843367f97f12e9c877fcd5703331e4baea2efc5dc404111558e10e2189a",
+  "counts": {
+    "adjacent_return_rows": 1502,
+    "adjacent_valid_geometry_return_pairs": 696,
+    "adjacent_valid_missing_third": 5,
+    "adjacent_valid_with_third": 691,
+    "all_images": 273,
+    "any_return_images": 29,
+    "complete_canonical_rows": 3467,
+    "exact_invalid_adjacent_pairs": 806,
+    "exact_invalid_nonadjacent_pairs": 100851,
+    "exact_invalid_pairs": 101657,
+    "exact_invalid_return_images": 3,
+    "exact_invalid_return_rows": 806,
+    "exact_valid_adjacent_pairs": 534,
+    "exact_valid_nonadjacent_pairs": 37307,
+    "exact_valid_pairs": 37841,
+    "exact_valid_return_images": 11,
+    "exact_valid_return_rows": 557,
+    "invalid_geometry_rows": 824,
+    "mature_images": 145,
+    "named_excluded_images_included_in_audit": 3,
+    "near_valid_nonexact_adjacent_pairs": 162,
+    "near_valid_nonexact_nonadjacent_pairs": 2688,
+    "near_valid_nonexact_pairs": 2850,
+    "near_valid_nonexact_return_images": 28,
+    "near_valid_nonexact_return_rows": 356,
+    "nonadjacent_only_return_rows": 10,
+    "prospective_images": 128,
+    "return_rows": 1512,
+    "return_rows_multiple_pair_kinds": 207,
+    "return_rows_single_pair_kind": 1305,
+    "valid_geometry_rows": 2643
+  },
+  "first_failure_counts": {
+    "best_below_0.75_A": 680,
+    "best_below_0.75_B": 3,
+    "class_mismatch": 4,
+    "invalid_geometry_A": 2,
+    "missing_preceding_third": 5,
+    "runner_not_below_0.25_A": 1,
+    "runner_not_below_0.25_B": 1
+  },
+  "overlapping_failure_counts": {
+    "best_below_0.75_A": 684,
+    "best_below_0.75_B": 687,
+    "best_below_0.75_C": 688,
+    "class_mismatch": 4,
+    "invalid_geometry_A": 2,
+    "missing_preceding_third": 5,
+    "runner_not_below_0.25_A": 38,
+    "runner_not_below_0.25_B": 38,
+    "runner_not_below_0.25_C": 35
+  },
+  "first_adjacent_valid_failure_by_image": {
+    "best_below_0.75_A": 13,
+    "best_below_0.75_B": 3,
+    "class_mismatch": 3,
+    "invalid_geometry_A": 2,
+    "missing_preceding_third": 5,
+    "no_adjacent_valid_pair": 2,
+    "runner_not_below_0.25_B": 1
+  },
+  "earliest_return_kind_by_image": {
+    "exact_valid": 1,
+    "near_valid_nonexact": 28
+  },
+  "independent_pair_sum": 142348,
+  "book_pair_iou": 0.6616438356164384,
+  "book_best_annotation_ious": [
+    0.6845238095238095,
+    0.6045602605863192,
+    0.5296052631578947
+  ],
+  "selfchecks": [
+    "exact_full_row",
+    "nonexact_valid_iou_ge_0.5",
+    "invalid_exact_separate",
+    "nonadjacent",
+    "earliest_and_all_qualifying_predecessors"
+  ],
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "gpu_seconds": 0
+}

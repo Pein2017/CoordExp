@@ -1,0 +1,62 @@
+{
+  "status": "lead-accepted-technical-and-frozen-numerical-positive",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/unit.md",
+    "sha256": "3ea786e900a491b32c540f997456ebbfdcc69ed9b123de9e1f94ceca6652c708",
+    "size_bytes": 10227
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/lead-admission-v1.json",
+    "sha256": "2736fe8e963b2d3aa134157457d550074cc43c4659b34451c7bbce38b8909954",
+    "size_bytes": 8570
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/candidate-results.md",
+    "sha256": "dea48142964054ab8802057ac95a28dca9bcd8154cfe32763908f53d0d1c4729",
+    "size_bytes": 5944
+  },
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/supporting/lead-verification-v1.json",
+    "sha256": "0a126e3f873229f3006dd46db64a82715ab83ecedbd9ccde468a5d4b8d57cf93",
+    "size_bytes": 11309
+  },
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/receipt.json",
+    "sha256": "31f4a39b69b0dbe845889a3c60215ec2a1ff65e4e85197638b4b92e2b5b5ac38",
+    "size_bytes": 334351
+  },
+  "cold_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/readback.json",
+    "sha256": "bbb7a44c0054fa1f6ca7243c0b7ca17c0cf7c2c5b66b23cc22ac84669cec4933",
+    "size_bytes": 21030
+  },
+  "outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/outer.json",
+    "sha256": "531067beb421f4fe77720fa7373b00a06fe3835d6cd132c20e6b14f31d1b7436",
+    "size_bytes": 248
+  },
+  "overlay": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/overlay.png",
+    "sha256": "2fa01756bfc4d7f3660c5f05031afe665ae852cf04f92d86a182709c1726d517",
+    "size_bytes": 1377746
+  },
+  "technical": "All27 saved raw vectors/own inputs/full causal masks/actual28-layer receipts and source traces independently checked; source captures and terminal receipt bound. Native/sham/history/companion/t0 errors0; source max3.814697265625e-5 below2e-4. Native rotary source construction additionally supported by frozen CPU and worker cold qualification.",
+  "scientific": "Frozen broad-A and exact-nine-token-row0 predictions pass. Native/sham produce person[0,0,33,86]; latest-record mask person[0,13,536,999]. First generated-token difference at y1, index5. Prior-record access causally supports this fragment choice under the admitted intervention.",
+  "physical": "Overlay independently confirms returned A is the broad left foreground person. Native fragment physical owner remains HOLD. Broad localization return repeats the already emitted proposal; no new-owner progress or repetition remediation.",
+  "mechanism_boundary": "One source/native state. Read removal also removes contextual content and changes attention normalization; no identified coordinate field, key/value carrier, semantic exclusion ledger, or generic recurrence cause. t0 remains native and opener identity is a residual path.",
+  "wrapper_ruling": "Disclosed local assertion occurred before any model child. No extra model attempt; does not invalidate sole captured27-call execution.",
+  "counts": {
+    "model_forwards": 27,
+    "vision_forwards": 27,
+    "emitted_target_tokens": 27,
+    "reused_calls": 0
+  },
+  "outer_gpu_seconds": 79.95819828659296,
+  "cumulative_sequence_gpu_hours": 0.4648794917405927,
+  "next_decision": "Separate fixed-history-content by read-access contrast to distinguish coordinate-content-specific routing from content-insensitive read-presence. No extra call under this unit."
+}

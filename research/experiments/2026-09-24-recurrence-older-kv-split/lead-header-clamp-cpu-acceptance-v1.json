@@ -1,0 +1,40 @@
+{
+  "status": "lead-accepted-CPU-feasibility-only",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "brief": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-split/supporting/lead-feedback-feasibility-brief.md",
+    "sha256": "8499d853d1298ee32d1bdde796faaf1066c9c898712ebc851a9020e4fdcddfe4",
+    "size_bytes": 5227
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-split/supporting/header-clamp-feasibility.md",
+    "sha256": "6cf6fcba26484214f16ebb790fd236ccdd4a956526b72a48d434020dfff62991",
+    "size_bytes": 8247
+  },
+  "bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-split/supporting/header-clamp-bindings.json",
+    "sha256": "74065466b331d8ca3ab2b6939cb2dbd8404d8fc1a0432dc784e33612b120b94d",
+    "size_bytes": 14130
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-older-kv-split/lead-acceptance-v1.json",
+    "sha256": "d4e5db20a24d9379f461df4518b3abf0e33e48a6f18e91a885c81a15d9fae670",
+    "size_bytes": 5526
+  },
+  "verification": "23 bound files rehashed; exact original target/header spans, model config, saved historical tensor schema and absence of actual header Q/K/V captures checked. All22 proposed cells and4vision counts independently checked. Maintained clamp hook/consumer source inspected. This is feasibility, not actual new hook or GPU qualification.",
+  "binding_count": 23,
+  "proposed_model_forwards": 22,
+  "proposed_vision_forwards": 4,
+  "proposed_generated_tokens": 0,
+  "technical_gap": "Fresh same-base native Q/K/V captures and bounded four-token actual-consumer clamp adaptation are required. No historical six-token state reuse.",
+  "model_loads": 0,
+  "model_forwards": 0,
+  "vision_forwards": 0,
+  "cuda_calls": 0,
+  "gpu_seconds": 0,
+  "next_action": "Separate new unit admits22 calls only after frozen CPU implementation checks and first16 runtime qualification gates."
+}

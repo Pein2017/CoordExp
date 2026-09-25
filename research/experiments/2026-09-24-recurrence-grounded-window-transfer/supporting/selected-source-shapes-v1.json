@@ -1,0 +1,399 @@
+{
+  "selected": [
+    {
+      "grid_derived_pixel_elements": 23396352,
+      "group": "refined-00",
+      "image_grids": [
+        [
+          1,
+          64,
+          64
+        ],
+        [
+          1,
+          46,
+          76
+        ],
+        [
+          1,
+          56,
+          64
+        ],
+        [
+          1,
+          52,
+          78
+        ]
+      ],
+      "image_id": 2299,
+      "kind": "D",
+      "left_padding": [
+        0,
+        150,
+        128,
+        10
+      ],
+      "original_source_tensor_sha256": {
+        "attention_mask": "4cb6115ae69b0eef69ada13f57dee6fcd04089054142325b5ab657bb2881ab4b",
+        "image_grid_thw": "cfce736bc0a56fd10e650d4007cfd76a72c39210b13896c58d5c87c08626d848",
+        "input_ids": "5f0a0174232506f5825aad8a9353c6e16efd08aa083f66a82315e63a62f52c35",
+        "pixel_values": "321d0f02c9a35f72f85efd240e1cbb0adfe64c562dcfb388dc3a3b803717e3c9"
+      },
+      "prompt_lengths": [
+        1372,
+        1222,
+        1244,
+        1362
+      ],
+      "prompt_width": 1372,
+      "raw_lengths": [
+        100,
+        244,
+        145,
+        235
+      ],
+      "raw_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "request_ids": [
+        "coco2017_val_000000001584",
+        "coco2017_val_000000002299",
+        "coco2017_val_000000002685",
+        "coco2017_val_000000004134"
+      ],
+      "states": [
+        {
+          "companions": [
+            {
+              "ended_at_t0": true,
+              "index": 0,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 68,
+              "pad_tokens_t0": 53,
+              "raw_len": 100,
+              "request_id": "coco2017_val_000000001584"
+            },
+            {
+              "ended_at_t0": true,
+              "index": 2,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 23,
+              "pad_tokens_t0": 8,
+              "raw_len": 145,
+              "request_id": "coco2017_val_000000002685"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 3,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 235,
+              "request_id": "coco2017_val_000000004134"
+            }
+          ],
+          "current_query_physical_t0": [
+            1525,
+            1525
+          ],
+          "current_query_physical_t15": [
+            1525,
+            1540
+          ],
+          "latest_row_keys_physical": [
+            1516,
+            1525
+          ],
+          "latest_row_keys_raw": [
+            144,
+            153
+          ],
+          "max_width_t15": 1540,
+          "native_first_opener": 151646,
+          "native_row_len": 9,
+          "native_row_tokens": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152294,
+            151756,
+            152393,
+            152059,
+            151649
+          ],
+          "prefix_width": 1525,
+          "raw_start": 153,
+          "row": 17
+        },
+        {
+          "companions": [
+            {
+              "ended_at_t0": true,
+              "index": 0,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 77,
+              "pad_tokens_t0": 62,
+              "raw_len": 100,
+              "request_id": "coco2017_val_000000001584"
+            },
+            {
+              "ended_at_t0": true,
+              "index": 2,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 32,
+              "pad_tokens_t0": 17,
+              "raw_len": 145,
+              "request_id": "coco2017_val_000000002685"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 3,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 235,
+              "request_id": "coco2017_val_000000004134"
+            }
+          ],
+          "current_query_physical_t0": [
+            1534,
+            1534
+          ],
+          "current_query_physical_t15": [
+            1534,
+            1549
+          ],
+          "latest_row_keys_physical": [
+            1525,
+            1534
+          ],
+          "latest_row_keys_raw": [
+            153,
+            162
+          ],
+          "max_width_t15": 1549,
+          "native_first_opener": 151646,
+          "native_row_len": 9,
+          "native_row_tokens": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152322,
+            152295,
+            152440,
+            152621,
+            151649
+          ],
+          "prefix_width": 1534,
+          "raw_start": 162,
+          "row": 18
+        }
+      ],
+      "target_index": 1,
+      "three_axis_position_status": "requires_processor/config-only reconstruction before any GPU admission"
+    },
+    {
+      "grid_derived_pixel_elements": 23851008,
+      "group": "refined-01",
+      "image_grids": [
+        [
+          1,
+          54,
+          72
+        ],
+        [
+          1,
+          46,
+          84
+        ],
+        [
+          1,
+          54,
+          72
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "image_id": 5001,
+      "kind": "D",
+      "left_padding": [
+        0,
+        6,
+        0,
+        0
+      ],
+      "original_source_tensor_sha256": {
+        "attention_mask": "76a395c1d8f322c06cba0270708f64fcc7239871c00b85a813727b70e3203cc2",
+        "image_grid_thw": "8d4c0c1a1f4e3d1ea7cf652d1d3258aaafe2c83ecc5b174f7ba31905b6e5dd65",
+        "input_ids": "98a3169ec200c38e61b89336197433cfe853977777a8edb4146225ae9a443a10",
+        "pixel_values": "86150b6e065e55032b0383ead5e8555d043b1f40d1fb30077306129fc6a52734"
+      },
+      "prompt_lengths": [
+        1320,
+        1314,
+        1320,
+        1320
+      ],
+      "prompt_width": 1320,
+      "raw_lengths": [
+        183,
+        82,
+        956,
+        161
+      ],
+      "raw_stops": [
+        "im_end",
+        "im_end",
+        "im_end",
+        "im_end"
+      ],
+      "request_ids": [
+        "coco2017_val_000000005001",
+        "coco2017_val_000000006040",
+        "coco2017_val_000000007511",
+        "coco2017_val_000000010707"
+      ],
+      "states": [
+        {
+          "companions": [
+            {
+              "ended_at_t0": true,
+              "index": 1,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 51,
+              "pad_tokens_t0": 36,
+              "raw_len": 82,
+              "request_id": "coco2017_val_000000006040"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 2,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 956,
+              "request_id": "coco2017_val_000000007511"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 3,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 161,
+              "request_id": "coco2017_val_000000010707"
+            }
+          ],
+          "current_query_physical_t0": [
+            1438,
+            1438
+          ],
+          "current_query_physical_t15": [
+            1438,
+            1453
+          ],
+          "latest_row_keys_physical": [
+            1429,
+            1438
+          ],
+          "latest_row_keys_raw": [
+            109,
+            118
+          ],
+          "max_width_t15": 1453,
+          "native_first_opener": 151646,
+          "native_row_len": 9,
+          "native_row_tokens": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152241,
+            151865,
+            152484,
+            152669,
+            151649
+          ],
+          "prefix_width": 1438,
+          "raw_start": 118,
+          "row": 13
+        },
+        {
+          "companions": [
+            {
+              "ended_at_t0": true,
+              "index": 1,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 60,
+              "pad_tokens_t0": 45,
+              "raw_len": 82,
+              "request_id": "coco2017_val_000000006040"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 2,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 956,
+              "request_id": "coco2017_val_000000007511"
+            },
+            {
+              "ended_at_t0": false,
+              "index": 3,
+              "original_stop": "im_end",
+              "pad_tokens_at_t15": 0,
+              "pad_tokens_t0": 0,
+              "raw_len": 161,
+              "request_id": "coco2017_val_000000010707"
+            }
+          ],
+          "current_query_physical_t0": [
+            1447,
+            1447
+          ],
+          "current_query_physical_t15": [
+            1447,
+            1462
+          ],
+          "latest_row_keys_physical": [
+            1438,
+            1447
+          ],
+          "latest_row_keys_raw": [
+            118,
+            127
+          ],
+          "max_width_t15": 1462,
+          "native_first_opener": 151646,
+          "native_row_len": 9,
+          "native_row_tokens": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152338,
+            151722,
+            152407,
+            151877,
+            151649
+          ],
+          "prefix_width": 1447,
+          "raw_start": 127,
+          "row": 14
+        }
+      ],
+      "target_index": 0,
+      "three_axis_position_status": "requires_processor/config-only reconstruction before any GPU admission"
+    }
+  ],
+  "status": "receipt_and_raw_derived_CPU_geometry"
+}

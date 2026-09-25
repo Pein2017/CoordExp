@@ -1,0 +1,367 @@
+{
+  "status": "lead-admitted-finite-written-extent-by-read-access",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "authority": "User authorized autonomous research; no elapsed-time ceiling. Finite five arms only.",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/unit.md",
+    "sha256": "38afdc7ccca4a74997b6833faa17022a2d1bd1f5bc21bc94c383fd62df7ef0de",
+    "size_bytes": 10106
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/lead-acceptance-v1.json",
+    "sha256": "be995dd80a250e9b0aef6a8d4ab04ed151d8dff5faa7276749441a87540f0f5c",
+    "size_bytes": 4282
+  },
+  "predecessor_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/receipt.json",
+    "sha256": "31f4a39b69b0dbe845889a3c60215ec2a1ff65e4e85197638b4b92e2b5b5ac38",
+    "size_bytes": 334351
+  },
+  "predecessor_cold_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/readback.json",
+    "sha256": "bbb7a44c0054fa1f6ca7243c0b7ca17c0cf7c2c5b66b23cc22ac84669cec4933",
+    "size_bytes": 21030
+  },
+  "predecessor_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-first-localization-collapse/supporting/lead-verification-v1.json",
+    "sha256": "0a126e3f873229f3006dd46db64a82715ab83ecedbd9ccde468a5d4b8d57cf93",
+    "size_bytes": 11309
+  },
+  "predecessor_outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/outer.json",
+    "sha256": "531067beb421f4fe77720fa7373b00a06fe3835d6cd132c20e6b14f31d1b7436",
+    "size_bytes": 248
+  },
+  "source_bindings": {
+    "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+      "sha256": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+      "size_bytes": 154193
+    },
+    "input_identity_sha256": "94d4ee001a7c36a4a598b96a5ace0cf1c04718c83025ee5aea18906c0c856150",
+    "input_identity_summary": {
+      "image_grids": [
+        [
+          1,
+          52,
+          76
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "media_sha256": [
+        "3d166106d64142b8bb5f3cc9128bb7799d040f67e7fced9e8ad94b3bdc10e96a",
+        "39f780da9084d7f54a7224d38c931f8bf10eb0e32969726b08133b131c7a99bf",
+        "b581bd917d48cba990815bb956d72b7ee74ec48e7997b622b081b371b0650824",
+        "66b4ed305acb5aa1c198309d4ce0ec6ed5edb25563ae8e9c2b04574ef18bda62"
+      ],
+      "request_ids": [
+        "coco2017_val_000000016228",
+        "coco2017_train_000000007116",
+        "coco2017_train_000000351017",
+        "coco2017_train_000000417044"
+      ],
+      "tensor_sha256": {
+        "attention_mask": "148787440a2e1c57d0f5015f5d408f0a9303c4fc147abc5993291e55962cbe4a",
+        "image_grid_thw": "54d7efdd62f129a0c5299d23249a20dbf8df0b66db00c8bb9ead8a96a4b30df7",
+        "input_ids": "468a4a64873a2c585f1a48a025446cdff8166025a8b12e2180e5545723661e18",
+        "pixel_values": "3221a3b3180eced27dbf77a0d8aa61dc038129b3bf6e029a9de231ff7427848d"
+      }
+    },
+    "loader_source": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+      "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+      "size_bytes": 179870
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+      "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+      "size_bytes": 189302
+    },
+    "source_identity": {
+      "attention": "sdpa",
+      "dtype": "fp32",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "model": "untied",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "shared_delta": false
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+      "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+      "size_bytes": 3312523
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json",
+    "sha256": "968f6f7e7752ad68deb697d69690704cb94c2cd3d3ebd15c254d9cbb709bf40a",
+    "size_bytes": 1870712
+  },
+  "loader_crosswalk": {
+    "historical": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "maintained": {
+      "path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "prior_acceptance": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-cpu-acceptance-v1.json",
+      "sha256": "e249b19c67df40d64c9d449f789f0a68bca3b159dc52992f43f9394a52dbb7a4",
+      "size_bytes": 3629
+    }
+  },
+  "source": {
+    "case_id": "mature:351017:1",
+    "group": "refined-03",
+    "target_index": 2,
+    "history_raw_end": 9,
+    "prior_keys_raw": [
+      0,
+      9
+    ],
+    "current_queries_raw": "[9,9+t)",
+    "source_row0_tokens": [
+      151646,
+      8987,
+      151647,
+      151648,
+      151670,
+      151683,
+      152206,
+      152669,
+      151649
+    ],
+    "source_row1_tokens": [
+      151646,
+      8987,
+      151647,
+      151648,
+      151670,
+      151670,
+      151703,
+      151756,
+      151649
+    ],
+    "A_box": [
+      0,
+      13,
+      536,
+      999
+    ],
+    "F_box": [
+      0,
+      0,
+      33,
+      86
+    ]
+  },
+  "history_write": {
+    "coordinate_slots_raw": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "A_ids": [
+      151670,
+      151683,
+      152206,
+      152669
+    ],
+    "F_ids": [
+      151670,
+      151670,
+      151703,
+      151756
+    ],
+    "actual_changed_raw": [
+      5,
+      6,
+      7
+    ],
+    "physical_changed_slots": [
+      1367,
+      1368,
+      1369
+    ],
+    "target_index": 2,
+    "history_length": 9,
+    "current_tokens_supplied": 0
+  },
+  "arms": [
+    "native_A",
+    "identity_write_A",
+    "masked_A",
+    "native_F",
+    "masked_F"
+  ],
+  "max_forwards_by_arm": [
+    9,
+    9,
+    9,
+    16,
+    16
+  ],
+  "accepted_reference_vectors": {
+    "native_A": [
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step0.pt",
+        "sha256": "66265d5f03af1224c227fdac82ecfea331f7a0fe9c3816bb97122881456ea42b",
+        "size_bytes": 12716303
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step1.pt",
+        "sha256": "52b00a823af1dc03a353cdb2a7234638ac46915a247e7c4707fb61446ef11779",
+        "size_bytes": 12727311
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step2.pt",
+        "sha256": "af613a5f82577790d4633405eb3e53867323d5654e3988aab38a15c083424596",
+        "size_bytes": 12738255
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step3.pt",
+        "sha256": "c41df32575de727a803f326fd18685a4945c5db6abfa135ecd4eae01ece7a064",
+        "size_bytes": 12749263
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step4.pt",
+        "sha256": "7efe47e241603c00f01f4c04e33275cb2c7b6f24360cfdc8d020b8c8eb50c2d1",
+        "size_bytes": 12760271
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step5.pt",
+        "sha256": "331c09c370c70504408242079c982e6f14c3d90538ea1f6f853ae7ada11d802a",
+        "size_bytes": 12771279
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step6.pt",
+        "sha256": "dd80396e000d24bc1ad55814186087882ca56a6f56c2b686730a117821d4cc8e",
+        "size_bytes": 12782287
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step7.pt",
+        "sha256": "d8b9418d04eaa83cc77173511104e7735fca57f0a4b1137549cb1a5d81bd2df4",
+        "size_bytes": 12793295
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/native-step8.pt",
+        "sha256": "e26a5b7208653e82190411aa0e451145cda3db7dd75bd49032e0999ce71b8c37",
+        "size_bytes": 12804303
+      }
+    ],
+    "masked_A": [
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step0.pt",
+        "sha256": "5dd342cb042a6177634f054b3dd38c3f64f240decbcd0bfa0f12505b9873f0c6",
+        "size_bytes": 12716537
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step1.pt",
+        "sha256": "57e96a3b9236c514ab0586baa5ba5dd1eea13098ca9381dc41122a9ad764f301",
+        "size_bytes": 12727545
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step2.pt",
+        "sha256": "666b25b5277cc73870d91f75ea159c5a8ddaf956c5087afd73979448868f7750",
+        "size_bytes": 12738489
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step3.pt",
+        "sha256": "7af14c2fe718cfc3edca66b154ae99ebcc5fa268fb7f4830be19731293bc5217",
+        "size_bytes": 12749497
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step4.pt",
+        "sha256": "b8c5b5678d4055fc160ed23dfd4357bb0a2988cbf326b6c621bf9c612808c287",
+        "size_bytes": 12760505
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step5.pt",
+        "sha256": "7201f82bf953c8cb1ec2cb2faac43403c065222a3d68ae59510bd4c67cbfc393",
+        "size_bytes": 12771513
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step6.pt",
+        "sha256": "fdb46fdc12dca232eaebf851dcf49774b410124ede73ee1d902d495b44d24776",
+        "size_bytes": 12782521
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step7.pt",
+        "sha256": "b7226901707d7fa072859017f1b58d6ebc279ebd8c5551df801c3bb12e5a5a59",
+        "size_bytes": 12793529
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-first-localization-collapse/attempt-001/latest_record_read_mask-step8.pt",
+        "sha256": "f515f52e4522e575649d7d45db06904082c57dc85be2ad1a938f4046e9221030",
+        "size_bytes": 12804537
+      }
+    ]
+  },
+  "primary": "native_F freely completes canonical person in broad-A numerical region (IoU(A)>=0.5,IoU(F)<=0.1, valid geometry;1e-6 guard). Other qualified outcomes nonpass.",
+  "secondary": "native_F complete emitted row exactly equals source row0 nine tokens.",
+  "masked_control": "F-mask t0 matches F-native t0. If maskedA/F opener identities match, later blocked vectors agree within2e-4 under identical own prefixes; structural qualification, not independent scientific credit. If opener differs retain scientific outcome and isolation comparison inapplicable.",
+  "native_reference_tolerance": 0.0002,
+  "max_model_forwards": 59,
+  "max_vision_forwards": 59,
+  "max_emitted_tokens": 59,
+  "reused_calls": 0,
+  "elapsed_time_ceiling": null,
+  "artifact_planning_bytes": 2147483648,
+  "prior_sequence_gpu_hours": 0.4648794917405927,
+  "measured_predecessor": {
+    "model_forwards": 27,
+    "vision_forwards": 27,
+    "outer_seconds": 79.95819828659296,
+    "raw_bytes": 361619461,
+    "width_min": 1371,
+    "width_max": 1379,
+    "pixel_elements": 24502272
+  },
+  "cpu_prelaunch_gate": "Reconstruct exact original full batch/shape/positions; bind all direct imports and commands; qualify actual joint history-write/mask caller and parser/mutation checks before model load. Larger forecast or conflict returns before launch.",
+  "stop": "No repair/retry/extra arm or model call after failure. Return stable candidate; lead owns interpretation and acceptance.",
+  "owned_paths": [
+    "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_collapse_history_content",
+    "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/supporting",
+    "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-collapse-history-content/candidate-results.md",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-collapse-history-content/attempt-001"
+  ],
+  "not_authorized": [
+    "Git",
+    "model/effort changes",
+    "accepted predecessor/peer/shared-runtime/lead-owned files",
+    "extra source/arm/model call/retry",
+    "self-acceptance or successor"
+  ]
+}

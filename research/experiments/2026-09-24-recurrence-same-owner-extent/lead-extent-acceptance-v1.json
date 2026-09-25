@@ -1,0 +1,58 @@
+{
+  "status": "lead-accepted-technical-valid-primary-nonpass",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/supporting/lead-extent-verification-v1.json",
+    "sha256": "364b5edaac7e95b67465af0ee2ec2fe6c0e65c41f6b8166ca978b1f0296ed9b6"
+  },
+  "candidate": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/extent-candidate-results.md",
+    "sha256": "b5b78873a3d2ad351ce4cfeff3530918297db070eab53d2055ebeeca3b992da0"
+  },
+  "summary": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/supporting/extent-cold-summary-v1.json",
+    "sha256": "7583695bdd6958dd1f3a59d01b8e18eb29ede4f751e751650434e7ad143d7919"
+  },
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/extent-protocol.md",
+    "sha256": "1dc907a4443794b3005d4b542dd7bf6ec2b5556134f73b5f02bcbbbbd1f7e0cd",
+    "size_bytes": 9500
+  },
+  "admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-same-owner-extent/lead-admission-v1.json",
+    "sha256": "a6f02b13d9e5677bb1a58a01a874f272c2fa22d52044125fa168fdd91e5ce790",
+    "size_bytes": 12798
+  },
+  "technical_ruling": "All45 raw vectors/actual input receipts and both terminal blocks independently verified on CPU; source trace max7.82012939453125e-05, exact native reference/sham/companions. No new model call.",
+  "physical_ruling": {
+    "native": "B2141669",
+    "identity_write_sham": "B2141669",
+    "both": "B2141669",
+    "x1_only": "B2141669",
+    "y2_only": "B2141669",
+    "Q": "UNKNOWN"
+  },
+  "primary": "Strict x1-dependent B-to-Q numerical routing pattern fails: all four corners stay in B-region.",
+  "secondary": {
+    "x1_only": false,
+    "both": false,
+    "y2_only": true
+  },
+  "observed_causal_effect": "At this fixed prefix, historical x1 197->207 changes the free next complete box [207,829,270,852] -> [223,829,270,850] in both tested y2 backgrounds. No physical owner change.",
+  "limits": [
+    "Zero y2 effect and interaction apply to selected greedy row/IoU readouts, not every hidden state or full probability vector.",
+    "This rejects neither physical owner-set invariance nor a geometry-conditioned owner-coverage account.",
+    "Latest row extent alone does not reproduce the later native Q proposal; older history and current position differ between those two states.",
+    "One selected image and finite counterfactual history; no natural burst mechanism, geometric sorting rule, copying circuit or new-owner claim."
+  ],
+  "actual_model_forwards": 45,
+  "actual_vision_forwards": 45,
+  "emitted_tokens": 45,
+  "reused_calls": 0,
+  "outer_gpu_seconds": 159.6176988258958,
+  "cumulative_sequence_gpu_hours": 0.39875775146149434,
+  "unit_disposition": "closed, no further cell under this contract",
+  "next_question": "At fixed post-revisit position and latest B row, distinguish older-record content/order from latest-row-plus-position and total-B-multiplicity accounts."
+}

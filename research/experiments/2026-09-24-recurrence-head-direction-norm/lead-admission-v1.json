@@ -1,0 +1,821 @@
+{
+  "status": "lead-admitted-six-call-head-direction-norm",
+  "date": "2026-09-24",
+  "lead_thread": "01a0c831-b332-7e12-b931-6ebe2359c99f",
+  "worker_thread": "01a0ce4b-9b55-7392-8a25-6a76f9e12c3a",
+  "lead_model": "gpt-6-astra",
+  "lead_effort": "xhigh",
+  "worker_model": "gpt-6-sol",
+  "worker_effort": "xhigh",
+  "authority": "User-authorized autonomous bounded mechanism research; finite lead-owned cells, independent acceptance and failed-attempt preservation; no elapsed ceiling.",
+  "protocol": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/unit.md",
+    "sha256": "60ccbb639cb1a86b0c663edc0454d7806089a703a9c2d51f72fef130d3d979c0",
+    "size_bytes": 9540
+  },
+  "cpu_feasibility": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/direction-norm-feasibility.md",
+    "sha256": "5173b9cf1cfdc3d7686a6c3ddfe98001356fa720b9eba5443d6039c5056a1f36",
+    "size_bytes": 5650
+  },
+  "cpu_bindings": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/direction-norm-bindings.json",
+    "sha256": "9bf13ca2d96e95f6e7809a7809001ea6994d5328dbba6301cc5208e4b58ae2c1",
+    "size_bytes": 1449109
+  },
+  "cpu_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/lead-direction-norm-cpu-acceptance-v1.json",
+    "sha256": "812116c81fbf52a518b41e585d26536a428e7208a83b003fc3e4bde260f5f58f",
+    "size_bytes": 2803
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/lead-acceptance-v1.json",
+    "sha256": "3f255b53adc45804c2e930319bc6c0a2d7f50fb874362c556687de18c6c5a667",
+    "size_bytes": 7741
+  },
+  "predecessor_result": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/results.md",
+    "sha256": "54a5496f19ffb38622330613958b1fca286cb892f0bdc831f4fb46309156bec3",
+    "size_bytes": 3131
+  },
+  "predecessor_admission": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/lead-admission-v1.json",
+    "sha256": "9673d1d1b5300e4c16d256b6b68ad5ea143ac82bb353159f43de6a3fae5ea312",
+    "size_bytes": 25919
+  },
+  "predecessor_repair": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/lead-repair-attempt-002.json",
+    "sha256": "28cde4d38811513b18e3859c33e2b5b273754081acd8c85a118ca188b0b3087d",
+    "size_bytes": 10704
+  },
+  "predecessor_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/receipt.json",
+    "sha256": "610faec502b3239b0a00f53b4b0bc6537f7f28b07a8922501ac0ce582467d9e2",
+    "size_bytes": 165789
+  },
+  "predecessor_readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/readback.json",
+    "sha256": "92d068c9f555df957b332185eec2d3f1561635778e793301da8dd76c4572fb4b",
+    "size_bytes": 95253
+  },
+  "predecessor_outer": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/outer.json",
+    "sha256": "5dc34252df0ed97a6d36cc8b3ad08c5c26b8aa9725cb0debb5792a8367c3573e",
+    "size_bytes": 278
+  },
+  "predecessor_preflight": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/attempt-002-preflight.json",
+    "sha256": "b9edbb727ee8ad7e0ee6f6307020ab0e1fcbd05487b8a433b847f8a4ebb8383e",
+    "size_bytes": 224048
+  },
+  "predecessor_verification": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-current-read-decomposition/supporting/lead-attempt-002-verification-v1.json",
+    "sha256": "75b1c357b86915f2c93ae7d5ad3c21c8b7316f4617c3b5fda070fb70631d84d2",
+    "size_bytes": 136874
+  },
+  "predecessor_producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_current_read_decomposition/run.py",
+    "sha256": "1d346e3e9534dc0ff1cd8949f1fc6736996cc4f458aa7bffb3554e3de7dfd0d4",
+    "size_bytes": 51722
+  },
+  "counterexamples": {
+    "cache_global_amplitude": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md",
+      "sha256": "01649a4a9b2264e2826033019dbc9472768c55ab118cf0d04d567bfa4e0c99e5",
+      "size_bytes": 7940
+    },
+    "output_coordinate_direction": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-19-readout-direction-control/results.md",
+      "sha256": "1ffe4268d1bf4ea7d9c289b59c3998f4b5825d6916ec9fcdac546773a3bb10c4",
+      "size_bytes": 8435
+    }
+  },
+  "source_bindings": {
+    "adapter_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+    "embedding_delta_path": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/special_token_embeddings",
+    "image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+      "sha256": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+      "size_bytes": 154193
+    },
+    "input_identity_sha256": "94d4ee001a7c36a4a598b96a5ace0cf1c04718c83025ee5aea18906c0c856150",
+    "input_identity_summary": {
+      "image_grids": [
+        [
+          1,
+          52,
+          76
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "media_sha256": [
+        "3d166106d64142b8bb5f3cc9128bb7799d040f67e7fced9e8ad94b3bdc10e96a",
+        "39f780da9084d7f54a7224d38c931f8bf10eb0e32969726b08133b131c7a99bf",
+        "b581bd917d48cba990815bb956d72b7ee74ec48e7997b622b081b371b0650824",
+        "66b4ed305acb5aa1c198309d4ce0ec6ed5edb25563ae8e9c2b04574ef18bda62"
+      ],
+      "request_ids": [
+        "coco2017_val_000000016228",
+        "coco2017_train_000000007116",
+        "coco2017_train_000000351017",
+        "coco2017_train_000000417044"
+      ],
+      "tensor_sha256": {
+        "attention_mask": "148787440a2e1c57d0f5015f5d408f0a9303c4fc147abc5993291e55962cbe4a",
+        "image_grid_thw": "54d7efdd62f129a0c5299d23249a20dbf8df0b66db00c8bb9ead8a96a4b30df7",
+        "input_ids": "468a4a64873a2c585f1a48a025446cdff8166025a8b12e2180e5545723661e18",
+        "pixel_values": "3221a3b3180eced27dbf77a0d8aa61dc038129b3bf6e029a9de231ff7427848d"
+      }
+    },
+    "loader_source": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "raw": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+      "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+      "size_bytes": 179870
+    },
+    "runtime_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+      "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+      "size_bytes": 189302
+    },
+    "source_identity": {
+      "attention": "sdpa",
+      "dtype": "fp32",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "model": "untied",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "shared_delta": false
+    },
+    "trace": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+      "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+      "size_bytes": 3312523
+    }
+  },
+  "source_panel": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json",
+    "sha256": "968f6f7e7752ad68deb697d69690704cb94c2cd3d3ebd15c254d9cbb709bf40a",
+    "size_bytes": 1870712
+  },
+  "loader_crosswalk": {
+    "historical": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/sources/infras_special_token_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "maintained": {
+      "path": "/data/CoordExp/.worktrees/research-probes/src/qwen/untied_embeddings.py",
+      "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+      "size_bytes": 51208
+    },
+    "prior_acceptance": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-book-first-revisit/lead-cpu-acceptance-v1.json",
+      "sha256": "e249b19c67df40d64c9d449f789f0a68bca3b159dc52992f43f9394a52dbb7a4",
+      "size_bytes": 3629
+    }
+  },
+  "source": {
+    "case_id": "mature:351017:1",
+    "group": "refined-03",
+    "target_index": 2,
+    "history_raw_end": 9,
+    "A_tokens": [
+      151646,
+      8987,
+      151647,
+      151648,
+      151670,
+      151683,
+      152206,
+      152669,
+      151649
+    ],
+    "request_ids": [
+      "coco2017_val_000000016228",
+      "coco2017_train_000000007116",
+      "coco2017_train_000000351017",
+      "coco2017_train_000000417044"
+    ],
+    "checkpoint_identity": {
+      "attention": "sdpa",
+      "dtype": "fp32",
+      "input_delta_sha256": "36d07fc1fa94efd27db18065714c56d3121eacbfedeb33114fc551f88d921b4c",
+      "input_rows_sha256": "bf4dbdf711f71f9c5a1116321a8b139b92dd4eefa7426a1f1389a1f5f5b0679f",
+      "model": "untied",
+      "output_delta_sha256": "1abba0209e5c5038f98255b0712c7c41628f06ba089ba9c4dabc443ee155e8a2",
+      "output_rows_sha256": "b649ff3496600fb2867cb4c48b951a5cfef525848aa1594060d481d4afa392a5",
+      "selected_ids_sha256": "6e4ad29711e3d49a8d9b2b4ad714a3f27d584a81feb68c775648516b9e359f01",
+      "shared_delta": false
+    },
+    "expected_changed_history_raw_slots": []
+  },
+  "conditioning": {
+    "history_raw_end": 9,
+    "full_target_raw_end": 15,
+    "current_prefix": [
+      151646,
+      8987,
+      151647,
+      151648,
+      151670,
+      151670
+    ],
+    "conditioning_not_generation": true,
+    "target_index": 2,
+    "prefix_width": 1377,
+    "query_token_role": "y1 at physical1376 predicts x2",
+    "request_count": 4
+  },
+  "model_geometry": {
+    "layers": 28,
+    "hidden_size": 2048,
+    "query_heads": 16,
+    "kv_heads": 8,
+    "kv_repeat_groups": 2,
+    "head_dim": 128,
+    "scaling": 0.08838834764831845,
+    "dropout_eval": 0.0,
+    "qk_norm": "per-head RMSNorm before RoPE",
+    "rotary": "three-axis original model rotary; capture actual cos/sin",
+    "full_prefix_no_cache_split": true,
+    "target_query_physical": 1376,
+    "earlier_query_physical": 1375,
+    "history_keys_physical": [
+      1362,
+      1371
+    ],
+    "native_readable_at_query": 1377,
+    "selected_history_keys": 9,
+    "remaining_readable_keys": 1368,
+    "headout_pre_o_proj_target_shape": [
+      16,
+      128
+    ],
+    "target_full_KV_shapes": {
+      "K": [
+        8,
+        1377,
+        128
+      ],
+      "V": [
+        8,
+        1377,
+        128
+      ]
+    },
+    "saved_Q_shape": [
+      16,
+      128
+    ],
+    "saved_sequence_major_KV_shape": [
+      1377,
+      8,
+      128
+    ],
+    "target_full_KV_shapes_axis_order": "head,sequence,dimension for attention reconstruction; saved captures are sequence-major as separately specified"
+  },
+  "references": {
+    "N": {
+      "arm": "native_anchor",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/native_anchor.pt",
+        "sha256": "f2d57986e9be968a3590bd75cefbad484cf3ad68aec4e7056330e80570129f32",
+        "size_bytes": 332175567
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/inputs-native_anchor.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "actual_mask_sha256": "bd2bf4c51e17d2bd8edd8bbc9e15f932499aa3490839a9437c50f21082df6c34"
+    },
+    "R": {
+      "arm": "remove_H",
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/remove_H.pt",
+        "sha256": "7ff50eed748f29a6bec83a6423a2ce9edb6195b3436c1e08e0d391cd8a0ef213",
+        "size_bytes": 332174458
+      },
+      "inputs": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-current-read-decomposition/attempt-002/inputs-remove_H.json",
+        "sha256": "fcf4a094187ef351cc8ff8d93a180471c1ec6ad44d1f48325add7fb65e0be4b5",
+        "size_bytes": 342374
+      },
+      "actual_mask_sha256": "bd2bf4c51e17d2bd8edd8bbc9e15f932499aa3490839a9437c50f21082df6c34"
+    }
+  },
+  "algebra": {
+    "N": "H+R under native attention denominator",
+    "n": "per-head L2(N), all128dimensions, FP64",
+    "r": "per-head L2(R), all128dimensions, FP64",
+    "G": "(r/n)*N",
+    "D": "(n/r)*R",
+    "fixed_heads_layers": true,
+    "own_incoming_QKV": true,
+    "FP32_cast_once": true,
+    "no_gain_fit_or_clamp": true
+  },
+  "cells": [
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 1,
+      "name": "native_anchor",
+      "write_formula": null,
+      "reference": "N"
+    },
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 2,
+      "name": "remove_anchor",
+      "write_formula": "R",
+      "reference": "R"
+    },
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 3,
+      "name": "native_identity",
+      "write_formula": "N",
+      "reference": "N"
+    },
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 4,
+      "name": "remove_identity",
+      "write_formula": "R",
+      "reference": "R"
+    },
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 5,
+      "name": "gain_control",
+      "write_formula": "G",
+      "reference": null
+    },
+    {
+      "mask_mode": "native",
+      "query_physical": 1376,
+      "target_index": 2,
+      "history_keys_physical": [
+        1362,
+        1371
+      ],
+      "all_text_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "all_query_heads": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 6,
+      "name": "direction_control",
+      "write_formula": "D",
+      "reference": null
+    }
+  ],
+  "qualification": {
+    "full_vocabulary_max_abs_error": 0.0002,
+    "state_max_abs_error": 0.0002,
+    "headout_relative_bound": 5e-05,
+    "headout_scale": "max(1, max_abs(actual pre-write selected headout), max_abs(independent same-call oracle))",
+    "selected_post_write": "exact declared N/R/G/D FP64 formula cast once to FP32 at actual runtime consumer",
+    "writer_complement": "exact input equality before/after actuator outside target2 physical1376; actual o_proj consumer proof",
+    "anchors": "Fresh N and R match accepted native_anchor and remove_H all-four vectors and exact source inputs; current-mask reference is forbidden",
+    "identity": "independent N and R writes match their own fresh and accepted all-four anchors",
+    "bridge": "No mask bridge in this unit; R endpoint is historical-contribution removal",
+    "partial_start_after": 4,
+    "QKV_origin": "own adaptive incoming same-call/layer tensors; no saved native gain or QKV substitution",
+    "rotary_precision": "Match model FP32 RoPE, then FP64 score/reduction. Model remains FP32 SDPA.",
+    "numerical_mass": "finite logZ_H/logZ_R/logZ and strictly positive representable remaining mass; no floor or clipping",
+    "source_trace": "native_anchor/native_identity target and original companions in all cells at offset15",
+    "saved_evidence": "Selective same-call incoming Q/K/V and actual rotary, actual mask, pre/post selected headout, complement hashes, raw logits/inputs, earlier/header/history/companion states or exact bound hashes, complete receipts",
+    "cold_reader": "separate CPU process; source/capture/hash/shape/device/alias/order/count checks plus independent local math and full-vocabulary reduction",
+    "per_head_norm_relative_error": 2e-06,
+    "per_head_unit_direction_max_abs_error": 2e-06,
+    "norm_fail_closed": "zero/nonfinite norm, gain or FP32 output; no clipping/epsilon/fallback",
+    "cold_numeric_rules": {
+      "FP64_error_and_scale": "absolute difference <= 1e-12 * max(1, recorded oracle scale, recomputed oracle scale), finite values required",
+      "FP64_mass": "each history/remaining probability absolute difference <=1e-12; finite values, range0..1, remaining strictly positive",
+      "FP32_formula": "CPU-recomputed formula cast to FP32 versus saved selected post-write FP32 max-abs <=2*torch.finfo(torch.float32).eps*max(1,max_abs(expected),max_abs(saved)); exact shape/dtype/finite checks. This only allows cross-backend reconstruction roundoff.",
+      "actual_GPU_write_and_consumer": "UNCHANGED exact equality of selected declared runtime formula cast to FP32 and actual post-actuator o_proj input; exact unselected complement",
+      "native_or_masked_headout_gate": "UNCHANGED 5e-5*max(1,max_abs(actual),max_abs(oracle)) both recorded runtime and cold recomputation must pass",
+      "all_four_reference_and_state_gate": "UNCHANGED2e-4"
+    }
+  },
+  "metrics": {
+    "full_vocabulary": 152670,
+    "dtype": "FP64",
+    "B": "TV(native_anchor,remove_anchor)",
+    "d_N_G": "TV(gain_control,native_anchor)/B",
+    "d_R_G": "TV(gain_control,remove_anchor)/B",
+    "d_N_D": "TV(direction_control,native_anchor)/B",
+    "d_R_D": "TV(direction_control,remove_anchor)/B",
+    "guard": 1e-06,
+    "all_pairwise_anchor_control_TVs": true,
+    "TV_G_D": true
+  },
+  "primary": {
+    "name": "direction_following_pair",
+    "clauses": [
+      "B>1e-6",
+      "d_N_G<0.5",
+      "d_R_G-d_N_G>0.1",
+      "d_R_D<0.5",
+      "d_N_D-d_R_D>0.1"
+    ]
+  },
+  "comparator": {
+    "name": "norm_following_pair",
+    "clauses": [
+      "B>1e-6",
+      "d_R_G<0.5",
+      "d_N_G-d_R_G>0.1",
+      "d_N_D<0.5",
+      "d_R_D-d_N_D>0.1"
+    ]
+  },
+  "low_baseline_category": "uninformative",
+  "numerical_guard_category": "numerical_HOLD",
+  "other_category": "mixed_or_other",
+  "descriptive_tokens": [
+    151703,
+    152206,
+    152669
+  ],
+  "counts": {
+    "model_forwards": 6,
+    "vision_forwards": 6,
+    "generated_tokens": 0,
+    "reused_calls": 0,
+    "max_nonmodel_CUDA_fixture_invocations": 1
+  },
+  "prior_sequence_gpu_hours": 0.9321684536531304,
+  "elapsed_time_ceiling": null,
+  "sequence_gpu_hour_ceiling": null,
+  "planning": {
+    "same_shape_prior_model_calls": 6,
+    "measured_outer_seconds": 50.671184331178665,
+    "two_x_planned_model_outer_seconds": 101.34236866235733,
+    "separate_fixture_outer_seconds_charge": true,
+    "measured_raw_bytes": 1996222285,
+    "planning_25pct_payload_allowance_bytes": 2495277857,
+    "artifact_envelope_bytes": 3221225472,
+    "full_attention_matrix_saved": false,
+    "not_runtime_bound": true,
+    "prior_peak_GPU_allocated_bytes": 10260986880,
+    "prior_peak_GPU_reserved_bytes": 11190403072,
+    "prior_peak_RSS_KiB": 11675452
+  },
+  "owned_paths": {
+    "producer": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_head_direction_norm",
+    "worker_supporting": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/supporting",
+    "worker_candidate": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-head-direction-norm/candidate-results.md",
+    "raw_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/attempt-001",
+    "fixture_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-24-recurrence-head-direction-norm/qualification-v1"
+  },
+  "pre_model_stages": [
+    "CPU preflight freezes actual caller checks, source captures, model and fixture commands",
+    "one non-model CUDA mixed-device fixture, terminal qualifying receipt; no model load",
+    "one fresh model job conditioned on both records and unchanged source captures"
+  ],
+  "stop": "Return any technical failure immediately; no retry or repair. After qualification run both controls regardless of scientific signs, cold-read separately, return candidate and stop.",
+  "not_authorized": [
+    "extra model/vision calls, generation, reuse or extra CUDA fixture",
+    "changing accepted sources/producer/evidence or lead-owned state",
+    "new heads/layers/queries/images, norm placement/global norm, fitted gains or clipping",
+    "Git/index/peer/shared-runtime edits",
+    "new threshold or coordinate-only endpoint",
+    "successor/self-acceptance"
+  ]
+}
