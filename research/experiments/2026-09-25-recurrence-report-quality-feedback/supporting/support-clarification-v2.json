@@ -1,0 +1,699 @@
+{
+  "status": "candidate_cpu_clarification_pending_lead_physical_review",
+  "authority": "same unit.md; no model admission",
+  "immutable_inputs": {
+    "v1_support": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json",
+    "v1_projection": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json",
+    "v1_report": "research/experiments/2026-09-25-recurrence-report-quality-feedback/cpu-candidate-results.md",
+    "accepted_visual_ruling": "research/experiments/2026-09-24-recurrence-grounded-window-transfer/lead-visual-acceptance-v1.json"
+  },
+  "source_denominator": 273,
+  "numerical_return_basket": 29,
+  "categories": {
+    "strong_coverage_preserving": 0,
+    "weak_identity_constant_coverage_unfixed": 1,
+    "hold_unresolved": 21,
+    "ineligible_or_reference": 7
+  },
+  "category_note": "The weak count is a worker visual proposal. No strong coverage-preserving or matched natural reverse pair is supported. HOLD cases are not scientific negatives.",
+  "ordered_cases": [
+    {
+      "global_source_rank": 6,
+      "image_id": 7511,
+      "source": "mature",
+      "group": "refined-01",
+      "batch_index": 2,
+      "earliest_i": 0,
+      "earliest_j": 1,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[0]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[0]"
+    },
+    {
+      "global_source_rank": 10,
+      "image_id": 14038,
+      "source": "mature",
+      "group": "refined-02",
+      "batch_index": 2,
+      "earliest_i": 6,
+      "earliest_j": 7,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[1]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[1]"
+    },
+    {
+      "global_source_rank": 15,
+      "image_id": 351017,
+      "source": "mature",
+      "group": "refined-03",
+      "batch_index": 2,
+      "earliest_i": 1,
+      "earliest_j": 2,
+      "v1_disposition": "reference_only",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[2]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[2]"
+    },
+    {
+      "global_source_rank": 16,
+      "image_id": 417044,
+      "source": "mature",
+      "group": "refined-03",
+      "batch_index": 3,
+      "earliest_i": 3,
+      "earliest_j": 4,
+      "v1_disposition": "ineligible_no_poor_report",
+      "v2_category": "weak_identity_constant_coverage_unfixed",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[3]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[3]",
+      "clarified_reason": "Accepted visual ruling supports rows3/4 as the same visible dark donut portion and partial boxes. A pixel-derived wider visible extent is proposed independently; row2 possible earlier edge visit and adequate prior coverage remain HOLD. Weak identity-only support, not a first-physical-revisit or coverage-preserving claim."
+    },
+    {
+      "global_source_rank": 17,
+      "image_id": 477415,
+      "source": "mature",
+      "group": "refined-04",
+      "batch_index": 0,
+      "earliest_i": 4,
+      "earliest_j": 5,
+      "v1_disposition": "source_screen_excluded",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[4]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[4]"
+    },
+    {
+      "global_source_rank": 36,
+      "image_id": 71122,
+      "source": "mature",
+      "group": "fresh-04",
+      "batch_index": 2,
+      "earliest_i": 1,
+      "earliest_j": 3,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[5]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[5]"
+    },
+    {
+      "global_source_rank": 43,
+      "image_id": 99184,
+      "source": "mature",
+      "group": "fresh-06",
+      "batch_index": 1,
+      "earliest_i": 0,
+      "earliest_j": 1,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[6]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[6]"
+    },
+    {
+      "global_source_rank": 73,
+      "image_id": 253212,
+      "source": "mature",
+      "group": "fresh-13",
+      "batch_index": 3,
+      "earliest_i": 1,
+      "earliest_j": 2,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[7]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[7]"
+    },
+    {
+      "global_source_rank": 75,
+      "image_id": 258285,
+      "source": "mature",
+      "group": "fresh-14",
+      "batch_index": 1,
+      "earliest_i": 14,
+      "earliest_j": 15,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[8]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[8]",
+      "clarified_reason": "The small birds are not attributable as one repeated visible bird; an adequate prior report is only a preference and is not the blocking condition."
+    },
+    {
+      "global_source_rank": 92,
+      "image_id": 313465,
+      "source": "mature",
+      "group": "fresh-18",
+      "batch_index": 3,
+      "earliest_i": 6,
+      "earliest_j": 7,
+      "v1_disposition": "source_screen_excluded",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[9]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[9]"
+    },
+    {
+      "global_source_rank": 102,
+      "image_id": 356238,
+      "source": "mature",
+      "group": "fresh-21",
+      "batch_index": 1,
+      "earliest_i": 1,
+      "earliest_j": 2,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[10]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[10]"
+    },
+    {
+      "global_source_rank": 104,
+      "image_id": 360695,
+      "source": "mature",
+      "group": "fresh-21",
+      "batch_index": 3,
+      "earliest_i": 1,
+      "earliest_j": 2,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[11]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[11]"
+    },
+    {
+      "global_source_rank": 109,
+      "image_id": 386313,
+      "source": "mature",
+      "group": "fresh-23",
+      "batch_index": 0,
+      "earliest_i": 4,
+      "earliest_j": 5,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[12]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[12]",
+      "clarified_reason": "The narrow boxes cut adjacent book spines; same physical book identity and an independently bounded clearer one-book extent are unestablished. Current quality need not be worse than row4 to qualify, but owner/donor support fails."
+    },
+    {
+      "global_source_rank": 150,
+      "image_id": 28012,
+      "source": "new",
+      "group": "new-01",
+      "batch_index": 1,
+      "earliest_i": 0,
+      "earliest_j": 2,
+      "v1_disposition": "ineligible_no_poor_report",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[13]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[13]",
+      "clarified_reason": "Earliest current row2 visibly encloses the one woman within the image despite being narrower than the poor full-frame row0; the poor predecessor does not make row2 a poor report."
+    },
+    {
+      "global_source_rank": 159,
+      "image_id": 70122,
+      "source": "new",
+      "group": "new-03",
+      "batch_index": 2,
+      "earliest_i": 9,
+      "earliest_j": 10,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[14]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[14]",
+      "clarified_reason": "Large blank/neighboring teddy parts prevent an attributable singleton and a same-owner clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "global_source_rank": 164,
+      "image_id": 78305,
+      "source": "new",
+      "group": "new-04",
+      "batch_index": 3,
+      "earliest_i": 5,
+      "earliest_j": 6,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[15]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[15]",
+      "clarified_reason": "A small upright item amid pens/books has uncertain book identity and no bounded clearer same-item extent; lack of prior completed coverage is not the sole obstacle."
+    },
+    {
+      "global_source_rank": 175,
+      "image_id": 131490,
+      "source": "new",
+      "group": "new-07",
+      "batch_index": 2,
+      "earliest_i": 0,
+      "earliest_j": 1,
+      "v1_disposition": "ineligible_no_poor_report",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[16]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[16]",
+      "clarified_reason": "Both current and predecessor boxes cover only a dark body portion of an overlapping cow cluster. The head/body linkage and a clearer single-cow donor cannot be established from these pixels; unresolved rather than demonstrably adequate."
+    },
+    {
+      "global_source_rank": 178,
+      "image_id": 151704,
+      "source": "new",
+      "group": "new-08",
+      "batch_index": 1,
+      "earliest_i": 3,
+      "earliest_j": 4,
+      "v1_disposition": "source_screen_excluded",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[17]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[17]"
+    },
+    {
+      "global_source_rank": 180,
+      "image_id": 169872,
+      "source": "new",
+      "group": "new-08",
+      "batch_index": 3,
+      "earliest_i": 6,
+      "earliest_j": 7,
+      "v1_disposition": "ineligible_no_poor_report",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[18]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[18]",
+      "clarified_reason": "Rows6/7 frame a narrow visible book/binder spine amid adjacent spines. The portion visible may be adequately localized; singleton identity, poorer quality and a separate clearer same-owner extent are unresolved."
+    },
+    {
+      "global_source_rank": 188,
+      "image_id": 196924,
+      "source": "new",
+      "group": "new-10",
+      "batch_index": 3,
+      "earliest_i": 16,
+      "earliest_j": 17,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[19]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[19]"
+    },
+    {
+      "global_source_rank": 198,
+      "image_id": 257685,
+      "source": "new",
+      "group": "new-13",
+      "batch_index": 1,
+      "earliest_i": 2,
+      "earliest_j": 3,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[20]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[20]"
+    },
+    {
+      "global_source_rank": 202,
+      "image_id": 269858,
+      "source": "new",
+      "group": "new-14",
+      "batch_index": 1,
+      "earliest_i": 7,
+      "earliest_j": 8,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[21]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[21]",
+      "clarified_reason": "Distant car boxes do not isolate a secure same visible vehicle and independent clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "global_source_rank": 213,
+      "image_id": 301827,
+      "source": "new",
+      "group": "new-17",
+      "batch_index": 0,
+      "earliest_i": 10,
+      "earliest_j": 11,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[22]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[22]"
+    },
+    {
+      "global_source_rank": 215,
+      "image_id": 311229,
+      "source": "new",
+      "group": "new-17",
+      "batch_index": 2,
+      "earliest_i": 19,
+      "earliest_j": 20,
+      "v1_disposition": "ineligible_no_poor_report",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[23]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[23]",
+      "clarified_reason": "Row20 covers much of a tiny pedestrian and is numerically tighter, but crowded low-resolution pixels do not establish either an inadequate current person box or a bounded clearer same-person donor; unresolved rather than certified adequate."
+    },
+    {
+      "global_source_rank": 218,
+      "image_id": 322768,
+      "source": "new",
+      "group": "new-18",
+      "batch_index": 1,
+      "earliest_i": 4,
+      "earliest_j": 5,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[24]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[24]"
+    },
+    {
+      "global_source_rank": 239,
+      "image_id": 415856,
+      "source": "new",
+      "group": "new-23",
+      "batch_index": 2,
+      "earliest_i": 0,
+      "earliest_j": 1,
+      "v1_disposition": "ineligible_distinct_owners",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[25]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[25]"
+    },
+    {
+      "global_source_rank": 254,
+      "image_id": 505967,
+      "source": "new",
+      "group": "new-27",
+      "batch_index": 1,
+      "earliest_i": 18,
+      "earliest_j": 19,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[26]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[26]",
+      "clarified_reason": "The distant car is too small to bind a distinct repeated vehicle and a clearer same-owner extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "global_source_rank": 259,
+      "image_id": 539124,
+      "source": "new",
+      "group": "new-28",
+      "batch_index": 2,
+      "earliest_i": 1,
+      "earliest_j": 2,
+      "v1_disposition": "ineligible_distinct_owners",
+      "v2_category": "ineligible_or_reference",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[27]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[27]"
+    },
+    {
+      "global_source_rank": 261,
+      "image_id": 545663,
+      "source": "new",
+      "group": "new-29",
+      "batch_index": 0,
+      "earliest_i": 0,
+      "earliest_j": 1,
+      "v1_disposition": "HOLD",
+      "v2_category": "hold_unresolved",
+      "v1_reason_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json#cases[28]",
+      "projection_ref": "research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json#cases[28]"
+    }
+  ],
+  "changed_reasons_or_categories": [
+    {
+      "image_id": 417044,
+      "new_reason": "Accepted visual ruling supports rows3/4 as the same visible dark donut portion and partial boxes. A pixel-derived wider visible extent is proposed independently; row2 possible earlier edge visit and adequate prior coverage remain HOLD. Weak identity-only support, not a first-physical-revisit or coverage-preserving claim."
+    },
+    {
+      "image_id": 28012,
+      "new_reason": "Earliest current row2 visibly encloses the one woman within the image despite being narrower than the poor full-frame row0; the poor predecessor does not make row2 a poor report."
+    },
+    {
+      "image_id": 131490,
+      "new_reason": "Both current and predecessor boxes cover only a dark body portion of an overlapping cow cluster. The head/body linkage and a clearer single-cow donor cannot be established from these pixels; unresolved rather than demonstrably adequate."
+    },
+    {
+      "image_id": 169872,
+      "new_reason": "Rows6/7 frame a narrow visible book/binder spine amid adjacent spines. The portion visible may be adequately localized; singleton identity, poorer quality and a separate clearer same-owner extent are unresolved."
+    },
+    {
+      "image_id": 311229,
+      "new_reason": "Row20 covers much of a tiny pedestrian and is numerically tighter, but crowded low-resolution pixels do not establish either an inadequate current person box or a bounded clearer same-person donor; unresolved rather than certified adequate."
+    },
+    {
+      "image_id": 386313,
+      "new_reason": "The narrow boxes cut adjacent book spines; same physical book identity and an independently bounded clearer one-book extent are unestablished. Current quality need not be worse than row4 to qualify, but owner/donor support fails."
+    },
+    {
+      "image_id": 258285,
+      "new_reason": "The small birds are not attributable as one repeated visible bird; an adequate prior report is only a preference and is not the blocking condition."
+    },
+    {
+      "image_id": 70122,
+      "new_reason": "Large blank/neighboring teddy parts prevent an attributable singleton and a same-owner clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "image_id": 78305,
+      "new_reason": "A small upright item amid pens/books has uncertain book identity and no bounded clearer same-item extent; lack of prior completed coverage is not the sole obstacle."
+    },
+    {
+      "image_id": 269858,
+      "new_reason": "Distant car boxes do not isolate a secure same visible vehicle and independent clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "image_id": 505967,
+      "new_reason": "The distant car is too small to bind a distinct repeated vehicle and a clearer same-owner extent; lack of an adequate earlier donor is not the sole obstacle."
+    }
+  ],
+  "sole_prior_adequate_donor_rejection_found": false,
+  "coverage_preference_audit": [
+    {
+      "image_id": 258285,
+      "independent_blocker": "The small birds are not attributable as one repeated visible bird; an adequate prior report is only a preference and is not the blocking condition."
+    },
+    {
+      "image_id": 386313,
+      "independent_blocker": "The narrow boxes cut adjacent book spines; same physical book identity and an independently bounded clearer one-book extent are unestablished. Current quality need not be worse than row4 to qualify, but owner/donor support fails."
+    },
+    {
+      "image_id": 70122,
+      "independent_blocker": "Large blank/neighboring teddy parts prevent an attributable singleton and a same-owner clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "image_id": 78305,
+      "independent_blocker": "A small upright item amid pens/books has uncertain book identity and no bounded clearer same-item extent; lack of prior completed coverage is not the sole obstacle."
+    },
+    {
+      "image_id": 269858,
+      "independent_blocker": "Distant car boxes do not isolate a secure same visible vehicle and independent clearer extent; lack of an adequate earlier donor is not the sole obstacle."
+    },
+    {
+      "image_id": 505967,
+      "independent_blocker": "The distant car is too small to bind a distinct repeated vehicle and a clearer same-owner extent; lack of an adequate earlier donor is not the sole obstacle."
+    }
+  ],
+  "weak_candidate": {
+    "failure_forward": {
+      "source_rank": 16,
+      "image_id": 417044,
+      "status": "worker_proposed_weak_visual_support_pending_lead_review",
+      "historical_row": 4,
+      "earliest_numerical_pair": [
+        3,
+        4
+      ],
+      "prefix_raw_end": 49,
+      "raw_row_span": [
+        39,
+        49
+      ],
+      "coordinate_slots": [
+        44,
+        45,
+        46,
+        47
+      ],
+      "native_box": [
+        0,
+        226,
+        53,
+        255
+      ],
+      "clearer_same_owner_box": [
+        0,
+        216,
+        68,
+        259
+      ],
+      "nonimproving_same_owner_box": [
+        0,
+        236,
+        38,
+        251
+      ],
+      "native_coordinate_ids": [
+        151670,
+        151896,
+        151723,
+        151925
+      ],
+      "clearer_coordinate_ids": [
+        151670,
+        151886,
+        151738,
+        151929
+      ],
+      "nonimproving_coordinate_ids": [
+        151670,
+        151906,
+        151708,
+        151921
+      ],
+      "both_edits_changed_slots": [
+        45,
+        46,
+        47
+      ],
+      "clearer_delta_y1_x2_y2": [
+        -10,
+        15,
+        4
+      ],
+      "nonimproving_delta_y1_x2_y2": [
+        10,
+        -15,
+        -4
+      ],
+      "previous_covered_set": "row0 left foreground person; row1 separate lower-left visible donut",
+      "unresolved_earlier_rows": "row2 may already touch the upper dark donut; row3 is same visible donut portion but partial; no adequate completed earlier localization established",
+      "visible_unreported_owner": "multiple central/right-tray donuts not present among rows0..4",
+      "coverage_statement": "correcting row4 to a fuller visible donut extent would add completed localization coverage, or at minimum prior completion is unresolved; identity alone is held fixed",
+      "visual_evidence": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/417044-earliest-donut-crop.png",
+      "physical_limit": "image-edge truncation is natural; candidate boxes target visible pixels only, not an amodal donut. The exact full extent and row2 owner remain lead-review HOLD."
+    },
+    "normal_boundary": {
+      "status": "possible_weak_reciprocal_only_not_natural_reverse_pair",
+      "historical_row": 1,
+      "prefix_raw_end": 19,
+      "raw_row_span": [
+        9,
+        19
+      ],
+      "coordinate_slots": [
+        14,
+        15,
+        16,
+        17
+      ],
+      "native_box": [
+        0,
+        314,
+        57,
+        377
+      ],
+      "possible_degradation_box": [
+        0,
+        324,
+        42,
+        373
+      ],
+      "possible_quality_preserving_edit_box": [
+        0,
+        304,
+        60,
+        381
+      ],
+      "native_coordinate_ids": [
+        151670,
+        151984,
+        151727,
+        152047
+      ],
+      "degradation_coordinate_ids": [
+        151670,
+        151994,
+        151712,
+        152043
+      ],
+      "quality_preserving_coordinate_ids": [
+        151670,
+        151974,
+        151730,
+        152051
+      ],
+      "changed_slots": [
+        15,
+        16,
+        17
+      ],
+      "matching_limit": "Three coordinate tokens change in each possible edit; degradation L1 displacement29 bins, quality-preserving L1 displacement17 bins. A displacement-identical expansion risks the adjacent donut. Prior row0 only covers a person, so completed donut coverage is not matched; do not use as strong reciprocal control. Quality-preserving status still needs lead visual review."
+    },
+    "source_and_shape": {
+      "group": "refined-03",
+      "condition": "untied-original",
+      "request_ids": [
+        "coco2017_val_000000016228",
+        "coco2017_train_000000007116",
+        "coco2017_train_000000351017",
+        "coco2017_train_000000417044"
+      ],
+      "target_index": 3,
+      "native_raw_lengths": [
+        255,
+        37,
+        3084,
+        3084
+      ],
+      "prompt_lengths": [
+        1336,
+        1362,
+        1362,
+        1320
+      ],
+      "source_input_ids_shape": [
+        4,
+        1362
+      ],
+      "pixel_elements": 24502272,
+      "image_grids": [
+        [
+          1,
+          52,
+          76
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          52,
+          78
+        ],
+        [
+          1,
+          54,
+          72
+        ]
+      ],
+      "pad_id": 151643,
+      "eos_id": 151645,
+      "failure_width_t0": 1411,
+      "failure_width_t127": 1538,
+      "normal_width_t0": 1381,
+      "normal_width_t127": 1508,
+      "companion_rule": "At failure prefix49 companion1 has ended at raw37 and needs 12+t pad tokens; companion0 and companion2 remain on their original raw prefixes through the 128-token horizon. At normal prefix19 companion1 stays active through raw37 then pads. Preserve all original four media/positions."
+    },
+    "forecast": {
+      "scope": "proposal_only_no_gpu_admission",
+      "per_arm_max_model_and_vision_forwards": 128,
+      "forward_failure_four_arms_max_forwards": 512,
+      "conditional_forward_plus_weak_normal_eight_arms_max_forwards": 1024,
+      "stop": "eight complete rows or128 free tokens or EOS, whichever first",
+      "measured_analogue": "accepted recurrence_x1_row_routing same refined-03 batch: 54 calls,147.846220292s parent outer,842288754 raw bytes",
+      "shape_aware_rough_seconds_per_forward": 3.36,
+      "forward_four_arm_2x_planning_seconds": 3443,
+      "eight_arm_2x_planning_seconds": 6885,
+      "forward_four_arm_raw_bytes_estimate": 7986145223,
+      "eight_arm_raw_bytes_estimate": 15972290446,
+      "planning_limit": "Extrapolation only; a future contract must choose retention and verify actual maximum shape and cost."
+    }
+  },
+  "later_output_exposure": "During source-schema inspection a broad print exposed later numerical-return summaries from the frozen attrition file. The visual crop and candidate forward coordinates had already been drawn from the original image; no later row was used as donor or selected. This is a blinding limitation for lead review, not permission to use later outputs.",
+  "accounting": {
+    "model_loads": 0,
+    "model_forwards": 0,
+    "vision_forwards": 0,
+    "generation_tokens": 0,
+    "cuda_calls": 0,
+    "gpu_hours": 0
+  }
+}

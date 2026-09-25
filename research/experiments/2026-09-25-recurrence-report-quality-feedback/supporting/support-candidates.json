@@ -1,0 +1,807 @@
+{
+  "status": "candidate_cpu_support_insufficient_pending_lead_physical_review",
+  "scope": {
+    "frozen_sources": 273,
+    "numerical_return_images": 29,
+    "order": "global_source_rank from accepted attrition; earliest return only",
+    "source_screen_exclusions": [
+      477415,
+      313465,
+      151704
+    ],
+    "additional_reference_only": [
+      351017
+    ],
+    "physical_labels": "worker visual proposals; source/annotation IDs do not establish ownership"
+  },
+  "counts": {
+    "HOLD": 18,
+    "reference_only": 1,
+    "ineligible_no_poor_report": 5,
+    "source_screen_excluded": 3,
+    "ineligible_distinct_owners": 2
+  },
+  "selected_independent_images": [],
+  "forward_corrections": [],
+  "matched_nonimproving_edits": [],
+  "normal_reciprocal_controls": [],
+  "donors": [],
+  "coverage_preserving_pairs": [],
+  "decisive_gap": "No earliest-return image establishes both a poorer report and an independently clearer same-owner report with remaining unreported owner while preserving the frozen exclusions and existing physical HOLDs. Rank239 is a false apparent donor: row0 tan horse and row1 dark horse are different physical owners.",
+  "review_projection": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json",
+  "prior_visual_acceptance": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-24-recurrence-grounded-window-transfer/lead-visual-acceptance-v1.json",
+  "rank239_coverage": {
+    "pre_return_covered": "tan foreground horse via row0",
+    "row1_report": "dark middle horse",
+    "still_visible_unreported": "white horse and two people",
+    "row0_as_clearer_donor": "rejected_different_owner",
+    "annotation_support_descriptive_only": {
+      "row0_best_id": 57442,
+      "row1_best_id": 1832361,
+      "row2_white_id": 59882
+    }
+  },
+  "cases": [
+    {
+      "global_source_rank": 6,
+      "source": "mature",
+      "group": "refined-01",
+      "batch_index": 2,
+      "split": "val",
+      "image_id": 7511,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 1,
+        "prefix_raw_end": 18
+      },
+      "disposition": "HOLD",
+      "reason": "Earlier 7511 ruling: blurred far-left shoreline patches do not identify one person.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-006-7511.png"
+    },
+    {
+      "global_source_rank": 10,
+      "source": "mature",
+      "group": "refined-02",
+      "batch_index": 2,
+      "split": "val",
+      "image_id": 14038,
+      "earliest_numerical_return": {
+        "i": 6,
+        "j": 7,
+        "prefix_raw_end": 77
+      },
+      "disposition": "HOLD",
+      "reason": "Earlier 14038 ruling: stacked adjacent book spines; row6/7 singleton owner unknown.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000014038.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-010-14038.png"
+    },
+    {
+      "global_source_rank": 15,
+      "source": "mature",
+      "group": "refined-03",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 351017,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "reference_only",
+      "reason": "Previously probed 351017; tiny row1/2 physical owner HOLD, not a same-person donor.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-015-351017.png"
+    },
+    {
+      "global_source_rank": 16,
+      "source": "mature",
+      "group": "refined-03",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 417044,
+      "earliest_numerical_return": {
+        "i": 3,
+        "j": 4,
+        "prefix_raw_end": 49
+      },
+      "disposition": "ineligible_no_poor_report",
+      "reason": "Same upper dark donut portion at rows3/4, but row4 modestly widens the prior partial box; row2 may be an earlier edge visit.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-016-417044.png"
+    },
+    {
+      "global_source_rank": 17,
+      "source": "mature",
+      "group": "refined-04",
+      "batch_index": 0,
+      "split": "train",
+      "image_id": 477415,
+      "earliest_numerical_return": {
+        "i": 4,
+        "j": 5,
+        "prefix_raw_end": 54
+      },
+      "disposition": "source_screen_excluded",
+      "reason": "Previously probed 477415; broad chair group and invalid earlier chair geometry; frozen exclusion.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-017-477415.png"
+    },
+    {
+      "global_source_rank": 36,
+      "source": "mature",
+      "group": "fresh-04",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 71122,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 3,
+        "prefix_raw_end": 38
+      },
+      "disposition": "HOLD",
+      "reason": "Plural skis/equipment bands; singleton ski identity unresolved in accepted six-image review.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000071122.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-036-71122.png"
+    },
+    {
+      "global_source_rank": 43,
+      "source": "mature",
+      "group": "fresh-06",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 99184,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 1,
+        "prefix_raw_end": 18
+      },
+      "disposition": "HOLD",
+      "reason": "Repeated edge region includes more than one person; singleton attribution unresolved in accepted review.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000099184.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-043-99184.png"
+    },
+    {
+      "global_source_rank": 73,
+      "source": "mature",
+      "group": "fresh-13",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 253212,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "HOLD",
+      "reason": "Thin shelf-edge book boxes with invalid row0 and uncertain physical book identity.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000253212.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-073-253212.png"
+    },
+    {
+      "global_source_rank": 75,
+      "source": "mature",
+      "group": "fresh-14",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 258285,
+      "earliest_numerical_return": {
+        "i": 14,
+        "j": 15,
+        "prefix_raw_end": 144
+      },
+      "disposition": "HOLD",
+      "reason": "Very small waterbird proposals in crowded flock; rows14/15 cannot establish one attributable bird or adequate earlier report.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000258285.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-075-258285.png"
+    },
+    {
+      "global_source_rank": 92,
+      "source": "mature",
+      "group": "fresh-18",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 313465,
+      "earliest_numerical_return": {
+        "i": 6,
+        "j": 7,
+        "prefix_raw_end": 80
+      },
+      "disposition": "source_screen_excluded",
+      "reason": "Previously probed 313465; earliest return is grouped carrot region with validity/owner HOLD; frozen exclusion.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-092-313465.png"
+    },
+    {
+      "global_source_rank": 102,
+      "source": "mature",
+      "group": "fresh-21",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 356238,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "HOLD",
+      "reason": "Adjacent book/DVD spines, with earlier row0 and singleton row1/2 identity unresolved.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000356238.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-102-356238.png"
+    },
+    {
+      "global_source_rank": 104,
+      "source": "mature",
+      "group": "fresh-21",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 360695,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "HOLD",
+      "reason": "Apple boxes at left edge of produce pile do not isolate a single apple.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000360695.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-104-360695.png"
+    },
+    {
+      "global_source_rank": 109,
+      "source": "mature",
+      "group": "fresh-23",
+      "batch_index": 0,
+      "split": "train",
+      "image_id": 386313,
+      "earliest_numerical_return": {
+        "i": 4,
+        "j": 5,
+        "prefix_raw_end": 55
+      },
+      "disposition": "HOLD",
+      "reason": "Rows4/5 cut neighboring narrow book spines; no independently adequate earlier single-book report or demonstrated degradation.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000386313.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-109-386313.png"
+    },
+    {
+      "global_source_rank": 150,
+      "source": "new",
+      "group": "new-01",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 28012,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "ineligible_no_poor_report",
+      "reason": "Row2 person remains a broad but image-supported localization of the same foreground person; no demonstrated poorer report than row0.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000028012.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-150-28012.png"
+    },
+    {
+      "global_source_rank": 159,
+      "source": "new",
+      "group": "new-03",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 70122,
+      "earliest_numerical_return": {
+        "i": 9,
+        "j": 10,
+        "prefix_raw_end": 121
+      },
+      "disposition": "HOLD",
+      "reason": "Rows9/10 include large blank upper region and fragments of nearby teddy bears; reported singleton and adequate donor unestablished.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000070122.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-159-70122.png"
+    },
+    {
+      "global_source_rank": 164,
+      "source": "new",
+      "group": "new-04",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 78305,
+      "earliest_numerical_return": {
+        "i": 5,
+        "j": 6,
+        "prefix_raw_end": 63
+      },
+      "disposition": "HOLD",
+      "reason": "Rows5/6 cover a small upright item beside pens; book identity and adequate earlier complete report unestablished.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000078305.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-164-78305.png"
+    },
+    {
+      "global_source_rank": 175,
+      "source": "new",
+      "group": "new-07",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 131490,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 1,
+        "prefix_raw_end": 18
+      },
+      "disposition": "ineligible_no_poor_report",
+      "reason": "Rows0/1 nearly coincide on left black cow, with no meaningful report-quality loss established.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000131490.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-175-131490.png"
+    },
+    {
+      "global_source_rank": 178,
+      "source": "new",
+      "group": "new-08",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 151704,
+      "earliest_numerical_return": {
+        "i": 3,
+        "j": 4,
+        "prefix_raw_end": 45
+      },
+      "disposition": "source_screen_excluded",
+      "reason": "Previously probed 151704 first B revisit; target-nonreturn control is not global health; frozen exclusion.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-178-151704.png"
+    },
+    {
+      "global_source_rank": 180,
+      "source": "new",
+      "group": "new-08",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 169872,
+      "earliest_numerical_return": {
+        "i": 6,
+        "j": 7,
+        "prefix_raw_end": 74
+      },
+      "disposition": "ineligible_no_poor_report",
+      "reason": "Rows6/7 follow the same narrow patterned book/binder; row7 is tighter, with no clear loss of owner localization.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000169872.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-180-169872.png"
+    },
+    {
+      "global_source_rank": 188,
+      "source": "new",
+      "group": "new-10",
+      "batch_index": 3,
+      "split": "train",
+      "image_id": 196924,
+      "earliest_numerical_return": {
+        "i": 16,
+        "j": 17,
+        "prefix_raw_end": 171
+      },
+      "disposition": "HOLD",
+      "reason": "Tiny bowl-like regions among several countertop objects; row16/17 physical singleton uncertain.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000196924.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-188-196924.png"
+    },
+    {
+      "global_source_rank": 198,
+      "source": "new",
+      "group": "new-13",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 257685,
+      "earliest_numerical_return": {
+        "i": 2,
+        "j": 3,
+        "prefix_raw_end": 37
+      },
+      "disposition": "HOLD",
+      "reason": "Overlapping boxes span adjacent upright books; row2/3 owner identity and single-book coverage unresolved.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000257685.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-198-257685.png"
+    },
+    {
+      "global_source_rank": 202,
+      "source": "new",
+      "group": "new-14",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 269858,
+      "earliest_numerical_return": {
+        "i": 7,
+        "j": 8,
+        "prefix_raw_end": 81
+      },
+      "disposition": "HOLD",
+      "reason": "Tiny distant cars at station; row7/8 singleton identity and adequate earlier localization unestablished.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000269858.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-202-269858.png"
+    },
+    {
+      "global_source_rank": 213,
+      "source": "new",
+      "group": "new-17",
+      "batch_index": 0,
+      "split": "train",
+      "image_id": 301827,
+      "earliest_numerical_return": {
+        "i": 10,
+        "j": 11,
+        "prefix_raw_end": 119
+      },
+      "disposition": "HOLD",
+      "reason": "Tiny lower-shelf bottle proposals; rows10/11 do not establish a visibly attributable complete bottle.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000301827.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-213-301827.png"
+    },
+    {
+      "global_source_rank": 215,
+      "source": "new",
+      "group": "new-17",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 311229,
+      "earliest_numerical_return": {
+        "i": 19,
+        "j": 20,
+        "prefix_raw_end": 192
+      },
+      "disposition": "ineligible_no_poor_report",
+      "reason": "Rows19/20 lie in adjacent small pedestrian regions; row20 is numerically better localized, not a supported degradation.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000311229.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-215-311229.png"
+    },
+    {
+      "global_source_rank": 218,
+      "source": "new",
+      "group": "new-18",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 322768,
+      "earliest_numerical_return": {
+        "i": 4,
+        "j": 5,
+        "prefix_raw_end": 54
+      },
+      "disposition": "HOLD",
+      "reason": "Several adjacent knife-like items; rows4/5 owner identity unresolved and row5 is not visibly worse.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000322768.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-218-322768.png"
+    },
+    {
+      "global_source_rank": 239,
+      "source": "new",
+      "group": "new-23",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 415856,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 1,
+        "prefix_raw_end": 18
+      },
+      "disposition": "ineligible_distinct_owners",
+      "reason": "Original image contains tan foreground, dark middle and white horses. Row0 covers tan; row1 centers on dark middle; row0 is an impermissible same-owner donor.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000415856.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-239-415856.png"
+    },
+    {
+      "global_source_rank": 254,
+      "source": "new",
+      "group": "new-27",
+      "batch_index": 1,
+      "split": "train",
+      "image_id": 505967,
+      "earliest_numerical_return": {
+        "i": 18,
+        "j": 19,
+        "prefix_raw_end": 184
+      },
+      "disposition": "HOLD",
+      "reason": "Tiny distant car at row18/19 has insufficient distinct-owner and adequate-donor support.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000505967.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-254-505967.png"
+    },
+    {
+      "global_source_rank": 259,
+      "source": "new",
+      "group": "new-28",
+      "batch_index": 2,
+      "split": "train",
+      "image_id": 539124,
+      "earliest_numerical_return": {
+        "i": 1,
+        "j": 2,
+        "prefix_raw_end": 27
+      },
+      "disposition": "ineligible_distinct_owners",
+      "reason": "Rows1/2 overlap numerically but center on different people; source has multiple visible people.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1,
+        2
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000539124.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-259-539124.png"
+    },
+    {
+      "global_source_rank": 261,
+      "source": "new",
+      "group": "new-29",
+      "batch_index": 0,
+      "split": "train",
+      "image_id": 545663,
+      "earliest_numerical_return": {
+        "i": 0,
+        "j": 1,
+        "prefix_raw_end": 20
+      },
+      "disposition": "HOLD",
+      "reason": "Two overlapping zebras occupy row0/1 boxes; a unique same physical owner for both is not established.",
+      "full_prior_prefix_row_indices": [
+        0,
+        1
+      ],
+      "source_image": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000545663.jpg",
+      "prediction_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-261-545663.png"
+    }
+  ],
+  "accounting": {
+    "model_loads": 0,
+    "model_forwards": 0,
+    "vision_forwards": 0,
+    "generation_tokens": 0,
+    "cuda_calls": 0,
+    "gpu_hours": 0
+  }
+}

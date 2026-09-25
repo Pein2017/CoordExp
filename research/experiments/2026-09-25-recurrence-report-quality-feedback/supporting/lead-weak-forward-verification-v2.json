@@ -1,0 +1,24 @@
+{
+  "status": "lead_cpu_verification_pass",
+  "steps": 320,
+  "raw_and_input_files_rehashed": 640,
+  "independent_argmax_and_row_parse": true,
+  "exact_all_four_sham_vectors": true,
+  "exact_companion_logits_and_positions": true,
+  "recorded_layer_observations": 8960,
+  "defined_trace_comparisons": 720,
+  "max_trace_error": 6.103515625e-05,
+  "expanded_minus_contracted_boxes": [
+    [
+      0,
+      197,
+      73,
+      216
+    ]
+  ],
+  "pid_absent": [
+    2694500,
+    2698140
+  ],
+  "scope": "Independent raw/hash/token/shape/selected invariant checks and inspection of separate cold readback; not a new model execution or independent full attention replay."
+}

@@ -1,0 +1,24 @@
+{
+  "status": "lead-accepted",
+  "date": "2026-09-25",
+  "technical": "Attempt002 qualified; attempt001 remains terminal technical-invalid and supplies no scientific anchor.",
+  "scientific": "exploratory_primary_nonpass",
+  "protocol": "weak-forward-protocol.md",
+  "candidate": "weak-forward-attempt-002-candidate-results.md",
+  "independent_verification": "supporting/lead-weak-forward-verification-v2.json",
+  "physical_ruling": {
+    "expanded_row7": "Box [0,197,73,216] is a thin partial band through the upper-edge donut/tray/reflection region. It does not isolate a complete identifiable new donut. Unsupported complete-object localization; exact owner remains UNKNOWN, not empty-background proof.",
+    "common_boxes": "Retain unresolved owner/quality labels; do not convert all edge boxes to same-owner duplication or certify no actual new object exists there.",
+    "decisive_relation": "Independent raw-token parsing proves every expanded box other than the unsupported strip occurs in contracted. Under consistent physical attribution on the same image/class and common prehistory exclusion set, U_expanded is a subset of U_contracted. Therefore the required +1 new-owner advantage is impossible even if shared UNKNOWN boxes are later assigned valid new owners.",
+    "confirmed_new_owners_now": "None credited in any arm; this is confirmed evidence only, not an exhaustive zero-owner physical census.",
+    "hold_rule": "Unresolved common labels cannot reverse the necessary owner-count clause. The full conjunction is NONPASS; exact common-row ownership remains HOLD. A future correction to the strip's complete-new-owner ruling would require reevaluation."
+  },
+  "counts": {"fresh_model": 320, "fresh_vision": 320, "fresh_emitted": 320, "failure_inclusive_model": 321, "failure_inclusive_vision": 321, "reused": 0},
+  "stop": "All four arms reached eight complete donut rows /80 tokens; no EOS. No inference beyond that horizon.",
+  "fresh_parent_seconds": 859.269824453,
+  "failed_parent_seconds": 15.93689356,
+  "cumulative_sequence_gpu_hours": 1.2033799155742415,
+  "terminal_pids_absent": [2694500, 2698140],
+  "boundary": "Single exploratory coverage-changing image; later-summary exposure disclosed. No strong reciprocal, quality-only, repeat-specific mechanism or population claim.",
+  "decision": "Close this finite branch. No donor/extent/horizon search or additional model call. Reopen only for a separately justified contrast with independently supported semantics; no successor admitted."
+}

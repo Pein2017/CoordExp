@@ -1,0 +1,716 @@
+{
+  "status": "worker_physical_candidate_pending_lead_adjudication",
+  "question": "Does expanding the written extent of the same visible edge donut improve free discovery over native and matched contraction within eight complete rows?",
+  "source": {
+    "batch": "refined-03 original four requests",
+    "target_index": 3,
+    "image_id": "train417044",
+    "raw_prefix_length": 49,
+    "original_image": {
+      "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg",
+      "sha256": "babd3b1132d5007428ac6202e23b0de6c3fd72c00271427cfdce9185f8231160",
+      "size_bytes": 127134
+    }
+  },
+  "bindings": {
+    "protocol": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/weak-forward-protocol.md",
+      "sha256": "056ccd6182f0856eab5b3f7a78b4cef2587bf91c66e6ee94f3220f743561d512",
+      "size_bytes": 8349
+    },
+    "producer": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_report_quality_feedback/weak_forward.py",
+      "sha256": "33e51627ddfb699106d5a329f256970a8f177b104fe48a5d2a27af490d5fae87",
+      "size_bytes": 49101
+    },
+    "preflight": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/weak-forward-attempt-002-preflight.json",
+      "sha256": "ac6b482f027c24d7964c1e788d50bb0e0e3ae117d5b3992e7de9227d3479c110",
+      "size_bytes": 218983
+    },
+    "controls_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/controls/receipt.json",
+      "sha256": "cee0876d600514480e2b037145f7e3ffd5602003e752c62a25894bbb30510200",
+      "size_bytes": 1433355
+    },
+    "controls_cold": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/controls/readback.json",
+      "sha256": "364c47d54ac6faa3b04e8b35840313188c7cf2514802505e4ed6960182d66010",
+      "size_bytes": 1405
+    },
+    "treatments_receipt": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/treatments/receipt.json",
+      "sha256": "0cfecd2def89156ef51e3f2d24ed9058f6738f66c50a4f240a98601c64789231",
+      "size_bytes": 1351642
+    },
+    "all_cold": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/readback-all.json",
+      "sha256": "e8e967dff780188c0524e987f70ab2ba0df7c90e139217b247eb121bd176c3ad",
+      "size_bytes": 1777
+    },
+    "sheet_map": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-map.json",
+      "sha256": "4e07b3b4e11e89d6b1a5034982b57edfb4632601e5e98c27691ed82d5f21f676",
+      "size_bytes": 37683
+    },
+    "original_attempt_failure": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/weak-forward-failure-v1.json",
+      "sha256": "f071b0aff1a0391a5ac51f9957cc401604bd33362fe4185adc886c3b65b6fb37",
+      "size_bytes": 4459
+    },
+    "original_attempt_producer_capture": {
+      "path": "/data/CoordExp/.worktrees/research-probes/reference/retained-sources/runs/ce8db17a9959ecf3f4734dfd67f3a90314aa4dd315215ce2568827f6793d286d/probes/training_set_completion/recurrence_report_quality_feedback/weak_forward.py",
+      "sha256": "4f87873c7daa37d8770d4264a78e687308c13902b51b5c81d914235ad7248d5f",
+      "size_bytes": 42111
+    }
+  },
+  "physical_preledger": [
+    "left person",
+    "lower-left donut",
+    "upper-edge donut portion including uncertain original row2"
+  ],
+  "arm_order": [
+    "native",
+    "identity_sham",
+    "expanded",
+    "contracted"
+  ],
+  "arms": {
+    "native": {
+      "U_confirmed_new_owners": [],
+      "rows": [
+        {
+          "row": 0,
+          "box": [
+            0,
+            210,
+            53,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "previously_reported_edge_donut_portion"
+        },
+        {
+          "row": 1,
+          "box": [
+            0,
+            197,
+            53,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 2,
+          "box": [
+            0,
+            197,
+            61,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 3,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 4,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 5,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 6,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 7,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        }
+      ],
+      "confirmed_old_repeat_rows": [
+        0
+      ],
+      "unknown_correspondence_rows": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "thin_unsupported_candidate_rows": [],
+      "new_owner_repeat_rows": [],
+      "invalid_geometry_rows": [],
+      "complete_rows": 8,
+      "emitted_tokens": 80,
+      "non_object_tokens": 0,
+      "incomplete_tail_tokens": 0,
+      "eos": false,
+      "censor": "eight_complete_rows",
+      "sheet": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-0.png",
+      "worker_physical_counts": {
+        "confirmed_new_distinct_owners": 0,
+        "confirmed_old_repeat_rows": 1,
+        "unknown_correspondence_rows": 7,
+        "thin_unsupported_candidate_rows": 0,
+        "invalid_geometry_rows": 0,
+        "grouped_rows": 0,
+        "incomplete_tail_tokens": 0,
+        "eos_events": 0,
+        "horizon_censored": true
+      }
+    },
+    "identity_sham": {
+      "U_confirmed_new_owners": [],
+      "rows": [
+        {
+          "row": 0,
+          "box": [
+            0,
+            210,
+            53,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "previously_reported_edge_donut_portion"
+        },
+        {
+          "row": 1,
+          "box": [
+            0,
+            197,
+            53,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 2,
+          "box": [
+            0,
+            197,
+            61,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 3,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 4,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 5,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 6,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 7,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        }
+      ],
+      "confirmed_old_repeat_rows": [
+        0
+      ],
+      "unknown_correspondence_rows": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "thin_unsupported_candidate_rows": [],
+      "new_owner_repeat_rows": [],
+      "invalid_geometry_rows": [],
+      "complete_rows": 8,
+      "emitted_tokens": 80,
+      "non_object_tokens": 0,
+      "incomplete_tail_tokens": 0,
+      "eos": false,
+      "censor": "eight_complete_rows",
+      "sheet": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-1.png",
+      "worker_physical_counts": {
+        "confirmed_new_distinct_owners": 0,
+        "confirmed_old_repeat_rows": 1,
+        "unknown_correspondence_rows": 7,
+        "thin_unsupported_candidate_rows": 0,
+        "invalid_geometry_rows": 0,
+        "grouped_rows": 0,
+        "incomplete_tail_tokens": 0,
+        "eos_events": 0,
+        "horizon_censored": true
+      }
+    },
+    "expanded": {
+      "U_confirmed_new_owners": [],
+      "rows": [
+        {
+          "row": 0,
+          "box": [
+            0,
+            226,
+            53,
+            255
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "previously_reported_edge_donut_portion"
+        },
+        {
+          "row": 1,
+          "box": [
+            0,
+            197,
+            53,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 2,
+          "box": [
+            0,
+            197,
+            61,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 3,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 4,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 5,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 6,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 7,
+          "box": [
+            0,
+            197,
+            73,
+            216
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "thin_edge_strip_not_valid_new_owner_proposal"
+        }
+      ],
+      "confirmed_old_repeat_rows": [
+        0
+      ],
+      "unknown_correspondence_rows": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "thin_unsupported_candidate_rows": [
+        7
+      ],
+      "new_owner_repeat_rows": [],
+      "invalid_geometry_rows": [],
+      "complete_rows": 8,
+      "emitted_tokens": 80,
+      "non_object_tokens": 0,
+      "incomplete_tail_tokens": 0,
+      "eos": false,
+      "censor": "eight_complete_rows",
+      "sheet": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-2.png",
+      "worker_physical_counts": {
+        "confirmed_new_distinct_owners": 0,
+        "confirmed_old_repeat_rows": 1,
+        "unknown_correspondence_rows": 6,
+        "thin_unsupported_candidate_rows": 1,
+        "invalid_geometry_rows": 0,
+        "grouped_rows": 0,
+        "incomplete_tail_tokens": 0,
+        "eos_events": 0,
+        "horizon_censored": true
+      }
+    },
+    "contracted": {
+      "U_confirmed_new_owners": [],
+      "rows": [
+        {
+          "row": 0,
+          "box": [
+            0,
+            226,
+            53,
+            255
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "previously_reported_edge_donut_portion"
+        },
+        {
+          "row": 1,
+          "box": [
+            0,
+            197,
+            53,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 2,
+          "box": [
+            0,
+            197,
+            53,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 3,
+          "box": [
+            0,
+            197,
+            61,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 4,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 5,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 6,
+          "box": [
+            0,
+            197,
+            73,
+            241
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        },
+        {
+          "row": 7,
+          "box": [
+            0,
+            197,
+            73,
+            247
+          ],
+          "description": "donut",
+          "serialization": "valid",
+          "physical_proposal": "edge_region_correspondence_unknown_no_new_owner_credit"
+        }
+      ],
+      "confirmed_old_repeat_rows": [
+        0
+      ],
+      "unknown_correspondence_rows": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "thin_unsupported_candidate_rows": [],
+      "new_owner_repeat_rows": [],
+      "invalid_geometry_rows": [],
+      "complete_rows": 8,
+      "emitted_tokens": 80,
+      "non_object_tokens": 0,
+      "incomplete_tail_tokens": 0,
+      "eos": false,
+      "censor": "eight_complete_rows",
+      "sheet": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-3.png",
+      "worker_physical_counts": {
+        "confirmed_new_distinct_owners": 0,
+        "confirmed_old_repeat_rows": 1,
+        "unknown_correspondence_rows": 7,
+        "thin_unsupported_candidate_rows": 0,
+        "invalid_geometry_rows": 0,
+        "grouped_rows": 0,
+        "incomplete_tail_tokens": 0,
+        "eos_events": 0,
+        "horizon_censored": true
+      }
+    }
+  },
+  "counterfactual_result": {
+    "worker_proposed_U_native": [],
+    "worker_proposed_U_expanded": [],
+    "worker_proposed_U_contracted": [],
+    "gained_expanded_vs_native": [],
+    "lost_native_in_expanded": [],
+    "novel_expanded_box": [
+      0,
+      197,
+      73,
+      216
+    ],
+    "novel_box_note": "Only expanded row7 differs from both comparators; it is a thin upper-edge strip within their broader overlapping edge boxes, not a complete newly attributable object. Other expanded boxes occur in a comparator, and all arms remain in the upper-left edge region.",
+    "frozen_owner_count_clause": false,
+    "worker_overall_pattern": "nonpass_pending_lead_physical_review",
+    "lead_question": "Confirm whether the thin expanded row7 is unsupported/UNKNOWN and whether any identical edge-region boxes should be attributed to a distinct owner. No central or right-side donut appears as a clear new owner.",
+    "worker_proposed_invalid_or_unsupported_counts": {
+      "native": 0,
+      "expanded": 1,
+      "contracted": 0
+    },
+    "worker_proposed_grouped_or_unknown_counts": {
+      "native": 7,
+      "expanded": 6,
+      "contracted": 7
+    },
+    "thin_strip_count_is_provisional": "Expanded row7 is a worker unsupported-localization proposal; lead may recategorize without changing the failed confirmed-new-owner clause."
+  },
+  "technical": {
+    "cpu_preflight_checks": 185,
+    "hidden_size_configured_and_runtime_checked": 2048,
+    "fresh_model_forwards": 320,
+    "fresh_vision_forwards": 320,
+    "fresh_emitted_tokens": 320,
+    "fresh_reused_calls": 0,
+    "failed_attempt_model_forwards": 1,
+    "failed_attempt_vision_forwards": 1,
+    "failed_attempt_emitted_tokens": 0,
+    "failure_inclusive_model_forwards": 321,
+    "failure_inclusive_vision_forwards": 321,
+    "all_arms_cold_pass": true,
+    "actual_native_mask_layer_observations": 8960,
+    "source_trace_comparisons": 720,
+    "source_trace_max_abs": {
+      "chosen_logit_abs_error": 6.103515625e-05,
+      "logsumexp_abs_error": 6.103515625e-05,
+      "logprob_abs_error": 1.3589859008789062e-05,
+      "top2_max_abs_error": 6.103515625e-05
+    },
+    "max_sham_full_vector_abs": 0,
+    "max_matched_companion_abs": 0,
+    "max_historical_state_abs_vs_t0": 0.0,
+    "pixel_elements": 24502272,
+    "widths": [
+      1411,
+      1538
+    ],
+    "preflight_artifact_forecast_bytes": 2119180288,
+    "actual_output_root_bytes": 1375841121,
+    "artifact_envelope_bytes": 12884901888
+  },
+  "cost": {
+    "prior_sequence_gpu_hours_including_failed_attempt": 0.964693853226186,
+    "failed_attempt_parent_seconds": 15.93689356,
+    "controls_parent_seconds": 427.274822945,
+    "treatments_parent_seconds": 431.995001508,
+    "fresh_parent_seconds": 859.269824453,
+    "fresh_gpu_hours": 0.23868606234805553,
+    "cumulative_sequence_gpu_hours": 1.2033799155742415,
+    "parent_meter_files": [
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/controls-parent.outer-ns.txt",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/treatments-parent.outer-ns.txt"
+    ]
+  },
+  "terminal": {
+    "controls_pid": 2694500,
+    "treatments_pid": 2698140,
+    "parent_exit_codes": [
+      0,
+      0
+    ],
+    "model_jobs_terminal": true
+  },
+  "review_views": {
+    "neutral_sheets": [
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-0.png",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-1.png",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-2.png",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-3.png"
+    ],
+    "arm_mapping": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/sheet-map.json",
+    "focused_contact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/review-contact.png",
+    "original_pixel_crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2/crop-upper-edge.png"
+  },
+  "limits": [
+    "Exploratory coverage-changing single-image contrast; numerical-return summaries were known after boxes were drawn.",
+    "Prehistory physical owner identity and treatment row physical validity are lead-adjudicated.",
+    "No quality-only mediation, reciprocal degradation, natural first-revisit, or sustained-recovery claim."
+  ]
+}

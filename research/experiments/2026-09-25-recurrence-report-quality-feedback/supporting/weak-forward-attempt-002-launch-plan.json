@@ -1,0 +1,26 @@
+{
+  "status": "cpu_qualified_before_model",
+  "preflight": "supporting/weak-forward-attempt-002-preflight.json",
+  "old_attempt": "weak-forward-v1 terminal technical-invalid, one model/vision forward, zero emissions, 15.93689356 parent seconds",
+  "fresh_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/weak-forward-v2",
+  "order": ["controls", "readback_controls", "treatments", "readback_all", "sheets"],
+  "model_commands": {
+    "controls": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward controls",
+    "treatments": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward treatments"
+  },
+  "cold_commands": {
+    "readback_controls": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward readback_controls",
+    "readback_all": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward readback_all",
+    "sheets": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward sheets"
+  },
+  "parent_meter": "Bash date +%s%N encloses each model Python command including startup/imports and writes start/end nanoseconds plus exit to the raw root; CPU readback time is reported separately.",
+  "configured_text_hidden_size": 2048,
+  "widths": [1411, 1538],
+  "pixel_elements": 24502272,
+  "fresh_max_model_vision_emitted": 512,
+  "failure_inclusive_max_model_vision": 513,
+  "artifact_forecast_bytes": 2119180288,
+  "artifact_envelope_bytes": 12884901888,
+  "prior_sequence_gpu_hours": 0.964693853226186,
+  "stop": "first concrete technical failure or one complete four-arm package; no further attempt"
+}

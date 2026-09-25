@@ -1,0 +1,18 @@
+923-worker candidate | same-owner report-quality CPU support | gpt-6-sol/xhigh -> lead gpt-6-astra/xhigh
+
+Outcome: support-insufficient, 0/2 independent images. This is not a model/scientific nonpass. Original 273-source order and 29 earliest numerical-return images retained. Dispositions: 18 physical/coverage HOLD, 1 reference-only (351017), 5 without a supported poor earliest report, 3 frozen exclusions (477415,313465,151704), 2 visibly distinct-owner numerical overlaps. No later-window backfill, donors, matched edits, reciprocal controls or GPU cells were selected. The R0/D2 predecessor and six-image visual HOLDs remain unchanged.
+
+Decisive counterexample: rank239 train415856/new-23 target2 raw[:18] has visually distinct tan foreground row0 and dark middle row1 horses, with white horse/people still visible; row0 is not a same-owner clearer donor. Original image and overlay:
+/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000415856.jpg
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-239-415856.png
+
+Saved support: /data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/support-candidates.json
+CPU source/row projection: /data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/review-projection.json
+Training audit: /data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/supporting/training-facts.md
+Full candidate: /data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-25-recurrence-report-quality-feedback/cpu-candidate-results.md
+Views/contact sheet: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/contact-29.png
+Only new helper: /data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_report_quality_feedback/review.py
+
+Checks: CPU reader verified original raw/trace/receipt/image identities, group/batch/index and parsed full 0..j prefix for all29; independent readback matched the frozen 273/29 source order, dispositions/exclusions, and all29 overlay paths. JSON parse and helper compile passed. One local renderer failure on invalid geometry was reproduced, then drawing skipped that invalid box while preserving its row record. No predecessor, lead-owned state, index or Git mutation. Training run/config/data owner and clean historical source commit show canonical supervised assistant row/EOS atoms, base CE weight1, zero-weight token gate, hinge .01, x-then-y/source tie order, and no evidenced corrupted-prior-box recovery treatment; actual per-example packed labels and base pretraining remain uninspected.
+
+Execution proposal: none admitted or frozen. Conditional maintained whole-row replacement/free-continuation route and 128-token/8-row arithmetic are in candidate; no eligible case exists for a source-specific forecast. Accounting 0 model loads, 0 model/vision forwards, 0 generation, 0 CUDA/GPU calls, 0 GPU hours; no child jobs. Lead owns physical/scientific acceptance and any later model contract. Stop at this packet.

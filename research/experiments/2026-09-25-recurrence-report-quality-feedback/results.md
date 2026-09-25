@@ -1,0 +1,11 @@
+# Report-quality support: accepted CPU boundary
+
+The [lead ruling](lead-cpu-acceptance-v1.json) accepts the corrected [CPU support candidate](cpu-candidate-results-v2.md): the fixed273-source/29-return-image basket supports **zero strong coverage-preserving cases and one weaker identity-constant case**, train417044. Twenty-one cases remain unresolved; seven are excluded, ineligible or reference-only. This is not a model nonpass or a population estimate. The original v1 zero-support statement was too categorical and remains preserved.
+
+The lead inspected the original donut image, the proposed crop and existing physical ruling. Row4's expansion `[0,216,68,259]` covers more of the same visible edge-donut portion than native `[0,226,53,255]`; contraction `[0,236,38,251]` retains an interior strip. The two edits change three coordinates with mirrored displacements and L1 distance29. Exact completed coverage is not established or held fixed. The first-physical-revisit HOLD remains. Normal-row1 edits are not a matched reciprocal pair and are not admitted.
+
+The horse415856 case is a valid different-owner numerical overlap, as independently inspected and confirmed by the user. IoU is symmetric; intersection divided by each box area can describe containment versus similar extents, but neither geometry test establishes duplication. No existing source selection is changed by adding this distinction.
+
+The [training audit](supporting/training-facts.md) records completed step2444 supervised training, source-order geometry and CE/hinge settings at its clean historical source commit. Lead spot checks confirmed the completed2444/7332 counters, source commit, bf16 supervised recipe, loss settings and full-vocabulary CE implementation. Packed per-example labels and base pretraining remain uninspected; the audit is not a causal explanation or universal negative about recovery exposure.
+
+The stronger proposed feedback test closes as support-insufficient. A separate [weak forward protocol](weak-forward-protocol.md) tests one exploratory behavioral contrast with native, identity, expansion and contraction arms. It cannot establish repeat-specific maintenance or independent replication. Later-summary exposure remains disclosed; no new model effect exists at this CPU acceptance. Added GPU cost is zero.

@@ -1,0 +1,4455 @@
+{
+  "count": 29,
+  "cases": [
+    {
+      "global_source_rank": 6,
+      "source": "mature",
+      "image_id": 7511,
+      "group": "refined-01",
+      "batch_index": 2,
+      "split": "val",
+      "j": 1,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            539,
+            20,
+            556
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.147059,
+          "second_iou": 0.097222
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            0,
+            532,
+            20,
+            553
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.093023,
+          "second_iou": 0.043956
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-006-7511.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+          "sha256": "2843c07959515a93d2791183c998462d76b34100185e57a258d8949f112296e7",
+          "size_bytes": 155276
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+          "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+          "size_bytes": 40378
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/receipt.json",
+          "sha256": "80f372759589cbb620dc45176b870239f46fa5d58179a07fff2e2fcd6266e11e",
+          "size_bytes": 187598
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/trace.json",
+          "sha256": "8efc8bb91e7250e6ef73b389d53be352f8bd8167ba140251470a8ed4b38abdaf",
+          "size_bytes": 1021225
+        }
+      }
+    },
+    {
+      "global_source_rank": 10,
+      "source": "mature",
+      "image_id": 14038,
+      "group": "refined-02",
+      "batch_index": 2,
+      "split": "val",
+      "j": 7,
+      "i": 6,
+      "rows": [
+        {
+          "index": 0,
+          "description": "refrigerator",
+          "values": [
+            24,
+            343,
+            231,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 11,
+          "proxy_owner": 331203,
+          "top_iou": 0.937459,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "bottle",
+          "values": [
+            68,
+            247,
+            93,
+            303
+          ],
+          "valid": true,
+          "start": 11,
+          "end": 21,
+          "proxy_owner": 90888,
+          "top_iou": 0.546429,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "bottle",
+          "values": [
+            120,
+            241,
+            141,
+            296
+          ],
+          "valid": true,
+          "start": 21,
+          "end": 31,
+          "proxy_owner": 82834,
+          "top_iou": 0.740385,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "microwave",
+          "values": [
+            249,
+            664,
+            362,
+            766
+          ],
+          "valid": true,
+          "start": 31,
+          "end": 41,
+          "proxy_owner": 2138715,
+          "top_iou": 0.857191,
+          "second_iou": null
+        },
+        {
+          "index": 4,
+          "description": "bed",
+          "values": [
+            471,
+            436,
+            556,
+            611
+          ],
+          "valid": true,
+          "start": 41,
+          "end": 50,
+          "proxy_owner": 319540,
+          "top_iou": 0.948761,
+          "second_iou": null
+        },
+        {
+          "index": 5,
+          "description": "tv",
+          "values": [
+            696,
+            431,
+            783,
+            592
+          ],
+          "valid": true,
+          "start": 50,
+          "end": 59,
+          "proxy_owner": 33179,
+          "top_iou": 0.500683,
+          "second_iou": null
+        },
+        {
+          "index": 6,
+          "description": "book",
+          "values": [
+            782,
+            656,
+            850,
+            687
+          ],
+          "valid": true,
+          "start": 59,
+          "end": 68,
+          "proxy_owner": -141,
+          "top_iou": 0.75225,
+          "second_iou": 0.477762
+        },
+        {
+          "index": 7,
+          "description": "book",
+          "values": [
+            788,
+            656,
+            850,
+            680
+          ],
+          "valid": true,
+          "start": 68,
+          "end": 77,
+          "proxy_owner": null,
+          "top_iou": 0.570687,
+          "second_iou": 0.556553
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000014038.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-010-14038.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000014038.jpg",
+          "sha256": "055f28bbd181590b7a7c4844bf488d7f1be752d39916e07034c279f5f387acd2",
+          "size_bytes": 133833
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+          "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+          "size_bytes": 17227
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/receipt.json",
+          "sha256": "e0297cf4b701f70badf594fe29372b6795d2d2bb0f2d8f9196bc4fa77a86b82a",
+          "size_bytes": 188746
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/trace.json",
+          "sha256": "0dba6a8172c84dc14e5c72442cd6a6c713110be437041c6d4e1222d0a5b8856a",
+          "size_bytes": 249346
+        }
+      }
+    },
+    {
+      "global_source_rank": 15,
+      "source": "mature",
+      "image_id": 351017,
+      "group": "refined-03",
+      "batch_index": 2,
+      "split": "train",
+      "j": 2,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            13,
+            536,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": -1276804344338180,
+          "top_iou": 0.953792,
+          "second_iou": 0.148357
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            0,
+            0,
+            33,
+            86
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.004053,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "person",
+          "values": [
+            0,
+            0,
+            29,
+            86
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.003562,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-015-351017.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "length",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000351017.jpg",
+          "sha256": "8bb2f91a7a1672a4aacd41092dc9480dbb86c50ac32ba2566f7e5e622e6db1c9",
+          "size_bytes": 154193
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+          "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+          "size_bytes": 179870
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+          "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+          "size_bytes": 189302
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+          "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+          "size_bytes": 3312523
+        }
+      }
+    },
+    {
+      "global_source_rank": 16,
+      "source": "mature",
+      "image_id": 417044,
+      "group": "refined-03",
+      "batch_index": 3,
+      "split": "train",
+      "j": 4,
+      "i": 3,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            406,
+            500,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": -8994123903730692,
+          "top_iou": 0.94772,
+          "second_iou": 0.018595
+        },
+        {
+          "index": 1,
+          "description": "donut",
+          "values": [
+            0,
+            314,
+            57,
+            377
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 19,
+          "proxy_owner": -5529525760667096,
+          "top_iou": 0.671329,
+          "second_iou": 0.264045
+        },
+        {
+          "index": 2,
+          "description": "donut",
+          "values": [
+            0,
+            256,
+            47,
+            270
+          ],
+          "valid": true,
+          "start": 19,
+          "end": 29,
+          "proxy_owner": null,
+          "top_iou": 0.176409,
+          "second_iou": 0.152074
+        },
+        {
+          "index": 3,
+          "description": "donut",
+          "values": [
+            0,
+            226,
+            47,
+            255
+          ],
+          "valid": true,
+          "start": 29,
+          "end": 39,
+          "proxy_owner": null,
+          "top_iou": 0.345467,
+          "second_iou": 0.329902
+        },
+        {
+          "index": 4,
+          "description": "donut",
+          "values": [
+            0,
+            226,
+            53,
+            255
+          ],
+          "valid": true,
+          "start": 39,
+          "end": 49,
+          "proxy_owner": null,
+          "top_iou": 0.403044,
+          "second_iou": 0.301485
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-016-417044.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "length",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000417044.jpg",
+          "sha256": "babd3b1132d5007428ac6202e23b0de6c3fd72c00271427cfdce9185f8231160",
+          "size_bytes": 127134
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+          "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+          "size_bytes": 179870
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+          "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+          "size_bytes": 189302
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+          "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+          "size_bytes": 3312523
+        }
+      }
+    },
+    {
+      "global_source_rank": 17,
+      "source": "mature",
+      "image_id": 477415,
+      "group": "refined-04",
+      "batch_index": 0,
+      "split": "train",
+      "j": 5,
+      "i": 4,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            629,
+            125,
+            832
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 1285340,
+          "top_iou": 0.82664,
+          "second_iou": 0.017034
+        },
+        {
+          "index": 1,
+          "description": "chair",
+          "values": [
+            0,
+            795,
+            121,
+            999
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1580313,
+          "top_iou": 0.879192,
+          "second_iou": 0.025715
+        },
+        {
+          "index": 2,
+          "description": "chair",
+          "values": [
+            0,
+            721,
+            0,
+            763
+          ],
+          "valid": false,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "chair",
+          "values": [
+            0,
+            999,
+            93,
+            999
+          ],
+          "valid": false,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "chair",
+          "values": [
+            0,
+            692,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": null,
+          "top_iou": 0.085558,
+          "second_iou": 0.073168
+        },
+        {
+          "index": 5,
+          "description": "chair",
+          "values": [
+            0,
+            692,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 54,
+          "proxy_owner": null,
+          "top_iou": 0.085558,
+          "second_iou": 0.073168
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-017-477415.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": true,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000477415.jpg",
+          "sha256": "84a91098415dae8ddf0c5c911505df7a1883b9c6363e5d54a42d9217ab3c2596",
+          "size_bytes": 103093
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+          "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c",
+          "size_bytes": 8301
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+          "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d",
+          "size_bytes": 126942
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+          "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f",
+          "size_bytes": 127664
+        }
+      }
+    },
+    {
+      "global_source_rank": 36,
+      "source": "mature",
+      "image_id": 71122,
+      "group": "fresh-04",
+      "batch_index": 2,
+      "split": "train",
+      "j": 3,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "dog",
+          "values": [
+            298,
+            692,
+            432,
+            847
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 8308,
+          "top_iou": 0.939776,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "skis",
+          "values": [
+            567,
+            768,
+            979,
+            850
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 19,
+          "proxy_owner": 1450494,
+          "top_iou": 0.862164,
+          "second_iou": 0.056316
+        },
+        {
+          "index": 2,
+          "description": "person",
+          "values": [
+            598,
+            269,
+            802,
+            915
+          ],
+          "valid": true,
+          "start": 19,
+          "end": 28,
+          "proxy_owner": 187019,
+          "top_iou": 0.952911,
+          "second_iou": null
+        },
+        {
+          "index": 3,
+          "description": "skis",
+          "values": [
+            709,
+            757,
+            999,
+            852
+          ],
+          "valid": true,
+          "start": 28,
+          "end": 38,
+          "proxy_owner": 1450494,
+          "top_iou": 0.571692,
+          "second_iou": 0.0487
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000071122.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-036-71122.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000071122.jpg",
+          "sha256": "7485269eda98f013b7430b83d2bd0ae6d8667238dabbec5844f8b680377ac9eb",
+          "size_bytes": 148356
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/raw.json",
+          "sha256": "312856ccac49ae2f084174d6658494e2c88c0501e91b660eedcea48ec2c85bda",
+          "size_bytes": 3958
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/receipt.json",
+          "sha256": "f011b6e0a3513f5a66b9596eb034345ec208af5b64c05c1029bc4638f867220e",
+          "size_bytes": 186441
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/trace.json",
+          "sha256": "6322c205edf9a87e4dd6b9c736e9000c50b536b6cffc209d2f4de21a33919137",
+          "size_bytes": 52007
+        }
+      }
+    },
+    {
+      "global_source_rank": 43,
+      "source": "mature",
+      "image_id": 99184,
+      "group": "fresh-06",
+      "batch_index": 1,
+      "split": "train",
+      "j": 1,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            179,
+            47,
+            297
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            0,
+            184,
+            47,
+            301
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000099184.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-043-99184.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "length",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000099184.jpg",
+          "sha256": "4866b34d3632f9f1a05c5b7b2b813c7333d3713996106640d6417415ad8c421c",
+          "size_bytes": 157841
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/raw.json",
+          "sha256": "e727f0083d183c80a28e6ba14b94b705e2a633474ab5d4e43b74a262f75a9a8b",
+          "size_bytes": 90374
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/receipt.json",
+          "sha256": "23c43469d7f52bdf040291688063d151ffc6140eed987825542ecd2229813353",
+          "size_bytes": 189041
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/trace.json",
+          "sha256": "ab94cb74cf87f6ea96ada0d5f9e5f3ea1023db2b472e0cd117b76c53e2db8f16",
+          "size_bytes": 3283478
+        }
+      }
+    },
+    {
+      "global_source_rank": 73,
+      "source": "mature",
+      "image_id": 253212,
+      "group": "fresh-13",
+      "batch_index": 3,
+      "split": "train",
+      "j": 2,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "book",
+          "values": [
+            39,
+            0,
+            0,
+            88
+          ],
+          "valid": false,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "book",
+          "values": [
+            40,
+            0,
+            61,
+            88
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "book",
+          "values": [
+            46,
+            0,
+            66,
+            86
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.021359,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000253212.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-073-253212.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000253212.jpg",
+          "sha256": "20367741a4d10e6def7eaf90aae03604e65f3bee1ef9bf185299d92f730af08f",
+          "size_bytes": 108908
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/raw.json",
+          "sha256": "f1281b240d404565e5201c50fcdf45bd498adfe1f6de8dd153b0afe753f1af51",
+          "size_bytes": 19634
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/receipt.json",
+          "sha256": "3f78b511506500f267b1b58b98a9bd4e88cb297a6207d02a244d2437a9746bee",
+          "size_bytes": 189037
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/trace.json",
+          "sha256": "794d83fde3b9be9f24123563ce150f17ba7241aebd1ad840d23c87e0ceac2f85",
+          "size_bytes": 594382
+        }
+      }
+    },
+    {
+      "global_source_rank": 75,
+      "source": "mature",
+      "image_id": 258285,
+      "group": "fresh-14",
+      "batch_index": 1,
+      "split": "train",
+      "j": 15,
+      "i": 14,
+      "rows": [
+        {
+          "index": 0,
+          "description": "bird",
+          "values": [
+            0,
+            926,
+            40,
+            963
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "bird",
+          "values": [
+            26,
+            942,
+            49,
+            964
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "bird",
+          "values": [
+            46,
+            926,
+            73,
+            947
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "bird",
+          "values": [
+            68,
+            914,
+            86,
+            939
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "bird",
+          "values": [
+            82,
+            913,
+            97,
+            913
+          ],
+          "valid": false,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "bird",
+          "values": [
+            92,
+            942,
+            105,
+            951
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 54,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 6,
+          "description": "bird",
+          "values": [
+            105,
+            942,
+            121,
+            953
+          ],
+          "valid": true,
+          "start": 54,
+          "end": 63,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 7,
+          "description": "bird",
+          "values": [
+            116,
+            953,
+            130,
+            953
+          ],
+          "valid": false,
+          "start": 63,
+          "end": 72,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 8,
+          "description": "bird",
+          "values": [
+            128,
+            914,
+            152,
+            923
+          ],
+          "valid": true,
+          "start": 72,
+          "end": 81,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 9,
+          "description": "bird",
+          "values": [
+            138,
+            863,
+            165,
+            884
+          ],
+          "valid": true,
+          "start": 81,
+          "end": 90,
+          "proxy_owner": null,
+          "top_iou": 0.086022,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "bird",
+          "values": [
+            153,
+            894,
+            170,
+            914
+          ],
+          "valid": true,
+          "start": 90,
+          "end": 99,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 11,
+          "description": "bird",
+          "values": [
+            177,
+            894,
+            188,
+            914
+          ],
+          "valid": true,
+          "start": 99,
+          "end": 108,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 12,
+          "description": "bird",
+          "values": [
+            197,
+            926,
+            217,
+            949
+          ],
+          "valid": true,
+          "start": 108,
+          "end": 117,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 13,
+          "description": "bird",
+          "values": [
+            210,
+            926,
+            224,
+            949
+          ],
+          "valid": true,
+          "start": 117,
+          "end": 126,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 14,
+          "description": "bird",
+          "values": [
+            222,
+            926,
+            234,
+            949
+          ],
+          "valid": true,
+          "start": 126,
+          "end": 135,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 15,
+          "description": "bird",
+          "values": [
+            223,
+            926,
+            237,
+            949
+          ],
+          "valid": true,
+          "start": 135,
+          "end": 144,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000258285.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-075-258285.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000258285.jpg",
+          "sha256": "2e4f4e5765b70fd6bd7b18a2272220ab1232df656316a3bdf50c3396b3eeca67",
+          "size_bytes": 94145
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/raw.json",
+          "sha256": "5baabd06dc7cd98235b6b7530eeb17aa9d9cad7141b058f670e41c06b86672e9",
+          "size_bytes": 12280
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/receipt.json",
+          "sha256": "eac0c27a301d8e22e3108d2d2a6c6e1fea2ca7ea4189362438dc4631b49810dd",
+          "size_bytes": 188845
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/trace.json",
+          "sha256": "59357edd80d35b6422333b1b6e25ef4e9ca73dd6069a14d25e03811b0388fd38",
+          "size_bytes": 375298
+        }
+      }
+    },
+    {
+      "global_source_rank": 92,
+      "source": "mature",
+      "image_id": 313465,
+      "group": "fresh-18",
+      "batch_index": 3,
+      "split": "train",
+      "j": 7,
+      "i": 6,
+      "rows": [
+        {
+          "index": 0,
+          "description": "bowl",
+          "values": [
+            0,
+            157,
+            277,
+            504
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 10,
+          "proxy_owner": 716308,
+          "top_iou": 0.500817,
+          "second_iou": 0.035397
+        },
+        {
+          "index": 1,
+          "description": "bowl",
+          "values": [
+            5,
+            197,
+            217,
+            407
+          ],
+          "valid": true,
+          "start": 10,
+          "end": 20,
+          "proxy_owner": 716308,
+          "top_iou": 0.883752,
+          "second_iou": 0.001785
+        },
+        {
+          "index": 2,
+          "description": "bowl",
+          "values": [
+            157,
+            0,
+            415,
+            241
+          ],
+          "valid": true,
+          "start": 20,
+          "end": 30,
+          "proxy_owner": 715278,
+          "top_iou": 0.800669,
+          "second_iou": 0.030837
+        },
+        {
+          "index": 3,
+          "description": "scissors",
+          "values": [
+            306,
+            171,
+            461,
+            414
+          ],
+          "valid": true,
+          "start": 30,
+          "end": 40,
+          "proxy_owner": 1157751,
+          "top_iou": 0.872645,
+          "second_iou": null
+        },
+        {
+          "index": 4,
+          "description": "carrot",
+          "values": [
+            406,
+            278,
+            651,
+            394
+          ],
+          "valid": true,
+          "start": 40,
+          "end": 50,
+          "proxy_owner": 1563743,
+          "top_iou": 0.555773,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "carrot",
+          "values": [
+            414,
+            341,
+            633,
+            400
+          ],
+          "valid": true,
+          "start": 50,
+          "end": 60,
+          "proxy_owner": null,
+          "top_iou": 0.247337,
+          "second_iou": 0.0
+        },
+        {
+          "index": 6,
+          "description": "carrot",
+          "values": [
+            453,
+            253,
+            649,
+            327
+          ],
+          "valid": true,
+          "start": 60,
+          "end": 70,
+          "proxy_owner": null,
+          "top_iou": 0.283636,
+          "second_iou": 0.0
+        },
+        {
+          "index": 7,
+          "description": "carrot",
+          "values": [
+            466,
+            236,
+            649,
+            306
+          ],
+          "valid": true,
+          "start": 70,
+          "end": 80,
+          "proxy_owner": null,
+          "top_iou": 0.250508,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-092-313465.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": true,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000313465.jpg",
+          "sha256": "bc28ebbcd6ad8015d7097959539c5069d4c7f92fa4431665d893b3d4b74c7f4b",
+          "size_bytes": 116004
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+          "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d",
+          "size_bytes": 16062
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/receipt.json",
+          "sha256": "23e219bab7f87097f1f6342e723b32b2c2e03c8f57f5d0559fc4ffa55b9a5875",
+          "size_bytes": 189037
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/trace.json",
+          "sha256": "eea6a5b2d5ea16f9c3ce63cefdc31331b399c0e61ec7432b36256644fb83b5f7",
+          "size_bytes": 305572
+        }
+      }
+    },
+    {
+      "global_source_rank": 102,
+      "source": "mature",
+      "image_id": 356238,
+      "group": "fresh-21",
+      "batch_index": 1,
+      "split": "train",
+      "j": 2,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "book",
+          "values": [
+            0,
+            361,
+            53,
+            447
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.260474,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "book",
+          "values": [
+            0,
+            400,
+            86,
+            487
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1663359,
+          "top_iou": 0.789305,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "book",
+          "values": [
+            0,
+            394,
+            93,
+            468
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": 1663359,
+          "top_iou": 0.714104,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000356238.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-102-356238.png",
+      "image_size": [
+        864,
+        1152
+      ],
+      "source_stop": "length",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000356238.jpg",
+          "sha256": "f035d20ffecc9c3670c087815b3abac324bfafd8d71450f4db56876d729bd215",
+          "size_bytes": 127464
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/raw.json",
+          "sha256": "5c89052148e65d6358090714a206c04700584101046492a7c3acc3a64c46aef7",
+          "size_bytes": 100299
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/receipt.json",
+          "sha256": "2000c02ef598b84017437a4d068adc687871588a9607862be3dec0454295112c",
+          "size_bytes": 189171
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/trace.json",
+          "sha256": "f24d9b0360eb5aca3338077cf516cec202702bffb478dee6bdf4d00b1c1e19e1",
+          "size_bytes": 3292156
+        }
+      }
+    },
+    {
+      "global_source_rank": 104,
+      "source": "mature",
+      "image_id": 360695,
+      "group": "fresh-21",
+      "batch_index": 3,
+      "split": "train",
+      "j": 2,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "apple",
+          "values": [
+            0,
+            361,
+            572,
+            758
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 1552246,
+          "top_iou": 0.876045,
+          "second_iou": 0.050492
+        },
+        {
+          "index": 1,
+          "description": "apple",
+          "values": [
+            0,
+            479,
+            61,
+            567
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.021817,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "apple",
+          "values": [
+            0,
+            447,
+            60,
+            567
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.029199,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000360695.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-104-360695.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000360695.jpg",
+          "sha256": "3735a202b5489505d6ff522f9182a3d69fafa7a312a624a7c58943b7f9086381",
+          "size_bytes": 126721
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/raw.json",
+          "sha256": "5c89052148e65d6358090714a206c04700584101046492a7c3acc3a64c46aef7",
+          "size_bytes": 100299
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/receipt.json",
+          "sha256": "2000c02ef598b84017437a4d068adc687871588a9607862be3dec0454295112c",
+          "size_bytes": 189171
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/trace.json",
+          "sha256": "f24d9b0360eb5aca3338077cf516cec202702bffb478dee6bdf4d00b1c1e19e1",
+          "size_bytes": 3292156
+        }
+      }
+    },
+    {
+      "global_source_rank": 109,
+      "source": "mature",
+      "image_id": 386313,
+      "group": "fresh-23",
+      "batch_index": 0,
+      "split": "train",
+      "j": 5,
+      "i": 4,
+      "rows": [
+        {
+          "index": 0,
+          "description": "bicycle",
+          "values": [
+            116,
+            468,
+            421,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 10,
+          "proxy_owner": 124863,
+          "top_iou": 0.971986,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "book",
+          "values": [
+            439,
+            494,
+            472,
+            592
+          ],
+          "valid": true,
+          "start": 10,
+          "end": 19,
+          "proxy_owner": null,
+          "top_iou": 0.340502,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "tv",
+          "values": [
+            443,
+            181,
+            639,
+            403
+          ],
+          "valid": true,
+          "start": 19,
+          "end": 28,
+          "proxy_owner": 33255,
+          "top_iou": 0.931076,
+          "second_iou": null
+        },
+        {
+          "index": 3,
+          "description": "book",
+          "values": [
+            467,
+            525,
+            472,
+            592
+          ],
+          "valid": true,
+          "start": 28,
+          "end": 37,
+          "proxy_owner": null,
+          "top_iou": 0.036781,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "book",
+          "values": [
+            467,
+            571,
+            487,
+            666
+          ],
+          "valid": true,
+          "start": 37,
+          "end": 46,
+          "proxy_owner": null,
+          "top_iou": 0.333839,
+          "second_iou": 0.047583
+        },
+        {
+          "index": 5,
+          "description": "book",
+          "values": [
+            473,
+            571,
+            487,
+            666
+          ],
+          "valid": true,
+          "start": 46,
+          "end": 55,
+          "proxy_owner": null,
+          "top_iou": 0.146423,
+          "second_iou": 0.034695
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000386313.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-109-386313.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000386313.jpg",
+          "sha256": "0e430e99a70bbdfd1a39990298fc81fa63a48872f65f3cc355258c0007f94b43",
+          "size_bytes": 150144
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/raw.json",
+          "sha256": "09f34eb5494735a6c719495aa36265f0b63d3a97aba201c59f75c81b36926ceb",
+          "size_bytes": 26498
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/receipt.json",
+          "sha256": "f2e5270a0c32b1ea0151e9e82663e12dea5e8bb9aa76e0c2339856cf2dbe6e46",
+          "size_bytes": 189709
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/trace.json",
+          "sha256": "c00a7451fdaf67b72979acbfe610b75c2c15701fad36e1dfa4b97072be573e79",
+          "size_bytes": 360376
+        }
+      }
+    },
+    {
+      "global_source_rank": 150,
+      "source": "new",
+      "image_id": 28012,
+      "group": "new-01",
+      "batch_index": 1,
+      "split": "train",
+      "j": 2,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            0,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 421817,
+          "top_iou": 0.943105,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "chair",
+          "values": [
+            3,
+            519,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 375104,
+          "top_iou": 0.899569,
+          "second_iou": 0.065914
+        },
+        {
+          "index": 2,
+          "description": "person",
+          "values": [
+            105,
+            36,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": 421817,
+          "top_iou": 0.882502,
+          "second_iou": null
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000028012.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-150-28012.png",
+      "image_size": [
+        832,
+        1248
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000028012.jpg",
+          "sha256": "c971e613597c04265f86d79b4c04a98f356bc755d5705bc45f65db6ea615ef56",
+          "size_bytes": 156452
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-01/raw.json",
+          "sha256": "4f8d107a172a88758ddd7d3e866f49e559599b835f7e782771dd75b66a397917",
+          "size_bytes": 5615
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-01/receipt.json",
+          "sha256": "b72aa770c387160c750d62c6037f546a27fd42f0a93197afbdbfd75878d34b42",
+          "size_bytes": 189251
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-01/trace.json",
+          "sha256": "38df99e64216a2b44f6e65e06e78d714ba85e00298877c1ecf3ffa3b855bdc0b",
+          "size_bytes": 56239
+        }
+      }
+    },
+    {
+      "global_source_rank": 159,
+      "source": "new",
+      "image_id": 70122,
+      "group": "new-03",
+      "batch_index": 2,
+      "split": "train",
+      "j": 10,
+      "i": 9,
+      "rows": [
+        {
+          "index": 0,
+          "description": "teddy bear",
+          "values": [
+            0,
+            421,
+            93,
+            664
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 11,
+          "proxy_owner": 1673574,
+          "top_iou": 0.853729,
+          "second_iou": 0.118132
+        },
+        {
+          "index": 1,
+          "description": "teddy bear",
+          "values": [
+            0,
+            595,
+            362,
+            999
+          ],
+          "valid": true,
+          "start": 11,
+          "end": 22,
+          "proxy_owner": null,
+          "top_iou": 0.085993,
+          "second_iou": 0.05157
+        },
+        {
+          "index": 2,
+          "description": "teddy bear",
+          "values": [
+            30,
+            197,
+            125,
+            504
+          ],
+          "valid": true,
+          "start": 22,
+          "end": 33,
+          "proxy_owner": 1673788,
+          "top_iou": 0.836155,
+          "second_iou": 0.114498
+        },
+        {
+          "index": 3,
+          "description": "teddy bear",
+          "values": [
+            92,
+            318,
+            217,
+            585
+          ],
+          "valid": true,
+          "start": 33,
+          "end": 44,
+          "proxy_owner": 1673613,
+          "top_iou": 0.834015,
+          "second_iou": 0.283773
+        },
+        {
+          "index": 4,
+          "description": "teddy bear",
+          "values": [
+            100,
+            795,
+            296,
+            999
+          ],
+          "valid": true,
+          "start": 44,
+          "end": 55,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "teddy bear",
+          "values": [
+            144,
+            251,
+            231,
+            479
+          ],
+          "valid": true,
+          "start": 55,
+          "end": 66,
+          "proxy_owner": 1674304,
+          "top_iou": 0.66712,
+          "second_iou": 0.225588
+        },
+        {
+          "index": 6,
+          "description": "teddy bear",
+          "values": [
+            228,
+            184,
+            335,
+            379
+          ],
+          "valid": true,
+          "start": 66,
+          "end": 77,
+          "proxy_owner": 1675161,
+          "top_iou": 0.907364,
+          "second_iou": 0.078019
+        },
+        {
+          "index": 7,
+          "description": "teddy bear",
+          "values": [
+            281,
+            390,
+            480,
+            789
+          ],
+          "valid": true,
+          "start": 77,
+          "end": 88,
+          "proxy_owner": 1996152,
+          "top_iou": 0.920069,
+          "second_iou": 0.103788
+        },
+        {
+          "index": 8,
+          "description": "teddy bear",
+          "values": [
+            322,
+            105,
+            395,
+            333
+          ],
+          "valid": true,
+          "start": 88,
+          "end": 99,
+          "proxy_owner": 1675207,
+          "top_iou": 0.802436,
+          "second_iou": 0.048105
+        },
+        {
+          "index": 9,
+          "description": "teddy bear",
+          "values": [
+            394,
+            0,
+            480,
+            259
+          ],
+          "valid": true,
+          "start": 99,
+          "end": 110,
+          "proxy_owner": null,
+          "top_iou": 0.037008,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "teddy bear",
+          "values": [
+            410,
+            0,
+            484,
+            178
+          ],
+          "valid": true,
+          "start": 110,
+          "end": 121,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000070122.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-159-70122.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000070122.jpg",
+          "sha256": "10e3b2c7c3ee081ac7d634d1202d3792db4540d7cdc542fb11c468b0f68b3c71",
+          "size_bytes": 164220
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-03/raw.json",
+          "sha256": "4a04a9cfa26cd4ed992cf5ea7c335af4e3d10294b54eb57ac6f2664bcb717e3a",
+          "size_bytes": 11520
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-03/receipt.json",
+          "sha256": "deb2abc003b3fd39742913bc6e773de2e5eaf0c7e9dc939524ad2bc06d6b459b",
+          "size_bytes": 189415
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-03/trace.json",
+          "sha256": "752960564771f03a52bb819f11c0a074a3a77f267c8fa849e930646af2470852",
+          "size_bytes": 258761
+        }
+      }
+    },
+    {
+      "global_source_rank": 164,
+      "source": "new",
+      "image_id": 78305,
+      "group": "new-04",
+      "batch_index": 3,
+      "split": "train",
+      "j": 6,
+      "i": 5,
+      "rows": [
+        {
+          "index": 0,
+          "description": "bed",
+          "values": [
+            0,
+            348,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 315935,
+          "top_iou": 0.961171,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "cat",
+          "values": [
+            314,
+            384,
+            520,
+            564
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 52075,
+          "top_iou": 0.919643,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "cat",
+          "values": [
+            560,
+            444,
+            967,
+            929
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": 50655,
+          "top_iou": 0.984555,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "book",
+          "values": [
+            563,
+            334,
+            717,
+            372
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "book",
+          "values": [
+            637,
+            343,
+            730,
+            365
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "book",
+          "values": [
+            729,
+            260,
+            769,
+            323
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 54,
+          "proxy_owner": 1657349,
+          "top_iou": 0.655848,
+          "second_iou": 0.443651
+        },
+        {
+          "index": 6,
+          "description": "book",
+          "values": [
+            742,
+            260,
+            776,
+            320
+          ],
+          "valid": true,
+          "start": 54,
+          "end": 63,
+          "proxy_owner": null,
+          "top_iou": 0.606258,
+          "second_iou": 0.535817
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000078305.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-164-78305.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000078305.jpg",
+          "sha256": "9f994ce7cb28a6474d5116bfdb09a77fa9e1ac8a22a100f4d8eed24914a2afd6",
+          "size_bytes": 129921
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-04/raw.json",
+          "sha256": "0f0fbd62a58e78c8afa2a4a99ce6047152d052b0043b6eeddda3b54d75790ce3",
+          "size_bytes": 10781
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-04/receipt.json",
+          "sha256": "7797911798adf66c35003263934aba54571a4b870966e658d5ac08bbf0064c8e",
+          "size_bytes": 189415
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-04/trace.json",
+          "sha256": "1d1db0eab60a2e92474a9a774f451bc3cf2d207d7cfb2b3f380744551d97e15f",
+          "size_bytes": 156074
+        }
+      }
+    },
+    {
+      "global_source_rank": 175,
+      "source": "new",
+      "image_id": 131490,
+      "group": "new-07",
+      "batch_index": 2,
+      "split": "train",
+      "j": 1,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "cow",
+          "values": [
+            0,
+            129,
+            231,
+            315
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 1820512,
+          "top_iou": 0.879356,
+          "second_iou": 0.168199
+        },
+        {
+          "index": 1,
+          "description": "cow",
+          "values": [
+            0,
+            137,
+            231,
+            318
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1820512,
+          "top_iou": 0.891759,
+          "second_iou": 0.143217
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000131490.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-175-131490.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000131490.jpg",
+          "sha256": "a49167b2ca4ab1a68f413a114f92fb880b96af7a00db4e29d6b53f206ff3bbb3",
+          "size_bytes": 160428
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-07/raw.json",
+          "sha256": "b45763c44e7f5a660425d622f3109b93d71faf4cb38a3519f528c0d118b80c59",
+          "size_bytes": 6057
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-07/receipt.json",
+          "sha256": "b49fc2295915d7db25ba7c4be88a8f736bf100877413362fc87a109ac77b2e34",
+          "size_bytes": 188212
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-07/trace.json",
+          "sha256": "3e092eadb21bd715421f0abb7c53467bd7949ffc1aaa6161cce9d3b416daa626",
+          "size_bytes": 82155
+        }
+      }
+    },
+    {
+      "global_source_rank": 178,
+      "source": "new",
+      "image_id": 151704,
+      "group": "new-08",
+      "batch_index": 1,
+      "split": "train",
+      "j": 4,
+      "i": 3,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            0,
+            494,
+            210,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 1243241,
+          "top_iou": 0.944328,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "chair",
+          "values": [
+            100,
+            500,
+            461,
+            999
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.43488,
+          "second_iou": null
+        },
+        {
+          "index": 2,
+          "description": "book",
+          "values": [
+            189,
+            768,
+            254,
+            814
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": 1652859,
+          "top_iou": 0.684524,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "book",
+          "values": [
+            197,
+            829,
+            270,
+            859
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": 2141669,
+          "top_iou": 0.60456,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "book",
+          "values": [
+            207,
+            829,
+            270,
+            852
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": 2141669,
+          "top_iou": 0.529605,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-178-151704.png",
+      "image_size": [
+        864,
+        1152
+      ],
+      "source_stop": "im_end",
+      "excluded": true,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000151704.jpg",
+          "sha256": "fb4947d5efc5674259b0b9fea8074b0b08803b49a612d5408d2de2ca61203846",
+          "size_bytes": 111459
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+          "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+          "size_bytes": 18757
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+          "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+          "size_bytes": 188166
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+          "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+          "size_bytes": 262097
+        }
+      }
+    },
+    {
+      "global_source_rank": 180,
+      "source": "new",
+      "image_id": 169872,
+      "group": "new-08",
+      "batch_index": 3,
+      "split": "train",
+      "j": 7,
+      "i": 6,
+      "rows": [
+        {
+          "index": 0,
+          "description": "cup",
+          "values": [
+            100,
+            591,
+            190,
+            717
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "cell phone",
+          "values": [
+            269,
+            702,
+            314,
+            737
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 19,
+          "proxy_owner": 324660,
+          "top_iou": 0.793746,
+          "second_iou": null
+        },
+        {
+          "index": 2,
+          "description": "laptop",
+          "values": [
+            354,
+            377,
+            568,
+            659
+          ],
+          "valid": true,
+          "start": 19,
+          "end": 29,
+          "proxy_owner": 1099315,
+          "top_iou": 0.964549,
+          "second_iou": null
+        },
+        {
+          "index": 3,
+          "description": "keyboard",
+          "values": [
+            374,
+            663,
+            694,
+            758
+          ],
+          "valid": true,
+          "start": 29,
+          "end": 38,
+          "proxy_owner": 1117003,
+          "top_iou": 0.876941,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "chair",
+          "values": [
+            387,
+            818,
+            663,
+            999
+          ],
+          "valid": true,
+          "start": 38,
+          "end": 47,
+          "proxy_owner": 377531,
+          "top_iou": 0.937948,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "mouse",
+          "values": [
+            715,
+            698,
+            769,
+            749
+          ],
+          "valid": true,
+          "start": 47,
+          "end": 56,
+          "proxy_owner": 1107022,
+          "top_iou": 0.912099,
+          "second_iou": null
+        },
+        {
+          "index": 6,
+          "description": "book",
+          "values": [
+            742,
+            458,
+            776,
+            562
+          ],
+          "valid": true,
+          "start": 56,
+          "end": 65,
+          "proxy_owner": 2144346,
+          "top_iou": 0.571429,
+          "second_iou": 0.327034
+        },
+        {
+          "index": 7,
+          "description": "book",
+          "values": [
+            742,
+            473,
+            769,
+            562
+          ],
+          "valid": true,
+          "start": 65,
+          "end": 74,
+          "proxy_owner": null,
+          "top_iou": 0.457453,
+          "second_iou": 0.188788
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000169872.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-180-169872.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000169872.jpg",
+          "sha256": "324bdd0c4be6d63ffe086977a69ee795eebb44baf6904961804e7b7dd98cff52",
+          "size_bytes": 109192
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/raw.json",
+          "sha256": "b6747f8950b7a1ed52df40503a3f9cbfe5a494c395ad6181f8857e6d6d220381",
+          "size_bytes": 18757
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/receipt.json",
+          "sha256": "c8c31700e78b356bab061c36b5cef111a9c960a61178c7eb0b851d87c045d7da",
+          "size_bytes": 188166
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-08/trace.json",
+          "sha256": "a99ff250db03455f6afe8ebbca24b88148cfb92b8e894b97a9e71c279ffa3ec7",
+          "size_bytes": 262097
+        }
+      }
+    },
+    {
+      "global_source_rank": 188,
+      "source": "new",
+      "image_id": 196924,
+      "group": "new-10",
+      "batch_index": 3,
+      "split": "train",
+      "j": 17,
+      "i": 16,
+      "rows": [
+        {
+          "index": 0,
+          "description": "tv",
+          "values": [
+            213,
+            238,
+            295,
+            325
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 33490,
+          "top_iou": 0.850344,
+          "second_iou": null
+        },
+        {
+          "index": 1,
+          "description": "chair",
+          "values": [
+            414,
+            431,
+            552,
+            621
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1591031,
+          "top_iou": 0.933761,
+          "second_iou": 0.144266
+        },
+        {
+          "index": 2,
+          "description": "clock",
+          "values": [
+            478,
+            240,
+            513,
+            301
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": 335551,
+          "top_iou": 0.694495,
+          "second_iou": null
+        },
+        {
+          "index": 3,
+          "description": "chair",
+          "values": [
+            506,
+            407,
+            617,
+            553
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": 1941626,
+          "top_iou": 0.942127,
+          "second_iou": 0.148734
+        },
+        {
+          "index": 4,
+          "description": "dining table",
+          "values": [
+            519,
+            561,
+            697,
+            746
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 47,
+          "proxy_owner": null,
+          "top_iou": null,
+          "second_iou": null
+        },
+        {
+          "index": 5,
+          "description": "chair",
+          "values": [
+            617,
+            444,
+            802,
+            652
+          ],
+          "valid": true,
+          "start": 47,
+          "end": 56,
+          "proxy_owner": 1594802,
+          "top_iou": 0.933701,
+          "second_iou": 0.001929
+        },
+        {
+          "index": 6,
+          "description": "cup",
+          "values": [
+            616,
+            561,
+            653,
+            592
+          ],
+          "valid": true,
+          "start": 56,
+          "end": 65,
+          "proxy_owner": null,
+          "top_iou": 0.439746,
+          "second_iou": 0.291545
+        },
+        {
+          "index": 7,
+          "description": "bowl",
+          "values": [
+            616,
+            589,
+            681,
+            627
+          ],
+          "valid": true,
+          "start": 65,
+          "end": 75,
+          "proxy_owner": 1537990,
+          "top_iou": 0.817348,
+          "second_iou": 0.0
+        },
+        {
+          "index": 8,
+          "description": "cup",
+          "values": [
+            630,
+            552,
+            658,
+            582
+          ],
+          "valid": true,
+          "start": 75,
+          "end": 84,
+          "proxy_owner": null,
+          "top_iou": 0.434783,
+          "second_iou": 0.273913
+        },
+        {
+          "index": 9,
+          "description": "couch",
+          "values": [
+            684,
+            472,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 84,
+          "end": 94,
+          "proxy_owner": 98069,
+          "top_iou": 0.958995,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "chair",
+          "values": [
+            716,
+            449,
+            782,
+            547
+          ],
+          "valid": true,
+          "start": 94,
+          "end": 103,
+          "proxy_owner": null,
+          "top_iou": 0.16493,
+          "second_iou": 0.0
+        },
+        {
+          "index": 11,
+          "description": "chair",
+          "values": [
+            768,
+            449,
+            796,
+            502
+          ],
+          "valid": true,
+          "start": 103,
+          "end": 112,
+          "proxy_owner": null,
+          "top_iou": 0.036622,
+          "second_iou": 0.0
+        },
+        {
+          "index": 12,
+          "description": "chair",
+          "values": [
+            801,
+            519,
+            999,
+            999
+          ],
+          "valid": true,
+          "start": 112,
+          "end": 121,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 13,
+          "description": "bowl",
+          "values": [
+            860,
+            431,
+            893,
+            461
+          ],
+          "valid": true,
+          "start": 121,
+          "end": 131,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 14,
+          "description": "bowl",
+          "values": [
+            874,
+            415,
+            900,
+            438
+          ],
+          "valid": true,
+          "start": 131,
+          "end": 141,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 15,
+          "description": "bowl",
+          "values": [
+            887,
+            415,
+            914,
+            447
+          ],
+          "valid": true,
+          "start": 141,
+          "end": 151,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 16,
+          "description": "bowl",
+          "values": [
+            893,
+            425,
+            921,
+            448
+          ],
+          "valid": true,
+          "start": 151,
+          "end": 161,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 17,
+          "description": "bowl",
+          "values": [
+            900,
+            429,
+            921,
+            448
+          ],
+          "valid": true,
+          "start": 161,
+          "end": 171,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000196924.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-188-196924.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000196924.jpg",
+          "sha256": "c1e6cb4b33ac87b2bdaf0b12230c2b456bb1b78fda6f6db2b48670eb2d44c157",
+          "size_bytes": 159791
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-10/raw.json",
+          "sha256": "8d337e07dfe694dd06307a06ce1d171935767982727f8a1496a4d871cb6ba136",
+          "size_bytes": 8010
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-10/receipt.json",
+          "sha256": "d963fca4ef2d162ef49893a7a3fb522ea15c7550ccd19c47f293c65c7d1ba85c",
+          "size_bytes": 187989
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-10/trace.json",
+          "sha256": "207e6f70ea206eb356b1f7a25603b48a341abb82131c27cdb21c089b67a3123a",
+          "size_bytes": 214821
+        }
+      }
+    },
+    {
+      "global_source_rank": 198,
+      "source": "new",
+      "image_id": 257685,
+      "group": "new-13",
+      "batch_index": 1,
+      "split": "train",
+      "j": 3,
+      "i": 2,
+      "rows": [
+        {
+          "index": 0,
+          "description": "vase",
+          "values": [
+            0,
+            394,
+            47,
+            582
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 10,
+          "proxy_owner": 1154355,
+          "top_iou": 0.915027,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "book",
+          "values": [
+            19,
+            328,
+            112,
+            578
+          ],
+          "valid": true,
+          "start": 10,
+          "end": 19,
+          "proxy_owner": null,
+          "top_iou": 0.72209,
+          "second_iou": 0.694862
+        },
+        {
+          "index": 2,
+          "description": "book",
+          "values": [
+            54,
+            260,
+            178,
+            572
+          ],
+          "valid": true,
+          "start": 19,
+          "end": 28,
+          "proxy_owner": 1139292,
+          "top_iou": 0.883995,
+          "second_iou": 0.487793
+        },
+        {
+          "index": 3,
+          "description": "book",
+          "values": [
+            96,
+            262,
+            202,
+            567
+          ],
+          "valid": true,
+          "start": 28,
+          "end": 37,
+          "proxy_owner": null,
+          "top_iou": 0.869703,
+          "second_iou": 0.521381
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000257685.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-198-257685.png",
+      "image_size": [
+        1120,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000257685.jpg",
+          "sha256": "ea079f772eae1df2c311a1abc09aa3013601d8a3d6256d1ba88596533d89f97a",
+          "size_bytes": 131228
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-13/raw.json",
+          "sha256": "1a2c441ff6c2bcd68d59b934c5558d0170df4320c39be6aa8ef868b69e7695f1",
+          "size_bytes": 7842
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-13/receipt.json",
+          "sha256": "a8079030afd0e30485391bce57cb7bbda42e53dc74e7216d4a2ccc96239e4b8f",
+          "size_bytes": 185941
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-13/trace.json",
+          "sha256": "ffe556bc407a698e690f173f9951d990517537221d91b5628aed6746ad2ec69e",
+          "size_bytes": 148685
+        }
+      }
+    },
+    {
+      "global_source_rank": 202,
+      "source": "new",
+      "image_id": 269858,
+      "group": "new-14",
+      "batch_index": 1,
+      "split": "train",
+      "j": 8,
+      "i": 7,
+      "rows": [
+        {
+          "index": 0,
+          "description": "bench",
+          "values": [
+            72,
+            595,
+            125,
+            677
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            108,
+            685,
+            166,
+            909
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 209021,
+          "top_iou": 0.956897,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "bench",
+          "values": [
+            161,
+            466,
+            198,
+            527
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "car",
+          "values": [
+            161,
+            168,
+            178,
+            198
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.478873,
+          "second_iou": 0.422263
+        },
+        {
+          "index": 4,
+          "description": "car",
+          "values": [
+            170,
+            163,
+            186,
+            193
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": null,
+          "top_iou": 0.378182,
+          "second_iou": 0.316508
+        },
+        {
+          "index": 5,
+          "description": "car",
+          "values": [
+            177,
+            163,
+            204,
+            193
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 54,
+          "proxy_owner": 1341519,
+          "top_iou": 0.530129,
+          "second_iou": 0.447084
+        },
+        {
+          "index": 6,
+          "description": "car",
+          "values": [
+            193,
+            157,
+            224,
+            192
+          ],
+          "valid": true,
+          "start": 54,
+          "end": 63,
+          "proxy_owner": null,
+          "top_iou": 0.456878,
+          "second_iou": 0.44164
+        },
+        {
+          "index": 7,
+          "description": "car",
+          "values": [
+            210,
+            150,
+            234,
+            163
+          ],
+          "valid": true,
+          "start": 63,
+          "end": 72,
+          "proxy_owner": null,
+          "top_iou": 0.424028,
+          "second_iou": 0.136691
+        },
+        {
+          "index": 8,
+          "description": "car",
+          "values": [
+            217,
+            150,
+            237,
+            163
+          ],
+          "valid": true,
+          "start": 72,
+          "end": 81,
+          "proxy_owner": null,
+          "top_iou": 0.291096,
+          "second_iou": 0.084706
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000269858.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-202-269858.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000269858.jpg",
+          "sha256": "d7d1d943f71c8a3cfdd4b1527907a94b5d655c33ae73dfe9947e2e96c9ca3ff3",
+          "size_bytes": 167597
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-14/raw.json",
+          "sha256": "a4610d4d5db8b355cf5b74be0e894f517c64a9f3cf2ce0ee10fc181b0f085e6f",
+          "size_bytes": 14644
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-14/receipt.json",
+          "sha256": "e00e601b34af34bb154b0f1e118d9926d0530a4d3adc133c576b0b7238cad0d4",
+          "size_bytes": 189416
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-14/trace.json",
+          "sha256": "ff2e64abf17cf7a37d9bfd6fbbfa5d143d2ad6544bddfa1aab71b2de8229b5e3",
+          "size_bytes": 279542
+        }
+      }
+    },
+    {
+      "global_source_rank": 213,
+      "source": "new",
+      "image_id": 301827,
+      "group": "new-17",
+      "batch_index": 0,
+      "split": "train",
+      "j": 11,
+      "i": 10,
+      "rows": [
+        {
+          "index": 0,
+          "description": "chair",
+          "values": [
+            203,
+            898,
+            315,
+            999
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 378657,
+          "top_iou": 0.920778,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "sink",
+          "values": [
+            262,
+            563,
+            480,
+            701
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1130170,
+          "top_iou": 0.928013,
+          "second_iou": null
+        },
+        {
+          "index": 2,
+          "description": "dining table",
+          "values": [
+            310,
+            869,
+            653,
+            999
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 29,
+          "proxy_owner": 412695,
+          "top_iou": 0.892058,
+          "second_iou": null
+        },
+        {
+          "index": 3,
+          "description": "bottle",
+          "values": [
+            492,
+            905,
+            504,
+            967
+          ],
+          "valid": true,
+          "start": 29,
+          "end": 39,
+          "proxy_owner": null,
+          "top_iou": 0.391026,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "bottle",
+          "values": [
+            499,
+            824,
+            536,
+            960
+          ],
+          "valid": true,
+          "start": 39,
+          "end": 49,
+          "proxy_owner": 89470,
+          "top_iou": 0.733017,
+          "second_iou": 0.066873
+        },
+        {
+          "index": 5,
+          "description": "bottle",
+          "values": [
+            499,
+            913,
+            536,
+            999
+          ],
+          "valid": true,
+          "start": 49,
+          "end": 59,
+          "proxy_owner": null,
+          "top_iou": 0.158016,
+          "second_iou": 0.142527
+        },
+        {
+          "index": 6,
+          "description": "bottle",
+          "values": [
+            538,
+            953,
+            579,
+            999
+          ],
+          "valid": true,
+          "start": 59,
+          "end": 69,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 7,
+          "description": "bottle",
+          "values": [
+            576,
+            525,
+            612,
+            615
+          ],
+          "valid": true,
+          "start": 69,
+          "end": 79,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 8,
+          "description": "bottle",
+          "values": [
+            584,
+            625,
+            605,
+            666
+          ],
+          "valid": true,
+          "start": 79,
+          "end": 89,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 9,
+          "description": "bottle",
+          "values": [
+            598,
+            644,
+            608,
+            680
+          ],
+          "valid": true,
+          "start": 89,
+          "end": 99,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "bottle",
+          "values": [
+            608,
+            644,
+            617,
+            673
+          ],
+          "valid": true,
+          "start": 99,
+          "end": 109,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 11,
+          "description": "bottle",
+          "values": [
+            608,
+            650,
+            617,
+            673
+          ],
+          "valid": true,
+          "start": 109,
+          "end": 119,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000301827.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-213-301827.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000301827.jpg",
+          "sha256": "24a1e9829beb14b6fc60299d36895c2086d3d6b74bd944b9ad6d4ae16f666aee",
+          "size_bytes": 96812
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/raw.json",
+          "sha256": "1c470a7f22e168a05f2da2f1ad008aadfb579892d849c4ec4ba2b91d3cf69d2b",
+          "size_bytes": 19047
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/receipt.json",
+          "sha256": "9481760701052a9e34e7fe4cba6464ab7b4b2c70fb559ba6a224f930f81d96e8",
+          "size_bytes": 188071
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/trace.json",
+          "sha256": "2bfaee8f5ac2e3cd79b0f5d3d16b9caa82820bdf5fc94aea62235d6d07a4ca91",
+          "size_bytes": 278849
+        }
+      }
+    },
+    {
+      "global_source_rank": 215,
+      "source": "new",
+      "image_id": 311229,
+      "group": "new-17",
+      "batch_index": 2,
+      "split": "train",
+      "j": 20,
+      "i": 19,
+      "rows": [
+        {
+          "index": 0,
+          "description": "car",
+          "values": [
+            0,
+            610,
+            53,
+            674
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 141231,
+          "top_iou": 0.984375,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            41,
+            105,
+            73,
+            225
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "person",
+          "values": [
+            88,
+            599,
+            106,
+            656
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "person",
+          "values": [
+            144,
+            584,
+            154,
+            622
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.005315,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "person",
+          "values": [
+            153,
+            622,
+            178,
+            709
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": 1245930,
+          "top_iou": 0.548154,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "motorcycle",
+          "values": [
+            157,
+            649,
+            182,
+            717
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 55,
+          "proxy_owner": 153229,
+          "top_iou": 0.59712,
+          "second_iou": 0.0
+        },
+        {
+          "index": 6,
+          "description": "person",
+          "values": [
+            173,
+            143,
+            204,
+            231
+          ],
+          "valid": true,
+          "start": 55,
+          "end": 64,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 7,
+          "description": "car",
+          "values": [
+            197,
+            613,
+            277,
+            658
+          ],
+          "valid": true,
+          "start": 64,
+          "end": 73,
+          "proxy_owner": 137970,
+          "top_iou": 0.673961,
+          "second_iou": 0.177488
+        },
+        {
+          "index": 8,
+          "description": "person",
+          "values": [
+            203,
+            583,
+            214,
+            609
+          ],
+          "valid": true,
+          "start": 73,
+          "end": 82,
+          "proxy_owner": null,
+          "top_iou": 0.468085,
+          "second_iou": 0.0
+        },
+        {
+          "index": 9,
+          "description": "person",
+          "values": [
+            265,
+            622,
+            315,
+            747
+          ],
+          "valid": true,
+          "start": 82,
+          "end": 91,
+          "proxy_owner": 1264806,
+          "top_iou": 0.873273,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "motorcycle",
+          "values": [
+            276,
+            686,
+            314,
+            758
+          ],
+          "valid": true,
+          "start": 91,
+          "end": 101,
+          "proxy_owner": 153059,
+          "top_iou": 0.986301,
+          "second_iou": 0.0
+        },
+        {
+          "index": 11,
+          "description": "traffic light",
+          "values": [
+            281,
+            298,
+            355,
+            355
+          ],
+          "valid": true,
+          "start": 101,
+          "end": 111,
+          "proxy_owner": 2058458,
+          "top_iou": 0.897472,
+          "second_iou": 0.0
+        },
+        {
+          "index": 12,
+          "description": "person",
+          "values": [
+            335,
+            552,
+            355,
+            608
+          ],
+          "valid": true,
+          "start": 111,
+          "end": 120,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 13,
+          "description": "person",
+          "values": [
+            370,
+            599,
+            395,
+            671
+          ],
+          "valid": true,
+          "start": 120,
+          "end": 129,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 14,
+          "description": "person",
+          "values": [
+            394,
+            599,
+            413,
+            641
+          ],
+          "valid": true,
+          "start": 129,
+          "end": 138,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 15,
+          "description": "person",
+          "values": [
+            414,
+            607,
+            440,
+            653
+          ],
+          "valid": true,
+          "start": 138,
+          "end": 147,
+          "proxy_owner": null,
+          "top_iou": 0.459307,
+          "second_iou": 0.0
+        },
+        {
+          "index": 16,
+          "description": "person",
+          "values": [
+            446,
+            599,
+            467,
+            674
+          ],
+          "valid": true,
+          "start": 147,
+          "end": 156,
+          "proxy_owner": 1326856,
+          "top_iou": 0.917832,
+          "second_iou": 0.0
+        },
+        {
+          "index": 17,
+          "description": "person",
+          "values": [
+            466,
+            599,
+            484,
+            674
+          ],
+          "valid": true,
+          "start": 156,
+          "end": 165,
+          "proxy_owner": 1329551,
+          "top_iou": 0.734754,
+          "second_iou": 0.109091
+        },
+        {
+          "index": 18,
+          "description": "person",
+          "values": [
+            479,
+            599,
+            496,
+            674
+          ],
+          "valid": true,
+          "start": 165,
+          "end": 174,
+          "proxy_owner": 1331724,
+          "top_iou": 0.676056,
+          "second_iou": 0.257155
+        },
+        {
+          "index": 19,
+          "description": "person",
+          "values": [
+            495,
+            604,
+            513,
+            671
+          ],
+          "valid": true,
+          "start": 174,
+          "end": 183,
+          "proxy_owner": 1325054,
+          "top_iou": 0.576167,
+          "second_iou": 0.130299
+        },
+        {
+          "index": 20,
+          "description": "person",
+          "values": [
+            499,
+            604,
+            520,
+            666
+          ],
+          "valid": true,
+          "start": 183,
+          "end": 192,
+          "proxy_owner": 1325054,
+          "top_iou": 0.872011,
+          "second_iou": 0.021088
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000311229.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-215-311229.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000311229.jpg",
+          "sha256": "9b7ac8b2f14a149eeb6413faca64b80dd763d8e40a71b687c091f0bf2d39df34",
+          "size_bytes": 158642
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/raw.json",
+          "sha256": "1c470a7f22e168a05f2da2f1ad008aadfb579892d849c4ec4ba2b91d3cf69d2b",
+          "size_bytes": 19047
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/receipt.json",
+          "sha256": "9481760701052a9e34e7fe4cba6464ab7b4b2c70fb559ba6a224f930f81d96e8",
+          "size_bytes": 188071
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-17/trace.json",
+          "sha256": "2bfaee8f5ac2e3cd79b0f5d3d16b9caa82820bdf5fc94aea62235d6d07a4ca91",
+          "size_bytes": 278849
+        }
+      }
+    },
+    {
+      "global_source_rank": 218,
+      "source": "new",
+      "image_id": 322768,
+      "group": "new-18",
+      "batch_index": 1,
+      "split": "train",
+      "j": 5,
+      "i": 4,
+      "rows": [
+        {
+          "index": 0,
+          "description": "knife",
+          "values": [
+            394,
+            296,
+            415,
+            403
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "knife",
+          "values": [
+            407,
+            296,
+            421,
+            389
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "knife",
+          "values": [
+            414,
+            317,
+            434,
+            389
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.236364,
+          "second_iou": 0.015595
+        },
+        {
+          "index": 3,
+          "description": "knife",
+          "values": [
+            431,
+            341,
+            457,
+            403
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": 1525204,
+          "top_iou": 0.529602,
+          "second_iou": 0.361312
+        },
+        {
+          "index": 4,
+          "description": "knife",
+          "values": [
+            433,
+            341,
+            480,
+            403
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 45,
+          "proxy_owner": null,
+          "top_iou": 0.4221,
+          "second_iou": 0.350788
+        },
+        {
+          "index": 5,
+          "description": "knife",
+          "values": [
+            446,
+            341,
+            480,
+            389
+          ],
+          "valid": true,
+          "start": 45,
+          "end": 54,
+          "proxy_owner": null,
+          "top_iou": 0.60049,
+          "second_iou": 0.520362
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000322768.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-218-322768.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000322768.jpg",
+          "sha256": "a69a4490b17bef5e4899a355d5fab1bc38b72ca23d2da0f40e928444d112702c",
+          "size_bytes": 125441
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-18/raw.json",
+          "sha256": "acb9a42bcf47b528c1613721fc8477b5828f8ea5145046560429e6ba99aab6af",
+          "size_bytes": 13702
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-18/receipt.json",
+          "sha256": "8a7334086364ba3b12ebc9865644f08f2e40fd89fcf92eb2d9ce3ed9e2dadda8",
+          "size_bytes": 187911
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-18/trace.json",
+          "sha256": "b013d1838e8301b8b7474d056a36afc3a10f886e7a98eae8a997f07fc65601fe",
+          "size_bytes": 187044
+        }
+      }
+    },
+    {
+      "global_source_rank": 239,
+      "source": "new",
+      "image_id": 415856,
+      "group": "new-23",
+      "batch_index": 2,
+      "split": "train",
+      "j": 1,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "horse",
+          "values": [
+            13,
+            498,
+            444,
+            848
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.904416,
+          "second_iou": 0.626734
+        },
+        {
+          "index": 1,
+          "description": "horse",
+          "values": [
+            131,
+            474,
+            472,
+            777
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 1832361,
+          "top_iou": 0.804421,
+          "second_iou": 0.481458
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000415856.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-239-415856.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000415856.jpg",
+          "sha256": "34656086596e1ca114bdf6e19f91e91be79f1becd48d4962664c180f7d5b19d0",
+          "size_bytes": 245849
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-23/raw.json",
+          "sha256": "8e8a249d2c581b5999149d277296bf6339b0b5899088216cea6f6f2833037176",
+          "size_bytes": 3652
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-23/receipt.json",
+          "sha256": "151221dda023ebb36f4f239a49518913cb1eb59c25ae96d2bb8b8c9e32918650",
+          "size_bytes": 188530
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-23/trace.json",
+          "sha256": "9dd35ba83e24b6f2f5d737efd2fb30b33789461af385be84bd0e29e1c9c56198",
+          "size_bytes": 49917
+        }
+      }
+    },
+    {
+      "global_source_rank": 254,
+      "source": "new",
+      "image_id": 505967,
+      "group": "new-27",
+      "batch_index": 1,
+      "split": "train",
+      "j": 19,
+      "i": 18,
+      "rows": [
+        {
+          "index": 0,
+          "description": "car",
+          "values": [
+            0,
+            825,
+            86,
+            914
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 1,
+          "description": "car",
+          "values": [
+            0,
+            895,
+            86,
+            999
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 2,
+          "description": "car",
+          "values": [
+            52,
+            672,
+            86,
+            715
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 3,
+          "description": "car",
+          "values": [
+            85,
+            680,
+            132,
+            722
+          ],
+          "valid": true,
+          "start": 27,
+          "end": 36,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 4,
+          "description": "traffic light",
+          "values": [
+            118,
+            573,
+            133,
+            616
+          ],
+          "valid": true,
+          "start": 36,
+          "end": 46,
+          "proxy_owner": null,
+          "top_iou": 0.310606,
+          "second_iou": 0.0
+        },
+        {
+          "index": 5,
+          "description": "car",
+          "values": [
+            136,
+            680,
+            186,
+            723
+          ],
+          "valid": true,
+          "start": 46,
+          "end": 55,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 6,
+          "description": "person",
+          "values": [
+            157,
+            878,
+            186,
+            999
+          ],
+          "valid": true,
+          "start": 55,
+          "end": 64,
+          "proxy_owner": null,
+          "top_iou": 0.459743,
+          "second_iou": 0.0
+        },
+        {
+          "index": 7,
+          "description": "motorcycle",
+          "values": [
+            161,
+            890,
+            204,
+            967
+          ],
+          "valid": true,
+          "start": 64,
+          "end": 74,
+          "proxy_owner": 1791335,
+          "top_iou": 0.706897,
+          "second_iou": null
+        },
+        {
+          "index": 8,
+          "description": "car",
+          "values": [
+            197,
+            953,
+            303,
+            999
+          ],
+          "valid": true,
+          "start": 74,
+          "end": 83,
+          "proxy_owner": null,
+          "top_iou": 0.264581,
+          "second_iou": 0.0
+        },
+        {
+          "index": 9,
+          "description": "truck",
+          "values": [
+            217,
+            765,
+            359,
+            847
+          ],
+          "valid": true,
+          "start": 83,
+          "end": 92,
+          "proxy_owner": 1373492,
+          "top_iou": 0.911111,
+          "second_iou": 0.0
+        },
+        {
+          "index": 10,
+          "description": "car",
+          "values": [
+            249,
+            912,
+            335,
+            999
+          ],
+          "valid": true,
+          "start": 92,
+          "end": 101,
+          "proxy_owner": 1786897,
+          "top_iou": 0.955056,
+          "second_iou": 0.0
+        },
+        {
+          "index": 11,
+          "description": "car",
+          "values": [
+            276,
+            637,
+            296,
+            657
+          ],
+          "valid": true,
+          "start": 101,
+          "end": 110,
+          "proxy_owner": null,
+          "top_iou": 0.0,
+          "second_iou": 0.0
+        },
+        {
+          "index": 12,
+          "description": "car",
+          "values": [
+            310,
+            750,
+            415,
+            802
+          ],
+          "valid": true,
+          "start": 110,
+          "end": 119,
+          "proxy_owner": 1773849,
+          "top_iou": 0.811475,
+          "second_iou": 0.0
+        },
+        {
+          "index": 13,
+          "description": "car",
+          "values": [
+            342,
+            670,
+            382,
+            712
+          ],
+          "valid": true,
+          "start": 119,
+          "end": 128,
+          "proxy_owner": null,
+          "top_iou": 0.224111,
+          "second_iou": 0.0
+        },
+        {
+          "index": 14,
+          "description": "traffic light",
+          "values": [
+            374,
+            542,
+            382,
+            572
+          ],
+          "valid": true,
+          "start": 128,
+          "end": 138,
+          "proxy_owner": 1804963,
+          "top_iou": 0.535714,
+          "second_iou": 0.0
+        },
+        {
+          "index": 15,
+          "description": "car",
+          "values": [
+            394,
+            688,
+            440,
+            715
+          ],
+          "valid": true,
+          "start": 138,
+          "end": 147,
+          "proxy_owner": null,
+          "top_iou": 0.473373,
+          "second_iou": 0.0
+        },
+        {
+          "index": 16,
+          "description": "car",
+          "values": [
+            422,
+            841,
+            489,
+            927
+          ],
+          "valid": true,
+          "start": 147,
+          "end": 156,
+          "proxy_owner": 1355688,
+          "top_iou": 0.95164,
+          "second_iou": 0.0
+        },
+        {
+          "index": 17,
+          "description": "traffic light",
+          "values": [
+            426,
+            550,
+            436,
+            580
+          ],
+          "valid": true,
+          "start": 156,
+          "end": 166,
+          "proxy_owner": 1808178,
+          "top_iou": 0.78125,
+          "second_iou": 0.0
+        },
+        {
+          "index": 18,
+          "description": "car",
+          "values": [
+            422,
+            644,
+            440,
+            685
+          ],
+          "valid": true,
+          "start": 166,
+          "end": 175,
+          "proxy_owner": null,
+          "top_iou": 0.058635,
+          "second_iou": 0.0
+        },
+        {
+          "index": 19,
+          "description": "car",
+          "values": [
+            422,
+            644,
+            440,
+            680
+          ],
+          "valid": true,
+          "start": 175,
+          "end": 184,
+          "proxy_owner": null,
+          "top_iou": 0.03268,
+          "second_iou": 0.0
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000505967.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-254-505967.png",
+      "image_size": [
+        1248,
+        832
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000505967.jpg",
+          "sha256": "9690beb88d2a020e95a09805c0dfa381e81cf0fe1c5856e5f2a0d4f8f3becc4d",
+          "size_bytes": 209910
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-27/raw.json",
+          "sha256": "bb6740259447d95f1e43e8339e8faf77da0a53f0abadbb7dd5fb9db53b23df2f",
+          "size_bytes": 13189
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-27/receipt.json",
+          "sha256": "8e2f56fde5cc3b84abd0b6d6e65e1b44b7d4b4365fce1a7a55e65175acdcd92e",
+          "size_bytes": 188711
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-27/trace.json",
+          "sha256": "39dcf577d0fc8cc0c5680e6886b9b90bf8d1c2018c308e29a6fe744dff6664e2",
+          "size_bytes": 373566
+        }
+      }
+    },
+    {
+      "global_source_rank": 259,
+      "source": "new",
+      "image_id": 539124,
+      "group": "new-28",
+      "batch_index": 2,
+      "split": "train",
+      "j": 2,
+      "i": 1,
+      "rows": [
+        {
+          "index": 0,
+          "description": "person",
+          "values": [
+            76,
+            141,
+            283,
+            693
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 9,
+          "proxy_owner": 219881,
+          "top_iou": 0.921655,
+          "second_iou": 0.040882
+        },
+        {
+          "index": 1,
+          "description": "person",
+          "values": [
+            258,
+            177,
+            560,
+            924
+          ],
+          "valid": true,
+          "start": 9,
+          "end": 18,
+          "proxy_owner": 193453,
+          "top_iou": 0.979658,
+          "second_iou": 0.474329
+        },
+        {
+          "index": 2,
+          "description": "person",
+          "values": [
+            354,
+            49,
+            592,
+            874
+          ],
+          "valid": true,
+          "start": 18,
+          "end": 27,
+          "proxy_owner": null,
+          "top_iou": 0.903906,
+          "second_iou": 0.505247
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000539124.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-259-539124.png",
+      "image_size": [
+        1024,
+        1024
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000539124.jpg",
+          "sha256": "9c843be2909a7a7279734dff87778e653f37e3a8990fe1ea1f4b962acac14f54",
+          "size_bytes": 143849
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-28/raw.json",
+          "sha256": "fdb023c1a94736d777b58412e4560b40c6fc4b05ef5c5f6257961aed7072fb63",
+          "size_bytes": 5814
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-28/receipt.json",
+          "sha256": "92f5f3176b885072253f14c19a4154e99d2095260d7e68b605c0948a40ae007f",
+          "size_bytes": 189573
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-28/trace.json",
+          "sha256": "70a0be3db3edbda302800c83135bfe9e4516049aea66f3102005d78e79908497",
+          "size_bytes": 102426
+        }
+      }
+    },
+    {
+      "global_source_rank": 261,
+      "source": "new",
+      "image_id": 545663,
+      "group": "new-29",
+      "batch_index": 0,
+      "split": "train",
+      "j": 1,
+      "i": 0,
+      "rows": [
+        {
+          "index": 0,
+          "description": "zebra",
+          "values": [
+            218,
+            343,
+            633,
+            848
+          ],
+          "valid": true,
+          "start": 0,
+          "end": 10,
+          "proxy_owner": 588863,
+          "top_iou": 0.889219,
+          "second_iou": 0.200375
+        },
+        {
+          "index": 1,
+          "description": "zebra",
+          "values": [
+            282,
+            415,
+            754,
+            832
+          ],
+          "valid": true,
+          "start": 10,
+          "end": 20,
+          "proxy_owner": 588863,
+          "top_iou": 0.606826,
+          "second_iou": 0.457685
+        }
+      ],
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000545663.jpg",
+      "view": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-25-recurrence-report-quality-feedback/cpu-review/rank-261-545663.png",
+      "image_size": [
+        1152,
+        864
+      ],
+      "source_stop": "im_end",
+      "excluded": false,
+      "source_bindings": {
+        "image": {
+          "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000545663.jpg",
+          "sha256": "0d3a2a092a27e63421bf608beb9c94f32d904f63df7b7d16b5e0e333d7e2366f",
+          "size_bytes": 222916
+        },
+        "raw": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-29/raw.json",
+          "sha256": "154ca41ca64855005fcc5a1f0feb0814ba514aeea389cd77804c0f828913e249",
+          "size_bytes": 9016
+        },
+        "runtime_receipt": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-29/receipt.json",
+          "sha256": "9ccdf670e889dcbccd915551f69d020ae744a3588a4e39db8d031f2ebbaff155",
+          "size_bytes": 187334
+        },
+        "trace": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-19-recurrence-distribution-census/runtime/untied-original/new-29/trace.json",
+          "sha256": "84adae556916af0d99d9e842f2c28d59691a74f5609a325171dd0d60fe2e4aa3",
+          "size_bytes": 153425
+        }
+      }
+    }
+  ]
+}

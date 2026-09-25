@@ -1,0 +1,25 @@
+{
+  "status": "cpu_qualified_before_model",
+  "preflight": "supporting/weak-forward-preflight-v3.json",
+  "source": "original refined-03 four-request train417044 target3 raw[:49]",
+  "arm_order": ["native", "identity_sham", "expanded", "contracted"],
+  "blocks": ["controls", "readback_controls", "treatments", "readback_all", "sheets"],
+  "commands": {
+    "controls": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward controls",
+    "readback_controls": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward readback_controls",
+    "treatments": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward treatments",
+    "readback_all": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward readback_all",
+    "sheets": "python -B -m probes.training_set_completion.recurrence_report_quality_feedback.weak_forward sheets"
+  },
+  "outer_charge": "Bash date +%s%N encloses each named Python model process including startup/imports; raw start/end nanoseconds and exit code are saved under the raw root. Sum both model processes; retain CPU cold-readback duration separately.",
+  "frozen_actual_widths": [1411, 1538],
+  "pixel_elements": 24502272,
+  "max_model_calls": 512,
+  "max_vision_calls": 512,
+  "max_free_tokens": 512,
+  "artifact_forecast_bytes": 2516459520,
+  "artifact_envelope_bytes": 12884901888,
+  "rough_parent_seconds": 3443,
+  "prior_sequence_gpu_hours": 0.9602669383484082,
+  "stop": "first EOS, eight structurally complete object rows, or 128 free tokens per arm; first technical failure ends the queue"
+}
