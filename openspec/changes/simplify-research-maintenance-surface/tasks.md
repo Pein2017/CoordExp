@@ -20,9 +20,9 @@
 ## 4. Target acceptance
 
 - [x] 4.1 Run surviving CPU tests, collection, Python/import/CLI, source-identity negative tests, strict OpenSpec and knowledge validation; require no unexplained failures.
-- [ ] 4.2 Rebuild available Codegraph and measure retained paths/search noise; review full diff and before/after counts, then commit the reduced target.
+- [x] 4.2 Rebuild available Codegraph and measure retained paths/search noise; review full diff and before/after counts, then commit the reduced target.
 
 ## 5. Canonical integration
 
-- [ ] 5.1 Create a registered isolated integration worktree from latest clean canonical, resolve target/canonical semantic conflicts and validate the complete integrated tree.
-- [ ] 5.2 Recheck exact canonical HEAD, cleanliness and holders, ff-only adopt the validated commit, then verify final canonical status and report precise commits, scope and residual justified owners.
+- [x] 5.1 Create a registered isolated integration worktree from latest clean canonical, resolve target/canonical semantic conflicts and validate the complete integrated tree.
+- [x] 5.2 Recheck exact canonical HEAD, cleanliness and holders, ff-only adopt the validated commit, then verify final canonical status and report precise commits, scope and residual justified owners.

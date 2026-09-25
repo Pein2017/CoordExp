@@ -8,8 +8,13 @@ Canonical scientific intake is clean
 `108dede0154abfd90a54d18234d9e0bac780a3ba`.
 The registered isolated integration checkout is
 `/data/CoordExp/.webcodex-managed-worktrees/research-probes-012001b3`, initially
-clean and detached at that canonical commit. Target reduction is ready for local
-commit; isolated merge and canonical ff-only adoption are not yet claimed here.
+clean and detached at that canonical commit. Target reduction was committed as
+`bcba2925b730722b50b8dfe4bb211b6211f5b81f`. The isolated merge is
+`32ffe63204751b2146f576bc464a5237126c3a32`, with canonical108 and targetbcba as
+parents. Its tree `34837e76a327008561e40448e1dc38f742d19d14` exactly matches the
+reduced target. Canonical was freshly fenced and ff-only adopted this merge,
+then verified clean. Only the task and verification documents differ from that tested code tree;
+their publication uses the same clean unchanged-head ff-only adoption fence.
 
 ## Ownership and retirement
 
@@ -95,21 +100,64 @@ Ignored local execution records are under `.local/distill-20260925`, including
 `final-surviving-suite.xml`, baseline XMLs, import/CLI result and the finite deletion
 checks. They are maintenance evidence, not a permanent research inventory.
 
-## Measured tree reduction before integration
+## Measured tree reduction, verified after integration
 
 Canonical intake -> reduced target:5934 ->456 tracked/new retained files;
 1916 ->260 Python files. Research experiment files1664 ->1(the existing catalog),
 legacy source objects1418 ->0,docs/history638 ->0,progress157 ->0,
 OpenSpec archive292 ->0,probe files569 ->6,configs488 ->62,docs677 ->30.
-The final isolated and canonical trees will be checked again rather than assuming
-that a merge includes uncommitted target work.
+The isolated merge and canonical adopted tree were both checked against the
+exact reduced target tree. The integration removed329 canonical-only closed
+source/operation files whose original records are included in the distilled
+catalog. Four conflicted scientific navigation files were resolved to synthesis
+that already incorporated canonical108, not to the earlier target research state.
 
-## Remaining integration gates
+## Integrated and canonical acceptance
 
-Commit target, merge into the exact clean isolated canonical-based checkout,
-resolve only the scientifically distilled closed-unit/source conflicts, rerun
-surviving suite/knowledge/specs/import/CLI/source-identity checks, and compare the
-complete retained tree. Canonical must still equal the expected commit and be
-clean with no active dependent consumer immediately before ff-only adoption.
-No push, reset, rebase, remote deletion, GPU run or history rewrite is authorized
-or performed as part of these checks.
+The isolated worktree independently passed **1486 tests,1 CUDA-only skip,0 failed**
+(9 warnings),137 maintained library/operator imports,260 Python parses,7 CLI helps,
+324-entry/163-reference knowledge validation and both strict OpenSpec checks.
+Clean-commit QP/norm qualification and exact-current reuse passed at both the
+reduced target and integrated merge commits; legacy envelopes failed before output.
+An initial norm integration check deliberately hit the exclusive-path guard due
+to an input/output naming collision in the verification command. The input was
+unchanged; retry at a fresh output passed. No code guard was relaxed.
+
+Canonical adoption checked branch, exact HEAD108, tracked/untracked cleanliness,
+ancestry and running holders immediately before `git merge --ff-only`. Idle
+shell/Agent/index processes were present, with no candidate source commands or
+open deleted-path file descriptors. Adoption returned0, HEAD became the validated
+merge and the checkout remained clean. No canonical source edit was made outside
+ff-only adoption. No remote operation, history rewrite or model execution occurred.
+
+Canonical Codegraph was rebuilt at its exact registered root:322 files,7212 nodes,
+23344 edges,0 pending changes/refs. Prior canonical index:1571 files,31641 nodes,
+118907 edges. Queries `training_set_completion` and `SourceArchive` return empty;
+maintained code contains no retired probe/source-provenance import. Some historical
+paths remain intentionally in the catalog's Git locators, not as indexed old code.
+
+One tool-scope incident is retained explicitly: the CLI `index` on the initially
+uninitialized integration worktree found the parent `/data/CoordExp` index and
+refreshed that index metadata. It was not accepted as scoped validation; no parent
+source/model/data content was changed. The installed CodeGraph API's explicit-root
+`init` created only the integration `.codegraph` directory and built its local
+index without changing watch/Agent configuration. Subsequent root/status checks
+and canonical rebuild verified the correct local indices. No index database was
+manually edited and no process was killed.
+
+Integrated evidence lives under `.local/distill-integration` in the isolated
+checkout. Canonical `.local/distill-adoption` records the actual ff-only event and
+its local Codegraph status. These ignored execution receipts are not a replacement
+historical source repository or a second scientific state ledger.
+
+## Explicit remaining boundaries
+
+The isolated worktree is left registered with its ignored verification evidence;
+its existence is not another permanent research authority. External model/dataset
+payloads and historical receipts remain untouched. Missing external adapter
+qualification evidence still rejects actual model loading. No GPU parity or
+full-model historical replay has been demonstrated. Current source changes require
+fresh qualification rather than accepting a prior commit's continuation receipt.
+Core numerical/runtime interfaces, saved evaluators, current qualification configs,
+12 data provenance manifests and the independent8-file Agent pilot were retained
+for actual supported functionality, not historical sentiment.
