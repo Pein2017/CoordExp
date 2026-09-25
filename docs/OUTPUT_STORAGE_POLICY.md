@@ -85,12 +85,11 @@ model-card JSON is separately recorded in `metadata_files`. A source adapter may
 omit a model card. A source Markdown card, when present, is packaged losslessly
 before publishing the new adapter directory.
 
-Reading a preserved version 1 materialization still verifies the actual live
-configuration/tensors and explicitly resolves its old README hash as historical
-metadata through the source archive. It does not claim that a README remains in
-the adapter directory, modify the old receipt, or permit an archive fallback for
-current version 2 metadata. This metadata change does not alter learned tensors,
-optimizer behavior, stage populations or natural evaluation gates.
+The maintained materialization reader accepts version 2 only. Preserved version
+1 receipts remain historical evidence; this checkout does not supply the retired
+source-archive README fallback. Do not rewrite those receipts or restore the old
+archive merely to make them pass the current reader. This support boundary does
+not change learned tensors, optimizer behavior, populations or evaluation gates.
 
 ## Documentation and retained source locations
 

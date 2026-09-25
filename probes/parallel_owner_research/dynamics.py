@@ -13,7 +13,7 @@ import traceback
 
 from probes.dora_owner_learning.candidate_opportunity import score
 from probes.dora_owner_learning.entrance_ce_eval import owner_change
-from probes.dora_owner_learning.route_access import checkpoint_config
+from src.config.inference import replace_adapter_path as checkpoint_config
 from src.eval.native_rows import native_detection_record as native_record
 from src.data.geometry import coord_bins_to_pixel_xyxy, iou_xyxy
 
@@ -255,7 +255,7 @@ def run(packet_path, out_dir, case_id, slice_only=False, reuse_slice=None):
     try:
         import torch as torch_module
         torch = torch_module
-        from probes.dora_owner_learning.runtime import load_policy
+        from probes.model_profiles.source256 import load_policy
         from src.inference.bound_requests import build_bound_native_requests as build_requests
         from src.config.inference import InferConfig
         from src.qwen.generation import NativeGenerationPolicy, generate_continuations

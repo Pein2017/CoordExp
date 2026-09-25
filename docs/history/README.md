@@ -47,7 +47,7 @@ From the canonical research checkout, run:
 
 ```sh
 python -B scripts/research/check_research_knowledge.py check
-python -B -m pytest -q -p no:cacheprovider tests/research/test_documentation_ownership.py tests/research/test_research_transfer_exposure.py
+python -B -m pytest -q -p no:cacheprovider tests/knowledge/test_documentation_ownership.py probes/parallel_owner_research/tests/test_transfer_exposure.py
 ```
 
 These are layout, identity and consumer checks, not scientific revalidation or

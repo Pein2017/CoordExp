@@ -2,6 +2,15 @@
 
 CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant matching to push open-vocabulary detection/grounding toward state of the art across public datasets.
 
+## Choose the working route
+
+Research tasks start from the [research frontier](research/index.md) and
+[probe capability map](probes/README.md). Production training/inference starts
+from [coordexp-infras](docs/coordexp_infras.md). Verify the registered Project,
+checkout and current Git state; a development/audit worktree is not a live mirror
+of canonical research. The [command map](scripts/README.md) states supported
+entries and retired legacy launchers; old examples are not execution authority.
+
 ## Why
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
@@ -14,6 +23,9 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 ## Repo layout
 - `src/` - importable CoordExp library code for config loading, datasets,
   training, inference, evaluation, metrics, and visualization helpers.
+- `probes/` - direction-owned research implementations and their colocated tests.
+- `research/` - scientific records, interpretation and state; the catalog owns
+  complete retrieval, while the index selects the current reading route.
 - `configs/` - YAML-first training, inference, evaluation, benchmark, and
   analysis configs. Current Swift training surfaces live under
   `configs/coordexp_infras/`; older `configs/stage1/` and `configs/stage2/`
@@ -33,10 +45,8 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
   deltas.
 - `outputs/` - local experiment artifacts and Baidu Netdisk sync surface. This
   is not source-controlled.
-- `ops/` - workstation and agent-runtime policy helpers that are not CoordExp
-  training, inference, evaluation, or artifact entrypoints.
-- `.codex/skills/` - tracked repo-local agent skills. Other `.codex/` runtime
-  state is local-only.
+- Agent-runtime tools and shared skills are discovered from the current runtime;
+  do not assume a repo-local `ops/` or `.codex/skills/` copy exists.
 - `AGENTS.md` - project instructions for coding agents.
 
 ## Quick start

@@ -14,11 +14,13 @@ import traceback
 
 from .candidate_opportunity import digest,file_hash,indexed,require,rows,score
 from .branch_bridge import OUTPUT as BRIDGE_ROOT,entrance,summarize_logits
-from .route_access import CONFIG,checkpoint_config,checked_ids,first_fork,publish
+from probes.dora_owner_learning.route_access import CONFIG, checked_ids, first_fork, publish
+from src.config.inference import replace_adapter_path as checkpoint_config
 from .round1_realization import ROOT,SOURCE_ROOT
 from .reward_rows import _gt_objects
-from probes.source_rweak_row_cross.owner_row_robustness import native_record,incidence
-from probes.source_rweak_row_cross.run import build_requests
+from probes.source_rweak_row_cross.owner_row_robustness import incidence
+from src.eval.native_rows import native_detection_record as native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
 
 ROOT_OUTPUT=ROOT/'2026-09-10-native-entrance-ce-feasibility'
 OUTPUT=ROOT_OUTPUT/'evaluation'
@@ -191,7 +193,7 @@ def execute(output,receipt_path):
     from src.config.inference import load_research_infer_config
     from src.qwen.native import prepare_native_inputs,prepare_replay
     from src.qwen.generation import generate_continuations
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     packet=json.loads((output/'manifest.json').read_text());training=json.loads(receipt_path.read_text())
     adapter=validate_receipt(training,packet)
     require(os.environ.get('CUDA_VISIBLE_DEVICES')=='1' and torch.cuda.device_count()==1,'GPU1 only')

@@ -31,8 +31,9 @@ from src.data.geometry import iou_xyxy
 from src.losses import aligned_token_logprobs
 from src.qwen.native import prepare_replay
 from .candidate_opportunity import file_hash, require
-from .composition import digest_json, loaded_composition_evidence
-from .route_access import CONFIG, checkpoint_config, publish
+from probes.model_profiles.dora_composition import digest_json, loaded_composition_evidence
+from probes.dora_owner_learning.route_access import CONFIG, publish
+from src.config.inference import replace_adapter_path as checkpoint_config
 
 
 BASE = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration")
@@ -470,10 +471,10 @@ def _protocol() -> dict[str, Any]:
 
 def _code_paths() -> list[Path]:
     return [
-        Path(__file__).with_name("composition.py"),
+        Path(__file__).resolve().parents[2] / 'probes/model_profiles/dora_composition.py',
         Path(__file__),
         Path(__file__).with_name("tests") / "test_repeat_recovery_train.py",
-        Path(__file__).with_name("runtime.py"),
+        Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py',
         Path(__file__).with_name("train.py"),
         Path(__file__).with_name("route_access.py"),
         Path(__file__).with_name("geometric_dedup.py"),
@@ -687,7 +688,7 @@ def _materialize_case(
     *, qwen: Any, frontend: Any, config: Any, raw: Any, case: Mapping[str, Any],
     positive: bool,
 ) -> dict[str, Any]:
-    from .runtime import build_request, materialize
+    from probes.model_profiles.source256 import build_request, materialize
 
     if positive:
         image, prompt = case["image"], case["prompt"]
@@ -884,7 +885,7 @@ def execute_rank(
     from .geometric_dedup_train import (
         checkpointing_receipt, install_language_decoder_checkpointing,
     )
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     from .train import (
         _all_true, _dist_values, _parameter_layout, _save_adapter_only,
         _tensor_state_hash,
@@ -1621,7 +1622,7 @@ def cold_check(*, input_path: Path, output_root: Path) -> dict[str, Any]:
     from src.config.inference import load_research_infer_config
     from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
 
     started = time.monotonic()
     device = torch.device("cuda:0")

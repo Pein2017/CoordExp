@@ -1,7 +1,9 @@
 # coordexp-infras-vertical-smoke Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define a permanently pinned, bounded training smoke with adapter admission, five-step and replicated-runtime checks and explicit artifact and evidence limits rather than an unrestricted scientific experiment.
+
 ## Requirements
 ### Requirement: Permanent Smoke Fixture
 

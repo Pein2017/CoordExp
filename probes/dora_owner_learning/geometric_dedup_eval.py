@@ -11,10 +11,12 @@ import time
 import traceback
 
 from .candidate_opportunity import digest,file_hash,indexed,require,score
-from .route_access import ROOT,CONFIG,checkpoint_config,publish,checked_ids
+from probes.dora_owner_learning.route_access import ROOT, CONFIG, publish, checked_ids
+from src.config.inference import replace_adapter_path as checkpoint_config
 from .reward_rows import _pixel_box
 from .entrance_ce_eval import aggregate_scores
-from probes.source_rweak_row_cross.run import build_requests,native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
+from src.eval.native_rows import native_detection_record as native_record
 from src.data.geometry import iou_xyxy
 
 OUTPUT=ROOT/'2026-09-11-stable50-geometric-dedup'
@@ -74,7 +76,7 @@ def prepare():
     model=dict(m['source_model'],current_adapter=adapter)
     paths=[manifest_path,consumer_path,ANCHOR/'training/receipt.json',route_path,CONFIG,Path(__file__),
         Path(__file__).with_name('geometric_dedup.py'),Path(__file__).with_name('geometric_dedup_train.py'),
-        Path(__file__).parent/'tests/test_geometric_dedup.py',Path(__file__).parents[2]/'tests/test_geometric_dedup_train.py',
+        Path(__file__).parent/'tests/test_geometric_dedup.py',Path(__file__).resolve().parents[2] / 'probes/dora_owner_learning/tests/test_geometric_dedup_train.py',
         Path(__file__).parent/'tests/test_geometric_dedup_eval.py',
         Path(model['base_model_path'])/'tokenizer.json']
     sources={str(p):file_hash(p) for p in paths}
@@ -133,7 +135,7 @@ def execute(shard):
     from src.config.inference import load_research_infer_config
     from src.qwen.native import prepare_native_inputs
     from src.qwen.generation import generate_continuations,NativeGenerationPolicy
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     p=json.loads((OUTPUT/'inputs.json').read_text());require(type(shard) is int and 0<=shard<8,'valid shard')
     require(os.environ.get('CUDA_VISIBLE_DEVICES')==str(shard) and torch.cuda.device_count()==1,'assigned single GPU')
     for path,sha in p['source_files'].items():require(file_hash(path)==sha,'frozen source changed: '+path)

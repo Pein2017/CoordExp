@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from probes.dora_owner_learning import owner_outcome, sample, train
-from probes.dora_owner_learning.runtime import DEFAULT_CONFIG
+from probes.model_profiles.source256 import DEFAULT_CONFIG
 from src.config.inference import load_research_infer_config
 from src.qwen.native import NativeBatch
 

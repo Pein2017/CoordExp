@@ -484,8 +484,8 @@ def acquisition_jobs(packet: Mapping[str, Any], mode: str, shard: int) -> list[d
 def acquisition_rank(packet_path: Path, output: Path, mode: str, shard: int, physical_gpu: int) -> None:
     """One Stable50 model load and one immutable JSONL row per frozen job."""
     import torch
-    from probes.dora_owner_learning.runtime import load_policy
-    from probes.dora_owner_learning.route_access import checkpoint_config
+    from probes.model_profiles.source256 import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig

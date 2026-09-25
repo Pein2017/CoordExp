@@ -28,7 +28,8 @@ if str(WORKTREE) not in os.sys.path:
     os.sys.path.insert(0, str(WORKTREE))
 
 from probes.dora_owner_learning.candidate_opportunity import file_hash  # noqa: E402
-from probes.dora_owner_learning.route_access import checkpoint_config, publish  # noqa: E402
+from src.config.inference import replace_adapter_path as checkpoint_config
+from probes.dora_owner_learning.route_access import publish  # noqa: E402
 
 
 SCHEMA = "native_escape_witness.v1"
@@ -425,8 +426,9 @@ def run(packet_path: Path, out_dir: Path, *, rank: int, smoke: bool,
         signal.alarm(HARD_WALL_SECONDS)
         import torch
         torch_module = torch
-        from probes.dora_owner_learning.runtime import load_policy
-        from probes.source_rweak_row_cross.run import build_requests, native_record
+        from probes.model_profiles.source256 import load_policy
+        from src.inference.bound_requests import build_bound_native_requests as build_requests
+        from src.eval.native_rows import native_detection_record as native_record
         from src.qwen.generation import NativeGenerationPolicy, generate_continuations
         from src.qwen.native import prepare_native_inputs
 

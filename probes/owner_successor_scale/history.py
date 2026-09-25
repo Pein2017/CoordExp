@@ -828,8 +828,8 @@ def endpoint_rank(
     """Run one frozen model arm on one assigned GPU; root must invoke explicitly."""
 
     import torch
-    from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
 

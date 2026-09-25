@@ -37,6 +37,8 @@ from probes.dora_owner_learning.candidate_opportunity import file_hash, require,
 from probes.dora_owner_learning.entrance_ce_eval import aggregate_scores
 from probes.dora_owner_learning.geometric_dedup_eval import overlap_counts
 
+from src.inference.bound_requests import materialize_bound_case as _candidate_materialized_case
+
 
 WORKTREE = Path("/data/CoordExp/.worktrees/research-probes")
 BASE = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration")
@@ -332,7 +334,7 @@ def _source_rows(path: str | Path) -> tuple[dict[int, tuple[int, dict[str, Any],
 def _native_records(selection: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Construct CPU native prompt/media/GT records for the frozen IDs."""
 
-    from probes.dora_owner_learning.runtime import build_request
+    from probes.model_profiles.source256 import build_request
     from src.config.inference import InferConfig
     from src.data.examples import raw_example_from_jsonl_row
     from src.qwen.native import prepare_native_inputs
@@ -861,8 +863,8 @@ def baseline_worker(
 
     import torch
 
-    from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
@@ -2607,18 +2609,7 @@ def _candidate_run_packet(packet: Mapping[str, Any]) -> None:
     require(packet["generation"].get("max_new_tokens") == CAP and packet["generation"].get("natural_prefix_ids") == [], "candidate generation identity")
 
 
-def _candidate_materialized_case(case: Mapping[str, Any], config: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve only the ephemeral row against its frozen source, not the fresh JSONL."""
 
-    path = Path(case["image_path"])
-    require(path.is_absolute() and path.is_file(), "candidate bound image missing")
-    require(file_hash(path) == case["image_plan"]["image_content_sha256"], "candidate bound image bytes changed")
-    require(len(case["input_record"]["images"]) == 1, "candidate requires one frozen image")
-    materialized = copy.deepcopy(case)
-    # The raw-row contract requires a relative reference; derive it from the
-    # bound absolute path rather than reinterpreting a legacy relative string.
-    materialized["input_record"]["images"] = [os.path.relpath(path, Path(config["data"]["input_jsonl"]).parent)]
-    return materialized
 
 
 def candidate_worker(
@@ -2628,8 +2619,8 @@ def candidate_worker(
 
     import torch
 
-    from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig

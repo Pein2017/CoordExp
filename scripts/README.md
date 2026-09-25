@@ -1,59 +1,64 @@
-# Scripts
+# Command entries and maintenance scope
 
-This directory contains user-facing entrypoints plus compatibility wrappers and
-historical diagnostics. The canonical training/inference implementation is
-owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/coordexp_infras.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+Start from the exact checkout and task. Model execution belongs to `src/` or the
+owning research family, not to a second implementation in this directory. See
+[checkout policy](../docs/BRANCH_AND_WORKTREE_POLICY.md) and the
+[research capability map](../probes/README.md).
 
-## Stable entrypoints
+## Current routes
 
-- Training (canonical Swift): `python -m src.train --config configs/coordexp_infras/...`.
-- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_infras/infer/...`.
-- Offline coordexp-infras detection evaluation (direct artifact reducer):
-  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
+| Task | Entry | Owner / boundary |
+|---|---|---|
+| Training | `python -m src.train --config ...` | `src.training`; use current `configs/coordexp_infras` configuration, not the old mainline CLI schema. |
+| Inference | `python -m src.infer --config ...` | `src.inference`; configuration owns generation and scoring policy. |
+| Saved detection evaluation | `python scripts/evaluate_detection.py --artifact-dir ... --out-dir ...` | `src.eval.detection_consumer`; requires a compatible scored artifact. |
+| Current knowledge check | `python -B scripts/research/check_research_knowledge.py check --live-only` | `scripts.tools.research_knowledge`; current catalog/state/links without historical migration inputs. |
+| Knowledge plus historical evidence plumbing | `python -B scripts/research/check_research_knowledge.py check` | Also checks retained migration coverage and frozen exposure data; no scientific revalidation. |
+| Research experiments | The named `probes.<family>` entry | Family documentation and the current unit contract, never an old command alone. |
 
-## Compatibility / debug wrappers
+## Retired inference launch chain
 
-- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`,
-  `scripts/postop_confidence.py`, and
-  `scripts/evaluate_proxy_detection_bundle.py`: legacy/mainline wrappers.
-  They are not the canonical Swift entrypoints and should be used only for
-  explicit compatibility or historical reproduction.
-- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.
-- `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
-  supplied prediction artifact and image root. Prefer evaluator overlays or
-  `vis_resources/` artifacts tied to resolved pipeline provenance for
-  reportable evidence.
+The old `run_infer.py`, `run_infer_eval.sh`,
+`analysis/run_ckpt_pair_confidence_eval.sh` and
+`pipelines/run_rollout_stability_probe.sh` are removed. Their dependency on the
+old `src.infer.pipeline` package was already unsupported. The current YAML
+entry is not a flag-compatible replacement for their legacy configurations.
+No forwarding aliases are kept. Git retains the historical code; existing
+results, source captures and result interpretation were not rewritten.
 
-## Shared helpers
+Saved-output analysis remains in `analysis/`. A reader can interpret an old
+format without supporting the launcher that originally produced it.
 
-- `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
+## Retired training and debug chain
 
-## External transfer helpers
+The old `train.sh`, `train_stage2.sh` and both `pipelines/train_task_manager`
+entries are removed together: their dependencies on `src.sft`, the old
+`ConfigLoader`/rollout preflight and Stage2 launcher no longer exist. No retained
+executable caller outside that chain was found. Its tmux queue/step/time stopping
+semantics were operator machinery, not a current research scheduler. No running
+process was stopped or restarted during retirement.
 
-Baidu Netdisk upload/download helpers live in the repo-local Codex skill:
+`postop_confidence.py` and `tools/dump_rollout_text.py` are also retired; they
+depended on removed legacy inference/evaluation APIs. Old example comments and
+historical runbooks are provenance, not compatible current commands. Saved-result
+readers remain; a file such as `confidence_postop_summary.json` does not require
+keeping its obsolete producer executable.
 
-- `.codex/skills/baidupcsgo-upload/scripts/upload_dir.sh`
-- `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh`
+## Other retained tooling
 
-Use them for `output/` backups under `/CoordExp/output/`. Do not use Baidu
-Netdisk as the default sync surface for `model_cache/`, raw `public_data/`, or
-processed `public_data/` contents.
+`tools/`, `analysis/` and `pipelines/` contain task-specific tools. Presence of a
+file is not a promise that every historical CLI runs on the current environment.
+In particular, proxy/export and historical data-preparation wrappers are not
+the default production or research route. Their old schemas need separately
+verified consumers, not automatic import-name substitution. `merge_coord.sh` is an
+explicit export operation, not permission to mutate an existing model package.
 
-## Utilities (organized)
+The existing `scripts/research` strict admission/support adapters still have
+real consumers. They remain optional, not a mandatory experiment workflow.
+New experimental implementations belong to a meaningful `probes/<family>`;
+use a thin CLI only when an operator command actually needs one.
 
-- Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/`
-- Small pipelines / workflow wrappers and diagnostics: `scripts/pipelines/`
-  - tmux queue manager for sequential training jobs: `scripts/pipelines/train_task_manager.sh`
-    (Python core: `scripts/pipelines/train_task_manager.py`)
-  - historical rollout parser/stability diagnostic:
-    `scripts/pipelines/run_rollout_stability_probe.sh`; this delegates to the
-    legacy/debug `run_infer_eval.sh` wrapper and is not a stable benchmark
-    pipeline.
-
-## Deprecated
-
-Deprecated wrappers are removed. Prefer stable YAML-first entrypoints for
-inference, scoring, evaluation, and reportable visualization artifacts.
+Shared shell primitives remain in `_lib/backbone.sh`. Resolve transfer tools
+from the current authorized runtime skill catalog, rather than assuming a
+repo-local copy of an agent skill exists. Uploads and model execution require
+their own task authority.

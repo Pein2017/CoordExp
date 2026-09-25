@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """Compare CoordExp detection runs (rollout + confidence + eval artifacts).
 
-This is an *offline* analysis harness that reads existing run directories produced
-by `scripts/run_infer.py` + `scripts/postop_confidence.py` + `scripts/evaluate_detection.py`.
+This is an *offline* reader for the historical rollout/confidence/evaluation
+artifact layout below. Its old inference launch chain is retired; reading saved
+results does not require that chain or make the current pipeline schema identical.
 
 It focuses on questions like:
 - Why does one checkpoint decode better even if teacher-forcing metrics look worse?

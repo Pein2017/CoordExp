@@ -8,7 +8,8 @@ from src.common.errors import ArtifactContractError
 from probes.dora_owner_learning.branch_bridge import (
     conditional_accounting, entrance, publish, summarize_logits, validate_intervention,
 )
-from probes.source_rweak_row_cross.owner_row_robustness import branch, native_record, incidence
+from probes.source_rweak_row_cross.owner_row_robustness import branch, incidence
+from src.eval.native_rows import native_detection_record as native_record
 
 
 def case_fixture():

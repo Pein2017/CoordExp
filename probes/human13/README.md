@@ -11,7 +11,7 @@ transfer or native deployment quality. No N256 solver profile is included.
 | `python -m probes.human13.magnitude_finite` | One shared AdamW update across canonical routes; per-image CE sums divided by total decisions; exact Source restoration; materialization and fresh natural readback | `scripts/research/run_human13_dora_magnitude_finite_overfit.py` |
 
 Scientific records are indexed in [the research catalog](../../research/experiments/catalog.jsonl)
-and preserved under `docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/`:
+and owned by `research/experiments/`:
 `2026-08-31-human13-shared-output-qp-identity-generalization` (same-panel overfit, despite the historical name),
 `2026-09-01-human13-dora-magnitude-qp-bridge`, and
 `2026-09-01-human13-dora-magnitude-finite-overfit`.

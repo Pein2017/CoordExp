@@ -1,7 +1,9 @@
 # coordexp-infras-supervision-losses Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define canonical typed token supervision, protected default objectives, FP32 loss computation, planned-step normalization and finite-gradient gates, with explicit auxiliary and calibration override boundaries.
+
 ## Requirements
 ### Requirement: TokenSequence Is Canonical Supervision
 

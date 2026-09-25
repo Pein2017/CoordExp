@@ -1,7 +1,9 @@
 # coordexp-infras-infer-prompt-parsing Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-infras-inference-infra. Update Purpose after archive.
+
+Define training-aligned prompts, semantic single-image decode requests, processor and prompt-token parity, compact object-box parsing, preserved prediction order and explicit geometry and drop diagnostics.
+
 ## Requirements
 ### Requirement: Training-aligned prompt construction
 Inference prompt construction SHALL share or delegate to supervised-training template semantics.

@@ -13,12 +13,12 @@ import time
 import traceback
 
 from .candidate_opportunity import digest, file_hash, indexed, require, rows
-from .route_access import OUTPUT as ROUTE_ROOT, POST, CONFIG, checkpoint_config, first_fork, publish, score_logits, validate_score
+from probes.dora_owner_learning.route_access import OUTPUT as ROUTE_ROOT, POST, CONFIG, first_fork, publish, score_logits, validate_score
+from src.config.inference import replace_adapter_path as checkpoint_config
 from .round1_realization import ROOT, SOURCE_ROOT
-from probes.source_rweak_row_cross.owner_row_robustness import (
-    OUTPUT as ROW_ROOT, branch, consume, incidence, native_record, score, validate_admission,
-)
-from probes.source_rweak_row_cross.run import build_requests
+from probes.source_rweak_row_cross.owner_row_robustness import OUTPUT as ROW_ROOT, branch, consume, incidence, score, validate_admission
+from src.eval.native_rows import native_detection_record as native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
 
 OUTPUT=ROOT/'2026-09-10-verified-branch-update-bridge'
 FROZEN_DIGEST='cf58b0fff2fb3832b864e2dd1fabdfca07210fea38e8dadf309d76a4526e4785'
@@ -186,7 +186,7 @@ def execute(output):
     from src.config.inference import load_research_infer_config
     from src.qwen.native import prepare_native_inputs,prepare_replay
     from src.qwen.generation import generate_continuations
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     packet=json.loads((output/'inputs.json').read_text())
     require(os.environ.get('CUDA_VISIBLE_DEVICES')=='0' and torch.cuda.device_count()==1,'GPU0 only')
     run=output/'execution';run.mkdir(exist_ok=False)

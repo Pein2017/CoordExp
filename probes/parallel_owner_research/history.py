@@ -276,8 +276,8 @@ def endpoint_jobs(packet, arm, shard):
 def endpoint_rank(endpoint_packet_path, output, shard, physical_gpu):
     """Single visible-GPU native endpoint; no trainer or compatibility fallback."""
     import torch
-    from probes.dora_owner_learning.runtime import load_policy
-    from probes.dora_owner_learning.route_access import checkpoint_config
+    from probes.model_profiles.source256 import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig

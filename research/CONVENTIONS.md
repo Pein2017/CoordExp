@@ -60,6 +60,12 @@ This is targeted retrieval, not a mandatory whole-library review: reuse already 
 
 Short attributed overlap is useful for catch-up; duplicated ledgers, full repeated backgrounds and separately edited volatile counters are not. A directory name, source code search result or tool success wrapper is not evidence of an accepted scientific claim.
 
+The index must link the complete experiment catalog. Catalog `tracking: current`
+means a current-schema state owner, not an active job or ongoing experiment. A
+closed or paused unit stays catalogued without a mandatory home-page entry.
+Choose frontier links for the task; do not replicate every state or metric in
+the index or `memories/current.md`. Missing/orphan states still fail validation.
+
 ## Public literature and critical synthesis
 
 Keep one note per paper, named by a stable identifier and short slug, and link it from every relevant question route rather than duplicating it across topic folders. An unread recommendation needs only an index entry; create a note when there is a substantive reusable claim, method or critique. Record the primary URL/version and reading scope (intake only, abstract, selected sections, or full text), so a secondary summary or a partial reading cannot masquerade as a verified full-paper account. Preserve original intake bytes and their provenance separately from edited synthesis. Canonical source links and section/table pointers are sufficient; do not copy full copyrighted papers into notes.
@@ -100,7 +106,7 @@ From the verified research-probes checkout:
 
 ```sh
 python -B scripts/research/check_research_knowledge.py check
-python -B -m unittest discover -s tests/research -p 'test_research_knowledge.py'
+python -B -m unittest discover -s tests/knowledge -p 'test_research_knowledge.py'
 git diff --check
 ```
 

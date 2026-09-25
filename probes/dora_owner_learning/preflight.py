@@ -12,7 +12,7 @@ from src.inference.inputs import plan_examples
 from src.qwen.native import prepare_native_inputs
 
 from .prepare import EOS_TOKEN_ID, TRAIN256_SHA256, _native_ce_group_from_plan, file_sha256, validate_plan
-from .runtime import DEFAULT_CONFIG
+from probes.model_profiles.source256 import DEFAULT_CONFIG
 
 
 def preflight(config_path=DEFAULT_CONFIG, *, rows=1, plan=None):

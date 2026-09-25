@@ -118,7 +118,7 @@ def prepare(output):
     publish(output/'inputs.json',packet)
     files=[Path(__file__),Path(__file__).with_name('tests')/'test_selective_preservation_strong.py',CONFIG,
            Path(__file__).with_name('selective_preservation_dense.py'),Path(__file__).with_name('selective_preservation.py'),
-           Path(__file__).with_name('train.py'),Path(__file__).with_name('runtime.py'),Path(__file__).with_name('entrance_ce.py')]
+           Path(__file__).with_name('train.py'),Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py',Path(__file__).with_name('entrance_ce.py')]
     files+=list(Path('src/qwen').glob('*.py'))+[Path('src/losses/token_scores.py'),Path('src/adapters/dora.py')]
     files += [Path('src/inference/inputs.py'), Path('src/inference/prompt.py'), Path('src/inference/image_plan.py')]
     records=[]
@@ -139,7 +139,7 @@ def execute_rank(output):
     from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
     from src.qwen.native import prepare_replay
-    from .runtime import bind_source256_language_dora, load_policy
+    from probes.model_profiles.source256 import bind_source256_language_dora, load_policy
     from .train import (_materialize_group,_parameter_layout,_tensor_state_hash,_save_adapter_only,
                         _dist_values,_all_true,EXPECTED_TRAINABLE_TENSORS,EXPECTED_TRAINABLE_SCALARS)
     rank,local,world=[int(os.environ.get(k,'-1')) for k in ('RANK','LOCAL_RANK','WORLD_SIZE')]

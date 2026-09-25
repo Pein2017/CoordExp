@@ -22,10 +22,12 @@ from .round1_realization import (
     ROOT, SOURCE_ROOT, CANDIDATE_ROOT, UPDATE_ROOT, trace_card, validate_identity,
 )
 
+from src.config.inference import replace_adapter_path as checkpoint_config
+
 OUTPUT = ROOT / '2026-09-10-fixed-witness-route-access'
 POST = ROOT / '2026-09-09-round1-greedy-realization/cold/source256-rloo-round1-train256-natural-v1'
 REALIZATION = ROOT / '2026-09-09-round1-greedy-realization/analysis-v1'
-CONFIG = Path(__file__).with_name('configs') / 'source256.yaml'
+from probes.model_profiles.source256 import DEFAULT_CONFIG as CONFIG
 EOS, PAD, CAP = 151645, 151643, 3084
 
 
@@ -244,7 +246,7 @@ def prepare(output):
             require(file_hash(target) == f['sha256'], 'model staging copy changed')
             staged.append(dict(source=str(original), staged=str(target), sha256=f['sha256'], size_bytes=target.stat().st_size))
     # Preserve effective local dependencies, not just Git's nominal revision.
-    code = sorted(set([Path(__file__), Path(__file__).with_name('runtime.py'), Path(__file__).with_name('train.py'),
+    code = sorted(set([Path(__file__), Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py', Path(__file__).with_name('train.py'),
                        Path(__file__).with_name('candidate_opportunity.py'), Path(__file__).with_name('round1_realization.py')]
                       + list(Path('src/qwen').glob('*.py')) + list(Path('src/losses').glob('*.py'))))
     for path in [*code + [CONFIG, Path(__file__).with_name('tests') / 'test_route_access.py'], Path(preserve_source.__code__.co_filename)]:
@@ -354,13 +356,7 @@ def credit_summary(output):
                 limitations='Shared-parameter updates, optimizer state, clipping and all256 groups are not localized by this coefficient. Shared-prefix cancellation is an objective property, not unchanged-logit evidence.')
 
 
-def checkpoint_config(config, adapter_path):
-    """Inference configuration models are immutable; retain validated field types."""
-    changed = config.model_copy(update={'adapter': config.adapter.model_copy(update={'path': str(adapter_path)})}, deep=True)
-    expected = config.model_dump(mode='json')
-    expected['adapter']['path'] = str(adapter_path)
-    require(changed.model_dump(mode='json') == expected, 'checkpoint switch changed other config fields')
-    return changed
+
 
 
 def resume_counters(prior, route_count):
@@ -381,7 +377,7 @@ def execute(output, *, post_only=False):
     from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
     from src.qwen.native import prepare_replay
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     from .train import _materialize_group
     require(os.environ.get('CUDA_VISIBLE_DEVICES') == '0', 'GPU0 only')
     packet = load_canonical_json(output / 'inputs.json')

@@ -27,7 +27,8 @@ from src.qwen.checkpointing import (
     language_decoder_checkpointing_receipt,
 )
 from .candidate_opportunity import digest, file_hash, require
-from .route_access import CONFIG, ROOT, checked_ids, checkpoint_config, publish
+from probes.dora_owner_learning.route_access import CONFIG, ROOT, checked_ids, publish
+from src.config.inference import replace_adapter_path as checkpoint_config
 
 
 OUTPUT = ROOT / "2026-09-11-stable50-geometric-dedup"
@@ -266,7 +267,7 @@ def _teacher_reference(model, inputs, prompt_ids, action_ids, layout):
 
 def _materialize_cases(qwen, packet, items, device):
     from src.qwen.native import prepare_native_inputs
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
 
     result = []
     for item in items:
@@ -295,7 +296,7 @@ def execute_rank(output):
     from src.config.inference import load_research_infer_config
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from .geometric_dedup import trajectory_layout
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     from .selective_preservation_dense import optimizer_hash
     from .train import (
         _all_true, _dist_values, _parameter_layout, _save_adapter_only,
@@ -961,9 +962,10 @@ def run(output):
     training.mkdir(parents=False, exist_ok=False)
     code_paths = [
         Path(__file__), Path(__file__).with_name("geometric_dedup.py"),
+        Path(__file__).parents[2] / "src" / "inference" / "token_text.py",
         Path(__file__).with_name("selective_preservation_stable.py"),
-        Path(__file__).with_name("runtime.py"), Path(__file__).with_name("route_access.py"),
-        Path(__file__).parents[2] / "tests" / "test_geometric_dedup_train.py",
+        Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py', Path(__file__).with_name("route_access.py"),
+        Path(__file__).resolve().parents[2] / 'probes/dora_owner_learning/tests/test_geometric_dedup_train.py',
     ]
     publish(training / "code_identity.json", dict(
         files=[dict(path=str(p.resolve()), sha256=file_hash(p)) for p in code_paths],

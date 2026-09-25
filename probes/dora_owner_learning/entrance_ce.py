@@ -94,7 +94,7 @@ def prepare(output):
     output.mkdir(parents=True, exist_ok=False)
     publish(output / 'inputs.json', packet)
     sources = [Path(__file__), Path(__file__).with_name('tests') / 'test_entrance_ce.py', CONFIG,
-               Path(__file__).with_name('train.py'), Path(__file__).with_name('runtime.py'),
+               Path(__file__).with_name('train.py'), Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py',
                Path(__file__).with_name('branch_bridge.py'), Path(__file__).with_name('route_access.py')]
     sources += list(Path('src/qwen').glob('*.py')) + [Path('src/losses/token_scores.py'), Path('src/adapters/dora.py')]
     records = []
@@ -116,7 +116,7 @@ def execute(output):
     from src.inference.runtime import assemble_frontend
     from src.qwen.native import prepare_replay
     from src.adapters.dora import select_dora_parameters
-    from .runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     from .train import (EXPECTED_TRAINABLE_TENSORS, EXPECTED_TRAINABLE_SCALARS,
                         _materialize_group, _parameter_layout, _tensor_state_hash, _save_adapter_only)
     require(os.environ.get('CUDA_VISIBLE_DEVICES') == '0', 'GPU0 only')

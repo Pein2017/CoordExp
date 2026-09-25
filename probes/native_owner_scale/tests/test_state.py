@@ -93,7 +93,7 @@ def test_runtime_captures_sources_outside_outputs_before_model_load(tmp_path, mo
     from pathlib import Path
     from probes.native_owner_scale import state
     from probes.parallel_owner_research import instance_state, instance_state_amplitude
-    from probes.dora_owner_learning import runtime
+    from probes.model_profiles import source256 as runtime
     from src.artifacts import source_provenance
     from src.config.inference import InferConfig
 

@@ -21,19 +21,24 @@ prefix, exactly four coordinate positions and the chosen credit; they own the
 16-image/four-branch population and the forward/backward synchronization scope.
 Its coordinate and full-action formulas are separate from Source256 CE/RLOO.
 
-`configs/source256.yaml` is the fully resolved original Source256 model/input
+`probes/model_profiles/configs/source256.yaml` is the retained Source256 model/input
 profile. It uses the public `src.config.inference.load_research_infer_config`
 loader for shared YAML/JSON resolution, `InferConfig` validation and fingerprinting,
 without production-only config-directory and leaf-authoring restrictions or debug
-mutations. The retained resolved fingerprint
-is `7f8448a8d8e62442bea1e9b1ffa45921a876510d6c9f12370949c6a418d1a4bb`.
+mutations. The historical expected fingerprint is
+`7f8448a8d8e62442bea1e9b1ffa45921a876510d6c9f12370949c6a418d1a4bb`;
+the architecture baseline already resolved it to
+`83e5b637b58eb51d368741f0109e4121b9a7b9f1853506ba3a2bd2d98b9fca75`.
+That pre-existing integration mismatch remains reported, not silently repaired
+by changing a frozen expectation. The packaged YAML itself moved byte-for-byte.
 The old `generation`/`scoring`/`artifacts` settings describe the inherited strict
 inference profile; native bank collection explicitly uses temperature 1, top-p 1,
 top-k 0, repetition penalty 1, a fresh generation config, and **no traces**.
 It keeps interior pad IDs and omits observed terminal EOS from bank bodies;
 preparation appends EOS only for an observed `im_end` stop.
 
-The model is loaded once through public Qwen/adapter/embedding owners. The
+The fixed composition is owned by `probes.model_profiles.source256`, using
+public Qwen/adapter/embedding operations. The
 `source256_loaded_policy.v1` descriptor means loaded-model identity only;
 `native_execution` separately records the actual replay or sampling behavior.
 No inference session, canonical scored-greedy receipt, hidden model, or sibling

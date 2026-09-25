@@ -147,7 +147,7 @@ def cross_jobs(d,tokenizer):
 def prepare():
     from src.config.inference import InferConfig
     from src.data.examples import raw_example_from_jsonl_row
-    from probes.dora_owner_learning.runtime import build_request
+    from probes.model_profiles.source256 import build_request
     from src.qwen.native import prepare_native_inputs
     from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
     from src.adapters.dora import inspect_dora_adapter_payload
@@ -230,8 +230,8 @@ def validate_population(rows, records, label):
 
 def execute(label, shard, phase):
     import torch
-    from probes.dora_owner_learning.runtime import load_policy
-    from probes.dora_owner_learning.route_access import checkpoint_config
+    from probes.model_profiles.source256 import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.eval.native_rows import native_detection_record as native_record
     from src.adapters.dora import inspect_dora_adapter_payload

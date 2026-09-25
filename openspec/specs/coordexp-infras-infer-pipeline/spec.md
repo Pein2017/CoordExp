@@ -1,7 +1,9 @@
 # coordexp-infras-infer-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-infras-inference-infra. Update Purpose after archive.
+
+Define end-to-end inference orchestration, per-device batching, failure accounting, exact backend-result normalization and staged artifact production; metric reduction remains a separate evaluator responsibility.
+
 ## Requirements
 ### Requirement: End-to-end inference pipeline
 The inference pipeline SHALL orchestrate the complete offline decode-to-artifact flow.

@@ -176,9 +176,7 @@ def test_legacy_schema_default_and_explicit_new_weight():
 
 
 def test_existing_real_trainer_hook_checks_corrected_objective_and_mutation():
-    from probes.training_set_completion.coordinate_codebook_alignment.three_loss_checks import (
-        ThreeLossQualificationProbe, ThreeLossQualificationError,
-    )
+    from probes.coordinate_representation.coordinate_codebook_alignment.three_loss_checks import ThreeLossQualificationProbe, ThreeLossQualificationError
 
     context = _context(extra_segment=True)
     runner = LossRunner(

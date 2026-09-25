@@ -15,10 +15,11 @@ from .entrance_ce_eval import validate_natural,aggregate_scores,owner_change
 from .selective_preservation_seven_eval import TABLE,validate_mask,consume,validate_global_admission as validate_prior_path
 from .selective_preservation_eval import target_boxes
 from .branch_bridge import summarize_logits
-from .route_access import CONFIG,checkpoint_config,publish
+from probes.dora_owner_learning.route_access import CONFIG, publish
+from src.config.inference import replace_adapter_path as checkpoint_config
 from .round1_realization import ROOT,UPDATE_ROOT
-from probes.source_rweak_row_cross.owner_row_robustness import native_record
-from probes.source_rweak_row_cross.run import build_requests
+from src.eval.native_rows import native_detection_record as native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
 
 ARM_ROOT=ROOT/'2026-09-10-selective-owner-learning-autonomous/positive7-support50-81'
 TRAINING=ARM_ROOT/'training';OUTPUT=ARM_ROOT/'evaluation'
@@ -221,7 +222,7 @@ def execute(shard):
     from src.config.inference import load_research_infer_config
     from src.qwen.native import prepare_native_inputs
     from src.qwen.generation import generate_continuations
-    from probes.dora_owner_learning.runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     packet=json.loads((OUTPUT/'manifest.json').read_text());validate_packet(packet);records=shard_records(packet,shard)
     receipt,adapter,receipt_sha=locked_checkpoint();require(os.environ.get('CUDA_VISIBLE_DEVICES')==str(GPUS[shard]) and torch.cuda.device_count()==1,'assigned single GPU only')
     run=OUTPUT/f'shard-{shard}';run.mkdir(exist_ok=False);started=time.monotonic()

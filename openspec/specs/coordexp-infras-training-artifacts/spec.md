@@ -1,7 +1,9 @@
 # coordexp-infras-training-artifacts Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define training-loop and backend ownership, optimizer-step ordering, bounded results, checkpoint payloads, rank-zero run records and wide-step logging and warning behavior.
+
 ## Requirements
 ### Requirement: SupervisedTrainer Owns Loop Only
 

@@ -17,7 +17,7 @@ from src.data import load_raw_examples
 from src.inference.parsing import parse_compact_object_box_closed
 from src.inference.runtime import assemble_frontend
 from src.qwen.generation import NativeGenerationPolicy, generate_continuations
-from .runtime import DEFAULT_CONFIG, build_request, load_policy, materialize
+from probes.model_profiles.source256 import DEFAULT_CONFIG, build_request, load_policy, materialize
 
 SCHEMA_VERSION = "current_seeded_sampled_rollouts.v1"
 RAW_SOFTMAX_POLICY = NativeGenerationPolicy(

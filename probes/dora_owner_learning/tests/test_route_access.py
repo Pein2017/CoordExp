@@ -3,10 +3,8 @@ import math
 import pytest
 import torch
 
-from probes.dora_owner_learning.route_access import (
-    CONFIG, EOS, PAD, branch_support, checked_ids, checkpoint_config, first_fork, indexed, prepare,
-    publish, reduce, resume_counters, score_logits, section_labels, validate_score,
-)
+from probes.dora_owner_learning.route_access import CONFIG, EOS, PAD, branch_support, checked_ids, first_fork, indexed, prepare, publish, reduce, resume_counters, score_logits, section_labels, validate_score
+from src.config.inference import replace_adapter_path as checkpoint_config
 from src.qwen.native import ExactReplay
 
 

@@ -19,7 +19,7 @@ from src.qwen.native import prepare_native_inputs
 
 
 FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack")
-PROFILE = Path("probes/dora_owner_learning/configs/source256.yaml")
+PROFILE = Path('probes/model_profiles/configs/source256.yaml')
 
 
 def _digest(value):

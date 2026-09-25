@@ -1,7 +1,9 @@
 # coordexp-infras-own-prefix-calibration-training Specification
 
 ## Purpose
-TBD - created by archiving change add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot. Update Purpose after archive.
+
+Define checkpoint-bound own-prefix calibration data, exact image/token replay and packed events, explicit entity or coordinate objectives and controls, and bounded metrics and qualification without altering inference architecture.
+
 ## Requirements
 ### Requirement: Immutable Checkpoint-Bound State Bank
 

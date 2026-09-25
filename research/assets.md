@@ -73,7 +73,7 @@ runtime views are distinct assets; none is replaced by a session recollection.
   `special_token_embeddings/`**. The selected input/output delta is shared.
   Loading only the adapter does not reproduce this checkpoint.
 - Resolved recipe: `configs.tied` in the [mature comparison panel](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json).
-  Maintained research loader: [untied_shared.py](../probes/training_set_completion/untied_shared.py),
+  Maintained research loader: [mature_tied_untied.py](../probes/model_profiles/mature_tied_untied.py),
   `config_for('tied')` / `load_model('tied', device)` (FP32/SDPA, frozen by default).
 - Historical SFT uses `geo_sorted_xy`; exact prompt/processor/decode belongs to
   the named config. The 1004 selected IDs include 1000 coordinates and four

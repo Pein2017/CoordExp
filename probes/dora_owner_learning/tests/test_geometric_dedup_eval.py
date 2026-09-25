@@ -4,7 +4,7 @@ from tokenizers import Tokenizer
 
 from probes.dora_owner_learning.candidate_opportunity import score
 from probes.dora_owner_learning.geometric_dedup_eval import consume,overlap_counts,reduce_records,CAP
-from probes.source_rweak_row_cross.run import native_record
+from src.eval.native_rows import native_detection_record as native_record
 
 
 def _score(owner, *, cap=0, repeats=0):

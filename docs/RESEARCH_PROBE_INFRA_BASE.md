@@ -42,6 +42,7 @@ local scientific configuration, not a global runtime class or registry.
 | Aligned differentiable scores | `src.losses.token_scores.aligned_token_logprobs` | Causal alignment, masks, reductions, credit and distributed factors |
 | Global annotated-owner assignment | `src.eval.assignment.global_matches` | Category/threshold policy; cardinality then quantized IoU, distinct from greedy visualization |
 | Native decode to standard detection row | `src.eval.native_rows.native_detection_record` | What is a trusted owner, category policy and scientific scoring |
+| Exact literal token/text boundaries | `src.inference.token_text.exact_token_text_frame`, `character_span_to_token_interval` | Actual token IDs, parser spans and scientific masks; non-reconstructible text and ambiguous boundaries fail without retokenizing |
 | Qwen decoder activation checkpointing | `src.qwen.checkpointing` | Whether it is enabled, expected decoder depth, parity criterion and memory/speed tradeoff |
 | Adapter-only serialization | `src.adapters.dora.save_dora_adapter_payload` | Trainable-surface choice, optimizer state and checkpoint-selection semantics |
 | Deterministic tensor/layout identity | `src.runtime.model_state` | Which tensors constitute a scientific state or acceptance criterion |
@@ -232,6 +233,10 @@ new direction from copying an old experiment's machinery.
 
 ## Maintained direction entries
 
+Use the [probe capability map](../probes/README.md) for selective maintenance,
+reuse priorities and the completed target-checkout family split. These direction links
+do not promise that every historical profile executes with current source hashes.
+
 - [DORA owner learning](../probes/dora_owner_learning/README.md): Source256 preparation, sampling and CE/RLOO; separate coordinate/full-action scoring.
 - [Source/Rweak row crossing](../probes/source_rweak_row_cross/README.md): frozen manifest preparation, native continuation and offline assignment/reduction.
 - [Human13](../probes/human13/README.md): output-QP and magnitude finite-panel profiles.
@@ -239,16 +244,39 @@ new direction from copying an old experiment's machinery.
 - `parallel_owner_research`: conditional-credit/composition and owner-preservation lanes.
 - `native_owner_scale`: scaled owner supply, state probes and independent evaluation.
 - `owner_successor_scale`: credible-successor supply, conditional credit and replay throughput.
-- [Training-set completion](../probes/training_set_completion/README.md): acquisition, reviewed teacher construction, CE training, natural readback and physical evaluation; shared replay/distributed owners and historical-source migration boundaries.
+- [Route learning](../probes/route_learning/README.md): reviewed routes, fixed-teacher fitting and distinct Source256 objectives.
+- [Recurrence dynamics](../probes/recurrence_dynamics/README.md): native history/KV, position and recurrence interventions/readbacks.
+- [Readout geometry](../probes/readout_geometry/README.md): norm equalization, readout and margin diagnostics.
+- [Coordinate representation](../probes/coordinate_representation/README.md): codebook/address/order profiles and independent evaluation.
+- [Visual grounding](../probes/visual_grounding/README.md): visual-instance binding and detail dependence.
+- [Named model profiles](../probes/model_profiles/README.md): fixed Source256 and mature tied/untied compositions; not a general experiment framework.
 
 Maintained direction tests live beside their package and are discovered by
 `python -m pytest -q probes`. Saved-input row-cross checks additionally require
-the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
+the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/archive/2026-09-16-restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
 
-The remaining `scripts/research` closure supports existing optional admission/evidence consumers, coverage comparison and research navigation checks. Its historical producers and dedicated tests are listed in the [retirement disposition](../openspec/changes/restructure-research-probe-development/retired-files.md); new direction work starts in the four packages above or a new ordinary direction package.
+The remaining `scripts/research` closure supports existing optional admission/evidence consumers, coverage comparison and research navigation checks. Its historical producers and dedicated tests are listed in the [retirement disposition](../openspec/changes/archive/2026-09-16-restructure-research-probe-development/retired-files.md); new work selects an owning family above or a new ordinary direction package.
 
 ## Source and identity owners after the September 21 migration
 
-See [Output storage policy](OUTPUT_STORAGE_POLICY.md) before creating source captures or run-local files. Shared literal native-input identity lives in `src/qwen/input_identity.py`; completion JSON/path operations live in `probes/training_set_completion/artifacts.py`; saved row accounting lives in `probes/training_set_completion/row_scoring.py`. DoRA loaded-composition checks live in `probes/dora_owner_learning/composition.py`.
+See [Output storage policy](OUTPUT_STORAGE_POLICY.md) before creating captures or
+run-local files. Literal native-input identity is `src/qwen/input_identity.py`;
+the distinct UTF-8/newline research JSON codec is `src/artifacts/utf8_json.py`;
+saved row accounting is `src/eval/saved_rows.py`. DoRA composition checks live in
+`probes/model_profiles/dora_composition.py`. Exact saved-prefix extension,
+inference-only row scoring and tied norm coefficients have separate `src/qwen`
+owners so their conditioning and profile-specific guards remain visible.
+
+Document path routing belongs to `scripts/tools/document_locations.py`; current
+knowledge validation to `scripts/tools/research_knowledge.py`. The old research
+checker path is only a thin CLI. `check --live-only` does not load old migration
+manifests; plain `check` additionally verifies historical intake and exposure.
+
+Unchanged closed-unit documents can retain a source link to their own last Git
+revision. The checker reports these separately as `historical-source`, with the
+document commit and source-byte digest, never as existing current code or proven
+executed receipt identity. Edited documents, live routers and missing data do not
+receive this fallback. Original unit/result bytes are not rewritten to follow
+current package names.
 
 `src/artifacts/source_provenance.py` can capture current-run source evidence locally. Migration-time source recovery and hash-bound historical readers are retired. Ordinary maintained imports replace the old output-directory loaders. Scientifically distinct recipes and the untied payload implementation retain separate owners rather than being collapsed into a universal trainer.

@@ -36,7 +36,7 @@ from .prepare import (  # noqa: E402
 from src.config.inference import load_research_infer_config
 from src.qwen.native import prepare_replay
 from src.losses import aligned_token_logprobs
-from .runtime import build_request, load_policy, materialize
+from probes.model_profiles.source256 import build_request, load_policy, materialize
 from src.adapters.dora import (  # noqa: E402
     select_dora_parameters,
     inspect_dora_adapter_payload,

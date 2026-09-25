@@ -3,8 +3,23 @@
 This folder contains dataset preparation for public detection/grounding datasets
 (currently COCO, LVIS, and Visual Genome), and shared preprocessing utilities.
 
-The preferred interface is the unified runner:
-`./public_data/run.sh <dataset> <command> ...`
+## Current versus historical preparation
+
+For the retained COCO view factory, inspect `scripts/build_coco_views.py` and its
+declared manifest/input contract. Existing raw images and processed JSONLs are
+data assets, not disposable build caches; their identity remains independent of
+whether an old launcher is still supported.
+
+The unified `./public_data/run.sh <dataset> <command> ...` interface and the
+preset procedures below are historical. Several shared preprocessing stages
+still require removed `src.datasets`/`src.coord_tokens` APIs and are not supported
+as a complete current pipeline. Do not restore those old APIs or silently replace
+them with new geometry/token semantics just to make an old command start. The
+retained converters, factory, manifests and saved data must be evaluated by their
+actual consumer scope. Download/help availability is not conversion parity.
+
+The remaining sections document those historical layouts and contracts, not a
+claim that every listed command works on the current checkout.
 
 ## Scope & Prereqs
 - Repo root: `.` (run `./public_data/run.sh` from here).

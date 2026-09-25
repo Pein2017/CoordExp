@@ -16,7 +16,7 @@ from src.data import RawExample, load_raw_examples
 from src.inference.runtime import assemble_frontend
 from src.qwen.native import prepare_native_inputs
 
-from .runtime import DEFAULT_CONFIG
+from probes.model_profiles.source256 import DEFAULT_CONFIG
 
 
 def select_examples(

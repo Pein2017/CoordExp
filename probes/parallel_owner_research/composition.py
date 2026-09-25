@@ -500,7 +500,7 @@ def prepare_residual_admission(candidates_path: Path, output_dir: Path):
     for path in [candidates_path, old_input_path, raw_path, reduced_path, loaded_path,
                  root / 'acquisition-v1/terminal.json', Path(__file__).resolve(),
                  Path(__file__).parent / 'tests/test_composition.py',
-                 Path(__file__).parents[1] / 'dora_owner_learning/runtime.py',
+                 Path(__file__).resolve().parents[2] / 'probes/model_profiles/source256.py',
                  Path(__file__).parents[1] / 'dora_owner_learning/route_access.py',
                  Path(__file__).parents[1] / 'source_rweak_row_cross/run.py',
                  Path(__file__).parents[2] / 'src/qwen/generation.py',
@@ -580,8 +580,9 @@ def reduce_residual_admission(records, packet, tok):
 def execute_acquisition(input_path: Path, output_dir: Path, *, physical_gpu=None):
     import torch
     from tokenizers import Tokenizer
-    from probes.dora_owner_learning.route_access import CONFIG, checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from probes.dora_owner_learning.route_access import CONFIG
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import load_research_infer_config

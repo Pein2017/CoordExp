@@ -332,7 +332,7 @@ def prepare():
 
 def _load_policy(packet, receipt):
     from src.config.inference import InferConfig
-    from probes.dora_owner_learning.runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
 
     qwen, identity = load_policy(InferConfig.model_validate(packet["config"]), device=torch.device("cuda:0"))
     require(identity["model_identity"]["adapter"]["adapter_path"] == packet["anchor_adapter"], "loaded adapter is not Stable50")

@@ -759,3 +759,13 @@ def _deep_copy_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_deep_copy_value(item) for item in value]
     return value
+
+
+def replace_adapter_path(config, adapter_path):
+    """Inference configuration models are immutable; retain validated field types."""
+    changed = config.model_copy(update={'adapter': config.adapter.model_copy(update={'path': str(adapter_path)})}, deep=True)
+    expected = config.model_dump(mode='json')
+    expected['adapter']['path'] = str(adapter_path)
+    if not (changed.model_dump(mode='json') == expected):
+        raise ValueError('checkpoint switch changed other config fields')
+    return changed

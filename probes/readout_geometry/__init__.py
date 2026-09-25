@@ -1,0 +1,1 @@
+"""Readout geometry research package."""

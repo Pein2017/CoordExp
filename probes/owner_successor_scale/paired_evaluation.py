@@ -435,8 +435,8 @@ def worker(*, packet_path: str | Path, arm: str, shard: int, physical_gpu: int,
            output: str | Path) -> None:
     """One GPU producer using the accepted native materializer/parser/scorer."""
     import torch
-    from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig

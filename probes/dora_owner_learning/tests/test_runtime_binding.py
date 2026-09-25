@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from probes.dora_owner_learning import runtime
+from probes.model_profiles import source256 as runtime
 from probes.dora_owner_learning.selective_preservation import selective_loss
 from src.common.errors import RuntimeContractError
 from src.qwen.native import prepare_replay

@@ -194,7 +194,7 @@ def run_items(pool, packet):
 
 
 def materialize(item, config, qwen, device='cuda:0'):
-    from probes.dora_owner_learning.runtime import build_request
+    from probes.model_profiles.source256 import build_request
     from src.config.inference import InferConfig
     from src.data.examples import raw_example_from_jsonl_row
     from src.qwen.native import prepare_native_inputs
@@ -219,8 +219,8 @@ def materialize(item, config, qwen, device='cuda:0'):
 
 def worker(packet_path, output, shard):
     import torch
-    from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.dora_owner_learning.runtime import load_policy
+    from src.config.inference import replace_adapter_path as checkpoint_config
+    from probes.model_profiles.source256 import load_policy
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     packet, output = e.read(packet_path), Path(output)

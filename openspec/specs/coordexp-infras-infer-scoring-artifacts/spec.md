@@ -1,7 +1,9 @@
 # coordexp-infras-infer-scoring-artifacts Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-infras-inference-infra. Update Purpose after archive.
+
+Define selected-token score semantics and raw, scored and trace artifact contracts, strict shard merge and staged publication, with explicit backend, likelihood and execution-context provenance.
+
 ## Requirements
 ### Requirement: Selected-token score formula
 For V1 scored inference, `pred[*].score` SHALL equal

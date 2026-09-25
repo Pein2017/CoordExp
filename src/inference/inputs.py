@@ -106,3 +106,31 @@ def plan_examples(
                 )
         planned.append(PlannedExample(rendered, image, prompt, request, target))
     return tuple(planned)
+
+
+def build_single_step_decode_requests(config, frontend, raw_examples):
+    """Plan strict one-step requests, leaving subsequent native budgets to callers."""
+    from src.inference.backend import DecodeRequest, GenerationPolicy
+
+    plans = plan_examples(raw_examples, config=config, components=frontend.qwen)
+    requests = []
+    for planned in plans:
+        row, record = planned.image, planned.prompt
+        requests.append(
+            DecodeRequest(
+                request_id=planned.request.request_id,
+                chat_text=record.chat_text,
+                input_prompt_token_ids=tuple(record.input_prompt_token_ids),
+                expected_executed_prompt_token_ids=tuple(record.expected_executed_prompt_token_ids),
+                image_path=row.image_path,
+                declared_image_width=row.declared_width,
+                declared_image_height=row.declared_height,
+                decoded_image_width=row.decoded_width,
+                decoded_image_height=row.decoded_height,
+                image_sha256=row.image_content_sha256,
+                expected_image_grid_thw=tuple(row.expected_image_grid_thw),
+                logical_transform_id=row.logical_transform_id,
+                generation_policy=GenerationPolicy(max_new_tokens=1),
+            )
+        )
+    return requests

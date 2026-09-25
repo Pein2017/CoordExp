@@ -1,7 +1,9 @@
 # coordexp-infras-adapters-embeddings-optim Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define selective adapter and special-token embedding training, checkpoint-compatible parameter composition, and optimizer ownership without changing the frozen base model outside the declared trainable surface.
+
 ## Requirements
 ### Requirement: Adapter Loading And Initialization
 

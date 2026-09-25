@@ -36,7 +36,7 @@ from probes.dora_owner_learning.candidate_opportunity import (  # noqa: E402
 )
 from probes.dora_owner_learning.entrance_ce_eval import aggregate_scores  # noqa: E402
 from probes.dora_owner_learning.geometric_dedup_eval import overlap_counts  # noqa: E402
-from probes.dora_owner_learning.route_access import checkpoint_config  # noqa: E402
+from src.config.inference import replace_adapter_path as checkpoint_config  # noqa: E402
 from src.adapters.dora import inspect_dora_adapter_payload  # noqa: E402
 from src.artifacts import publish_json_exclusive  # noqa: E402
 from probes.dora_owner_learning import positive_branch_endpoint
@@ -650,8 +650,9 @@ def forward_budget_hook(counters: dict[str, int]) -> Any:
 
 def execute(packet_path: Path, out: Path, shard: int) -> None:
     import torch
-    from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from probes.model_profiles.source256 import load_policy
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -1239,7 +1240,7 @@ def reduce_endpoint(
 
 
 def merge(packet_path: Path, out: Path, *, verify: bool) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from tokenizers import Tokenizer
 
     packet = load_json(packet_path)

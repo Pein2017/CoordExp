@@ -15,7 +15,7 @@ from typing import Any, Mapping, Sequence
 from src.config.inference import load_research_infer_config
 from src.eval.assignment import global_matches as _global_matches
 from .reward_rows import _gt_objects, _pred_objects
-from .runtime import DEFAULT_CONFIG
+from probes.model_profiles.source256 import DEFAULT_CONFIG
 from src.inference.inputs import PlannedExample, plan_examples
 from .sample import (  # noqa: E402
     SCHEMA_VERSION as ROLLOUT_SCHEMA,

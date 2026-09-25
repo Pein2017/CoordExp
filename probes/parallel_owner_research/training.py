@@ -28,7 +28,8 @@ from src.runtime.model_state import parameter_layout as _parameter_layout, tenso
 from probes.dora_owner_learning import repeat_recovery_train as old
 from probes.dora_owner_learning import margin_preserved_train as margin_engine
 from probes.dora_owner_learning.candidate_opportunity import file_hash, require
-from probes.dora_owner_learning.route_access import CONFIG, checkpoint_config, publish
+from probes.dora_owner_learning.route_access import CONFIG, publish
+from src.config.inference import replace_adapter_path as checkpoint_config
 
 SCHEMA = "parallel_owner_training.inputs.v1"
 COMPONENTS = ("positive", "conditional_kl", "normal_kl", "margin")
@@ -318,7 +319,7 @@ def _load_model(anchor: Mapping[str, Any], *, adapter_path: str, device: torch.d
     from src.config.inference import load_research_infer_config
     from src.inference.runtime import assemble_frontend
     from src.qwen.special_token_embeddings import inspect_special_token_embedding_delta_payload
-    from probes.dora_owner_learning.runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
 
     base = load_research_infer_config(CONFIG).config
     require(base.model_dump(mode="json") == anchor["config"], "live base config identity")

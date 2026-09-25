@@ -27,7 +27,7 @@ def test_fresh_profile_preparation_captures_shared_input_sources(tmp_path, suffi
     profile.prepare(output)
     identity = json.loads((output / "code_identity.json").read_text())
     files = {Path(row["path"]).resolve(): row for row in identity["files"]}
-    for source in (Path(profile.__file__).with_name("runtime.py"), Path("src/inference/inputs.py"),
+    for source in (Path(__file__).resolve().parents[3] / "probes/model_profiles/source256.py", Path("src/inference/inputs.py"),
                    Path("src/inference/prompt.py"), Path("src/inference/image_plan.py"),
                    Path("src/qwen/encoding.py"), Path("src/qwen/images.py")):
         record = files[source.resolve()]

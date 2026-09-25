@@ -41,7 +41,7 @@ from probes.dora_owner_learning.geometric_dedup_eval import (  # noqa: E402
     overlap_counts,
     reduce_records,
 )
-from probes.dora_owner_learning.route_access import checkpoint_config  # noqa: E402
+from src.config.inference import replace_adapter_path as checkpoint_config  # noqa: E402
 
 
 ROOT = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-11-positive-branch-vs-repeat-event")
@@ -429,8 +429,9 @@ def _checked_action(ids: list[int], stop: str, budget: int) -> None:
 
 def execute(packet_path: Path, receipt_path: Path, out: Path, *, arm: str, shard: int) -> None:
     import torch
-    from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from probes.model_profiles.source256 import load_policy
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -577,7 +578,7 @@ def execute(packet_path: Path, receipt_path: Path, out: Path, *, arm: str, shard
 
 
 def _cold_natural(row: dict[str, Any], frozen: Mapping[str, Any], tokenizer: Any) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     require(row["request_id"] == row["example_id"] == frozen["example_id"], "natural request association differs")
     require(row["prefix_ids"] == row["forced_ids"] == [] and row["remaining_budget"] == CAP, "natural forcing/budget")
     _checked_action(row["action_ids"], row["stop_reason"], CAP)
@@ -596,7 +597,7 @@ def _cold_natural(row: dict[str, Any], frozen: Mapping[str, Any], tokenizer: Any
 
 
 def merge(packet_path: Path, receipt_path: Path, out: Path, *, arm: str, verify: bool = False) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from tokenizers import Tokenizer
     packet = load_json(packet_path)
     validate_packet(packet)

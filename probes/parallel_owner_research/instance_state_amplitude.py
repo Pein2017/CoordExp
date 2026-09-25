@@ -138,7 +138,7 @@ def tensor_hash(tensor):
 
 def load_case(packet, out, receipt):
     from src.config.inference import InferConfig
-    from probes.dora_owner_learning.runtime import load_policy
+    from probes.model_profiles.source256 import load_policy
     from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.qwen.native import prepare_native_inputs
     require(torch.cuda.device_count()==1,'exactly one visible GPU required per worker')

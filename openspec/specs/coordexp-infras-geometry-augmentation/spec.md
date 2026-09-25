@@ -1,7 +1,9 @@
 # coordexp-infras-geometry-augmentation Specification
 
 ## Purpose
-TBD - created by archiving change add-coordexp-infras-geometry-flip-augmentation. Update Purpose after archive.
+
+Define training-only geometric flips with matched image and box transforms, explicit object ordering, and reproducible augmentation identity in packing caches and their provenance.
+
 ## Requirements
 ### Requirement: Train-only geometry flip config
 coordexp-infras SHALL support train-only geometry flip augmentation through the

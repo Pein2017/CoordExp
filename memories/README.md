@@ -21,29 +21,23 @@ rewrite them.
 
 ## Files
 
-- `current.md` is the short starting point for the next agent. Rewrite it when
-  the live goal, beliefs, decisions, blockers, or next action change.
+- `current.md` is a stable route to the research owners, not a live-state copy.
+  Goals, boundaries, blockers and next actions belong to the selected unit state.
 - `notes/` preserves useful reasoning and history in whatever natural structure
   fits the material.
 - `template.md` is optional guidance, not a required schema.
 - `config.yaml` states the operating boundary.
 
-Agents may create, read, update, merge, and delete anything in this directory.
-Prune stale or misleading material instead of accumulating sediment. Preserve
-rejected reasoning when it will prevent the same dead end from being explored
-again. Git history is the recovery path for deleted or rewritten memory.
+Read relevant notes when continuity matters. Writes require explicit user
+authorization, consistent with `research/CONVENTIONS.md`; a normal closeout or
+handoff is not an automatic memory-write trigger. Do not duplicate unit states,
+acceptance ledgers or the research frontier here.
 
-For non-trivial continuity-sensitive work, the main agent should recall memory
-without waiting for a user reminder, track whether project state changed, and
-checkpoint once at the next meaningful boundary. Update only `current.md` for
-recovery-critical live state. Add a note when durable reasoning, evidence,
-user steering, or a rejected path changed future decisions. Other agents must
-not compete to rewrite `current.md`.
-
-Operational statements in `current.md` should include `Last verified` or an
-equivalent scope marker and must be rechecked before use. Avoid process
-identifiers, momentary utilization, short estimates, and other state that
-becomes stale faster than it helps continuation.
+Retain non-reconstructible reasoning, user steering and rejected alternatives
+with attributed sources and a historical/verification boundary. Useful scientific
+methods and results belong with their research owner. Prune consumed transport
+after reference checks; Git history retains old memory versions. Do not preserve
+temporary process identifiers or utilization as durable continuity.
 
 Do not copy raw transcripts, large tool outputs, caches, indexes, credentials,
 or secrets here. Record a source handle and retrieve the original only when
