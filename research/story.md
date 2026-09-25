@@ -2,7 +2,7 @@
 title: From object support to a learned set-completion policy
 role: research-story
 authority: non_normative_research
-updated: 2026-09-17
+updated: 2026-09-24
 ---
 # The research story
 
@@ -88,7 +88,15 @@ The user's [fresh128 image review and the replayed CPU census](experiments/2026-
 
 The proposed next discriminator is whether a complete-row change at a naturally reached confirmed recurrence restores **subsequent free distinct-owner enumeration**, while retaining credible old and unlabeled owners. A same-owner alternative row is an important control for a distinct-owner row; the supplied owner earns no recovery credit. This proposal is unlaunched. It must retain the older spatial-history counterexample and failed dedup-to-recovery shortcuts: fewer repeats can also mean jitter, invalid boxes or premature EOS. Co-DETR remains optional screening support; neither exhaustive GT completion nor a new training sweep is the default next step.
 
+## 10. Historical reading affects progress and localization through different conditions
+
+The [current recurrence synthesis](questions/history-repetition-stopping.md#current-recurrence-evidence-and-next-decision-2026-09-24) now separates two outcomes. In reviewed bowl/book transitions, recent-record access can support a new owner, and blocking it does not eliminate the selected book revisit. In train351017, written coordinates affect broad-versus-fragment localization at fixed history count and positions; physical ownership of the fragment remains unresolved. Those observations do not establish a single recurrence disease.
+
+At the matched AF/FF microscope, accepted cache recombination and current-header clamps trace a causal contribution through older cache and adaptive current representations, with context-dependent Q/K/V roles. The endpoint is a conditional x1 distribution, not a free complete-row or burst cure. The reciprocal x1 bridge now leaves each complete output in its original fragment/broad region. The first-token choice alone does not carry the historical difference into the remaining coordinates. At the original one-record collapse, blocking coordinate-position history access restores broad localization, while blocking header-position access gives an invalid box; both pure complete-row signatures fail. The reciprocal y1 test also fails: its one numerical broad-region response covers nearly the whole image, and matched-y1 prefixes retain large x2 distribution differences across read modes. Selected-token feedback matters locally but does not account for the continuing history-read effect. The accepted query partition localizes stronger relative x2 endpoint influence to current-query history removal, while earlier-query removal also has a large effect. The accepted decomposition then finds historical weighted-contribution removal closer to the full-mask endpoint than redistribution alone. The subsequent direction/norm pair fails both shared predictions: local native-direction gain scaling moves far from both anchors, while norm-restored remaining direction is nearer removal. Thus neither simple signature explains the endpoint, and no semantic-retrieval or full-loop conclusion follows. Earlier first-x1 mediation already showed model/policy dependence, while the peer's sustained legality control retained repetitions despite valid boxes. A useful mechanism must predict complete consequences beyond such local sensitivity; no unique key, copying circuit or owner ledger is established.
+
 ## The unresolved problem is structured, not one missing module
+
+The [September25 Pro consultation and lead assessment](questions/history-repetition-stopping.md#pro-consultation-and-proposed-behavior-bridge-2026-09-25) close further fixed-endpoint subdivision for now. Per-head geometric controls do not preserve the projected model update, and a simple affine readout can reproduce their qualitative signature without abnormal retrieval. The next proposed discriminator concerns report feedback across generated rows: can a clearer report of an already covered owner improve free discovery beyond a matched nonimproving edit, with a reciprocal effect in normal states? Earlier whole-row substitutions already produced unchanged long suffixes, conditional gains and premature EOS, so the new value must be semantic selectivity and independent behavior, not another altered rollout. Physical support and checkpoint training facts need review before execution; no new model or training package is admitted.
 
 | Obligation | What a decisive test must distinguish |
 |---|---|
