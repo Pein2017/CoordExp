@@ -1,7 +1,9 @@
 # coordexp-infras-infer-backend-trace Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-infras-inference-infra. Update Purpose after archive.
+
+Define backend-neutral decoding, native scored-generation sessions, exact chosen-token evidence, stop policy and separately identified policy versus raw-model likelihood traces across HF and vLLM.
+
 ## Requirements
 ### Requirement: Backend-neutral decode records
 The system SHALL define complete backend-neutral decode request, decode result, and token trace records.

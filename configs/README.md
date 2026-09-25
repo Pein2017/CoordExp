@@ -1,47 +1,16 @@
----
-doc_id: configs.index
-layer: configs
-doc_type: router
-status: canonical
-domain: training
-updated: 2026-05-25
----
+# Supported configurations
 
-# Configs
+`coordexp_infras/prod` contains maintained production-shaped training profiles;
+`coordexp_infras/smoke` contains reusable engineering qualification inputs;
+`coordexp_infras/infer` contains the retained inference/test profiles. A small
+number of additional current-schema profiles remain actual core-test consumers.
+Declared `extends` parents remain part of each configuration closure.
 
-`configs/` is for durable, runnable configuration. Keep experiments small and
-named around the research decision they represent, not around every launch
-attempt.
+A smoke config's presence is not an authorization to run GPU tests. Paths identify
+external data/model roots and must be checked before execution. No YAML exists
+solely as a diary of a closed research run. Historical config versions and exact
+hyperparameters are recoverable from the research catalog's Git and artifacts.
 
-## Training Surfaces
-
-- `configs/coordexp_infras/prod/`: canonical Swift production-style training
-  configs.
-- `configs/coordexp_infras/smoke/`: canonical Swift implementation and
-  promotion smokes.
-- `configs/coordexp_infras/infer/`: canonical Swift inference configs.
-- `configs/coordexp_infras/deepspeed/`: Swift backend helper configuration;
-  production support remains governed by the Swift contracts.
-
-The former `configs/stage1/`, `configs/stage2/`, and related root-level
-training families are MS-Swift/mainline compatibility or historical surfaces.
-They are not the current `main` training route. The old route is preserved on
-the `ms-swift` branch and should be used only for explicit legacy reproduction.
-
-## Policy
-
-- Do not add one YAML per debugging attempt. Put one-off launch variations under
-  `temp/` or pass temporary overrides through a copied local file.
-- Keep a new tracked training YAML only when it represents a durable production
-  profile, a reusable smoke/preflight overlay, or a named ablation whose result
-  should remain reproducible.
-- Prefer a small prod config plus a smoke overlay over separate tiny/DDP/single
-  GPU files for every variant.
-- If a config exists only to remember an old run, record the artifact path in
-  `research/` or a current handoff note and remove the runnable YAML from
-  `configs/`. Do not create new `progress/` notes.
-- The retired Stage-2 AB/two-channel config root is removed; do not add active
-  configs under old `stage2_ab` or `stage2_two_channel` names.
-- `configs/analysis/`, `configs/infer/`, `configs/eval/`, `configs/postop/`,
-  and `configs/bench/` are tool/config inputs, not training profile families.
-  Clean them separately from Stage-1/Stage-2 training YAML.
+Config validation rejects unsupported legacy keys; it does not silently migrate
+old pipeline schemas. New clean-source qualification does not make an old receipt
+continuable. Keep tested scientific values distinct from execution mechanics.

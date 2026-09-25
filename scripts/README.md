@@ -1,59 +1,20 @@
-# Scripts
+# Maintained command adapters
 
-This directory contains user-facing entrypoints plus compatibility wrappers and
-historical diagnostics. The canonical training/inference implementation is
-owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/coordexp_infras.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+Saved detection evaluation and visualization are thin entries over `src.eval`
+and `src.visualization`. Use their `--help` for actual accepted fields; old launch
+flags are not compatibility promises.
 
-## Stable entrypoints
+- `python -m scripts.evaluate_detection --help`
+- `python -m scripts.visualize_detection --help`
+- `python -m scripts.check_research_knowledge check`
 
-- Training (canonical Swift): `python -m src.train --config configs/coordexp_infras/...`.
-- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_infras/infer/...`.
-- Offline coordexp-infras detection evaluation (direct artifact reducer):
-  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
+`scripts/probes/coordexp_infras/` retains explicit engineering qualification
+commands for adapter/token payloads, attention and inference backends. They are
+not routine research runners and must not be executed merely because their
+source is present. Their contracts and meaningful core tests remain supported.
 
-## Compatibility / debug wrappers
-
-- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`,
-  `scripts/postop_confidence.py`, and
-  `scripts/evaluate_proxy_detection_bundle.py`: legacy/mainline wrappers.
-  They are not the canonical Swift entrypoints and should be used only for
-  explicit compatibility or historical reproduction.
-- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.
-- `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
-  supplied prediction artifact and image root. Prefer evaluator overlays or
-  `vis_resources/` artifacts tied to resolved pipeline provenance for
-  reportable evidence.
-
-## Shared helpers
-
-- `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
-
-## External transfer helpers
-
-Baidu Netdisk upload/download helpers live in the repo-local Codex skill:
-
-- `.codex/skills/baidupcsgo-upload/scripts/upload_dir.sh`
-- `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh`
-
-Use them for `output/` backups under `/CoordExp/output/`. Do not use Baidu
-Netdisk as the default sync surface for `model_cache/`, raw `public_data/`, or
-processed `public_data/` contents.
-
-## Utilities (organized)
-
-- Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/`
-- Small pipelines / workflow wrappers and diagnostics: `scripts/pipelines/`
-  - tmux queue manager for sequential training jobs: `scripts/pipelines/train_task_manager.sh`
-    (Python core: `scripts/pipelines/train_task_manager.py`)
-  - historical rollout parser/stability diagnostic:
-    `scripts/pipelines/run_rollout_stability_probe.sh`; this delegates to the
-    legacy/debug `run_infer_eval.sh` wrapper and is not a stable benchmark
-    pipeline.
-
-## Deprecated
-
-Deprecated wrappers are removed. Prefer stable YAML-first entrypoints for
-inference, scoring, evaluation, and reportable visualization artifacts.
+Historical training managers, dataset conversion factories, experiment-specific
+admission adapters and migration tools have retired. Git recovers old commands;
+new commands do not pretend to accept their schemas. [Research operators](../probes/README.md)
+use ordinary modules. External outputs, model and data resources retain their
+original identities and are never recreated implicitly by an entry adapter.

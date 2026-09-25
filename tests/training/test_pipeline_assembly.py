@@ -428,9 +428,13 @@ def test_final_handler_deduplicates_same_step_explicit_checkpoint() -> None:
 def test_pre_trainer_failure_finalizes_initialized_run_without_masking_original(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # This test exercises failure finalization after qualification. Git identity
+    # itself is covered by real-repository negative tests, not this model stub.
+    from src.artifacts import git_identity
+    monkeypatch.setattr(git_identity, "capture_source_identity", lambda *a, **kw: {"fixture": True})
     run_dir = tmp_path / "run"
     config = SimpleNamespace(
-        training=SimpleNamespace(precision="no"),
+        training=SimpleNamespace(precision="no", resume_from_checkpoint=None),
         runtime=SimpleNamespace(seed=7),
         run=SimpleNamespace(name="run"),
     )
@@ -589,6 +593,7 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "SupervisedTrainer", lambda **kwargs: SimpleNamespace(run=lambda: result))
 
     pipeline._run_initialized_training(
+        execution_source={"fixture": True},
         repo_root=tmp_path,
         resolved_config=SimpleNamespace(entry_config_path=tmp_path / "config.yaml", fingerprint="config-fp"),
         config=config,
@@ -607,3 +612,17 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     assert set(bindings[1][1]) == {
         "cache_format_version", "semantic_fingerprint", "determinant_digest"
     }
+
+
+def test_unqualified_source_rejects_before_accelerator_or_output(tmp_path, monkeypatch):
+    from src.artifacts import git_identity
+    calls = []
+    monkeypatch.setattr(pipeline, "load_train_config", lambda path: SimpleNamespace(config=object()))
+    def reject(*args, **kwargs):
+        raise git_identity.SourceIdentityError("historical/unsupported for continuation: dirty")
+    monkeypatch.setattr(git_identity, "capture_source_identity", reject)
+    monkeypatch.setattr(pipeline, "_build_accelerator", lambda *a, **kw: calls.append("accelerator"))
+    monkeypatch.setattr(pipeline, "_initialize_artifact_owner", lambda **kw: calls.append("output"))
+    with pytest.raises(git_identity.SourceIdentityError, match="unsupported for continuation"):
+        pipeline.run_training_pipeline(tmp_path / "config.yaml")
+    assert calls == []

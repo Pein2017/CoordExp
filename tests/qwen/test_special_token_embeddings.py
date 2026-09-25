@@ -60,7 +60,7 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
     assert artifact["coord_token_ids_contiguous"] is True
 
 
-def test_default_special_token_embedding_source_gate_loads_checked_in_evidence(
+def test_default_special_token_embedding_source_gate_reads_explicit_fixture(
     embedding_source_gate_root: Path,
 ) -> None:
     evidence = load_default_special_token_embedding_source_gate_evidence(
@@ -862,23 +862,19 @@ class TinyTiedQwenWithAdapter(TinyTiedQwenModel):
 
 @pytest.fixture
 def embedding_source_gate_root(tmp_path: Path) -> Path:
-    """Stage existing evidence at the real loader's default contract paths."""
+    """Exercise the loader schema with explicit synthetic fixture evidence.
+
+    This is not production qualification or a recovered historical run.
+    """
     repo_root = Path(__file__).resolve().parents[2]
     root = tmp_path / "embedding-source-gate"
-    study_relative = Path(
-        "docs/history/architecture/proposals/2026-06-27-coordexp-infras/"
-        "source-studies/special-token-embeddings.md"
-    )
-    receipt_relative = Path(
-        "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
-    )
-    for source, relative in (
-        (repo_root / study_relative, study_relative),
-        (repo_root / "probes/logit_lens/configs/source-gate-receipt.json", receipt_relative),
-    ):
-        target = root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+    study_relative = Path("docs/adapters/selected-embedding-qualification.md")
+    target = root / study_relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(repo_root / study_relative, target)
+    receipt = root / "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text(json.dumps(_source_gate(selected_count=1004).probe_receipt))
     return root
 
 

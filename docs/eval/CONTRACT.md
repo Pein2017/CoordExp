@@ -47,7 +47,7 @@ artifacts.
 
 The old `image/width/height/coord_mode/raw_output_json` pipeline shape and
 `vis_resources/` sidecar shape belong to the
-[historical reference](../history/evaluation/2026-09-09-legacy-eval-reference.md).
+historical reference (recoverable in Git 108dede0154abfd90a54d18234d9e0bac780a3ba).
 They are not interchangeable with current Swift JSONL rows.
 
 ## Coordinate Handling

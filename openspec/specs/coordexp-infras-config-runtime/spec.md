@@ -1,7 +1,9 @@
 # coordexp-infras-config-runtime Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define strict config-first training setup, immutable resolved configuration, exact effective-batch and planned-step scheduling, and the supported Accelerate runtime and packed-Qwen resource boundaries.
+
 ## Requirements
 ### Requirement: Strict Resolved Config
 

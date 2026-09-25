@@ -1,1 +1,0 @@
-"""Bounded spatial-progress probe."""

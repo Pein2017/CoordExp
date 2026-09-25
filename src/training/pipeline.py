@@ -447,6 +447,13 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     repo_root = Path.cwd().resolve()
     resolved_config = load_train_config(config_path)
     config = resolved_config.config
+    from src.artifacts.git_identity import capture_source_identity
+    source_paths = sorted(str(p.relative_to(repo_root)) for p in (repo_root / "src").rglob("*.py"))
+    execution_source = capture_source_identity(source_paths, root=repo_root)
+    # Reject old/missing/dirty source identities before accelerator/model/output effects.
+    resume_checkpoint = _resume_checkpoint_dir(config.training.resume_from_checkpoint)
+    if resume_checkpoint is not None:
+        load_training_state(resume_checkpoint / STATE_FILE, source_root=repo_root)
     accelerator = _build_accelerator(config.training.precision)
     validate_accelerator_runtime(
         accelerator,
@@ -483,6 +490,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
             run_id=run_id,
             writer=writer,
             lifecycle=lifecycle,
+            execution_source=execution_source,
         )
     except BaseException as exc:
         if writer is not None:
@@ -512,6 +520,7 @@ def _run_initialized_training(
     run_id: str,
     writer: RunWriter | None,
     lifecycle: dict[str, Any],
+    execution_source: Mapping[str, Any],
 ) -> dict[str, Any]:
     seed_training_runtime(
         config.runtime.seed,
@@ -821,6 +830,7 @@ def _run_initialized_training(
     runtime.dora_initialization_receipt = finalize_dora_initialization(runtime.model)
 
     source_identity = {
+        "execution_source": dict(execution_source),
         "base_model_path": str(components.base_model_path),
         "base_config_sha256": components.base_config_sha256,
         "tokenizer_sha256": components.tokenizer_sha256,

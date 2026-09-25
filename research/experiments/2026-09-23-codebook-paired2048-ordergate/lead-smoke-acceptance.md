@@ -1,9 +1,0 @@
-# Corrected order-gate smoke accepted
-
-2026-09-23. Lead independently read the maintained conditional_order_gate source and actual token-context caller tests, rehashed43 smoke bindings, reran10 focused order-gate tests, and checked all8 rank objective receipts. The implemented valid slice starts at the actual predecessor token bin+1: equality and all smaller coordinates are penalized; x1/y1 have no geometry-gate row. Mean-legal/argmax-invalid and packed-prefix counterexamples are covered. Active terms are exactly CE1/typegate0.2/conditional_order_gate0.2 with legacy hinge/Gaussian0. Independent weighted-loss arithmetic maximum error3.3113691566555303e-08 passes2e-4.
-
-Accept bounded technical smoke, not scientific quality. Official fresh-load/native path is exercised; full-logit reload parity and post-load codebook tensor hashes were not measured and must not be claimed. Continue the already authorized fresh paired472-call production without an ACK or restart; original new clock1790170084.5299346 and shared envelope remain. Preserve smoke/production separation and fresh mature-source starts. No hidden decode mask or output correction.
-
-Lead also rehashed all305 archived files and verified the old-root symlink resolves to the designated invalid-mean-hinge archive. Cleanup is complete for the old group; original source/cache and unrelated runs remain. The old-path link is archival compatibility only. No prior fitted checkpoint/result may enter the corrected comparison; unchanged source baseline reuse remains conditional on its bound identity.
-
-Verification receipt: qualification/lead-smoke-verification-v1.json under the ordergate output root. User priority is actual pre-drop emitted equality/reversal counts at final evaluation, alongside official metrics and per-image severity. No response-only ACK needed; report genuine first-entry/material conflict or stable final candidate directly.

@@ -1,7 +1,9 @@
 # coordexp-infras-data-template-encoding Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define the validated single-image example-to-template-to-token chain, literal supervision spans, explicit object ordering, tokenizer identity and processor-aligned no-resize image encoding used by packed training.
+
 ## Requirements
 ### Requirement: Canonical Example Chain
 

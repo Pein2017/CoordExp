@@ -1,7 +1,9 @@
 # coordexp-infras-detection-evaluator Specification
 
 ## Purpose
-TBD - created by archiving change standardize-coordexp-infras-detection-evaluator. Update Purpose after archive.
+
+Define artifact-bound detection evaluation with explicit parser and score eligibility, category and coordinate normalization, empty-prediction accounting and official COCO metrics and output artifacts.
+
 ## Requirements
 ### Requirement: Parser owns generated-text salvage
 The system SHALL perform generated-text prediction salvage only in the inference

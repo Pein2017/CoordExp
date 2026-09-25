@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import io
 import random
 import hashlib
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -12,10 +14,12 @@ from typing import Any
 import torch
 
 from src.common.errors import RuntimeContractError
+from src.artifacts.git_identity import verify_source_identity, SourceIdentityError
 
 
 STATE_FILE = "training_state.pt"
-STATE_VERSION = 1
+STATE_VERSION = 2
+REQUIRED_SOURCE_PATHS = ("src/training/pipeline.py", "src/training/resume.py", "src/artifacts/git_identity.py")
 
 
 def capture_rng_state() -> dict[str, Any]:
@@ -92,7 +96,13 @@ def build_training_state(
     }
 
 
-def save_training_state(path: Path | str, state: Mapping[str, Any]) -> None:
+def save_training_state(
+    path: Path | str, state: Mapping[str, Any], *, source_root: Path | None = None,
+    required_paths: tuple[str, ...] = REQUIRED_SOURCE_PATHS,
+) -> None:
+    source = state.get("source_identity", {}).get("execution_source")
+    if source is not None:
+        verify_source_identity(source, required_paths=required_paths, root=source_root)
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
@@ -102,14 +112,45 @@ def save_training_state(path: Path | str, state: Mapping[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, target)
         _fsync_directory(target.parent)
+        # A separate JSON gate is read before torch deserialization on resume.
+        # Unqualified direct callers may save state, but cannot continue it.
+        source = state.get("source_identity", {}).get("execution_source")
+        gate = {"schema": "training.clean_source_gate.v1", "source_identity": source,
+                "payload_sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+        sidecar = target.with_suffix(".source.json")
+        staged_gate = sidecar.with_name(f".{sidecar.name}.{os.getpid()}.tmp")
+        try:
+            staged_gate.write_text(json.dumps(gate, sort_keys=True) + "\n")
+            with staged_gate.open("rb") as handle:
+                os.fsync(handle.fileno())
+            os.replace(staged_gate, sidecar)
+            _fsync_directory(target.parent)
+        finally:
+            staged_gate.unlink(missing_ok=True)
     finally:
         temporary.unlink(missing_ok=True)
 
 
-def load_training_state(path: Path | str) -> dict[str, Any]:
+def load_training_state(
+    path: Path | str, *, source_root: Path | None = None,
+    required_paths: tuple[str, ...] = REQUIRED_SOURCE_PATHS,
+) -> dict[str, Any]:
     target = Path(path)
     try:
-        state = torch.load(target, map_location="cpu", weights_only=False)
+        gate = json.loads(target.with_suffix(".source.json").read_text())
+        if gate.get("schema") != "training.clean_source_gate.v1":
+            raise ValueError("unsupported source gate schema")
+        verify_source_identity(gate.get("source_identity", {}), required_paths=required_paths, root=source_root)
+        payload_bytes = target.read_bytes()
+        if hashlib.sha256(payload_bytes).hexdigest() != gate.get("payload_sha256"):
+            raise ValueError("training state bytes do not match the source gate")
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        raise RuntimeContractError(
+            "historical/unsupported for continuation: training source identity is not verifiable",
+            code="training.resume_source_identity", cause=exc,
+        ) from exc
+    try:
+        state = torch.load(io.BytesIO(payload_bytes), map_location="cpu", weights_only=False)
     except (OSError, RuntimeError, ValueError) as exc:
         raise RuntimeContractError(
             "resume checkpoint state cannot be loaded",
@@ -123,6 +164,8 @@ def load_training_state(path: Path | str) -> dict[str, Any]:
             code="training.resume_state_schema",
             context={"path": str(target), "schema": state.get("schema") if isinstance(state, dict) else None},
         )
+    if state.get("source_identity", {}).get("execution_source") != gate["source_identity"]:
+        raise RuntimeContractError("training state source gate differs", code="training.resume_source_identity")
     return state
 
 

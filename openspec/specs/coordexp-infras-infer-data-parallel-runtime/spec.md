@@ -1,7 +1,9 @@
 # coordexp-infras-infer-data-parallel-runtime Specification
 
 ## Purpose
-TBD - created by archiving change add-coordexp-infras-infer-data-parallelism. Update Purpose after archive.
+
+Define visible-device inference workers, deterministic batch-block sharding, fresh-interpreter isolation, controller handoff and backend-specific process ownership without conflating model and outer data parallelism.
+
 ## Requirements
 ### Requirement: Default visible-CUDA data parallelism
 Production inference SHALL use all useful CUDA devices visible to the process by default.

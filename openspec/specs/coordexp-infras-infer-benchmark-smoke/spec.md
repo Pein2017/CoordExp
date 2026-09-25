@@ -1,7 +1,9 @@
 # coordexp-infras-infer-benchmark-smoke Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-infras-inference-infra. Update Purpose after archive.
+
+Define bounded qualification and benchmark acceptance for real HF and vLLM inference, including adapter fidelity, repeatability, distributed execution, numeric likelihood checks and honest evidence-scope labeling.
+
 ## Requirements
 ### Requirement: Real HF Qwen tiny smoke
 The first inference smoke SHALL use a real HF/Qwen path rather than mocked backend acceptance evidence.

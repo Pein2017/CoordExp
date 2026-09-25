@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import torch
 
 from src.common.errors import LossContractError
@@ -36,4 +38,15 @@ def aligned_token_logprobs(
     return logits.float().log_softmax(dim=-1).gather(1, target_ids[:, None]).squeeze(1)
 
 
-__all__ = ["aligned_token_logprobs"]
+def masked_active_mean_ce(logits: torch.Tensor, targets: torch.Tensor, weights: Sequence[int]) -> tuple[torch.Tensor, dict[str, float]]:
+    if not (logits.ndim == 2 and logits.shape[0] == targets.numel() == len(weights)):
+        raise ValueError('aligned CE shape')
+    mask = torch.tensor(weights, dtype=logits.dtype, device=logits.device)
+    active = int(mask.sum().item())
+    if not (active > 0):
+        raise ValueError('CE has no active positions')
+    nll = -aligned_token_logprobs(logits.float(), targets)
+    return (nll * mask).sum() / active, {"active_tokens": active, "masked_nll_sum": float((nll * mask).detach().sum())}
+
+
+__all__ = ["aligned_token_logprobs", "masked_active_mean_ce"]

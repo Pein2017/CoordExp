@@ -33,7 +33,7 @@ Non-goals:
 
 ## Source ownership
 
-Use the [implementation map](../IMPLEMENTATION_MAP.md) for current modules,
+Use the [implementation map](../SYSTEM_OVERVIEW.md) for current modules,
 entrypoints and verification owners. Keep source inventories there so style
 guidance does not become a second, drifting implementation map.
 
@@ -81,7 +81,7 @@ the supported alternative.
 
 Do not introduce a new backend or framework merely to make a document or
 interface symmetrical. Verify supported backends through the
-[implementation map](../IMPLEMENTATION_MAP.md) and their live source; reserved
+[implementation map](../SYSTEM_OVERVIEW.md) and their live source; reserved
 fields do not establish runtime support.
 
 ## Configuration: YAML first and strict

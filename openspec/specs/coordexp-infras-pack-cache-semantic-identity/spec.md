@@ -1,7 +1,9 @@
 # coordexp-infras-pack-cache-semantic-identity Specification
 
 ## Purpose
-TBD - created by archiving change harden-coordexp-infras-cache-and-handoff-contracts. Update Purpose after archive.
+
+Define packing-cache semantic fingerprints and current-version payload validation, separating forward-side source identity from incidental cache materialization provenance.
+
 ## Requirements
 ### Requirement: Forward-Side Source Identity In Cache Fingerprint
 

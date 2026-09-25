@@ -175,37 +175,6 @@ def test_legacy_schema_default_and_explicit_new_weight():
         })
 
 
-def test_existing_real_trainer_hook_checks_corrected_objective_and_mutation():
-    from probes.training_set_completion.coordinate_codebook_alignment.three_loss_checks import (
-        ThreeLossQualificationProbe, ThreeLossQualificationError,
-    )
-
-    context = _context(extra_segment=True)
-    runner = LossRunner(
-        base_ce_weight=1, token_type_gate_weight=.2,
-        token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
-        raw_axis_validity_hinge_weight=0, raw_axis_validity_hinge=None,
-        conditional_order_gate_weight=.2, conditional_order_gate=ConditionalOrderGateLoss(),
-    )
-    probe = ThreeLossQualificationProbe(expected_weights={
-        "base_ce": 1.0, "token_type_gate": .2, "conditional_order_gate": .2,
-    }, require_unequal_segment_counts=False)
-    plan = runner.prepare_planned_step((context.token_sequence,))
-    probe.observe_plan((context.token_sequence,), plan)
-    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
-    receipt = probe.observe_micro_step(context, bundle, plan, local_micro_step_index=0)
-    assert receipt["total_gradient_max_delta"] < 2e-4
-    broken = replace(bundle, total_loss=bundle.total_loss - bundle.term_by_name("conditional_order_gate").weighted_loss)
-    with pytest.raises(ThreeLossQualificationError):
-        probe.observe_micro_step(context, broken, plan, local_micro_step_index=0)
-    doubled = replace(plan, denominators={
-        **plan.denominators,
-        "conditional_order_gate": replace(
-            plan.denominators["conditional_order_gate"], eligible_segment_count=4,
-        ),
-    })
-    with pytest.raises(ThreeLossQualificationError):
-        probe.observe_plan((context.token_sequence,), doubled)
 
 
 def test_new_term_uses_same_global_segment_denominator_as_other_losses():

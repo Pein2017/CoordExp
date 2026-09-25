@@ -1,7 +1,9 @@
 # coordexp-infras-physical-owner-duplication-training Specification
 
 ## Purpose
-TBD - created by archiving change add-physical-owner-duplicate-rejection-and-recovery-training. Update Purpose after archive.
+
+Define reviewed physical-owner eligibility, duplicate rejection and counterfactual imitation, burst-credit normalization, matched-dose controls and evidence that preserves the difference between generated and replayed candidates.
+
 ## Requirements
 ### Requirement: Reviewed physical-owner evidence controls training eligibility
 The system SHALL admit a duplicate-negative row only when a reviewed image-local physical owner is already represented by a usable accepted prefix row and the later row is trusted to represent that same owner. The system SHALL keep official ground-truth-unmatched predictions neutral unless review establishes an eligible role.

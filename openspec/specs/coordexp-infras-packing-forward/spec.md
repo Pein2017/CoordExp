@@ -1,7 +1,9 @@
 # coordexp-infras-packing-forward Specification
 
 ## Purpose
-TBD - created by archiving change rebuild-coordexp-infras-training-infra. Update Purpose after archive.
+
+Define padding-free isolated packed sequences, deterministic cache reuse, supervision and MRoPE alignment and explicit Qwen/FlashAttention forward boundaries, while keeping visual replacement upstream-owned.
+
 ## Requirements
 ### Requirement: No-Padding Packed Training Row
 
