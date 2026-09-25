@@ -1,2 +1,5 @@
 # Frozen evidence is available explicitly, not part of ordinary source search.
 /reference/
+
+# Required current data dependency; inspect it only by explicit path.
+/public_data/coco_annotation_delta.json
