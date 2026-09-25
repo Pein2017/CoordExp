@@ -179,12 +179,9 @@ submission are separate workflows.
 
 ## Historical boundaries
 
-Old MS-Swift/mainline paths such as `src/sft.py`, `src/trainers/`,
-`src/datasets/`, `src/detection/`, `src/infer/`, `configs/stage1/`, and
-`configs/stage2/` remain in historical docs, archived configs, tests, and old
-run evidence. They are not current Swift ownership. Completed rebuild changes
-are preserved under `openspec/changes/archive/`; a named
-`openspec/changes/<change>/` directory is the sole local workspace for bounded
-code/config/docs or architecture work that benefits from durable lifecycle.
-Delta specs are included only when a stable compatibility-sensitive contract
-changes; internal refactors do not require invented normative deltas.
+Superseded implementation and completed change detail are recoverable through
+exact Git commits. Current accepted behavior lives in the main specs; a named
+`openspec/changes/<change>/` holds bounded ongoing implementation and validation.
+There is no maintained archive tree. Follow the [storage policy](OUTPUT_STORAGE_POLICY.md)
+for retention, external assets and recovery. Delta specs are required for changed
+stable contracts, not invented solely for internal file moves.

@@ -136,3 +136,32 @@ model behavior. Historical inspection SHALL remain read-only and distinct.
 
 - **WHEN** current source and explicit input bindings pass and a fresh destination is supplied
 - **THEN** the command can publish a separately identified bounded result; this certifies no GPU or physical-recall outcome
+
+### Requirement: Supported data remains recoverable
+
+A data asset consumed by a maintained configuration SHALL have either a verified
+external recovery source or a maintained minimal producer with available declared
+raw inputs. Current recovery manifests SHALL bind exact content, executable
+dependencies and image-path semantics. Historical provenance alone MUST NOT be
+advertised as executable recovery. Removing a producer SHALL retire only unused
+contracts or replace the recovery route before accepting cleanup.
+
+#### Scenario: Current data differs from historical checksums
+
+- **WHEN** actual consumed bytes differ from a historical manifest
+- **THEN** recovery validation reports the difference and binds a separate evidenced current identity without rewriting old run receipts or hiding the older hash
+
+#### Scenario: No external replica has been verified
+
+- **WHEN** a maintained input exists only as a local materialization
+- **THEN** its recovery contract requires a tested minimal regeneration path; local existence alone is not cross-node recovery evidence
+
+#### Scenario: Recovery dependencies or destination are invalid
+
+- **WHEN** a current recovery command lacks an input/dependency, uses a historical-only manifest, or would overwrite an existing destination
+- **THEN** it fails explicitly before publishing a successful restored asset; dry-run writes nothing
+
+#### Scenario: Current documentation directs an operation
+
+- **WHEN** a current guide contains a supported command or storage instruction
+- **THEN** its local executable targets exist and it does not direct operators to recreate retired history/archive surfaces

@@ -106,3 +106,46 @@ delete archives and dead closures; reconcile current guides; test surviving tree
 commit; integrate in isolated canonical-based checkout; final fenced adoption.
 Keep local commits for recovery. Recovery of an intermediate stage is an explicit
 future Git checkout/worktree operation, not an automatic destructive reset.
+
+## Post-review correction design
+
+The ten old manifests are not ten independently maintained data pipelines.
+Current prod/smoke configs consume the COCO len12000 train/val coordinate view;
+its resized COCO base is a real transitive input. Old image-store and proxy views
+without current consumers must not imply a recovery service that does not exist.
+A manifest identity is not an executable restoration route.
+
+First compare recorded hashes, actual inputs and raw dependencies. A read-only
+check found the base JSONLs still match their manifests but all six current
+len12000 JSONLs differ from the old recorded version. Preserve the old manifest
+through its exact Git locator and expose that discrepancy. Recover the *current*
+consumed view only after whole-JSONL reconstruction matches its observed bytes.
+Do not equate a sampled read with full content verification or a computed path
+with a reachable remote replica.
+
+Select an explicit raw-input producer if no verified independent copy is found.
+Keep COCO box selection, pixel resize/rounding, image encoding, coordinate
+conversion, object order and all kept metadata exact. Qualify on synthetic edge
+cases and actual raw/processed comparisons. Full regeneration writes only to an
+absent destination, checks expected hashes, and publishes a completion receipt
+only after output/image checks. A dry run performs no writes and validates
+required dependencies; unsupported historical manifests fail with an explicit
+reason. No legacy namespace, mapping registry or source archive returns.
+
+Documentation consumers will have one storage policy, and tests inspect fenced
+commands as well as Markdown links. Missing manifest dependencies, checksum drift
+and recovery failures are errors, not skipped acceptance. Existing loss, source
+identity and resume contracts are out of scope and remain unchanged.
+
+### Verified curation boundary
+
+The raw-to-view reconstruction initially matched the *old* recorded hashes, not
+the current consumed files. Inspection found observed annotation removals, added
+IDs, revised geometry and compact serialization. A raw-only restore would silently
+discard these data. The minimal current-data delta therefore keeps 117 surface
+edits with before/after hashes, 284 object upserts and 86 removals. This is an
+indispensable data dependency, not a source archive or a new physical-label
+admission. A read-only reconstruction from the official annotation ZIP plus
+that delta reproduced all six current JSONLs across 122,218 images exactly.
+The dataset files and old manifest version remain unchanged in their original
+external/Git owners. Current schema-2 identity is explicitly separate.

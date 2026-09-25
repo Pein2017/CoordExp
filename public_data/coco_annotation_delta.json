@@ -1,0 +1,7078 @@
+{
+  "schema_version": 1,
+  "scope": "exact observed current-input recovery; not a new scientific labeling admission",
+  "source_root": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000",
+  "observed_at": "2026-09-25",
+  "edits": [
+    {
+      "split": "train",
+      "image_id": 9,
+      "surface": "norm1000",
+      "before_sha256": "65da472aea62b2a3d3ce6f40b7c8a6c8fccdd59a63ee849a879f2d99a585e85c",
+      "remove_annotation_ids": [
+        1058555,
+        1913551,
+        1913746,
+        1913856,
+        1914001
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            479,
+            0,
+            987,
+            485
+          ],
+          "desc": "bowl",
+          "category_id": 51,
+          "category_name": "bowl",
+          "coco_ann_id": 1039564
+        },
+        {
+          "bbox_2d": [
+            552,
+            1,
+            712,
+            136
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -8
+        },
+        {
+          "bbox_2d": [
+            0,
+            27,
+            672,
+            794
+          ],
+          "desc": "bowl",
+          "category_id": 51,
+          "category_name": "bowl",
+          "coco_ann_id": 1534147
+        },
+        {
+          "bbox_2d": [
+            690,
+            69,
+            749,
+            168
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -1
+        },
+        {
+          "bbox_2d": [
+            727,
+            78,
+            822,
+            179
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -7
+        },
+        {
+          "bbox_2d": [
+            573,
+            84,
+            707,
+            197
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -6
+        },
+        {
+          "bbox_2d": [
+            724,
+            119,
+            901,
+            306
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -2
+        },
+        {
+          "bbox_2d": [
+            598,
+            151,
+            737,
+            317
+          ],
+          "desc": "orange",
+          "category_id": 55,
+          "category_name": "orange",
+          "coco_ann_id": -4
+        },
+        {
+          "bbox_2d": [
+            0,
+            398,
+            959,
+            999
+          ],
+          "desc": "bowl",
+          "category_id": 51,
+          "category_name": "bowl",
+          "coco_ann_id": 1038967
+        },
+        {
+          "bbox_2d": [
+            614,
+            474,
+            916,
+            979
+          ],
+          "desc": "broccoli",
+          "category_id": 56,
+          "category_name": "broccoli",
+          "coco_ann_id": -9
+        },
+        {
+          "bbox_2d": [
+            393,
+            526,
+            642,
+            878
+          ],
+          "desc": "broccoli",
+          "category_id": 56,
+          "category_name": "broccoli",
+          "coco_ann_id": -3
+        },
+        {
+          "bbox_2d": [
+            496,
+            866,
+            674,
+            996
+          ],
+          "desc": "broccoli",
+          "category_id": 56,
+          "category_name": "broccoli",
+          "coco_ann_id": -5
+        }
+      ],
+      "object_order": [
+        1039564,
+        -8,
+        1534147,
+        -1,
+        -7,
+        -6,
+        -2,
+        -4,
+        1038967,
+        -9,
+        -3,
+        -5
+      ],
+      "after_sha256": "52379e02a7b81c8ea2a226a70aef9b7a5f0a0cc7439b75260252be0b80e71fbe"
+    },
+    {
+      "split": "train",
+      "image_id": 25,
+      "surface": "norm1000",
+      "before_sha256": "1fd36eaa91d1e45c0f6fe32868e1b9ec76c39b7a40b0d24160ade732a7b706cf",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            58,
+            837,
+            268,
+            971
+          ],
+          "desc": "giraffe",
+          "category_id": 25,
+          "category_name": "giraffe",
+          "coco_ann_id": 599491
+        }
+      ],
+      "object_order": [
+        598548,
+        599491
+      ],
+      "after_sha256": "ef2792dd50658c11ca2a449fdee3565604e8ea91f6fd46222d147191e0c4aaa1"
+    },
+    {
+      "split": "train",
+      "image_id": 21504,
+      "surface": "pixel",
+      "before_sha256": "20a9db902f8d93134ebf1beae854635473facbaaca559a32dfd5e1e951d3d018",
+      "remove_annotation_ids": [
+        1920730
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        466572,
+        1532378,
+        706105,
+        1535143,
+        1917508,
+        1920182,
+        1918260,
+        1918526,
+        1919485,
+        1920092,
+        2116425,
+        1919947,
+        1920004,
+        1920270,
+        1919739
+      ],
+      "after_sha256": "eff41c9d4c6bb2c0c2108affbadcf836ad0d64889fc8e6c335d23aa6469f63bb"
+    },
+    {
+      "split": "train",
+      "image_id": 21504,
+      "surface": "norm1000",
+      "before_sha256": "cfc1b7d05aca2113537d5a993dd1027ff879e1a2322f2d8a94e83bd29f4c9091",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            668,
+            941,
+            671,
+            947
+          ],
+          "desc": "carrot",
+          "category_id": 57,
+          "category_name": "carrot",
+          "coco_ann_id": 1920730
+        }
+      ],
+      "object_order": [
+        466572,
+        1532378,
+        706105,
+        1535143,
+        1917508,
+        1920182,
+        1918260,
+        1918526,
+        1919485,
+        1920730,
+        1920092,
+        2116425,
+        1919947,
+        1920004,
+        1920270,
+        1919739
+      ],
+      "after_sha256": "bd914a00c924b7621514cd951618c7f67a3ef7e528a03d25022602a6680ee945"
+    },
+    {
+      "split": "train",
+      "image_id": 22240,
+      "surface": "norm1000",
+      "before_sha256": "0df3e84b1da2bca81ac03623520a94bd764e6ae7016aaff158be0a8658635d68",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        473803,
+        528599,
+        547634,
+        1228272,
+        1256363,
+        515830,
+        2152393,
+        545713,
+        550134,
+        1705914,
+        1272264,
+        551945,
+        297253,
+        294456,
+        2177805,
+        2210954,
+        2076834,
+        1827267,
+        283335,
+        2078509,
+        1418941,
+        1186434,
+        1446553,
+        2076016,
+        2176474,
+        1842753,
+        282456,
+        1184262,
+        1418319,
+        2177677,
+        1446967,
+        2076479,
+        1827006,
+        1164627
+      ],
+      "after_sha256": "f30ba02b5e58535e1e5913800aa7087f3f9fbc0df4926c779c1a5fba4761e44f"
+    },
+    {
+      "split": "train",
+      "image_id": 23957,
+      "surface": "pixel",
+      "before_sha256": "99021920bb872325782bec5722ea9045374106c2d05d2541c22020c31d5911ca",
+      "remove_annotation_ids": [
+        1406898
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1698239,
+        1366594,
+        2068583,
+        2068647,
+        1686236,
+        1818205,
+        1406402,
+        1818628,
+        2068213,
+        1405029,
+        1406775,
+        1696006,
+        1818558,
+        1406877,
+        1406920,
+        1366966,
+        173110,
+        1724692,
+        1740097
+      ],
+      "after_sha256": "f2707ec7ce9507c51a0bf087e5ebaabf55438f92395f0186056307c08752b450"
+    },
+    {
+      "split": "train",
+      "image_id": 23957,
+      "surface": "norm1000",
+      "before_sha256": "92a3f395d0b989c539aebf861a1dd249397309ce44d96c970ac1c3754207906c",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            827,
+            618,
+            830,
+            623
+          ],
+          "desc": "sheep",
+          "category_id": 20,
+          "category_name": "sheep",
+          "coco_ann_id": 1406898
+        }
+      ],
+      "object_order": [
+        1698239,
+        1366594,
+        2068583,
+        2068647,
+        1686236,
+        1818205,
+        1406402,
+        1818628,
+        2068213,
+        1405029,
+        1406775,
+        1696006,
+        1818558,
+        1406877,
+        1406920,
+        1406898,
+        1366966,
+        173110,
+        1724692,
+        1740097
+      ],
+      "after_sha256": "4a60ccfe8eb507b6a77f3170bed88e4fec0633a9deb44a1c1c73423b4ee28350"
+    },
+    {
+      "split": "train",
+      "image_id": 32074,
+      "surface": "norm1000",
+      "before_sha256": "8f4b816e1caf42842a738f63e7f308dc539e30c379aa68d88d9f484b7e179e3b",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        492068,
+        494701,
+        557288,
+        1119953,
+        1641444,
+        519816,
+        508430,
+        2161926,
+        91211,
+        83299,
+        670231,
+        1738808,
+        711142,
+        715950
+      ],
+      "after_sha256": "d163b6725688f2aacfe7c19ca39fe70b45969ac1f9f70946b438c461c30c85bd"
+    },
+    {
+      "split": "train",
+      "image_id": 37953,
+      "surface": "norm1000",
+      "before_sha256": "ca09ea8eb72dc908368a4bf35dffb6cab9a35d7c2b6bd7d0e4349623df49c8c0",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        2162923,
+        478491,
+        500832,
+        1368064,
+        2043015,
+        2026378,
+        506864,
+        2023205,
+        1272332,
+        2164525,
+        1237063,
+        615379,
+        610683,
+        620259
+      ],
+      "after_sha256": "eb95e66f0c048f025b3f6514c915bd708e7a948b8fa51964c05cc4691d84a5e6"
+    },
+    {
+      "split": "train",
+      "image_id": 41572,
+      "surface": "pixel",
+      "before_sha256": "42113471c467db5b247570ff98e8f9e7ae55f9535469aeda715763ce9455ace2",
+      "remove_annotation_ids": [
+        2091032
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        302147,
+        631051,
+        451568,
+        1354204,
+        464440,
+        1715294,
+        1470664,
+        2087630,
+        1461826,
+        1854214,
+        1854867,
+        1855079,
+        1854405,
+        1855109,
+        1855131,
+        1855217,
+        1461709
+      ],
+      "after_sha256": "56fc985cf6c9084b3cb7f9efeb29cd1462e9d8f54961280be68f499fda6a0e6d"
+    },
+    {
+      "split": "train",
+      "image_id": 41572,
+      "surface": "norm1000",
+      "before_sha256": "50d5bdd79fb4efe948b0c9f389334332d17e6d09d18e071f250ed22824086c6a",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            720,
+            503,
+            726,
+            506
+          ],
+          "desc": "baseball glove",
+          "category_id": 40,
+          "category_name": "baseball glove",
+          "coco_ann_id": 2091032
+        }
+      ],
+      "object_order": [
+        302147,
+        631051,
+        451568,
+        1354204,
+        464440,
+        1715294,
+        2091032,
+        1470664,
+        2087630,
+        1461826,
+        1854214,
+        1854867,
+        1855079,
+        1854405,
+        1855109,
+        1855131,
+        1855217,
+        1461709
+      ],
+      "after_sha256": "340e188e649948d4fe3a197536b4f94935149c37f4fb34a92839a26f2ceb4d6c"
+    },
+    {
+      "split": "train",
+      "image_id": 42819,
+      "surface": "norm1000",
+      "before_sha256": "b32b689951c7ff4206b87256b7cbb5b98287b7f00ebc70ef8e03fb3bcc472e06",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        174557,
+        1323991,
+        1330901,
+        1721124,
+        1292637,
+        1209800,
+        1303444,
+        1738064,
+        1326573,
+        1331598,
+        2004606,
+        1260133,
+        1294654,
+        1308835,
+        1169577,
+        1182207,
+        1179273,
+        1168887,
+        1444716,
+        1170211,
+        1444663,
+        1843101,
+        1183298
+      ],
+      "after_sha256": "f333e5fdd5426768b9a755f989f0f3bd80b7bcd2ebf089c1e77ec945293ae459"
+    },
+    {
+      "split": "train",
+      "image_id": 44977,
+      "surface": "norm1000",
+      "before_sha256": "b5a171fd4f23f6cf0441e8ad2e1f6eeccd6513d4c32a859c535e9fdb2272a48e",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        624572,
+        627222,
+        627157,
+        623480,
+        625713,
+        1757094,
+        1195666,
+        1798780,
+        1194031,
+        1763955,
+        1195546,
+        1710341,
+        1195082,
+        1800475,
+        1195471,
+        1194355,
+        1780960,
+        1195728,
+        1782123,
+        1782563,
+        1195629,
+        1195370,
+        1796909,
+        496686,
+        502397,
+        554489,
+        502647,
+        1755284,
+        1764054,
+        1763997,
+        1763871
+      ],
+      "after_sha256": "6b81aa47af8921934f997251b7fddc6c5aad694a30188430dd3ef2f86148bc98"
+    },
+    {
+      "split": "train",
+      "image_id": 77039,
+      "surface": "pixel",
+      "before_sha256": "2e576b705410a32d34dc57e1513f4f28179416078a292da4885a24137c6133aa",
+      "remove_annotation_ids": [
+        2087312
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        443257,
+        2003168,
+        1270895,
+        1852762,
+        1751730,
+        2025898,
+        2008964,
+        2020787,
+        1748478,
+        1744204,
+        1747272,
+        2156619,
+        1713248,
+        2212920,
+        2200145
+      ],
+      "after_sha256": "10c46cc2f149019a8d9f10405a9a40303031dc23db8d3142badd99af5171154d"
+    },
+    {
+      "split": "train",
+      "image_id": 77039,
+      "surface": "norm1000",
+      "before_sha256": "6579a3404861ce1f1d51f767bce0a33ba000b023e682f2757014772cb565a341",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            362,
+            799,
+            367,
+            802
+          ],
+          "desc": "snowboard",
+          "category_id": 36,
+          "category_name": "snowboard",
+          "coco_ann_id": 2087312
+        }
+      ],
+      "object_order": [
+        443257,
+        2003168,
+        1270895,
+        1852762,
+        1751730,
+        2025898,
+        2008964,
+        2020787,
+        1748478,
+        1744204,
+        1747272,
+        2156619,
+        1713248,
+        2087312,
+        2212920,
+        2200145
+      ],
+      "after_sha256": "e842f28f5df3a98c1fd34a04dbf57b30ac561ca2c68829983ddadd8a6973a3da"
+    },
+    {
+      "split": "train",
+      "image_id": 80281,
+      "surface": "pixel",
+      "before_sha256": "62395a5041149aa3afd8881e0ee183385063a2c14c73fedbc58aaea4c0357478",
+      "remove_annotation_ids": [
+        36881,
+        37361,
+        367364,
+        1815274
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2064540,
+        39793,
+        1401846,
+        1400800,
+        1401917,
+        1401953,
+        1398974,
+        1401933,
+        1815221,
+        339430,
+        225216,
+        202405
+      ],
+      "after_sha256": "8a493ef5eeb3149a0e7f7833ccee3f0528a8e2f475657286cc5f4334783e8874"
+    },
+    {
+      "split": "train",
+      "image_id": 80281,
+      "surface": "norm1000",
+      "before_sha256": "abf66808ebeace4ab0fcc68c845458b9d35d2fb584f6c75cfd36b67011064ed8",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            374,
+            61,
+            377,
+            67
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1815274
+        },
+        {
+          "bbox_2d": [
+            298,
+            72,
+            301,
+            76
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 37361
+        },
+        {
+          "bbox_2d": [
+            301,
+            73,
+            303,
+            79
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 36881
+        },
+        {
+          "bbox_2d": [
+            291,
+            108,
+            295,
+            111
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 367364
+        }
+      ],
+      "object_order": [
+        2064540,
+        39793,
+        1815274,
+        1401846,
+        1400800,
+        1401917,
+        37361,
+        36881,
+        1401953,
+        1398974,
+        1401933,
+        367364,
+        1815221,
+        339430,
+        225216,
+        202405
+      ],
+      "after_sha256": "2f2c04e624365957ff0fbeaddf170ad100cdc14738794633203cfd9cd4a45654"
+    },
+    {
+      "split": "train",
+      "image_id": 82737,
+      "surface": "norm1000",
+      "before_sha256": "2629f1a7c960a137416a46ed59d7dc8a9f38a29c938d1a3196a2449d55030eea",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        405469,
+        409840,
+        407812,
+        173832,
+        410230,
+        406454,
+        410262,
+        1786032,
+        1789261,
+        1788265,
+        190177,
+        395836,
+        1788716,
+        1711169,
+        1357410,
+        1370475,
+        1781474,
+        1777924,
+        1371224,
+        1789135,
+        1342163,
+        1771451,
+        1771263,
+        1355598
+      ],
+      "after_sha256": "a72f5056d4c81ae1e9a72622709021afa0050413bf2c01de70757b3580e9a977"
+    },
+    {
+      "split": "train",
+      "image_id": 86646,
+      "surface": "norm1000",
+      "before_sha256": "a3db24680de0107db0d322b4a794af6d2c26f5448e788824878c3e40df1aaf71",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        491196,
+        528589,
+        2158298,
+        535463,
+        708018,
+        1888602,
+        1084264,
+        1517783,
+        707910,
+        1840570,
+        296189,
+        383600
+      ],
+      "after_sha256": "f2fd6966bfe1d4dec65a00c44472b6ab33f3d95f0ace49009041e7451ca13774"
+    },
+    {
+      "split": "train",
+      "image_id": 91530,
+      "surface": "norm1000",
+      "before_sha256": "67cebb87102f61104297922fbad4d9c40aac1e97aabae05519ff447024a12894",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1992567,
+        1994012,
+        1091467,
+        1931293,
+        1992268,
+        715727,
+        703829,
+        2216501
+      ],
+      "after_sha256": "d6f9a6724b0b03f6524f582f2b47191712604b4a9dcbcaadce162f6c491c7123"
+    },
+    {
+      "split": "train",
+      "image_id": 102256,
+      "surface": "pixel",
+      "before_sha256": "aa6a91e96be75c5ad8c57e36b835cb040e34e80013501a6417552de46e93f677",
+      "remove_annotation_ids": [
+        2136934
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2011574,
+        2158835,
+        1312318,
+        2052316,
+        1779721,
+        1799530,
+        1291577,
+        1332062,
+        362039,
+        1780609,
+        1352458,
+        363585,
+        1314188,
+        1303936,
+        360272,
+        1356733,
+        2039268,
+        361380,
+        1341658,
+        1324755,
+        1299476,
+        1935479,
+        1276230,
+        1322816,
+        1253430,
+        385380,
+        382434,
+        1930888,
+        1215231,
+        1589069,
+        604187
+      ],
+      "after_sha256": "3560c92d5e2bc13ac7a4d144ac06f046b2a2ab348165d6ff859ab38463ab60e1"
+    },
+    {
+      "split": "train",
+      "image_id": 102256,
+      "surface": "norm1000",
+      "before_sha256": "9eac8edc4da632be0db0a772fc785bada7387244ff306b8b6d0c4fb23b9f4c77",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            848,
+            323,
+            851,
+            327
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 2136934
+        }
+      ],
+      "object_order": [
+        2011574,
+        2158835,
+        1312318,
+        2136934,
+        2052316,
+        1779721,
+        1799530,
+        1291577,
+        1332062,
+        362039,
+        1780609,
+        1352458,
+        363585,
+        1314188,
+        1303936,
+        360272,
+        1356733,
+        2039268,
+        361380,
+        1341658,
+        1324755,
+        1299476,
+        1935479,
+        1276230,
+        1322816,
+        1253430,
+        385380,
+        382434,
+        1930888,
+        1215231,
+        1589069,
+        604187
+      ],
+      "after_sha256": "ca72f4013d334bdd17fd28bf3bfa685d2f7f4bae71d06b023e1f6c9e907278f6"
+    },
+    {
+      "split": "train",
+      "image_id": 116004,
+      "surface": "pixel",
+      "before_sha256": "4b372cab4e5abd53c02e7e23c5d0e2d4b30dba7ff4d4308d5ef935e8a2c216f0",
+      "remove_annotation_ids": [
+        2174047
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1398982,
+        1400644,
+        2066040,
+        1399790,
+        1400246,
+        1400434,
+        2065355,
+        405222,
+        2057772,
+        407956,
+        1199489,
+        1199104,
+        1384851,
+        1384120,
+        1196947,
+        1276840,
+        1294029,
+        1321269,
+        1301746,
+        1300231,
+        1228816,
+        1723799,
+        1297667,
+        352262,
+        1307975,
+        1309954,
+        2011422,
+        1257273,
+        1220253,
+        2170257,
+        358242
+      ],
+      "after_sha256": "6e82545997f5029bd2687a8da05d5f0687a743227444cbcae2a6aeda32ea0c46"
+    },
+    {
+      "split": "train",
+      "image_id": 116004,
+      "surface": "norm1000",
+      "before_sha256": "f5c76b12883804eb0063e40945538b427b58fa94dd2cc725b6bdd5f0c48bed4e",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            313,
+            31,
+            316,
+            34
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 2174047
+        }
+      ],
+      "object_order": [
+        1398982,
+        1400644,
+        2174047,
+        2066040,
+        1399790,
+        1400246,
+        1400434,
+        2065355,
+        405222,
+        2057772,
+        407956,
+        1199489,
+        1199104,
+        1384851,
+        1384120,
+        1196947,
+        1276840,
+        1294029,
+        1321269,
+        1301746,
+        1300231,
+        1228816,
+        1723799,
+        1297667,
+        352262,
+        1307975,
+        1309954,
+        2011422,
+        1257273,
+        1220253,
+        2170257,
+        358242
+      ],
+      "after_sha256": "a286cec9aee01d3804bb528b6fdbea31e29d83e878f7f8a676814ded11e3085d"
+    },
+    {
+      "split": "train",
+      "image_id": 141426,
+      "surface": "pixel",
+      "before_sha256": "4de4d938c72e0a9f96deb53b13d26120c1030790e7824d2902cf16d5c66473a1",
+      "remove_annotation_ids": [
+        1637247
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        76408,
+        1292433,
+        1308509,
+        1274490,
+        1737480,
+        1299507,
+        1304639,
+        2010647,
+        1275769,
+        1279148,
+        1316254,
+        1274147,
+        1166715,
+        1178818,
+        1207624,
+        1717812,
+        1835505,
+        1174650,
+        75945,
+        1820392,
+        1183626
+      ],
+      "after_sha256": "4481a52bbba07e61d19ae0c0bb8b3849939357036296ffb37121caadcac29fb4"
+    },
+    {
+      "split": "train",
+      "image_id": 141426,
+      "surface": "norm1000",
+      "before_sha256": "534d9b13cdfca4a5cb5e4eef609ab5cc17adca7298c4a620e2048eca861284a0",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            350,
+            250,
+            351,
+            258
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 1637247
+        }
+      ],
+      "object_order": [
+        76408,
+        1292433,
+        1637247,
+        1308509,
+        1274490,
+        1737480,
+        1299507,
+        1304639,
+        2010647,
+        1275769,
+        1279148,
+        1316254,
+        1274147,
+        1166715,
+        1178818,
+        1207624,
+        1717812,
+        1835505,
+        1174650,
+        75945,
+        1820392,
+        1183626
+      ],
+      "after_sha256": "78524b3df5414d0fd0f2640c25b2cb65b49ce9a4b71f31cb631ccf0e106b8849"
+    },
+    {
+      "split": "train",
+      "image_id": 146972,
+      "surface": "norm1000",
+      "before_sha256": "4a17c201ffe40df2e98fedd7e47e39fac0495cfbc9a9735785350bdcc2946d16",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        233804,
+        1954702,
+        1666906,
+        1153697,
+        1967360,
+        1967326,
+        1502341,
+        2215650,
+        1967258,
+        106246,
+        1964078,
+        1965789,
+        320283,
+        571828,
+        1898434,
+        1390448,
+        1151861,
+        123302,
+        1038916,
+        708757,
+        1900344,
+        708236,
+        2109395,
+        1534415,
+        1899372,
+        2217339,
+        1038479,
+        1539623,
+        1532433,
+        2230961,
+        716967,
+        709066,
+        2230967,
+        717189,
+        695379
+      ],
+      "after_sha256": "c909f4d652da34f522f2632b52709b2706647ddd35d9509b4dd8113abcd9854b"
+    },
+    {
+      "split": "train",
+      "image_id": 157960,
+      "surface": "norm1000",
+      "before_sha256": "12565c28d2caf9a466a6b9300f969360b1b9c592a33493d206155c66b7ed98c9",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        205843,
+        32480,
+        233890,
+        1950477,
+        663812,
+        1512993,
+        1109050
+      ],
+      "after_sha256": "1618bad1dbb2ca530bc8b25f2e7234b4e4fcc5cf2ee176c368b7be101da20a46"
+    },
+    {
+      "split": "train",
+      "image_id": 166594,
+      "surface": "norm1000",
+      "before_sha256": "f61f09cb4160f84c12b10d5c371cfb38690a0e4202dbd00c8c2f37b6c65a673e",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        444137,
+        1202399,
+        1225411,
+        79363,
+        2072908,
+        299221
+      ],
+      "after_sha256": "f3378b6d88f9819bfcf754084c94e4c76f3721c94ece97bde7543d4f2199578e"
+    },
+    {
+      "split": "train",
+      "image_id": 168890,
+      "surface": "pixel",
+      "before_sha256": "1e2c1eb9acf5cb1dd81c9088631d5e70729d107ef755152626e563e5ce38f77a",
+      "remove_annotation_ids": [
+        1977900
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        256661,
+        137713,
+        139884,
+        145314,
+        151023
+      ],
+      "after_sha256": "6f75c34a8ab57ab4cf4b8cc32dc26b77d2dccd6f1016b16cfccc9b583ce433c6"
+    },
+    {
+      "split": "train",
+      "image_id": 168890,
+      "surface": "norm1000",
+      "before_sha256": "15b1c47b1e47f9c33acb663ebabb71259c055a0e75aa2e17eb703812f025e18c",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            149,
+            16,
+            152,
+            20
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 1977900
+        }
+      ],
+      "object_order": [
+        256661,
+        137713,
+        1977900,
+        139884,
+        145314,
+        151023
+      ],
+      "after_sha256": "24eb1eeccab1e689d195e0fa75d3c5f2563509350a62a47ae96b2e96b1dd99d6"
+    },
+    {
+      "split": "train",
+      "image_id": 182406,
+      "surface": "pixel",
+      "before_sha256": "ec2eebe69ecab635640b30e5cbf17e76c3f8d772ee74a972b9a4431e70080f07",
+      "remove_annotation_ids": [
+        1977531
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1288685,
+        1267511,
+        1201209,
+        1290994,
+        1284401,
+        1301235,
+        1302341,
+        1273802,
+        1285226,
+        323751,
+        1746460,
+        674238,
+        1302803,
+        671652,
+        82534,
+        2071283,
+        2073008,
+        2215988,
+        2215888,
+        83628,
+        1421499,
+        1510028
+      ],
+      "after_sha256": "5f1c8a110705c81a2cff3d76e8042ea69d043c4a05d72ae85fa80024b6c1d25d"
+    },
+    {
+      "split": "train",
+      "image_id": 182406,
+      "surface": "norm1000",
+      "before_sha256": "0c703ba164b48a4dd5bb70f77810b5ca9b03e3e2ef0319ac873dfea94f5a6e26",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            261,
+            495,
+            264,
+            501
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 1977531
+        }
+      ],
+      "object_order": [
+        1288685,
+        1267511,
+        1201209,
+        1290994,
+        1284401,
+        1301235,
+        1302341,
+        1273802,
+        1285226,
+        323751,
+        1746460,
+        674238,
+        1302803,
+        1977531,
+        671652,
+        82534,
+        2071283,
+        2073008,
+        2215988,
+        2215888,
+        83628,
+        1421499,
+        1510028
+      ],
+      "after_sha256": "75b264a0bb4efbe87ba1b0e743d1a0a84bcd4c1e6a3538e726a2193e57c282f0"
+    },
+    {
+      "split": "train",
+      "image_id": 207151,
+      "surface": "norm1000",
+      "before_sha256": "3cf096c96352c0e6c250b50e8862459c1e7fc64bec8575c4418b3e326c1ce48f",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        79606,
+        1617936,
+        668697,
+        1075566,
+        1074145
+      ],
+      "after_sha256": "aef4c7d2d75d82424743e1609cddc9c169c3ea418076907e3d7d98f8ef743f18"
+    },
+    {
+      "split": "train",
+      "image_id": 209919,
+      "surface": "pixel",
+      "before_sha256": "301c43b294401f739de971c3422865b5610fdf4f05bf0869547b0bee7783d472",
+      "remove_annotation_ids": [
+        1802501
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        279580,
+        281818,
+        1723924,
+        1725097,
+        1377254,
+        1378597,
+        1801901
+      ],
+      "after_sha256": "7a9ee25b8eb5c3299aa832324c28a96b7d70e74f9e83a60ffc9e76a35ed948b6"
+    },
+    {
+      "split": "train",
+      "image_id": 209919,
+      "surface": "norm1000",
+      "before_sha256": "d6a9933f0b098925c66d41151dcecb87f00ad881f6d2a8ae83a4dc1761f5b5f0",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            440,
+            468,
+            442,
+            475
+          ],
+          "desc": "boat",
+          "category_id": 9,
+          "category_name": "boat",
+          "coco_ann_id": 1802501
+        }
+      ],
+      "object_order": [
+        279580,
+        281818,
+        1723924,
+        1725097,
+        1802501,
+        1377254,
+        1378597,
+        1801901
+      ],
+      "after_sha256": "9c7ef22ed7a5247e4a7616ba64b85faeb54b03776b1e6dc901da048c8d7c7ce6"
+    },
+    {
+      "split": "train",
+      "image_id": 228011,
+      "surface": "pixel",
+      "before_sha256": "20a19994debfbb510535fb87232884184b65ce1aac0c396732caeed81c6fd62d",
+      "remove_annotation_ids": [
+        329108
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1762572,
+        2153939,
+        227422,
+        234440,
+        1738232,
+        228850,
+        226686,
+        154731,
+        1820373,
+        154995,
+        246479,
+        129401,
+        1789717,
+        130138,
+        1336250,
+        1790992,
+        152220,
+        130191
+      ],
+      "after_sha256": "6d1c302913dcd57f6a7c711f93fe8461547d44b6871edb4ec719c1f67abcccc4"
+    },
+    {
+      "split": "train",
+      "image_id": 228011,
+      "surface": "norm1000",
+      "before_sha256": "d4842ea42f57c8015181b43fb3a651b2995ac6c8b0d7dcd07e72a8f50bc65dfd",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            229,
+            420,
+            231,
+            425
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 329108
+        }
+      ],
+      "object_order": [
+        1762572,
+        2153939,
+        227422,
+        234440,
+        1738232,
+        228850,
+        226686,
+        329108,
+        154731,
+        1820373,
+        154995,
+        246479,
+        129401,
+        1789717,
+        130138,
+        1336250,
+        1790992,
+        152220,
+        130191
+      ],
+      "after_sha256": "fcbe3f4c64a9438c428849d70a27219e56c8be06851870a5275def834b31b55c"
+    },
+    {
+      "split": "train",
+      "image_id": 236052,
+      "surface": "pixel",
+      "before_sha256": "914d3dff2034f73c35956f25d745b0bcf44aa9ebe6d95a4a556486dc67cc8faa",
+      "remove_annotation_ids": [
+        322552
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        173803,
+        207002,
+        575164
+      ],
+      "after_sha256": "b9f7186e02c599b4dad76b3bb3b39b214f04f7e6173d99537ebc8d7770b887b7"
+    },
+    {
+      "split": "train",
+      "image_id": 236052,
+      "surface": "norm1000",
+      "before_sha256": "f5a8c9c13ccecca9bd419782de4faabd14244a8f6fe5f180581e1857fc31dbe6",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            406,
+            445,
+            409,
+            451
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 322552
+        }
+      ],
+      "object_order": [
+        173803,
+        207002,
+        322552,
+        575164
+      ],
+      "after_sha256": "457cbc266911d5749294f8c1f85c9e52f544a558b939c31c18efe57143025716"
+    },
+    {
+      "split": "train",
+      "image_id": 247306,
+      "surface": "pixel",
+      "before_sha256": "62a3fd2d6c45809c6bbfaca96d6702b2bac5dfd6d8bc5ce3b2704309a6707855",
+      "remove_annotation_ids": [
+        38004
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        38976,
+        1815146,
+        37852,
+        2064864,
+        1815475,
+        41154,
+        1815169,
+        1815823,
+        190272,
+        182284,
+        181507,
+        180766,
+        1377508,
+        178923,
+        178839,
+        218609,
+        2015197,
+        229620,
+        1704339,
+        2162605,
+        229795,
+        231571,
+        1711349,
+        254245,
+        256469,
+        258610,
+        1704469
+      ],
+      "after_sha256": "4dab54fd2d2f312f407af737dc023554705bf7f399999759b29421a9fb25c92e"
+    },
+    {
+      "split": "train",
+      "image_id": 247306,
+      "surface": "norm1000",
+      "before_sha256": "46bd4699bcbc1e75543facad313c190f71247742c8b5e27ba8ba76a29b7b4e5e",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            745,
+            377,
+            748,
+            380
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 38004
+        }
+      ],
+      "object_order": [
+        38976,
+        1815146,
+        37852,
+        2064864,
+        1815475,
+        41154,
+        1815169,
+        1815823,
+        190272,
+        38004,
+        182284,
+        181507,
+        180766,
+        1377508,
+        178923,
+        178839,
+        218609,
+        2015197,
+        229620,
+        1704339,
+        2162605,
+        229795,
+        231571,
+        1711349,
+        254245,
+        256469,
+        258610,
+        1704469
+      ],
+      "after_sha256": "66f762494f0a30c8d487fbc5f29925c709d51bbe184d7b79ac3c5bbf47f649bf"
+    },
+    {
+      "split": "train",
+      "image_id": 253796,
+      "surface": "pixel",
+      "before_sha256": "3181388f0bd6d1c5b46520d8a30f99094d716a916986e4f4431f974fd9bebeca",
+      "remove_annotation_ids": [
+        1398764,
+        1401929
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        594970,
+        2065121,
+        1401956,
+        1414035,
+        1402009,
+        1402001,
+        1401995,
+        2066097,
+        2066252,
+        2065610,
+        1401654,
+        1401991
+      ],
+      "after_sha256": "b1541a49b8d7faf0df9bf52d772e5c6cc814c3becf700b9b7f1e8caeb268c9e6"
+    },
+    {
+      "split": "train",
+      "image_id": 253796,
+      "surface": "norm1000",
+      "before_sha256": "3842965a6e4ce5d5a3be91058686616777da6ea73b63d72b3da1a8a172b3b268",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            109,
+            319,
+            112,
+            323
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1398764
+        },
+        {
+          "bbox_2d": [
+            109,
+            327,
+            112,
+            331
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1401929
+        }
+      ],
+      "object_order": [
+        594970,
+        2065121,
+        1401956,
+        1414035,
+        1402009,
+        1402001,
+        1398764,
+        1401929,
+        1401995,
+        2066097,
+        2066252,
+        2065610,
+        1401654,
+        1401991
+      ],
+      "after_sha256": "d496e1dd4e05f1ffd1ba2294a4e548cd102fd1ecc38ce3b57ac6c2d87b572d00"
+    },
+    {
+      "split": "train",
+      "image_id": 254449,
+      "surface": "pixel",
+      "before_sha256": "6a0ee62625c3645cb9a9c95d48e59d3f824b1481574e28f0208db4ff110f5294",
+      "remove_annotation_ids": [
+        1816247,
+        1816254
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1814421,
+        1816263,
+        2064453,
+        1815561,
+        1816221,
+        1816243,
+        1816030,
+        1253365,
+        1270217,
+        1741072,
+        1793961,
+        1248454,
+        1702257,
+        2162740,
+        1307420,
+        1242934,
+        1290747,
+        2014782,
+        1681547,
+        1284364,
+        1700228,
+        1394089,
+        1170228,
+        1175259,
+        571779,
+        1976860
+      ],
+      "after_sha256": "23bd8c1af5eb062871e0b0368d29168cc6e9177e1eeff3e26efcbe65ad167921"
+    },
+    {
+      "split": "train",
+      "image_id": 254449,
+      "surface": "norm1000",
+      "before_sha256": "be3a59e69b95e9a28dac2d19de8f9f4277b606f0db607748997347ef1c3ac404",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            941,
+            133,
+            945,
+            136
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1816254
+        },
+        {
+          "bbox_2d": [
+            939,
+            163,
+            943,
+            166
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1816247
+        }
+      ],
+      "object_order": [
+        1814421,
+        1816263,
+        2064453,
+        1815561,
+        1816254,
+        1816221,
+        1816243,
+        1816030,
+        1816247,
+        1253365,
+        1270217,
+        1741072,
+        1793961,
+        1248454,
+        1702257,
+        2162740,
+        1307420,
+        1242934,
+        1290747,
+        2014782,
+        1681547,
+        1284364,
+        1700228,
+        1394089,
+        1170228,
+        1175259,
+        571779,
+        1976860
+      ],
+      "after_sha256": "64bac4e63cc62ee475fae9d1c7dbf363913bc7f29bb19df4c6aee54f9b337ce2"
+    },
+    {
+      "split": "train",
+      "image_id": 266120,
+      "surface": "pixel",
+      "before_sha256": "f68eb8fbf93de4dee9b80b19cf801caa15f99016b4ea8126da7db97069c63468",
+      "remove_annotation_ids": [
+        1948590
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        428549,
+        1948649,
+        1208400,
+        1948427,
+        1679367,
+        1678052,
+        1937336,
+        1938081,
+        613354
+      ],
+      "after_sha256": "5d097b99569e1ea0d3372a9d61b31340cbf775fb0cd0166222a796cb51d4d241"
+    },
+    {
+      "split": "train",
+      "image_id": 266120,
+      "surface": "norm1000",
+      "before_sha256": "eb41b97144fbaac5c7705f3e15c91d2d0389ba0a4abfd12d7be9119fdc0f83f4",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            136,
+            262,
+            139,
+            266
+          ],
+          "desc": "chair",
+          "category_id": 62,
+          "category_name": "chair",
+          "coco_ann_id": 1948590
+        }
+      ],
+      "object_order": [
+        428549,
+        1948649,
+        1208400,
+        1948427,
+        1679367,
+        1678052,
+        1937336,
+        1938081,
+        1948590,
+        613354
+      ],
+      "after_sha256": "ab82ea2089779916f958ceba77a9af3a0e48a0a8db9dff1e1e3269b07dd7109a"
+    },
+    {
+      "split": "train",
+      "image_id": 287535,
+      "surface": "norm1000",
+      "before_sha256": "a72b87961a65e1c2cf244ae2fffde4df5e2a025d10d9366b320d27999d845162",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        403120,
+        1382908,
+        403323,
+        1807560,
+        345946,
+        1370470,
+        1798113,
+        1340341
+      ],
+      "after_sha256": "59a3e8d5568afc6acfb4770da2aca140b456f33ea83cd979e1ff9fee62414b43"
+    },
+    {
+      "split": "train",
+      "image_id": 296176,
+      "surface": "pixel",
+      "before_sha256": "f8f59dc64331e356266c43f8db9261168a62c6b8e17fce13f44054d7dec61863",
+      "remove_annotation_ids": [
+        1776481
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        624365,
+        431877,
+        1787928,
+        1787447,
+        1357423,
+        1786567,
+        1780882,
+        1773875,
+        1770619,
+        1788001,
+        1229956
+      ],
+      "after_sha256": "ffacc4191b35683f4796ec8fb34062aa79617455a2fe85ff9e56b90e3dec9db4"
+    },
+    {
+      "split": "train",
+      "image_id": 296176,
+      "surface": "norm1000",
+      "before_sha256": "e3df7601e7a49935ca19e5980935949989abcab0e25194bb7458b15394662450",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            794,
+            474,
+            800,
+            477
+          ],
+          "desc": "car",
+          "category_id": 3,
+          "category_name": "car",
+          "coco_ann_id": 1776481
+        }
+      ],
+      "object_order": [
+        624365,
+        431877,
+        1787928,
+        1787447,
+        1357423,
+        1786567,
+        1780882,
+        1776481,
+        1773875,
+        1770619,
+        1788001,
+        1229956
+      ],
+      "after_sha256": "897da01b0f499772948af6267a18b08f364862a03fbdfbfbacc62970e01f75a2"
+    },
+    {
+      "split": "train",
+      "image_id": 297159,
+      "surface": "norm1000",
+      "before_sha256": "c247057529df4556ecce38b7b8b7ad6c19f0264b155e6ed0c43213ea51b6118b",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        38639,
+        368150,
+        367831,
+        36153,
+        368003,
+        40312,
+        41795,
+        367457,
+        272169,
+        41734,
+        2065087,
+        1400507,
+        272564
+      ],
+      "after_sha256": "ed926201cf678b87493748fca281deec0bf9017c68c069cca0c970cd18569d59"
+    },
+    {
+      "split": "train",
+      "image_id": 321968,
+      "surface": "norm1000",
+      "before_sha256": "c9b2c44286d3a3d23f23820dd58aca040b1803681e9d4fa707d25e784972d4ad",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1750344,
+        2031286,
+        1322668,
+        1313454,
+        1282944,
+        1268085,
+        1603460,
+        2120053,
+        1603040,
+        1277037,
+        1603103,
+        1603417,
+        1246799,
+        1319990,
+        1603475,
+        1601365,
+        1964777,
+        1596559,
+        391301,
+        1597937,
+        1589618,
+        2031609,
+        1965687,
+        1600221,
+        1602035,
+        1962908,
+        1508428,
+        668087,
+        1874351,
+        668093,
+        1932317,
+        663800,
+        2099185,
+        391532,
+        1282329,
+        1514779,
+        668105,
+        1504156,
+        668111,
+        2100809,
+        1508992,
+        1510904,
+        713501,
+        668082,
+        1874000,
+        1515763,
+        1513594,
+        675077,
+        1527642,
+        667962,
+        1536527,
+        1037988,
+        2106263,
+        1515865,
+        718164,
+        676895,
+        1495742,
+        1514654
+      ],
+      "after_sha256": "3b70004b743aa545ea2ab4d5c40eba84c1e701a7644030f68cca1a80ccd3ecb8"
+    },
+    {
+      "split": "train",
+      "image_id": 333081,
+      "surface": "norm1000",
+      "before_sha256": "05cb3603e3335c415b22b14132a689effaf933a31fbd4c71e8ba02bf2f6e0ffc",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1220624,
+        1232844,
+        1283599,
+        1269595,
+        1275562,
+        1718278,
+        1247923,
+        1269556,
+        1263814,
+        1247226,
+        1229618,
+        610824,
+        1451719,
+        1455212,
+        1454550,
+        609419,
+        606806
+      ],
+      "after_sha256": "7d6d33c87725410275d5ee9e2079e695bc535a18c3e14795f4895e39f67864fa"
+    },
+    {
+      "split": "train",
+      "image_id": 334953,
+      "surface": "pixel",
+      "before_sha256": "bd59043d956d56714cfc3087b8020927102e206062bcf065fe17eaefcddd2c15",
+      "remove_annotation_ids": [
+        1814128
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2066264,
+        1815163,
+        1815032,
+        2065872,
+        2065936,
+        1815925,
+        1814741,
+        1815720,
+        1815801,
+        2064582,
+        261799,
+        257052,
+        653604,
+        654277
+      ],
+      "after_sha256": "498b4842355eb9a00984dd92927dc8a3dec058777f2fb8fd768238c607f3b0a3"
+    },
+    {
+      "split": "train",
+      "image_id": 334953,
+      "surface": "norm1000",
+      "before_sha256": "1ddc2ca2e169b9690d852a9714f65a3e3ba81cf90070bbcc21a660fbf821887f",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            142,
+            369,
+            147,
+            373
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1814128
+        }
+      ],
+      "object_order": [
+        2066264,
+        1815163,
+        1815032,
+        2065872,
+        2065936,
+        1814128,
+        1815925,
+        1814741,
+        1815720,
+        1815801,
+        2064582,
+        261799,
+        257052,
+        653604,
+        654277
+      ],
+      "after_sha256": "8b51329118565d4b8dc40bfce4397449d2fd83b2cdecc954c04fa7f73e23b27b"
+    },
+    {
+      "split": "train",
+      "image_id": 339913,
+      "surface": "pixel",
+      "before_sha256": "d9d7c922fb4cc4abb393c74c95ce6fa82c0204391a1711a6bfb61c37feea1dad",
+      "remove_annotation_ids": [
+        328532
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        163551,
+        229630,
+        220135,
+        1206951,
+        1163572,
+        227751,
+        230166,
+        1218224,
+        232452,
+        1751433,
+        1421411,
+        127008,
+        322483,
+        1970530
+      ],
+      "after_sha256": "5c3097dfc8aa6538d619ff17d762b36ebc67e3d06fd15b5e353b56b9e9b4171a"
+    },
+    {
+      "split": "train",
+      "image_id": 339913,
+      "surface": "norm1000",
+      "before_sha256": "59896155a367d774fb109b3dcc8c477b0c88886ae9e580fbd731c2cd2e8b7bd6",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            51,
+            468,
+            54,
+            474
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 328532
+        }
+      ],
+      "object_order": [
+        163551,
+        229630,
+        220135,
+        1206951,
+        1163572,
+        227751,
+        230166,
+        328532,
+        1218224,
+        232452,
+        1751433,
+        1421411,
+        127008,
+        322483,
+        1970530
+      ],
+      "after_sha256": "fd55ba82b56a17ee3f39600aaaf709de038ba0acc6cd8f8b91956b6784851512"
+    },
+    {
+      "split": "train",
+      "image_id": 341409,
+      "surface": "pixel",
+      "before_sha256": "1b346f42a0ee5090e97c2b77d76919e8d7a547df318e3c54d449f786a3e3b2ad",
+      "remove_annotation_ids": [
+        1640030
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1376500,
+        1291563,
+        1285305,
+        1208995,
+        2016225,
+        556353,
+        2158213,
+        563643,
+        1291448,
+        1426162,
+        1863544,
+        1322427,
+        1749761,
+        1933140,
+        1247152,
+        2120712,
+        1295389,
+        1585569,
+        1936916,
+        1481173,
+        1863885,
+        1481270,
+        1481339,
+        1479191,
+        1481414,
+        1481308,
+        1480795,
+        1863905,
+        1862021,
+        1480374,
+        2091402
+      ],
+      "after_sha256": "41c105b4e3c4a9e61bceb89424a29bdaba3b1650ec9d001799ba1970484c4ffc"
+    },
+    {
+      "split": "train",
+      "image_id": 341409,
+      "surface": "norm1000",
+      "before_sha256": "e3512aaa8e03bd5015db74cef4669212d9f6ae9897c68d88b677a46339c06472",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            341,
+            160,
+            343,
+            168
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 1640030
+        }
+      ],
+      "object_order": [
+        1376500,
+        1291563,
+        1285305,
+        1640030,
+        1208995,
+        2016225,
+        556353,
+        2158213,
+        563643,
+        1291448,
+        1426162,
+        1863544,
+        1322427,
+        1749761,
+        1933140,
+        1247152,
+        2120712,
+        1295389,
+        1585569,
+        1936916,
+        1481173,
+        1863885,
+        1481270,
+        1481339,
+        1479191,
+        1481414,
+        1481308,
+        1480795,
+        1863905,
+        1862021,
+        1480374,
+        2091402
+      ],
+      "after_sha256": "eee18fc7bb01a4864fdefd61a3b52ee6604bd91b1c4126d3630e4d8a4d5b1851"
+    },
+    {
+      "split": "train",
+      "image_id": 341892,
+      "surface": "pixel",
+      "before_sha256": "252914b74b081eeab6a7a2489d14ba2fcdd542ff4a55aee6c9b4382300f6d227",
+      "remove_annotation_ids": [
+        2066324
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2229982,
+        1400491,
+        1399654,
+        2065614,
+        2230014,
+        2230020,
+        177337,
+        2065859,
+        181115,
+        236434,
+        1377583,
+        228837,
+        237980,
+        279958,
+        2002049,
+        237605,
+        280568,
+        239324,
+        227198,
+        227641,
+        238675,
+        236934,
+        237384,
+        6979,
+        237441,
+        1755552,
+        575137
+      ],
+      "after_sha256": "f26908ad44c8fe8b6d243dc43e6f20f7aa6247c6c7b5080f4ffe35614bbd5213"
+    },
+    {
+      "split": "train",
+      "image_id": 341892,
+      "surface": "norm1000",
+      "before_sha256": "bd53650605618e31d02fa480c089edc2c3dfa22720a11f5f8371cb2d4fabca0e",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            765,
+            294,
+            768,
+            299
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 2066324
+        }
+      ],
+      "object_order": [
+        2229982,
+        1400491,
+        1399654,
+        2065614,
+        2230014,
+        2230020,
+        2066324,
+        177337,
+        2065859,
+        181115,
+        236434,
+        1377583,
+        228837,
+        237980,
+        279958,
+        2002049,
+        237605,
+        280568,
+        239324,
+        227198,
+        227641,
+        238675,
+        236934,
+        237384,
+        6979,
+        237441,
+        1755552,
+        575137
+      ],
+      "after_sha256": "521f20d188eb20375c2e8c1c51003072260367ca96644cef56edd8d6c9ce1000"
+    },
+    {
+      "split": "train",
+      "image_id": 349101,
+      "surface": "pixel",
+      "before_sha256": "0f6b9b003f8f5f765a59fc562bc9fda1aa9e4354d4b5b2b5db448ca242a3fd15",
+      "remove_annotation_ids": [
+        2138009
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        170774,
+        248099,
+        1807678,
+        1808005,
+        231026,
+        207332,
+        197939,
+        1733737,
+        189980,
+        222334,
+        1179363,
+        1638188,
+        140445
+      ],
+      "after_sha256": "bf627fc73062a07f6047b21f45795d6e4b3f6212540e012a5baae9ad14701962"
+    },
+    {
+      "split": "train",
+      "image_id": 349101,
+      "surface": "norm1000",
+      "before_sha256": "01709099a0b8ee998b80079ad59df7551c1284f7208e73f43c417337ef8feab8",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            740,
+            478,
+            744,
+            482
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 2138009
+        }
+      ],
+      "object_order": [
+        170774,
+        248099,
+        1807678,
+        1808005,
+        231026,
+        207332,
+        197939,
+        1733737,
+        189980,
+        2138009,
+        222334,
+        1179363,
+        1638188,
+        140445
+      ],
+      "after_sha256": "bf63de055d1a49e47f100312b08aabcbfac3a6fc78be861148bcb04e1ea7c630"
+    },
+    {
+      "split": "train",
+      "image_id": 370739,
+      "surface": "norm1000",
+      "before_sha256": "fb29d8577320ec8a39a3c2fd9bf51c62a188553f72b8308052b9f04fc494d37d",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1797393,
+        1771048,
+        350772,
+        1373733,
+        354384,
+        1342481
+      ],
+      "after_sha256": "66485926203e013f45a5e7ae95677d072fea2d2c1d43cff5188b07101f2f1dcc"
+    },
+    {
+      "split": "train",
+      "image_id": 373063,
+      "surface": "norm1000",
+      "before_sha256": "26846003263ad71d63a0ad759748e36df3a59d758d35210e51fcee5d2d3681b9",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        597248,
+        36903,
+        587400
+      ],
+      "after_sha256": "fc19e79e27561ec812d6ef6dadada1e31fa6e36d1f1fd8432d9f01fbd46946b6"
+    },
+    {
+      "split": "train",
+      "image_id": 373267,
+      "surface": "norm1000",
+      "before_sha256": "e7b85d24646282ba09233a043dec39eebe79397cb8a7012c993bb5e80657b3c2",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        172826,
+        193152,
+        223757,
+        226118,
+        1726870,
+        236455,
+        2021430,
+        1175727,
+        1825962,
+        2010675,
+        1207046,
+        1175540,
+        1180587,
+        1827226
+      ],
+      "after_sha256": "259fe1a274fc09d5cca7e39ee31ffb51f788e3294c2539d72b324c0a62f49449"
+    },
+    {
+      "split": "train",
+      "image_id": 381556,
+      "surface": "norm1000",
+      "before_sha256": "f9a2a1c1885a3c4177a323d6d51c4f79854fb0545463c312933bc96b94e4c938",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1678500,
+        265222,
+        264423,
+        2151847,
+        154004,
+        264681,
+        258222,
+        257290,
+        259364,
+        155636,
+        156028,
+        2047818,
+        151597,
+        1838257,
+        1838702
+      ],
+      "after_sha256": "caa3a0536b2c482cb6aa7baf379c15c15da8585dc4d58fd1cc1526c1769c73f9"
+    },
+    {
+      "split": "train",
+      "image_id": 389655,
+      "surface": "pixel",
+      "before_sha256": "1d8422af7999a0798a84a454f5e2bd54d2299f82e129853f1dd5987a6edffdb6",
+      "remove_annotation_ids": [
+        2073979
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        159263,
+        2154131,
+        1682899,
+        1694949,
+        1258408,
+        1746456,
+        1253538,
+        1755530,
+        1756276,
+        2027102,
+        1755469,
+        1756338,
+        1735021,
+        2072019,
+        2073926,
+        1690387,
+        2073539,
+        1432515
+      ],
+      "after_sha256": "5d7976384995aa8797f030a435507398db81525bfc6370fc5dd8e8bce027453d"
+    },
+    {
+      "split": "train",
+      "image_id": 389655,
+      "surface": "norm1000",
+      "before_sha256": "03da6eb229bfa49c4546138e9d4bc977a0404c3c82f26d80cde379e7231b0ef1",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            684,
+            871,
+            686,
+            880
+          ],
+          "desc": "backpack",
+          "category_id": 27,
+          "category_name": "backpack",
+          "coco_ann_id": 2073979
+        }
+      ],
+      "object_order": [
+        159263,
+        2154131,
+        1682899,
+        1694949,
+        1258408,
+        1746456,
+        1253538,
+        1755530,
+        1756276,
+        2027102,
+        1755469,
+        1756338,
+        1735021,
+        2073979,
+        2072019,
+        2073926,
+        1690387,
+        2073539,
+        1432515
+      ],
+      "after_sha256": "ca61342f90dacd2d8235ecaa7e0ce99f7ab1fabd17cab0f86b2eb3cb13b9a710"
+    },
+    {
+      "split": "train",
+      "image_id": 397973,
+      "surface": "pixel",
+      "before_sha256": "9de1acb7aa5b75f4c265e4b674b816eb58551524230f86dadf4aee38a6d7970f",
+      "remove_annotation_ids": [
+        2065114
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2066101,
+        1400872,
+        2065377,
+        2066266,
+        2065148,
+        2174409,
+        2066352,
+        256527,
+        56486
+      ],
+      "after_sha256": "491f147d079a386a8e25951a02241c058ebbbc739ad230114d32fc34bdbc56e7"
+    },
+    {
+      "split": "train",
+      "image_id": 397973,
+      "surface": "norm1000",
+      "before_sha256": "b8cd2a337d111a4077cc5993031d159ddb80f3f9ac0c7015c488b6b522eddeff",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            284,
+            358,
+            288,
+            362
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 2065114
+        }
+      ],
+      "object_order": [
+        2066101,
+        1400872,
+        2065114,
+        2065377,
+        2066266,
+        2065148,
+        2174409,
+        2066352,
+        256527,
+        56486
+      ],
+      "after_sha256": "11a491f8a507c94142b726bb842d074d6c65097ece019034891b3fb52a792bfa"
+    },
+    {
+      "split": "train",
+      "image_id": 401337,
+      "surface": "norm1000",
+      "before_sha256": "e05fb739192211fbeb0fe7aa17b64fd641c048172bd4f1973808a73ab346d6e2",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        567903,
+        327611,
+        405467,
+        2206223,
+        2017401,
+        2026947,
+        472682,
+        481521,
+        1236721,
+        560728,
+        2010099,
+        538046,
+        2030026
+      ],
+      "after_sha256": "46953bfd4978e47d77fa6c487c16c27acb187f743c91c4239aae6cae9af44b7b"
+    },
+    {
+      "split": "train",
+      "image_id": 402470,
+      "surface": "pixel",
+      "before_sha256": "e5dced48f70d2340a0901c90d1c1ae994d44b34b6f7357a83f8ef7d4bbb2f2ea",
+      "remove_annotation_ids": [
+        1471366
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2088375,
+        1761118,
+        1750410,
+        1696562,
+        1470555,
+        1471345,
+        300613,
+        627391,
+        1760393,
+        2167374,
+        2167673,
+        1762011,
+        1763624,
+        1761817,
+        1763587,
+        2008072,
+        2004830,
+        1946926,
+        1932351,
+        1944083,
+        1880353,
+        1762047,
+        1947529,
+        1948293,
+        1948067,
+        1947124,
+        1945916,
+        1943447
+      ],
+      "after_sha256": "bf48050e58180a86504a286060658ce9f58ce3240ca786e897ff7b167583ec55"
+    },
+    {
+      "split": "train",
+      "image_id": 402470,
+      "surface": "norm1000",
+      "before_sha256": "a8fb91a59a3275c2672258a930b8d77ed88c25d2664b2b0af029dc1bc97a9cb9",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            689,
+            469,
+            691,
+            475
+          ],
+          "desc": "baseball glove",
+          "category_id": 40,
+          "category_name": "baseball glove",
+          "coco_ann_id": 1471366
+        }
+      ],
+      "object_order": [
+        2088375,
+        1761118,
+        1471366,
+        1750410,
+        1696562,
+        1470555,
+        1471345,
+        300613,
+        627391,
+        1760393,
+        2167374,
+        2167673,
+        1762011,
+        1763624,
+        1761817,
+        1763587,
+        2008072,
+        2004830,
+        1946926,
+        1932351,
+        1944083,
+        1880353,
+        1762047,
+        1947529,
+        1948293,
+        1948067,
+        1947124,
+        1945916,
+        1943447
+      ],
+      "after_sha256": "4173ad776bc0d6f606b959938a3dc510bee834c78d1bdcc3c1128c06b60decc1"
+    },
+    {
+      "split": "train",
+      "image_id": 405964,
+      "surface": "pixel",
+      "before_sha256": "00015ff4ed37da6a63e653a408200d6b72af6da8ed221c447f941ad410c149d4",
+      "remove_annotation_ids": [
+        1849197
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1266020,
+        1212208,
+        1262232,
+        423504,
+        1276420,
+        1305947,
+        1281090,
+        1298855,
+        2016249,
+        1300793,
+        1274946,
+        1729837,
+        1261975,
+        2086106,
+        1449955,
+        2198800,
+        614426
+      ],
+      "after_sha256": "3d946a3518606fd72661a6dbda3eb7e3fdb2b2f6e36f38a53de6e702a648d26e"
+    },
+    {
+      "split": "train",
+      "image_id": 405964,
+      "surface": "norm1000",
+      "before_sha256": "0645b11812a855ec7f2346b0ed3d33f6d3152c0c11922612a1362bab4be6f298",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            276,
+            414,
+            284,
+            416
+          ],
+          "desc": "skis",
+          "category_id": 35,
+          "category_name": "skis",
+          "coco_ann_id": 1849197
+        }
+      ],
+      "object_order": [
+        1266020,
+        1212208,
+        1262232,
+        423504,
+        1276420,
+        1305947,
+        1281090,
+        1298855,
+        2016249,
+        1300793,
+        1849197,
+        1274946,
+        1729837,
+        1261975,
+        2086106,
+        1449955,
+        2198800,
+        614426
+      ],
+      "after_sha256": "352da6fc1b73ead8a1fc53b44dcfa7427c0be623384dfdc5a0e16a144e7761e7"
+    },
+    {
+      "split": "train",
+      "image_id": 414888,
+      "surface": "pixel",
+      "before_sha256": "c4c4449355355f0fd7ed5e6ba68b8bcabf5f8e3aa8f98f22480e42a425aaf573",
+      "remove_annotation_ids": [
+        329181
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        138367,
+        2169770,
+        194356,
+        55217,
+        188225,
+        218673
+      ],
+      "after_sha256": "9c459cf2aded6ea2fdbf081c1c2561314bd9d289688b1abee9873e6fc6e0a751"
+    },
+    {
+      "split": "train",
+      "image_id": 414888,
+      "surface": "norm1000",
+      "before_sha256": "f06d769f4485bacac7d7b57f09ea456c4b8c7d2f06ac4ea75c351a75aeb3d520",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            79,
+            215,
+            83,
+            219
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 329181
+        }
+      ],
+      "object_order": [
+        138367,
+        2169770,
+        194356,
+        329181,
+        55217,
+        188225,
+        218673
+      ],
+      "after_sha256": "e2d85f615d6cd413034d22f0fe8b857c95fc5a3e806d778b6d84daf81581eee8"
+    },
+    {
+      "split": "train",
+      "image_id": 421865,
+      "surface": "norm1000",
+      "before_sha256": "588e322cca11ec28c2106ed0a0adcf79b741cfb16be99c9b7e299c3c4338c9f8",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1466714,
+        1468258,
+        1468405,
+        1467432,
+        1469381,
+        1855350,
+        1469737,
+        1470040,
+        1469924,
+        2089195,
+        1470006,
+        1470071,
+        1469823,
+        1426802,
+        284504,
+        2074970,
+        1697563,
+        1695660,
+        286415,
+        517140,
+        286062,
+        1427484,
+        1829307,
+        287421,
+        1740764,
+        489609,
+        1693971,
+        564215,
+        284807,
+        279942,
+        286777,
+        1687186,
+        287492,
+        281540,
+        2190478,
+        531818,
+        2192805,
+        564988,
+        2126398,
+        2153495,
+        2019684,
+        2125144,
+        2192614,
+        554830,
+        2222303,
+        2126095,
+        1812587,
+        1394045,
+        2122102,
+        374141,
+        1396638,
+        1592196
+      ],
+      "after_sha256": "6ba3a36433be6e9f1d720cf7f0b82f29a9129dff4f04d7c9f9cbb45bea5888b5"
+    },
+    {
+      "split": "train",
+      "image_id": 425289,
+      "surface": "pixel",
+      "before_sha256": "49d702a1ee18312ef72161d5ca0d6ea9e668d3bb42960277efd7fb48b724cf3f",
+      "remove_annotation_ids": [
+        2138639
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1241011,
+        1258751,
+        1313145,
+        1283741,
+        1282379,
+        2159490,
+        1311363,
+        2033295,
+        2163722,
+        1691724,
+        1637710,
+        1292488,
+        2165098,
+        1690953,
+        1844255,
+        1844357,
+        1842852,
+        1843250,
+        1183942,
+        1184939,
+        1844191
+      ],
+      "after_sha256": "3090909559619f988241a19116ce5336c17b9f1b43c0cfcd8923be9ff7395959"
+    },
+    {
+      "split": "train",
+      "image_id": 425289,
+      "surface": "norm1000",
+      "before_sha256": "31d4fd1fdc831bc3fffe1ff6a308da72303133b760ea20a2bee331f6cd052a6a",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            914,
+            400,
+            916,
+            406
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 2138639
+        }
+      ],
+      "object_order": [
+        1241011,
+        1258751,
+        1313145,
+        1283741,
+        1282379,
+        2159490,
+        1311363,
+        2033295,
+        2163722,
+        2138639,
+        1691724,
+        1637710,
+        1292488,
+        2165098,
+        1690953,
+        1844255,
+        1844357,
+        1842852,
+        1843250,
+        1183942,
+        1184939,
+        1844191
+      ],
+      "after_sha256": "5840ac17abee3eebcbc890a459eb159064e51140b46acbe9cc7aa8cf450fcd24"
+    },
+    {
+      "split": "train",
+      "image_id": 431133,
+      "surface": "norm1000",
+      "before_sha256": "dc4aa9ac5c257633bf60f6c001e9f7c89c24e4d0a8b49ef517492db3bc0c5b1c",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1806219,
+        2177351,
+        1213872,
+        1261611,
+        1340038,
+        1257312,
+        1736400,
+        1274918,
+        1296398,
+        1245813,
+        1299468,
+        132922,
+        2016133,
+        1284301,
+        1679122,
+        243199,
+        1676826,
+        145517,
+        1300137,
+        243513,
+        1833800,
+        1784683,
+        1835992,
+        1835026
+      ],
+      "after_sha256": "bc23d7fab27eb5b82cef0654a3ffea9f715e0efcffd284cfda5696954cc8edeb"
+    },
+    {
+      "split": "train",
+      "image_id": 431190,
+      "surface": "pixel",
+      "before_sha256": "3d640311e5984aa09067fc7a94b638f62fc5ef403d8e39477c722dc7e250b2f1",
+      "remove_annotation_ids": [
+        2199248
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        486621,
+        1707176,
+        467186,
+        515548,
+        1169594,
+        1712608,
+        1163918,
+        1169911,
+        1845927,
+        606642
+      ],
+      "after_sha256": "cb426cd7001c34bfdf3ec5f3d9b2487bb578f760ebd79278c3b6c91c0a25c203"
+    },
+    {
+      "split": "train",
+      "image_id": 431190,
+      "surface": "norm1000",
+      "before_sha256": "99ee0feed43ee5c74989556838c2c1ef1ef387f32b273bc3396cdbb04e12a0f9",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            372,
+            421,
+            376,
+            425
+          ],
+          "desc": "skis",
+          "category_id": 35,
+          "category_name": "skis",
+          "coco_ann_id": 2199248
+        }
+      ],
+      "object_order": [
+        486621,
+        1707176,
+        467186,
+        515548,
+        1169594,
+        1712608,
+        1163918,
+        1169911,
+        2199248,
+        1845927,
+        606642
+      ],
+      "after_sha256": "4e0c1fe8d52c6e7c742e7ca6581a8704af1b23b90bb84caf22ef798a9ea61a1b"
+    },
+    {
+      "split": "train",
+      "image_id": 442489,
+      "surface": "norm1000",
+      "before_sha256": "d4af50ce84ef8461289006919d463dd11a10bb3250779ec0eb13584afba5f983",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        390149,
+        1040072,
+        1869780,
+        1040698,
+        1914899,
+        1915481,
+        1916417,
+        1916318,
+        703284,
+        1915516
+      ],
+      "after_sha256": "e6732326581d5547238b493baf84645d2ead08d477b394e05aba0beb9668e5f6"
+    },
+    {
+      "split": "train",
+      "image_id": 467138,
+      "surface": "norm1000",
+      "before_sha256": "cd8a432ec5d8b7a7b08bad72a82925536713cf639d898ae7a072b98d4a925c1d",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1598942,
+        1743752,
+        2151006,
+        2004255,
+        1599933,
+        1721541,
+        529652,
+        507743,
+        1580187,
+        514864,
+        522551,
+        495184,
+        1594666,
+        1588681,
+        431353,
+        657499
+      ],
+      "after_sha256": "bf8eac678541bb2e96e9915a4a6311dc38c5baf616e1286caded0ce5cd4f97d7"
+    },
+    {
+      "split": "train",
+      "image_id": 492156,
+      "surface": "pixel",
+      "before_sha256": "00963882fb52122d47977769a26e2ed810e89b85a3f7fbaf3dcff98eaaffde61",
+      "remove_annotation_ids": [
+        2173077
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        409165,
+        402004,
+        412104,
+        1384432,
+        1383393,
+        412262,
+        412303,
+        412379,
+        2173022,
+        1198856,
+        1198547,
+        1798668,
+        1788324,
+        356831,
+        2052390,
+        1777565,
+        1350742,
+        1787942,
+        363156,
+        1798421,
+        353498,
+        1350859,
+        350264,
+        1778669,
+        1341486
+      ],
+      "after_sha256": "a423ca54081e9e991e0ca5a15c637667d53fe1da2b6007b351e4cf44b52165a4"
+    },
+    {
+      "split": "train",
+      "image_id": 492156,
+      "surface": "norm1000",
+      "before_sha256": "2edf26756c0f79d098cfb3b7fb575522e38be1d8520b8a32531335f4b56904e8",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            453,
+            680,
+            455,
+            688
+          ],
+          "desc": "traffic light",
+          "category_id": 10,
+          "category_name": "traffic light",
+          "coco_ann_id": 2173077
+        }
+      ],
+      "object_order": [
+        409165,
+        402004,
+        412104,
+        1384432,
+        1383393,
+        412262,
+        412303,
+        412379,
+        2173022,
+        1198856,
+        1198547,
+        1798668,
+        1788324,
+        2173077,
+        356831,
+        2052390,
+        1777565,
+        1350742,
+        1787942,
+        363156,
+        1798421,
+        353498,
+        1350859,
+        350264,
+        1778669,
+        1341486
+      ],
+      "after_sha256": "6d589a34deb66f7b973855567a9825e2a705c4e98fd87a10dd4448e9a48800aa"
+    },
+    {
+      "split": "train",
+      "image_id": 516633,
+      "surface": "pixel",
+      "before_sha256": "dd91a3db1a6e4722500e462952d3db76adaf66f311ddac77fe062f6bc4adbf03",
+      "remove_annotation_ids": [
+        1400547
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2149832,
+        1757211,
+        1750629,
+        1713423,
+        1758642,
+        2149975,
+        1293743,
+        1750258,
+        1242700,
+        1777300,
+        1797925,
+        171470,
+        1401357,
+        1815838,
+        1399773,
+        2065764,
+        1815038,
+        1283038
+      ],
+      "after_sha256": "2958326ce21e96140b5ef84d542aabc2af25ac1cdd1fce49be003c4fe531e76e"
+    },
+    {
+      "split": "train",
+      "image_id": 516633,
+      "surface": "norm1000",
+      "before_sha256": "a6fbb274a352a0cfc23ef8a72f0816cb0d9b80d49e8b68163eb3ab6c4f5d158f",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            662,
+            352,
+            666,
+            356
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 1400547
+        }
+      ],
+      "object_order": [
+        2149832,
+        1757211,
+        1750629,
+        1713423,
+        1758642,
+        2149975,
+        1293743,
+        1750258,
+        1242700,
+        1777300,
+        1797925,
+        171470,
+        1401357,
+        1400547,
+        1815838,
+        1399773,
+        2065764,
+        1815038,
+        1283038
+      ],
+      "after_sha256": "21a96bf471fc4a26e5bfd3760347d7bcb86b672847796ed973ca0eb55cd31fab"
+    },
+    {
+      "split": "train",
+      "image_id": 523224,
+      "surface": "norm1000",
+      "before_sha256": "985ca4470bd6e590a3e8eab9accc70a5e686f8a8cda9a519a483cf957f5659e3",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        163993,
+        1248959,
+        1732149,
+        1682848,
+        1266946,
+        1688006,
+        1285745,
+        1762316,
+        1701909,
+        1286910,
+        1692112,
+        1700035,
+        1705057,
+        139433,
+        1775513
+      ],
+      "after_sha256": "49dfa61376e5cbbb2b09ce234b729581c5e8912b9dfb347ed7e139d7a49c00cf"
+    },
+    {
+      "split": "train",
+      "image_id": 528951,
+      "surface": "norm1000",
+      "before_sha256": "06d71e34de1e777875a6abf7888aaf8dda258f861f8138d42bf87597131129ed",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        171101,
+        2050954,
+        2053616,
+        2045629,
+        2052878,
+        2046013,
+        245195,
+        1789497,
+        245168,
+        1788397,
+        244862,
+        216446,
+        244597,
+        2053112,
+        185651,
+        244213,
+        2171786,
+        1777296
+      ],
+      "after_sha256": "6ed0a1c53125e98e5903f26416cc8c5ad808b2af94eb1e879ced30dcf055661b"
+    },
+    {
+      "split": "train",
+      "image_id": 535750,
+      "surface": "pixel",
+      "before_sha256": "51ae5c08bc977b0a696e67c30a6b608cae655997291bd712c6484de4327d9838",
+      "remove_annotation_ids": [
+        1977894
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1267466,
+        2156002,
+        1699063,
+        1286094,
+        1685571,
+        2013430,
+        1740594,
+        1709661,
+        1705253,
+        1280727,
+        327161,
+        1835564,
+        2079152,
+        1434002,
+        1279070,
+        2079335,
+        1432938,
+        1426375,
+        1705034,
+        1432922,
+        1272937
+      ],
+      "after_sha256": "ac524f463552843524ccceca671a54bce765eddec803892299755778b5dc0d66"
+    },
+    {
+      "split": "train",
+      "image_id": 535750,
+      "surface": "norm1000",
+      "before_sha256": "edbad4f473fce912d584038af4730fa93d1a450a3ef4e37b043d93f4b8cd9816",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            792,
+            429,
+            796,
+            432
+          ],
+          "desc": "cell phone",
+          "category_id": 77,
+          "category_name": "cell phone",
+          "coco_ann_id": 1977894
+        }
+      ],
+      "object_order": [
+        1267466,
+        2156002,
+        1699063,
+        1286094,
+        1685571,
+        2013430,
+        1740594,
+        1709661,
+        1705253,
+        1280727,
+        327161,
+        1835564,
+        1977894,
+        2079152,
+        1434002,
+        1279070,
+        2079335,
+        1432938,
+        1426375,
+        1705034,
+        1432922,
+        1272937
+      ],
+      "after_sha256": "eed93921e246e347cbb28d0c10464c70d4cdc3eb5b6eac2a8650be731f4a4017"
+    },
+    {
+      "split": "train",
+      "image_id": 537879,
+      "surface": "norm1000",
+      "before_sha256": "595a7b93c3cbc7a83b46b269700fd9cb2cc49f552ba6fe78e01d83c02c018590",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        168448,
+        168502,
+        1365767,
+        2049660,
+        1382173,
+        1344811,
+        1372474,
+        2046120,
+        1771779,
+        1700450,
+        1373391,
+        2043199,
+        185742,
+        138205,
+        2045880,
+        210430,
+        225796,
+        1686196,
+        1729077,
+        1774413,
+        1824864,
+        1391384
+      ],
+      "after_sha256": "f2cc5662fb500a8c89c59b81293562b81b6c9d606c342e122c7afc09b0704e75"
+    },
+    {
+      "split": "train",
+      "image_id": 557047,
+      "surface": "pixel",
+      "before_sha256": "3c952cc67459f8fa0c84c7b44ee274ab2bf3901130061f2275ae803bf0b9ea96",
+      "remove_annotation_ids": [
+        272019
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        2066626,
+        41833,
+        2064778,
+        40450,
+        2065058,
+        2066138,
+        1399777,
+        2066293,
+        2065168,
+        2066597,
+        2066581,
+        2066557
+      ],
+      "after_sha256": "a778a680c46206139c6e550642a194281ab1195179e04be687a5bbd6c5ff08f5"
+    },
+    {
+      "split": "train",
+      "image_id": 557047,
+      "surface": "norm1000",
+      "before_sha256": "bdfc292a68edc94a97cd47bd723846d4f2d6764d1f48b0b75c58b89d1137ba20",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            265,
+            287,
+            267,
+            296
+          ],
+          "desc": "bird",
+          "category_id": 16,
+          "category_name": "bird",
+          "coco_ann_id": 272019
+        }
+      ],
+      "object_order": [
+        2066626,
+        41833,
+        2064778,
+        40450,
+        2065058,
+        2066138,
+        272019,
+        1399777,
+        2066293,
+        2065168,
+        2066597,
+        2066581,
+        2066557
+      ],
+      "after_sha256": "a8a955cccd07b5383cc013e5ff2e1e8ba56274b07890079465a9c479348930bb"
+    },
+    {
+      "split": "train",
+      "image_id": 568117,
+      "surface": "norm1000",
+      "before_sha256": "82e92bea603dbc5559fdf9cddff22b6dde98cbdd47327ee54e39ddf113cd96c5",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        1611692,
+        1402249,
+        1721611,
+        48797,
+        1817307,
+        17450,
+        49596
+      ],
+      "after_sha256": "ccbf93c2c86ce8da773118a4f2342bbc1d2091a64c511f9c33223a189cfbea77"
+    },
+    {
+      "split": "val",
+      "image_id": 139,
+      "surface": "norm1000",
+      "before_sha256": "78af4917d2803717994c8ca173f308f47ccc18430c67d500c2d22370e4e807e0",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            363,
+            414,
+            419,
+            498
+          ],
+          "desc": "potted plant",
+          "category_id": 64,
+          "category_name": "potted plant",
+          "coco_ann_id": 26547
+        }
+      ],
+      "object_order": [
+        1666628,
+        230831,
+        34646,
+        233201,
+        1647285,
+        26547,
+        2146194,
+        2146548,
+        1640282,
+        1669970,
+        35802,
+        104368,
+        103487,
+        110334,
+        1941808,
+        105328,
+        2204286,
+        1648594,
+        1654394,
+        1667817
+      ],
+      "after_sha256": "b38f989f0d39e19c630c76dd1a88d3f55003fab88f2af5b4f4a4e83bc185b50c"
+    },
+    {
+      "split": "val",
+      "image_id": 1584,
+      "surface": "norm1000",
+      "before_sha256": "5ce64f09db81c8f3ac5c7739530e1538712d099c4d70ea43fffe6f8d48ec2931",
+      "remove_annotation_ids": [
+        538134,
+        550932,
+        1724596,
+        1739250
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            558,
+            272,
+            579,
+            298
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -72
+        },
+        {
+          "bbox_2d": [
+            779,
+            552,
+            809,
+            599
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -71
+        },
+        {
+          "bbox_2d": [
+            710,
+            553,
+            740,
+            598
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -69
+        },
+        {
+          "bbox_2d": [
+            61,
+            573,
+            76,
+            600
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -66
+        },
+        {
+          "bbox_2d": [
+            84,
+            573,
+            99,
+            602
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -65
+        },
+        {
+          "bbox_2d": [
+            128,
+            573,
+            146,
+            602
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -67
+        },
+        {
+          "bbox_2d": [
+            126,
+            615,
+            160,
+            704
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1722864
+        },
+        {
+          "bbox_2d": [
+            188,
+            619,
+            210,
+            705
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -68
+        },
+        {
+          "bbox_2d": [
+            149,
+            634,
+            172,
+            702
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1689589
+        },
+        {
+          "bbox_2d": [
+            163,
+            648,
+            188,
+            703
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -73
+        },
+        {
+          "bbox_2d": [
+            180,
+            649,
+            193,
+            678
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -70
+        }
+      ],
+      "object_order": [
+        365622,
+        542102,
+        -72,
+        1719530,
+        541559,
+        512395,
+        1794632,
+        1364533,
+        540946,
+        -71,
+        -69,
+        -66,
+        -65,
+        -67,
+        1722864,
+        -68,
+        1689589,
+        -73,
+        -70
+      ],
+      "after_sha256": "a55a94982d2a8c17878452ba76c147bf97bad8104a07e7c0021372e6587ac5d4"
+    },
+    {
+      "split": "val",
+      "image_id": 2299,
+      "surface": "norm1000",
+      "before_sha256": "2885f4564b57c1b86fa44034c41da5c8241fd6621d2cd75d7813c91676bef299",
+      "remove_annotation_ids": [
+        1293633,
+        1840947,
+        1841260
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            525,
+            61,
+            617,
+            356
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -7
+        },
+        {
+          "bbox_2d": [
+            427,
+            69,
+            520,
+            357
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -27
+        },
+        {
+          "bbox_2d": [
+            625,
+            86,
+            711,
+            356
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -2
+        },
+        {
+          "bbox_2d": [
+            331,
+            87,
+            423,
+            369
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -23
+        },
+        {
+          "bbox_2d": [
+            708,
+            91,
+            784,
+            368
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -9
+        },
+        {
+          "bbox_2d": [
+            790,
+            92,
+            873,
+            381
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -3
+        },
+        {
+          "bbox_2d": [
+            219,
+            98,
+            327,
+            396
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -15
+        },
+        {
+          "bbox_2d": [
+            119,
+            108,
+            227,
+            465
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1310382
+        },
+        {
+          "bbox_2d": [
+            458,
+            220,
+            570,
+            494
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -18
+        },
+        {
+          "bbox_2d": [
+            555,
+            249,
+            652,
+            508
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -21
+        },
+        {
+          "bbox_2d": [
+            814,
+            256,
+            913,
+            509
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -25
+        },
+        {
+          "bbox_2d": [
+            88,
+            259,
+            186,
+            502
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -16
+        },
+        {
+          "bbox_2d": [
+            724,
+            263,
+            820,
+            512
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -14
+        },
+        {
+          "bbox_2d": [
+            639,
+            266,
+            734,
+            514
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -6
+        },
+        {
+          "bbox_2d": [
+            369,
+            270,
+            464,
+            513
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -17
+        },
+        {
+          "bbox_2d": [
+            285,
+            275,
+            382,
+            519
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -1
+        },
+        {
+          "bbox_2d": [
+            886,
+            279,
+            998,
+            899
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -20
+        },
+        {
+          "bbox_2d": [
+            3,
+            298,
+            100,
+            552
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -10
+        },
+        {
+          "bbox_2d": [
+            376,
+            382,
+            450,
+            759
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -26
+        },
+        {
+          "bbox_2d": [
+            568,
+            391,
+            652,
+            754
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 2008221
+        },
+        {
+          "bbox_2d": [
+            431,
+            399,
+            526,
+            717
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -5
+        },
+        {
+          "bbox_2d": [
+            499,
+            400,
+            590,
+            701
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -13
+        },
+        {
+          "bbox_2d": [
+            292,
+            406,
+            373,
+            738
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -4
+        },
+        {
+          "bbox_2d": [
+            69,
+            412,
+            165,
+            922
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -8
+        },
+        {
+          "bbox_2d": [
+            1,
+            415,
+            98,
+            928
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -24
+        },
+        {
+          "bbox_2d": [
+            218,
+            417,
+            296,
+            748
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -22
+        },
+        {
+          "bbox_2d": [
+            718,
+            421,
+            795,
+            839
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -11
+        },
+        {
+          "bbox_2d": [
+            148,
+            443,
+            232,
+            757
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -19
+        },
+        {
+          "bbox_2d": [
+            655,
+            629,
+            783,
+            945
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1251019
+        },
+        {
+          "bbox_2d": [
+            575,
+            748,
+            602,
+            813
+          ],
+          "desc": "tie",
+          "category_id": 32,
+          "category_name": "tie",
+          "coco_ann_id": -12
+        }
+      ],
+      "object_order": [
+        -7,
+        -27,
+        -2,
+        -23,
+        -9,
+        -3,
+        -15,
+        1310382,
+        1841451,
+        1841388,
+        298359,
+        299621,
+        299021,
+        -18,
+        -21,
+        -25,
+        -16,
+        -14,
+        1727411,
+        -6,
+        -17,
+        -1,
+        -20,
+        -10,
+        -26,
+        2008221,
+        -5,
+        -13,
+        -4,
+        -8,
+        -24,
+        -22,
+        -11,
+        1284714,
+        1309469,
+        -19,
+        1750702,
+        1230224,
+        1219726,
+        1251019,
+        1226789,
+        1246141,
+        1261662,
+        -12,
+        295960,
+        1839816
+      ],
+      "after_sha256": "d4b476ee9a58e53c5fac52c3a4e7e5100697e0e1dfae46c7cfc219f3eda93377"
+    },
+    {
+      "split": "val",
+      "image_id": 2685,
+      "surface": "norm1000",
+      "before_sha256": "21f56f9ee1bdcef7bf5656825b8a2b53ed54f73cdf1cbd0c34e20e21b9e90956",
+      "remove_annotation_ids": [
+        82783,
+        90393,
+        91651,
+        92393,
+        93129,
+        94557,
+        96193,
+        1488062,
+        1498078
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            621,
+            12,
+            950,
+            633
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1715694
+        },
+        {
+          "bbox_2d": [
+            495,
+            101,
+            995,
+            794
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1226144
+        },
+        {
+          "bbox_2d": [
+            287,
+            221,
+            654,
+            763
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1298949
+        },
+        {
+          "bbox_2d": [
+            442,
+            266,
+            465,
+            280
+          ],
+          "desc": "cup",
+          "category_id": 47,
+          "category_name": "cup",
+          "coco_ann_id": 1873354
+        },
+        {
+          "bbox_2d": [
+            120,
+            341,
+            166,
+            409
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -83
+        },
+        {
+          "bbox_2d": [
+            143,
+            343,
+            182,
+            400
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -78
+        },
+        {
+          "bbox_2d": [
+            113,
+            353,
+            159,
+            418
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -81
+        },
+        {
+          "bbox_2d": [
+            107,
+            362,
+            139,
+            423
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -92
+        },
+        {
+          "bbox_2d": [
+            65,
+            381,
+            104,
+            406
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -85
+        },
+        {
+          "bbox_2d": [
+            35,
+            400,
+            332,
+            999
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1289024
+        },
+        {
+          "bbox_2d": [
+            29,
+            416,
+            57,
+            485
+          ],
+          "desc": "wine glass",
+          "category_id": 46,
+          "category_name": "wine glass",
+          "coco_ann_id": -82
+        },
+        {
+          "bbox_2d": [
+            267,
+            422,
+            291,
+            461
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -77
+        },
+        {
+          "bbox_2d": [
+            262,
+            431,
+            288,
+            475
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -74
+        },
+        {
+          "bbox_2d": [
+            239,
+            441,
+            267,
+            505
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -89
+        },
+        {
+          "bbox_2d": [
+            248,
+            445,
+            284,
+            520
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -86
+        },
+        {
+          "bbox_2d": [
+            154,
+            458,
+            194,
+            518
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -84
+        },
+        {
+          "bbox_2d": [
+            218,
+            458,
+            232,
+            477
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -87
+        },
+        {
+          "bbox_2d": [
+            224,
+            467,
+            277,
+            533
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -80
+        },
+        {
+          "bbox_2d": [
+            210,
+            472,
+            238,
+            535
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -76
+        },
+        {
+          "bbox_2d": [
+            214,
+            476,
+            281,
+            596
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -90
+        },
+        {
+          "bbox_2d": [
+            120,
+            479,
+            162,
+            544
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -75
+        },
+        {
+          "bbox_2d": [
+            192,
+            491,
+            275,
+            605
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -79
+        },
+        {
+          "bbox_2d": [
+            135,
+            498,
+            162,
+            538
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -88
+        },
+        {
+          "bbox_2d": [
+            162,
+            500,
+            238,
+            635
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -91
+        }
+      ],
+      "object_order": [
+        1715694,
+        1226144,
+        1240876,
+        1298949,
+        2166871,
+        1873354,
+        -83,
+        -78,
+        -81,
+        1504615,
+        -92,
+        -85,
+        1289024,
+        -82,
+        -77,
+        -74,
+        -89,
+        -86,
+        -84,
+        -87,
+        1834120,
+        -80,
+        -76,
+        -90,
+        -75,
+        -79,
+        -88,
+        -91,
+        1878140
+      ],
+      "after_sha256": "6314b1488efa3dba7a77b35f002a2f40d98bfb5f2fde04dcd1621c893493554e"
+    },
+    {
+      "split": "val",
+      "image_id": 4134,
+      "surface": "norm1000",
+      "before_sha256": "49c38cfa298c2fd1ee856f7de52ed45a34103ad2aef43bb22aa4f7a6b6eec0a3",
+      "remove_annotation_ids": [
+        550355
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            67,
+            105,
+            418,
+            999
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 442581
+        },
+        {
+          "bbox_2d": [
+            364,
+            110,
+            914,
+            999
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 421744
+        },
+        {
+          "bbox_2d": [
+            901,
+            253,
+            995,
+            745
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 538115
+        },
+        {
+          "bbox_2d": [
+            27,
+            263,
+            111,
+            636
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 546200
+        },
+        {
+          "bbox_2d": [
+            298,
+            280,
+            360,
+            600
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 551149
+        },
+        {
+          "bbox_2d": [
+            120,
+            299,
+            145,
+            340
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -97
+        },
+        {
+          "bbox_2d": [
+            138,
+            303,
+            159,
+            396
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -98
+        },
+        {
+          "bbox_2d": [
+            101,
+            309,
+            135,
+            383
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -100
+        },
+        {
+          "bbox_2d": [
+            541,
+            325,
+            597,
+            472
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 2028991
+        },
+        {
+          "bbox_2d": [
+            469,
+            329,
+            488,
+            374
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -103
+        },
+        {
+          "bbox_2d": [
+            801,
+            332,
+            836,
+            426
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1733387
+        },
+        {
+          "bbox_2d": [
+            425,
+            333,
+            459,
+            431
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -95
+        },
+        {
+          "bbox_2d": [
+            858,
+            333,
+            895,
+            459
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -93
+        },
+        {
+          "bbox_2d": [
+            877,
+            333,
+            902,
+            447
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -104
+        },
+        {
+          "bbox_2d": [
+            430,
+            334,
+            455,
+            420
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -99
+        },
+        {
+          "bbox_2d": [
+            919,
+            335,
+            938,
+            363
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -96
+        },
+        {
+          "bbox_2d": [
+            106,
+            337,
+            153,
+            457
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -101
+        },
+        {
+          "bbox_2d": [
+            845,
+            343,
+            867,
+            412
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -94
+        },
+        {
+          "bbox_2d": [
+            927,
+            345,
+            999,
+            999
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1741448
+        },
+        {
+          "bbox_2d": [
+            30,
+            351,
+            57,
+            510
+          ],
+          "desc": "tie",
+          "category_id": 32,
+          "category_name": "tie",
+          "coco_ann_id": 1441752
+        },
+        {
+          "bbox_2d": [
+            42,
+            611,
+            76,
+            637
+          ],
+          "desc": "spoon",
+          "category_id": 50,
+          "category_name": "spoon",
+          "coco_ann_id": -102
+        }
+      ],
+      "object_order": [
+        442581,
+        421744,
+        538115,
+        507774,
+        546200,
+        551149,
+        505594,
+        -97,
+        -98,
+        1225950,
+        -100,
+        2028991,
+        -103,
+        1733387,
+        -95,
+        -93,
+        -104,
+        -99,
+        -96,
+        -101,
+        -94,
+        1741448,
+        1441860,
+        1441752,
+        484575,
+        1939737,
+        1585903,
+        2194459,
+        294005,
+        1497300,
+        1582548,
+        664488,
+        1090642,
+        666188,
+        1959490,
+        662324,
+        -102
+      ],
+      "after_sha256": "bb1425b2c1095c3698cc12d2d77fa077f7438def7717ecb0eabfe9a86ae5968e"
+    },
+    {
+      "split": "val",
+      "image_id": 5001,
+      "surface": "norm1000",
+      "before_sha256": "d290f9beb1960bee0514a225e0686b03c958f05b770e557c644b055665d5266c",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            822,
+            107,
+            889,
+            247
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -106
+        },
+        {
+          "bbox_2d": [
+            509,
+            111,
+            563,
+            220
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -109
+        },
+        {
+          "bbox_2d": [
+            536,
+            111,
+            632,
+            333
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -110
+        },
+        {
+          "bbox_2d": [
+            824,
+            117,
+            970,
+            576
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -107
+        },
+        {
+          "bbox_2d": [
+            942,
+            125,
+            999,
+            257
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -105
+        },
+        {
+          "bbox_2d": [
+            569,
+            192,
+            809,
+            981
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1328232
+        },
+        {
+          "bbox_2d": [
+            882,
+            284,
+            999,
+            758
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -108
+        },
+        {
+          "bbox_2d": [
+            271,
+            426,
+            441,
+            924
+          ],
+          "desc": "scissors",
+          "category_id": 87,
+          "category_name": "scissors",
+          "coco_ann_id": 1158531
+        }
+      ],
+      "object_order": [
+        1329797,
+        1272180,
+        1201627,
+        1329465,
+        1310395,
+        -106,
+        -109,
+        -110,
+        -107,
+        1269467,
+        -105,
+        2017429,
+        1263773,
+        1327525,
+        1328232,
+        1261310,
+        -108,
+        1764832,
+        1158531,
+        1259834,
+        1220394,
+        1434055,
+        2146793
+      ],
+      "after_sha256": "ca3f42a6e86e7686150a1101c8aa9fc1c4ab87412bf79b99c6a5013df43e3a2f"
+    },
+    {
+      "split": "val",
+      "image_id": 6040,
+      "surface": "norm1000",
+      "before_sha256": "8c6ae7671238f95781bf8e62002a93f342a09602c8b57fb0fa59bfa748b676e6",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            0,
+            478,
+            87,
+            603
+          ],
+          "desc": "truck",
+          "category_id": 8,
+          "category_name": "truck",
+          "coco_ann_id": 2171879
+        },
+        {
+          "bbox_2d": [
+            703,
+            509,
+            754,
+            648
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -148
+        },
+        {
+          "bbox_2d": [
+            841,
+            517,
+            893,
+            654
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -149
+        },
+        {
+          "bbox_2d": [
+            145,
+            558,
+            163,
+            599
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -147
+        }
+      ],
+      "object_order": [
+        172843,
+        2171879,
+        -148,
+        243467,
+        -149,
+        -147,
+        1225712,
+        2021658,
+        1226859,
+        2004380,
+        2020885,
+        228220,
+        219328,
+        1706814,
+        209855
+      ],
+      "after_sha256": "eeec0163f513f876fa53bcae6d29eba448759f03fe35b937a4765cf0eefe4d5d"
+    },
+    {
+      "split": "val",
+      "image_id": 7511,
+      "surface": "norm1000",
+      "before_sha256": "f19075363a1a3685d428c112e34616cad7ff508001779d92b10636f136655ceb",
+      "remove_annotation_ids": [
+        561648,
+        1271214,
+        1276770,
+        1281372,
+        1301313,
+        2149061,
+        2164257
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            39,
+            539,
+            47,
+            557
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -175
+        },
+        {
+          "bbox_2d": [
+            0,
+            545,
+            5,
+            555
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -176
+        },
+        {
+          "bbox_2d": [
+            30,
+            548,
+            36,
+            561
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -156
+        },
+        {
+          "bbox_2d": [
+            4,
+            549,
+            9,
+            560
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -166
+        },
+        {
+          "bbox_2d": [
+            150,
+            550,
+            157,
+            565
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -160
+        },
+        {
+          "bbox_2d": [
+            189,
+            551,
+            195,
+            564
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -178
+        },
+        {
+          "bbox_2d": [
+            238,
+            552,
+            244,
+            565
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -177
+        },
+        {
+          "bbox_2d": [
+            252,
+            554,
+            258,
+            564
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -174
+        },
+        {
+          "bbox_2d": [
+            268,
+            554,
+            275,
+            570
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -168
+        },
+        {
+          "bbox_2d": [
+            280,
+            558,
+            289,
+            571
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -150
+        },
+        {
+          "bbox_2d": [
+            249,
+            565,
+            257,
+            579
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -162
+        },
+        {
+          "bbox_2d": [
+            924,
+            566,
+            932,
+            602
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -170
+        },
+        {
+          "bbox_2d": [
+            930,
+            567,
+            939,
+            604
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -183
+        },
+        {
+          "bbox_2d": [
+            527,
+            570,
+            537,
+            588
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -172
+        },
+        {
+          "bbox_2d": [
+            627,
+            572,
+            640,
+            602
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -181
+        },
+        {
+          "bbox_2d": [
+            660,
+            573,
+            671,
+            598
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -159
+        },
+        {
+          "bbox_2d": [
+            760,
+            573,
+            766,
+            596
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -158
+        },
+        {
+          "bbox_2d": [
+            939,
+            575,
+            952,
+            595
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -165
+        },
+        {
+          "bbox_2d": [
+            619,
+            576,
+            631,
+            601
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -180
+        },
+        {
+          "bbox_2d": [
+            638,
+            576,
+            650,
+            598
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -152
+        },
+        {
+          "bbox_2d": [
+            807,
+            576,
+            819,
+            607
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -179
+        },
+        {
+          "bbox_2d": [
+            950,
+            576,
+            963,
+            597
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -163
+        },
+        {
+          "bbox_2d": [
+            672,
+            577,
+            681,
+            598
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -151
+        },
+        {
+          "bbox_2d": [
+            799,
+            577,
+            810,
+            604
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -154
+        },
+        {
+          "bbox_2d": [
+            970,
+            584,
+            985,
+            615
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -167
+        },
+        {
+          "bbox_2d": [
+            934,
+            585,
+            954,
+            606
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -182
+        },
+        {
+          "bbox_2d": [
+            876,
+            590,
+            886,
+            610
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -161
+        },
+        {
+          "bbox_2d": [
+            969,
+            592,
+            983,
+            625
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -169
+        },
+        {
+          "bbox_2d": [
+            867,
+            594,
+            883,
+            612
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -153
+        },
+        {
+          "bbox_2d": [
+            798,
+            597,
+            813,
+            625
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1712988
+        },
+        {
+          "bbox_2d": [
+            782,
+            599,
+            797,
+            622
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -164
+        },
+        {
+          "bbox_2d": [
+            929,
+            609,
+            950,
+            644
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -155
+        },
+        {
+          "bbox_2d": [
+            940,
+            610,
+            952,
+            637
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -184
+        },
+        {
+          "bbox_2d": [
+            946,
+            611,
+            962,
+            640
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -171
+        },
+        {
+          "bbox_2d": [
+            991,
+            616,
+            999,
+            646
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -157
+        },
+        {
+          "bbox_2d": [
+            954,
+            621,
+            982,
+            646
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -173
+        }
+      ],
+      "object_order": [
+        622618,
+        624804,
+        445593,
+        -175,
+        -176,
+        -156,
+        -166,
+        -160,
+        -178,
+        -177,
+        -174,
+        -168,
+        -150,
+        -162,
+        -170,
+        -183,
+        476481,
+        -172,
+        508196,
+        -181,
+        -159,
+        -158,
+        565324,
+        -165,
+        -180,
+        -152,
+        -179,
+        -163,
+        -151,
+        -154,
+        -167,
+        -182,
+        2162904,
+        -161,
+        -169,
+        -153,
+        1712988,
+        -164,
+        -155,
+        -184,
+        -171,
+        -157,
+        -173,
+        1165089
+      ],
+      "after_sha256": "b5e410b53deb83c9dd4236594f7f4aa213c644c2bb19ecf1bb8a9331a5a94d24"
+    },
+    {
+      "split": "val",
+      "image_id": 10707,
+      "surface": "norm1000",
+      "before_sha256": "7832365285e68c7a89289c37b4f5147d2fe5e0c39bb55bad687b12217588de74",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            361,
+            303,
+            621,
+            954
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 193096
+        },
+        {
+          "bbox_2d": [
+            361,
+            697,
+            396,
+            775
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -185
+        },
+        {
+          "bbox_2d": [
+            156,
+            731,
+            482,
+            989
+          ],
+          "desc": "dining table",
+          "category_id": 67,
+          "category_name": "dining table",
+          "coco_ann_id": 120550
+        },
+        {
+          "bbox_2d": [
+            236,
+            765,
+            276,
+            869
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -188
+        },
+        {
+          "bbox_2d": [
+            226,
+            786,
+            266,
+            902
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -187
+        },
+        {
+          "bbox_2d": [
+            282,
+            788,
+            326,
+            903
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -186
+        }
+      ],
+      "object_order": [
+        233159,
+        1109589,
+        193096,
+        221149,
+        116290,
+        113866,
+        1628363,
+        1825577,
+        84825,
+        -185,
+        1506809,
+        1484033,
+        120550,
+        682380,
+        2135228,
+        1630006,
+        -188,
+        -187,
+        -186
+      ],
+      "after_sha256": "885e83f1dc393783267b18cf3c4f96ec73446b8a69012e1eed645cca5e405be7"
+    },
+    {
+      "split": "val",
+      "image_id": 13348,
+      "surface": "norm1000",
+      "before_sha256": "38c643af7efb8b693d9eb4ced93af55361595de2a3648fa4a924ab1ebdc0421f",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            0,
+            329,
+            885,
+            670
+          ],
+          "desc": "airplane",
+          "category_id": 5,
+          "category_name": "airplane",
+          "coco_ann_id": 161024
+        },
+        {
+          "bbox_2d": [
+            182,
+            587,
+            205,
+            611
+          ],
+          "desc": "truck",
+          "category_id": 8,
+          "category_name": "truck",
+          "coco_ann_id": -111
+        },
+        {
+          "bbox_2d": [
+            59,
+            612,
+            93,
+            650
+          ],
+          "desc": "truck",
+          "category_id": 8,
+          "category_name": "truck",
+          "coco_ann_id": -112
+        },
+        {
+          "bbox_2d": [
+            141,
+            623,
+            155,
+            646
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -113
+        },
+        {
+          "bbox_2d": [
+            5,
+            669,
+            64,
+            723
+          ],
+          "desc": "truck",
+          "category_id": 8,
+          "category_name": "truck",
+          "coco_ann_id": 1372048
+        }
+      ],
+      "object_order": [
+        161024,
+        1364096,
+        1681190,
+        2017079,
+        2015225,
+        -111,
+        1198133,
+        -112,
+        -113,
+        1198098,
+        261461,
+        191150,
+        1373235,
+        257469,
+        1372048
+      ],
+      "after_sha256": "67652ecb5fe9072ee846cc1d4afa57b1823a49f46c625e64772dbac4a7b3b5cd"
+    },
+    {
+      "split": "val",
+      "image_id": 13923,
+      "surface": "norm1000",
+      "before_sha256": "9878f5e30d06f9da4a1b30cdcfa9530b9672dba057d7e551426fa05c411eb2b4",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            455,
+            432,
+            481,
+            475
+          ],
+          "desc": "vase",
+          "category_id": 86,
+          "category_name": "vase",
+          "coco_ann_id": -189
+        },
+        {
+          "bbox_2d": [
+            407,
+            435,
+            436,
+            470
+          ],
+          "desc": "vase",
+          "category_id": 86,
+          "category_name": "vase",
+          "coco_ann_id": -190
+        }
+      ],
+      "object_order": [
+        1536045,
+        1488664,
+        1490683,
+        1540774,
+        1539705,
+        25639,
+        28853,
+        27164,
+        -189,
+        -190,
+        114321,
+        1954318,
+        108331,
+        1152315,
+        109275,
+        1954498,
+        108430,
+        108630,
+        390122,
+        1153517,
+        2123120
+      ],
+      "after_sha256": "d44f0666144ce36ea7c0442f82763ad480026ef2d2c97dbbdf6559ce838dc629"
+    },
+    {
+      "split": "val",
+      "image_id": 14038,
+      "surface": "norm1000",
+      "before_sha256": "5616d5c15ee6504ee870e721fe754e796c63dc96f4b3cc0419362f46465b2f14",
+      "remove_annotation_ids": [
+        1138773,
+        1138926,
+        1141001,
+        1142874,
+        1148460,
+        1148880,
+        1651488,
+        1987215,
+        1987615,
+        2197005
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            778,
+            90,
+            869,
+            365
+          ],
+          "desc": "potted plant",
+          "category_id": 64,
+          "category_name": "potted plant",
+          "coco_ann_id": 1605902
+        },
+        {
+          "bbox_2d": [
+            831,
+            163,
+            860,
+            199
+          ],
+          "desc": "vase",
+          "category_id": 86,
+          "category_name": "vase",
+          "coco_ann_id": -144
+        },
+        {
+          "bbox_2d": [
+            815,
+            427,
+            861,
+            441
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -116
+        },
+        {
+          "bbox_2d": [
+            666,
+            433,
+            683,
+            476
+          ],
+          "desc": "bottle",
+          "category_id": 44,
+          "category_name": "bottle",
+          "coco_ann_id": -137
+        },
+        {
+          "bbox_2d": [
+            813,
+            438,
+            861,
+            456
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -121
+        },
+        {
+          "bbox_2d": [
+            807,
+            447,
+            860,
+            468
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -129
+        },
+        {
+          "bbox_2d": [
+            807,
+            456,
+            861,
+            479
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -135
+        },
+        {
+          "bbox_2d": [
+            792,
+            468,
+            861,
+            493
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -146
+        },
+        {
+          "bbox_2d": [
+            788,
+            481,
+            862,
+            508
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -123
+        },
+        {
+          "bbox_2d": [
+            787,
+            501,
+            863,
+            518
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -122
+        },
+        {
+          "bbox_2d": [
+            263,
+            503,
+            387,
+            580
+          ],
+          "desc": "couch",
+          "category_id": 63,
+          "category_name": "couch",
+          "coco_ann_id": 1604128
+        },
+        {
+          "bbox_2d": [
+            806,
+            533,
+            856,
+            554
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -138
+        },
+        {
+          "bbox_2d": [
+            806,
+            543,
+            842,
+            561
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -134
+        },
+        {
+          "bbox_2d": [
+            810,
+            555,
+            845,
+            567
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -118
+        },
+        {
+          "bbox_2d": [
+            811,
+            566,
+            849,
+            576
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -139
+        },
+        {
+          "bbox_2d": [
+            812,
+            575,
+            845,
+            582
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -114
+        },
+        {
+          "bbox_2d": [
+            789,
+            577,
+            849,
+            603
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -133
+        },
+        {
+          "bbox_2d": [
+            810,
+            580,
+            846,
+            591
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -126
+        },
+        {
+          "bbox_2d": [
+            788,
+            583,
+            853,
+            611
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -117
+        },
+        {
+          "bbox_2d": [
+            788,
+            594,
+            856,
+            618
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -145
+        },
+        {
+          "bbox_2d": [
+            808,
+            626,
+            851,
+            648
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -124
+        },
+        {
+          "bbox_2d": [
+            803,
+            627,
+            851,
+            653
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -131
+        },
+        {
+          "bbox_2d": [
+            793,
+            630,
+            851,
+            665
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -140
+        },
+        {
+          "bbox_2d": [
+            788,
+            642,
+            843,
+            681
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -119
+        },
+        {
+          "bbox_2d": [
+            785,
+            660,
+            851,
+            690
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -141
+        },
+        {
+          "bbox_2d": [
+            784,
+            670,
+            851,
+            704
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -125
+        },
+        {
+          "bbox_2d": [
+            878,
+            672,
+            999,
+            824
+          ],
+          "desc": "chair",
+          "category_id": 62,
+          "category_name": "chair",
+          "coco_ann_id": 1941759
+        },
+        {
+          "bbox_2d": [
+            782,
+            677,
+            854,
+            715
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -127
+        },
+        {
+          "bbox_2d": [
+            791,
+            723,
+            844,
+            761
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -143
+        },
+        {
+          "bbox_2d": [
+            797,
+            741,
+            839,
+            769
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -136
+        },
+        {
+          "bbox_2d": [
+            794,
+            748,
+            837,
+            778
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -115
+        },
+        {
+          "bbox_2d": [
+            786,
+            751,
+            837,
+            784
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -128
+        },
+        {
+          "bbox_2d": [
+            785,
+            759,
+            830,
+            790
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -142
+        },
+        {
+          "bbox_2d": [
+            787,
+            770,
+            834,
+            797
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -132
+        },
+        {
+          "bbox_2d": [
+            787,
+            771,
+            834,
+            803
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -130
+        },
+        {
+          "bbox_2d": [
+            783,
+            773,
+            835,
+            809
+          ],
+          "desc": "book",
+          "category_id": 84,
+          "category_name": "book",
+          "coco_ann_id": -120
+        }
+      ],
+      "object_order": [
+        1605902,
+        -144,
+        82834,
+        90888,
+        331203,
+        1989043,
+        1989219,
+        -116,
+        -137,
+        319540,
+        33179,
+        -121,
+        -129,
+        -135,
+        -146,
+        -123,
+        -122,
+        1604128,
+        -138,
+        -134,
+        -118,
+        -139,
+        -114,
+        -133,
+        -126,
+        -117,
+        -145,
+        -124,
+        -131,
+        -140,
+        -119,
+        -141,
+        2138715,
+        -125,
+        1941759,
+        -127,
+        1491536,
+        118573,
+        -143,
+        -136,
+        -115,
+        -128,
+        -142,
+        -132,
+        -130,
+        -120,
+        321540
+      ],
+      "after_sha256": "c46356b37bde75d731f99b1b8a503955e461cda4fa722fcf1b9af66e9790a6b6"
+    },
+    {
+      "split": "val",
+      "image_id": 14439,
+      "surface": "norm1000",
+      "before_sha256": "b2569d6b5eecbced0748d0be3b157182f85df5831e3e48984bb93b4eba622792",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            724,
+            34,
+            737,
+            87
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -193
+        },
+        {
+          "bbox_2d": [
+            637,
+            52,
+            654,
+            85
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -192
+        },
+        {
+          "bbox_2d": [
+            748,
+            56,
+            759,
+            86
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -197
+        },
+        {
+          "bbox_2d": [
+            621,
+            58,
+            634,
+            86
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -191
+        },
+        {
+          "bbox_2d": [
+            913,
+            63,
+            926,
+            86
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -195
+        },
+        {
+          "bbox_2d": [
+            544,
+            109,
+            579,
+            244
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -194
+        },
+        {
+          "bbox_2d": [
+            0,
+            311,
+            14,
+            366
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -196
+        }
+      ],
+      "object_order": [
+        -193,
+        -192,
+        -197,
+        -191,
+        -195,
+        1720080,
+        1729788,
+        -194,
+        1754508,
+        2016432,
+        1755416,
+        1695019,
+        1684258,
+        1755623,
+        622491,
+        1681269,
+        1213473,
+        1749825,
+        1733380,
+        1751086,
+        372865,
+        -196,
+        375587,
+        1827291,
+        1826473,
+        1826731,
+        1170759
+      ],
+      "after_sha256": "921988c9804d8275326ae348c7a64b6eb90616fd27130810c24baf9d969eefb5"
+    },
+    {
+      "split": "val",
+      "image_id": 16228,
+      "surface": "norm1000",
+      "before_sha256": "e0258db221fc80c200b7657f86bbf354e3996e166d385fb3666c59bfd2f03057",
+      "remove_annotation_ids": [
+        1242637,
+        1291466,
+        1294336,
+        1311594,
+        1676785,
+        1705724,
+        1739202
+      ],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            545,
+            295,
+            746,
+            398
+          ],
+          "desc": "umbrella",
+          "category_id": 28,
+          "category_name": "umbrella",
+          "coco_ann_id": 1425221
+        },
+        {
+          "bbox_2d": [
+            185,
+            339,
+            543,
+            727
+          ],
+          "desc": "train",
+          "category_id": 7,
+          "category_name": "train",
+          "coco_ann_id": 1795625
+        },
+        {
+          "bbox_2d": [
+            853,
+            362,
+            862,
+            383
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -42
+        },
+        {
+          "bbox_2d": [
+            866,
+            367,
+            881,
+            387
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -59
+        },
+        {
+          "bbox_2d": [
+            863,
+            375,
+            876,
+            393
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -63
+        },
+        {
+          "bbox_2d": [
+            872,
+            375,
+            894,
+            444
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -31
+        },
+        {
+          "bbox_2d": [
+            821,
+            378,
+            847,
+            428
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -30
+        },
+        {
+          "bbox_2d": [
+            613,
+            379,
+            685,
+            417
+          ],
+          "desc": "umbrella",
+          "category_id": 28,
+          "category_name": "umbrella",
+          "coco_ann_id": -58
+        },
+        {
+          "bbox_2d": [
+            852,
+            379,
+            887,
+            447
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -60
+        },
+        {
+          "bbox_2d": [
+            823,
+            390,
+            850,
+            466
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -40
+        },
+        {
+          "bbox_2d": [
+            969,
+            396,
+            991,
+            438
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -49
+        },
+        {
+          "bbox_2d": [
+            951,
+            398,
+            971,
+            437
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -54
+        },
+        {
+          "bbox_2d": [
+            8,
+            403,
+            48,
+            444
+          ],
+          "desc": "umbrella",
+          "category_id": 28,
+          "category_name": "umbrella",
+          "coco_ann_id": -29
+        },
+        {
+          "bbox_2d": [
+            936,
+            403,
+            947,
+            427
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -50
+        },
+        {
+          "bbox_2d": [
+            931,
+            405,
+            965,
+            455
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -39
+        },
+        {
+          "bbox_2d": [
+            918,
+            406,
+            934,
+            427
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -48
+        },
+        {
+          "bbox_2d": [
+            911,
+            407,
+            926,
+            434
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -47
+        },
+        {
+          "bbox_2d": [
+            459,
+            421,
+            488,
+            505
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -55
+        },
+        {
+          "bbox_2d": [
+            188,
+            430,
+            225,
+            584
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -52
+        },
+        {
+          "bbox_2d": [
+            306,
+            435,
+            330,
+            480
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -35
+        },
+        {
+          "bbox_2d": [
+            282,
+            443,
+            301,
+            492
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -33
+        },
+        {
+          "bbox_2d": [
+            265,
+            444,
+            285,
+            485
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -38
+        },
+        {
+          "bbox_2d": [
+            120,
+            445,
+            164,
+            598
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -46
+        },
+        {
+          "bbox_2d": [
+            161,
+            445,
+            177,
+            537
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -44
+        },
+        {
+          "bbox_2d": [
+            226,
+            445,
+            243,
+            503
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -32
+        },
+        {
+          "bbox_2d": [
+            183,
+            446,
+            205,
+            578
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -62
+        },
+        {
+          "bbox_2d": [
+            175,
+            448,
+            198,
+            553
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -51
+        },
+        {
+          "bbox_2d": [
+            42,
+            456,
+            63,
+            560
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -53
+        },
+        {
+          "bbox_2d": [
+            59,
+            457,
+            84,
+            597
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -34
+        },
+        {
+          "bbox_2d": [
+            131,
+            459,
+            176,
+            585
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -43
+        },
+        {
+          "bbox_2d": [
+            74,
+            460,
+            97,
+            493
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -36
+        },
+        {
+          "bbox_2d": [
+            93,
+            460,
+            113,
+            493
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -56
+        },
+        {
+          "bbox_2d": [
+            263,
+            464,
+            284,
+            498
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -37
+        },
+        {
+          "bbox_2d": [
+            104,
+            467,
+            124,
+            593
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -28
+        },
+        {
+          "bbox_2d": [
+            23,
+            472,
+            38,
+            515
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -41
+        },
+        {
+          "bbox_2d": [
+            45,
+            473,
+            66,
+            564
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -61
+        },
+        {
+          "bbox_2d": [
+            739,
+            484,
+            813,
+            646
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -57
+        },
+        {
+          "bbox_2d": [
+            155,
+            495,
+            174,
+            592
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -64
+        },
+        {
+          "bbox_2d": [
+            776,
+            495,
+            846,
+            648
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": -45
+        },
+        {
+          "bbox_2d": [
+            13,
+            507,
+            46,
+            599
+          ],
+          "desc": "person",
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 1703142
+        }
+      ],
+      "object_order": [
+        1425221,
+        1795625,
+        54058,
+        1830129,
+        -42,
+        1425987,
+        -59,
+        -63,
+        -31,
+        -30,
+        -58,
+        -60,
+        -40,
+        -49,
+        -54,
+        -29,
+        -50,
+        -39,
+        1218312,
+        -48,
+        -47,
+        -55,
+        -52,
+        1206679,
+        -35,
+        2018451,
+        -33,
+        -38,
+        1704592,
+        -46,
+        -44,
+        -32,
+        -62,
+        -51,
+        1321605,
+        -53,
+        -34,
+        -43,
+        -36,
+        -56,
+        -37,
+        -28,
+        -41,
+        -61,
+        -57,
+        1441803,
+        -64,
+        -45,
+        1703142,
+        575192
+      ],
+      "after_sha256": "595bdc9731b948c75ee3471046c07d9078765f7092e5460c192f4eebdfff2264"
+    },
+    {
+      "split": "val",
+      "image_id": 218091,
+      "surface": "norm1000",
+      "before_sha256": "6bf7c120bd9ec3ba927ada69f5d8afaa63075a18a5445c1dcb00f136cb222ddd",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        315227,
+        28887,
+        2222918,
+        2223835,
+        1112308,
+        97993,
+        1598339
+      ],
+      "after_sha256": "4bddb99cea44c0b8e6c27da1cff51a4d6fde5cc49eb1e7131e4a467aa62ae27e"
+    },
+    {
+      "split": "val",
+      "image_id": 304365,
+      "surface": "norm1000",
+      "before_sha256": "a85ed89733570be99ee6067d07db58ce5cc223bf7a261a136c4251b5078024a1",
+      "remove_annotation_ids": [],
+      "upsert_objects": [],
+      "object_order": [
+        170507,
+        193697,
+        1446883,
+        2211585
+      ],
+      "after_sha256": "afaa9cbf346a23d5d39ff8155a9ba298e5fd69ef2b4dbd7dca918d564de4b1bc"
+    },
+    {
+      "split": "val",
+      "image_id": 326627,
+      "surface": "pixel",
+      "before_sha256": "7abf96eb20df277c5595d60d4582f00b5ecd3cabd350eb1c5123d543f69f67d4",
+      "remove_annotation_ids": [
+        2057009
+      ],
+      "upsert_objects": [],
+      "object_order": [
+        1386294,
+        1386487,
+        1350425,
+        1354723,
+        1353061,
+        364374,
+        346702,
+        364237,
+        364206,
+        1342711,
+        363987,
+        1354386
+      ],
+      "after_sha256": "921d00f7b4a8d58f25487cd1da0f9cd73f8a012301830b4681cbd5cd6877e30a"
+    },
+    {
+      "split": "val",
+      "image_id": 326627,
+      "surface": "norm1000",
+      "before_sha256": "143cc9487fb89d5d9a9cbade212e93bc358898fbd644b6fd305c384de06ca8c6",
+      "remove_annotation_ids": [],
+      "upsert_objects": [
+        {
+          "bbox_2d": [
+            737,
+            790,
+            740,
+            796
+          ],
+          "desc": "traffic light",
+          "category_id": 10,
+          "category_name": "traffic light",
+          "coco_ann_id": 2057009
+        }
+      ],
+      "object_order": [
+        1386294,
+        2057009,
+        1386487,
+        1350425,
+        1354723,
+        1353061,
+        364374,
+        346702,
+        364237,
+        364206,
+        1342711,
+        363987,
+        1354386
+      ],
+      "after_sha256": "6f3980374863719bfe7734401e8d00eec56c6e94cf5e5e5a6fc83c42dd2df781"
+    }
+  ]
+}

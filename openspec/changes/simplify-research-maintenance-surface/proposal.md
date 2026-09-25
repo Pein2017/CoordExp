@@ -52,3 +52,26 @@ will retain only justified consumer closures. Current production train/infer/eva
 contracts and meaningful integrity tests stay protected. External outputs, model
 checkpoints, datasets, runtime services, unrelated worktrees and remote refs are
 outside deletion scope. No GPU, historical model rerun, push or history rewrite.
+
+## Acceptance correction: dataset recovery and live instructions
+
+Independent review identified a P1 regression: retained data manifests promised
+raw regeneration while their executable closure had been removed. Keeping their
+bytes was not enough to preserve a supported capability. P2 also found commands
+and historical destinations in current guides that no longer exist. Prior
+acceptance is bounded to code/CPU behavior, not complete data recoverability.
+
+This correction restores a small current-data recovery boundary, not the old
+factory. Prefer an actually verified immutable external replica; a local ext4 path
+is not proof of cross-node recovery. If none is available, maintain only the raw
+COCO-to-current-consumed-view producer with its dependency, no-overwrite, checksum
+and image-reading checks. Separate no-current-consumer manifests as historical
+identity records. Historical checksums must not be silently replaced: observed
+current data with different bytes needs an explicitly distinct identity and
+reconstruction proof. No existing dataset, receipt or model is overwritten.
+
+Consolidate storage/transfer rules at docs/OUTPUT_STORAGE_POLICY.md, remove
+obsolete operations from current guides, and add checks covering code blocks and
+manifest command dependencies. Append local commits and ff-only canonical only
+after a fresh clean/HEAD check. No push, history rewrite, archive or worktree
+retirement in this correction.

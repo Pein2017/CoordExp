@@ -1,30 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "artifact_type": "processed_directory",
   "relative_path": "public_data/coco/rescale_32_1024_bbox",
-  "producer_script": "public_data/run.sh",
-  "working_dir": ".",
-  "command": "./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- --max-pixels 1048576 --min-pixels 4096 --image-factor 32 --num-workers 1",
-  "inputs": [
-    {
-      "kind": "raw_dataset",
-      "path": "public_data/coco/raw",
-      "notes": "COCO 2017 raw images and converted raw train/val JSONL prepared locally before rescale."
-    }
-  ],
-  "key_params": {
-    "dataset": "coco",
-    "image_factor": 32,
-    "max_pixels": 1048576,
-    "max_pixels_units": 1024,
-    "min_pixels": 4096,
-    "bbox_format": "xyxy",
-    "max_objects": null,
-    "splits": [
-      "train",
-      "val"
-    ],
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest_not_baidu_directory_sync"
+  "support": "current",
+  "origin": {
+    "commit": "0f5b505866525cf0dc9bf946a81c6acca280ebaf",
+    "manifest_path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox.json",
+    "manifest_sha256": "218f9d00b4a39c169980f1a8c1467a7cde8045e077eb2bf1c1a002baa7a8a9fb"
   },
   "checksums": {
     "scope": "jsonl_training_samples_only",
@@ -46,7 +28,87 @@
       }
     ]
   },
-  "code_ref": null,
-  "generated_at_utc": null,
-  "notes": "Full-object COCO 1024 xyxy rescale root. This manifest is the cross-node regeneration contract; do not routine-sync this processed directory through Baidu Netdisk."
+  "asset_version": "raw-boxes-1024-v1",
+  "recovery": {
+    "mode": "raw_archives",
+    "module": "public_data.recover_coco",
+    "recipe": "pixel-v1",
+    "raw_archives": [
+      {
+        "path": "train2017.zip",
+        "sha256": "69a8bb58ea5f8f99d24875f21416de2e9ded3178e903f1f7603e283b9e06d929",
+        "size_bytes": 19336861798,
+        "url": "http://images.cocodataset.org/zips/train2017.zip"
+      },
+      {
+        "path": "val2017.zip",
+        "sha256": "4f7e2ccb2866ec5041993c9cf2a952bbed69647b115d0f74da7ce8f4bef82f05",
+        "size_bytes": 815585330,
+        "url": "http://images.cocodataset.org/zips/val2017.zip"
+      },
+      {
+        "path": "annotations_trainval2017.zip",
+        "sha256": "113a836d90195ee1f884e704da6304dfaaecff1f023f49b6ca93c4aaae470268",
+        "size_bytes": 252907541,
+        "url": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
+      }
+    ],
+    "environment": {
+      "python": "3.12",
+      "pillow": "11.3.0",
+      "libjpeg_turbo": "3.1.1"
+    },
+    "image_canaries": [
+      {
+        "split": "train",
+        "member": "train2017/000000000009.jpg",
+        "width": 1152,
+        "height": 864,
+        "raw_sha256": "35cdfe8259aca40d564baf33ee749d82ce852446bd9574f0c47551d8bfffda99",
+        "resized_sha256": "258702149ad4205e87c1905b5f56146282ccb6f5a006328c9b5a47301d4712c0"
+      },
+      {
+        "split": "train",
+        "member": "train2017/000000291780.jpg",
+        "width": 1248,
+        "height": 832,
+        "raw_sha256": "5cebb9bdb6b583b0c2601106eff2fecfa9349f1be82c33b7cdb1815b9701734b",
+        "resized_sha256": "f85072b1f7a4edbb916a8d1a589053373939bcdfedb1f50d65b897b4b7d1c0f6"
+      },
+      {
+        "split": "train",
+        "member": "train2017/000000581929.jpg",
+        "width": 1088,
+        "height": 864,
+        "raw_sha256": "ddf07c79d321aa18e5c31429495eedf8c84b4405e6b8c3e579adbc2e018bbbe6",
+        "resized_sha256": "124bacaefb74ce762f9aa90f37986c0bbb27bfa0ff8998ba1888e36306a0908e"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000000139.jpg",
+        "width": 1248,
+        "height": 832,
+        "raw_sha256": "ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d",
+        "resized_sha256": "99475180da0ad018a3ff8cb84445c468a149d58f4b92c3601d9fad05a2c3020c"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000289586.jpg",
+        "width": 832,
+        "height": 1248,
+        "raw_sha256": "915f8d37726e95c51d35ee998c841a4d8e1dcd648990e2acec76ea4e9bd736b6",
+        "resized_sha256": "a6434cb3b02dd1d6a32a3aad5c89295c2289d72f5c484021828b807ac2b8f39d"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000581781.jpg",
+        "width": 1152,
+        "height": 864,
+        "raw_sha256": "59b1da30af12f76b691990363e0d221050a59cf53fc4a97e776bcb00228c6c2a",
+        "resized_sha256": "af308c744e621bf3db9e0ea959508ed2843de7f0967e7ee576e7ce8f10164f70"
+      }
+    ],
+    "image_contract": "Pillow RGB/LANCZOS/default JPEG from bound raw ZIPs; full generation plus six frozen byte canaries, not a full stored image-checksum inventory."
+  },
+  "notes": "Transitive image source for current COCO training inputs. JSONL identity matches the original manifest; the maintained raw-archive recipe replaces the retired factory."
 }

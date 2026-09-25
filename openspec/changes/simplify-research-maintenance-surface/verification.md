@@ -158,6 +158,101 @@ payloads and historical receipts remain untouched. Missing external adapter
 qualification evidence still rejects actual model loading. No GPU parity or
 full-model historical replay has been demonstrated. Current source changes require
 fresh qualification rather than accepting a prior commit's continuation receipt.
-Core numerical/runtime interfaces, saved evaluators, current qualification configs,
-12 data provenance manifests and the independent8-file Agent pilot were retained
-for actual supported functionality, not historical sentiment.
+Core numerical/runtime interfaces, saved evaluators, qualification configs and the
+independent8-file Agent pilot were retained. The 12 data-provenance files were
+preserved as identity records, but their executable recovery closure was not
+validated then. The independent review below found a real recovery regression;
+byte preservation alone did not establish supported restoration.
+
+## Acceptance reopened after independent P1/P2 review
+
+The earlier passing CPU suite and byte preservation did not verify public-data
+restoration. Its supported-function claim for the ten legacy manifests was too
+broad: their raw-generation commands were absent. Current storage guides also
+retained stale commands and history/archive instructions. This correction is
+HOLD pending tasks 6.1–6.6, with actual recovery validation recorded below.
+
+## P1/P2 correction evidence (2026-09-25)
+
+### Disposition
+
+P1 was a real capability regression, not a request to preserve legacy code. No
+independent processed-data replica was verified; `/data` is local ext4. The two
+currently consumed COCO assets therefore use a new narrow maintained raw-ZIP
+recovery path. Eight unused manifests now explicitly record historical identity
+only, retain their prior checksums, and reject attempted regeneration.
+
+The current len12000 bytes differed from all six older declared JSONL hashes.
+Inspection found compact serialization plus actual annotation additions, removals
+and extent/order changes. Raw-only rebuilding would discard those changes. The
+necessary 151,209-byte current-data delta contains 117 surface edits with input
+and output hashes, 284 object upserts and 86 removals. This is not a new label
+admission. The schema-2 curated asset version is separate; exact old manifests
+remain at their `origin` Git commit/path/hash. External data and old run receipts
+were not edited.
+
+The replacement is two Python modules (fixed record conversion and recovery),
+not the historical factory/config/mapping/tokenizer closure. The five grid-size
+functions have identical AST to original commit
+`82eb100ae186ee084339e4e9cd4b821623581f50`. The fixed raw corpus had zero images
+dropped by the old 12k filter; the replacement reconstructs only that exact
+corpus with the observed edits and requires complete final hashes. It is not a
+general token-budget filter, a new dataset recipe, or an old receipt continuation.
+
+P2 policies are consolidated into `docs/OUTPUT_STORAGE_POLICY.md`. The two
+conflicting standards files were deleted. The infrastructure guide no longer
+promises a completed-change archive. A further command-target check found stale
+LVIS/template commands in data preparation/contract docs; those current routes
+were corrected without restoring the retired launchers.
+
+### Executed checks in the target
+
+- Existing suite plus initial 32 new tests: **1,518 passed / 1 skipped / 0 failed**;
+  `.local/recovery-review/surviving-suite.xml`. The skip remains the existing
+  CUDA bf16 parity test; CUDA was hidden. No old test was removed or relaxed.
+- Final focused recovery/policy suite: **33 passed** after adding the general
+  fenced/inline command-target regression; `focused-final-v2.xml`. This extra
+  check first caught two dangling commands and passed after fixing those docs.
+- Actual read-only curated reconstruction: **6/6 complete JSONL size/count/SHA-256
+  matches**, 122,218 images, all 117 delta edits consumed, zero data/image writes.
+  Exact CLI: `python -B -m public_data.recover_coco reconstruct-jsonl --manifest
+  manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json
+  --raw-archives /data/CoordExp/public_data/coco/raw/downloads`. Job
+  `wc_job_ILACBEP-5X7pYSbj` completed successfully.
+- Actual base reconstruction: **2/2 complete JSONL matches**, the same 122,218
+  images, zero data/image writes. `materialization-and-base-reconstruction.json`.
+- Actual `regenerate --dry-run`: full checksum verification of all three bound
+  raw ZIPs, pinned image environment and six raw/resized JPEG byte canaries;
+  destination remained absent. Independently checked **122,218 raw ZIP image
+  members/header dimensions, zero mismatches**. `raw-qualification.json`.
+- Real materialized-input verification: all eight JSONL files across both assets
+  matched; the retained coordinate reader parsed four actual rows, image reads
+  and all six canaries passed. Scope is full JSONL hashes plus bounded reading,
+  not a full processed-image checksum census.
+- Synthetic end-to-end recovery used real tiny ZIPs/JPEGs, separately specified
+  expected pixel/norm/token bytes, current annotation edits, exclusive output
+  publication and the production reader. Bad/missing raw files, altered delta,
+  environment mismatch, wrong image canary, absent producer, symlink path, output
+  hash mismatch, occupied destinations, manifest races and receipt collisions
+  fail explicitly without a false completed materialization.
+- All ten manifests validate, including exact historical Git origins; every
+  retained config's public COCO input has a current recovery owner.
+- OpenSpec strict: change **1/1**, main specs **26/26**. Knowledge check:
+  **324 distilled records / 163 claim references**. Python parse: **263 files**;
+  two new module imports and eight current CLI help entries pass. `git diff
+  --check` passes. `src/`, configs, scientific research, Agent instructions and
+  the independent Agent pilot remain byte-unchanged.
+
+### Limits and adoption boundary
+
+The full 122,218-image regeneration was not executed and no second physical node
+was provisioned. The bounded actual image-canary proof, all raw archive checks,
+all raw image headers, full JSONL reconstruction and synthetic complete restore
+are reported separately. Official source URLs were recovered from existing
+download metadata; current network availability was not tested and no remote
+backup is claimed. Operators must obtain the exact checksum-bound raw ZIPs and
+pinned image environment. No archive/history, model run, dataset upload/deletion,
+Git rewrite, push or worktree retirement was performed.
+
+Canonical/integration adoption remains task 6.6 until a freshly checked clean
+checkout accepts the appended correction commit by ff-only and verifies it.

@@ -1,149 +1,93 @@
-# Public Data Provenance Manifests
+# Public-data identity and recovery contracts
 
-This directory stores small git-tracked provenance records for durable
-`public_data/` artifacts.
+A checksum identifies bytes; it does not establish a restore path. Schema 2
+separates **current, executable recovery** from **historical identity only**.
+The [storage policy](../../docs/OUTPUT_STORAGE_POLICY.md) is the sole owner of
+backup/transfer/retention rules. No processed-data mirror has been verified.
 
-It does not store data files. It records how processed data was produced so a
-new machine can regenerate the directory after preparing raw datasets locally.
+## Current supported assets
 
-Path convention:
+| Manifest under this directory | Recovery contract |
+|---|---|
+| `coco/rescale_32_1024_bbox.json` | Original noncrowd COCO bbox JSONLs and shared resized images, from the three checksum-bound official raw ZIPs. |
+| `coco/rescale_32_1024_bbox_len12000.json` | Exact current train/val pixel, norm1000 and coordinate-token JSONLs; raw COCO plus the bound observed annotation delta, with the same shared-image layout. |
 
-```text
-public_data/<dataset>/<processed-dir>/
-manifests/public_data_provenance/<dataset>/<processed-dir>.json
+All retained production configs and their public-data smoke inputs use the second
+asset. The other eight manifests have `support: historical` and no executable
+recovery promise: no retained configuration consumes those versions, and no
+independent replica was established. Their original checksums/metadata remain
+unchanged, and `origin` gives the exact prior manifest Git commit/path/hash.
+Historical entries are rejected by regeneration/verification commands instead of
+falling back to a deleted producer or silently substituting a current dataset.
 
-public_data/<dataset>/images/<image-store>/
-manifests/public_data_provenance/<dataset>/images/<image-store>.json
+## Why the current view has a distinct version
 
-public_data/<dataset>/views/<view-family>/<view-name>/
-manifests/public_data_provenance/<dataset>/views/<view-family>/<view-name>.json
+On 2026-09-25 the two base JSONLs matched their original manifest, but the six
+consumed len12000 files did not. Besides compact JSON serialization, the current
+view contains added/removed annotations and revised boxes/order. Replacing them
+with a raw-only regeneration would lose actual training input information.
+
+`public_data/coco_annotation_delta.json` is a necessary **current data input**,
+not an archive or a new scientific label admission. It stores only observed
+object edits and order for affected records, with before/after content hashes.
+The curated manifest binds its exact hash. The previous manifest remains
+recoverable through `origin`; old receipts and all existing external files were
+left untouched. Do not use the current version to rewrite a historical score.
+
+The original frozen raw corpus dropped zero images at the recorded 12k limit.
+The replacement recovers those exact image identities, then reapplies the observed
+annotation edits. It is **not** a general length-budget filter, tokenizer, proxy
+label generator or arbitrary-corpus factory. Whole-output checksums reject any
+different corpus or conversion. A different view requires separate qualification.
+
+## Restore on a new node
+
+Prepare `annotations_trainval2017.zip`, `train2017.zip`, and `val2017.zip` from
+the official source URLs recorded in `recovery.raw_archives`, or from a separately
+verified mirror. Their full SHA-256 and sizes are mandatory. No authentication
+material is stored here. The recovery command itself does not download anything.
+Install the exact Python/Pillow/libjpeg-turbo versions declared by the manifest.
+No legacy training config, mapping CSV, tokenizer or model checkpoint is needed.
+
+From a checkout containing this implementation:
+
+```bash
+python -m public_data.recover_coco check
+python -m public_data.recover_coco regenerate \
+  --manifest manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json \
+  --raw-archives /path/to/coco-zip-inputs \
+  --destination /path/to/absent-workspace --dry-run
 ```
 
-Each manifest should follow `schema.json` and include the exact production
-command whenever possible. Manifests must include `artifact_type`:
+Dry-run validates all three archive hashes, implementation/data dependencies,
+environment and six resized-image byte canaries, without creating the destination.
+For explicitly authorized full restoration, run the same command without
+`--dry-run`. It reads official annotation/image members directly, writes the
+selected JSONLs and shared images under the destination workspace, verifies all
+expected JSONL hashes and publishes `recovery.json` only on success. A failure
+leaves `.recovery-incomplete`; never use that directory as accepted input.
+Existing destinations are not overwritten or repaired in place.
 
-- `processed_directory` for legacy processed roots.
-- `image_store` for reusable image roots such as
-  `public_data/coco/images/res-1024`.
-- `annotation_view` for model-facing JSONL views such as
-  `public_data/coco/views/coco80/len-12000`.
-
-Materialized training-sample directories and annotation views should include a
-JSONL-only checksum block. The checksum scope is intentionally narrow: hash the
-model-facing `*.jsonl` files and an aggregate over those file records, but do
-not hash raw images, resized images, caches, or whole `public_data/` trees.
-Tests verify checksum entries when the artifact root exists locally. If a
-checkout does not have generated data, tests skip local file hashing for that
-absent root. If the root exists, every listed JSONL and sidecar must exist, and
-the local top-level JSONL set must match the manifest checksum block.
-
-Image-store manifests use `checksums: null` by default. Full image-file hashing
-is intentionally out of the routine provenance path; it can be added later only
-for an explicit freeze or cross-node image-store audit.
-
-Use a fresh materialization command for image-store manifests, such as
-`--image-store-mode hardlink`, `reflink`, or `copy`. `reuse-existing` is useful
-for local revalidation after the image store already exists, but it is not a
-fresh regeneration command.
-
-Annotation-view manifests should also record lightweight sidecar metadata when
-available under `metadata`. The Git-tracked manifest should carry small audit
-fields inline under `key_params.view_summary`, so review does not require the
-ignored local sidecars to be present. For example:
-
-```json
-{
-  "metadata": {
-    "view_metadata": {
-      "path": "public_data/coco/views/coco80/len-12000/meta.json",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "size_bytes": 123
-    },
-    "source_comparison": {
-      "path": "public_data/coco/views/coco80/len-12000/source_comparison.json",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "size_bytes": 123
-    },
-    "length_stats": {
-      "train": {
-        "path": "public_data/coco/views/coco80/len-12000/train.length_stats.json",
-        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "size_bytes": 123
-      }
-    }
-  }
-}
+```bash
+python -m public_data.recover_coco verify \
+  --manifest manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json \
+  --workspace /path/to/restored-workspace
 ```
 
-Derived artifacts at the same image resolution should share the canonical
-processed image root instead of copying or relinking images. For example, COCO
-1024 length-budget variants keep only JSONL/meta files and write relative image
-paths that point back to `public_data/coco/rescale_32_1024_bbox/images/`.
-Phase 1 view-architecture artifacts instead resolve JSONL image paths through
-the declared image store, for example
-`public_data/coco/images/res-1024`.
+Verification hashes every declared JSONL, invokes the real reader on bounded
+coordinate rows, opens their images at the declared dimensions, and verifies
+the image canaries. It is not a full image checksum census. Use the restored
+absolute input paths in a newly resolved training config; no script rewrites
+existing configs or substitutes data into an old run.
 
-Minimal example:
+`reconstruct-jsonl --manifest ... --raw-archives ...` is a separate read-only
+whole-JSONL reconstruction check: it reads only the annotation ZIP and delta,
+writes no images/data, and explicitly does not qualify image archives.
 
-```json
-{
-  "schema_version": 1,
-  "artifact_type": "annotation_view",
-  "relative_path": "public_data/coco/views/coco80/len-12000",
-  "producer_script": "public_data/scripts/build_coco_views.py",
-  "working_dir": ".",
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --views coco80/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
-  "inputs": [
-    {
-      "kind": "raw_dataset",
-      "path": "public_data/coco/raw",
-      "notes": "Prepared locally from the COCO source files."
-    }
-  ],
-  "key_params": {
-    "image_store": "public_data/coco/images/res-1024",
-    "image_path_semantics": "image_store_relative",
-    "coordinate_space": "norm1000",
-    "coordinate_storage": "integer",
-    "length_budget_scope": {
-      "rendered_families": ["objects"],
-      "excluded_sidecars": ["metadata.supervision.support_objects"]
-    },
-    "view_summary": {
-      "records": 1,
-      "rendered_object_count": 1,
-      "support_sidecar_count": 0
-    },
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest"
-  },
-  "checksums": {
-    "scope": "jsonl_training_samples_only",
-    "algorithm": "sha256",
-    "aggregate_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "aggregate_source": "sorted path sha256 size_bytes records lines",
-    "files": [
-      {
-        "path": "public_data/coco/views/coco80/len-12000/train.jsonl",
-        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "size_bytes": 123,
-        "records": 1
-      }
-    ]
-  },
-  "metadata": {
-    "view_metadata": {
-      "path": "public_data/coco/views/coco80/len-12000/meta.json",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "size_bytes": 123
-    },
-    "source_comparison": {
-      "path": "public_data/coco/views/coco80/len-12000/source_comparison.json",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "size_bytes": 123
-    }
-  },
-  "code_ref": null,
-  "generated_at_utc": null,
-  "notes": "Example shape only; replace with the real producer and command."
-}
-```
+## Contract maintenance
+
+`python -m public_data.recover_coco check` validates every schema and current
+producer/delta dependency. Tests also require every retained COCO config input
+to have a current recovery owner and preserve each historical manifest origin.
+A passing static check is not raw-input availability, byte reconstruction or
+new-node restoration; report those scopes separately.

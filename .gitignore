@@ -205,3 +205,6 @@ text_editor.md
 # Preserve the two originally ignored empty logs named by the research source manifest.
 !docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/logs/wine-glass-2685.log
 !docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/logs/person-7511.log
+
+# Required current annotation corrections, not raw/processed dataset snapshots.
+!public_data/coco_annotation_delta.json

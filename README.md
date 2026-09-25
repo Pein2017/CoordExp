@@ -35,3 +35,7 @@ archive in HEAD. No GPU/model replay is implied by the CPU test suite.
 Run offline CPU checks with CUDA hidden, one-thread math libraries and
 `python -B -m pytest -q -p no:cacheprovider`. Configuration and real model resources
 must be selected explicitly before any separately authorized model execution.
+
+Public-data recovery is a maintained exception to historical factory retirement:
+[the recovery contracts](manifests/public_data_provenance/README.md) bind current
+COCO inputs, their minimal annotation delta and a tested raw-ZIP restore path.

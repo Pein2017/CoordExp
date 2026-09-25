@@ -1,29 +1,12 @@
----
-doc_id: docs.standards.index
-layer: docs
-doc_type: router
-status: canonical
-domain: standards
-summary: Router for repo conventions, code style, upstream policy, porting notes, and asset provenance standards.
-tags: [standards, policy]
-updated: 2026-06-07
----
+# Engineering standards
 
-# Standards
+- [Storage and recovery](../OUTPUT_STORAGE_POLICY.md): source/evidence ownership,
+  current data recovery, output transfer and retention.
+- [Code style](CODE_STYLE.md): module, contract, refactoring and porting guidance.
+- [Upstream boundaries](UPSTREAM.md) and [dependency notes](upstream/):
+  qualification and implementation constraints.
+- [Branch/worktree policy](../BRANCH_AND_WORKTREE_POLICY.md): exact checkout,
+  dirty work, integration and publication safety.
 
-Use this folder for stable repo policy and engineering conventions.
-
-## Pages
-
-- [REPO_HYGIENE.md](REPO_HYGIENE.md)
-  - where things live and how work is promoted
-- [CODE_STYLE.md](CODE_STYLE.md)
-  - code and architecture style guidance
-- [UPSTREAM.md](UPSTREAM.md)
-  - upstream dependencies and boundary rules
-- [upstream/](upstream)
-  - focused upstream notes for Qwen-VL, ms-swift, FlashAttention, and the HF training ecosystem
-- [PORTING.md](CODE_STYLE.md)
-  - porting notes and compatibility guidance
-- [OUTPUT_SYNC_AND_DATA_PROVENANCE.md](OUTPUT_SYNC_AND_DATA_PROVENANCE.md)
-  - output backup ownership and processed-data provenance
+Do not keep parallel copies of storage policy or infer a supported command from
+a historical filename.

@@ -1,329 +1,36 @@
----
-doc_id: docs.data.preparation
-layer: docs
-doc_type: workflow
-status: canonical
-domain: data
-summary: Offline preparation and intake workflow for dataset conversion and validation.
-updated: 2026-05-17
----
+# Data preparation and intake
 
-# Data Preprocessing & Intake Pipeline
-
-This is the unified flow used for all detection/grounding datasets (LVIS, COCO, Objects365, etc.) to produce:
-- Pixel JSONL (train/val)
-- Resized JSONL + resized images (budget + grid-aligned)
-- Tiny smoke splits
-- Coord-token JSONL (strict 0–999)
-
----
-
-## End-to-end Pipeline Overview
-
-```
-Raw annotations/images
-  → dataset converter (per-dataset, emits pixel JSONL)
-  → smart resize (public_data/scripts/rescale_jsonl.py)
-  → tiny subset (public_data/scripts/sample_dataset.py)
-  → coord tokens (public_data/scripts/convert_to_coord_tokens.py)
-  → bbox-format branch (optional, public_data/run.sh <dataset> bbox-format)
-  → (optional) image-level filter (public_data/scripts/filter_low_diversity_images.py)
-  → training (custom.train_jsonl / custom.val_jsonl)
-```
-
-For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other datasets, add a matching converter that outputs the same JSONL contract (see [`CONTRACT.md`](CONTRACT.md)).
-
----
-
-## Phase 1 Public-Data View Architecture
-
-Phase 1 separates COCO's reusable resized image store from model/eval
-annotation views:
-
-```text
-public_data/coco/images/res-1024/
-public_data/coco/views/coco80/full/
-public_data/coco/views/coco80/len-12000/
-public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
-```
-
-Canonical view JSONLs under `public_data/coco/views/**` use:
-
-- `images[]` paths relative to the declared image store, not the JSONL
-  directory;
-- bare norm1000 integer `bbox_2d` / `poly` coordinates in strict JSON;
-- assistant rendering as Qwen `<|coord_k|>` tokens at the template/builder
-  boundary;
-- local `meta.json` for view/image-store metadata;
-- Git-tracked provenance manifests under `manifests/public_data_provenance/`
-  as the cross-node source of truth.
-
-Generated `public_data/coco/images/**` and `public_data/coco/views/**`
-artifacts are local data products. Do not treat the legacy preset roots as
-deleted during Phase 1, and do not assume production configs have all migrated
-until their config slice does so explicitly.
-
----
-
-## Unified Runner (Recommended for Public Data)
-
-The preferred way to prepare public datasets is the unified runner:
+The maintained recovery path is [fixed COCO recovery](../../manifests/public_data_provenance/README.md),
+not a universal multi-dataset factory. It reconstructs the exact current consumed
+view, including observed annotation edits, from checksum-bound raw archives.
+[Storage policy](../OUTPUT_STORAGE_POLICY.md) owns backup and retention; the
+[JSONL contract](CONTRACT.md) owns coordinate and image-path interpretation.
 
 ```bash
-./public_data/run.sh <dataset> <command> [runner-flags] [-- <passthrough-args>]
+python -m public_data.recover_coco check
+python -m public_data.recover_coco verify \
+  --manifest manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json \
+  --workspace /path/to/restored-workspace
 ```
 
-**Key Commands**:
-- `all`: download + convert + rescale + coord + validate (using a preset).
-- `bbox-format`: derive an offline non-canonical bbox branch from a canonical
-  preset.
-- `validate`: check annotation structure and optionally image presence.
+The complete restore/dry-run commands and pinned dependencies live in the recovery
+README rather than being maintained a second time here. Eight older proxy/view
+identities are historical-only; their presence is not a current factory interface.
 
-**Examples**:
-```bash
-# VG (download+convert+rescale+coord+validate)
-./public_data/run.sh vg all --preset rescale_32_768_bbox
+Before training, verify the exact declared JSONL bytes, image resolution and paths,
+coordinate chart/range, object metadata, annotation version and intended order.
+A bounded reader/image smoke is a necessary integration check, not full dataset
+qualification. Retain pixel and normalized geometry distinctions; no runtime
+image resize or silent bbox-chart conversion may repair an incompatible input.
 
-# LVIS polygons (segmentation → poly)
-./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon --poly-max-points 20
+Point the selected current config's `data.train.path` and `data.eval.path` at the
+restored absolute inputs, then resolve a new config identity. Do not overwrite an
+existing dataset or change an old receipt/hash to disguise a different version.
+Model-specific token length is still validated by the current packing pipeline.
+The fixed recovery is not a general 12k-token filter or permission to discard
+objects/images from another corpus.
 
-# Derive offline non-canonical bbox branches from an existing canonical preset
-./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
-./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcywh
-```
-
----
-
-## Manual Pipeline Steps
-
-### 1. Smart Resize (Budget-Filling + Grid)
-
-```bash
-PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
-  --input-jsonl path/to/raw/train.jsonl \
-  --output-jsonl path/to/out/train.jsonl \
-  --output-images path/to/out \
-  --image-factor 32 \
-  --max-pixels $((32*32*768)) \
-  --min-pixels $((32*32*4)) \
-  --relative-images
-```
-- Uses `SmartResizePreprocessor` to resize images and geometry together.
-- Each image is resized to the largest `image_factor`-aligned shape that stays under
-  `max_pixels`, while preserving the original aspect ratio as closely as possible.
-- This intentionally upsamples low-resolution sources (including some native COCO-2017
-  images) so evaluation/training can use the available visual budget instead of only
-  treating `max_pixels` as a hard cap.
-- For stage-2 training configs, mirror this offline resize budget into
-  `custom.offline_max_pixels` so launcher prechecks and dataset runtime enforce the
-  same prepared-data contract without reusing the runtime `template.max_pixels` knob.
-- Golden rule:
-  - all training and evaluation must use these offline-prepared images,
-  - the model's vision processor must not resize them at runtime,
-  - if a runtime path would require resize to proceed, treat that as a contract failure rather than letting the processor silently change the image geometry.
-
-### 2. Tiny Subset (Smoke Tests)
-
-```bash
-PYTHONPATH=. python public_data/scripts/sample_dataset.py \
-  --input path/to/out/train.jsonl \
-  --output path/to/out/train_tiny.jsonl \
-  --num_samples 256 \
-  --strategy random
-```
-Use `--strategy stratified` for long-tail datasets like LVIS.
-
-### 3. Coord-Token Conversion (Strict 0–999)
-
-```bash
-PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
-  --input path/to/out/train.jsonl \
-  --output-norm path/to/out/train.norm.jsonl \
-  --output-tokens path/to/out/train.coord.jsonl
-```
-- Converts pixel coords into **norm1000 integer coords** (0..999) and/or `<|coord_k|>` tokens.
-- Pixel -> norm scaling clamps into range and ensures `bbox_2d` stays strictly valid after rounding (no collapse).
-- For coord-token training, use `train.coord.jsonl` / `val.coord.jsonl` with
-  `custom.coord_tokens.enabled: true`.
-- For raw-text norm1000 training, use `train.norm.jsonl` / `val.norm.jsonl`
-  with `custom.coord_tokens.enabled: false`.
-- In both modes keep `custom.emit_norm: none` and
-  `custom.coord_tokens.skip_bbox_norm: true`.
-
----
-
-## Record-Level Filtering
-
-### Image-Level Filtering (Semantic Diversity)
-
-Some datasets (LVIS) contain images with many repeated instances but low semantic diversity. We filter these at the record/image level to keep the dataset semantically rich.
-
-```bash
-PYTHONPATH=. python public_data/scripts/filter_low_diversity_images.py \
-  --input  path/to/train.coord.jsonl \
-  --output path/to/train.filtered.coord.jsonl \
-  --hard_max_objects 101 \
-  --min_objects 50 \
-  --max_unique 3 \
-  --min_top1_ratio 0.95
-```
-Tip: add `--stats_json output/<name>.json` to record filter statistics for reproducibility.
-
-### Object-Count Cap (Legacy / Transparency)
-
-If you want simple, transparent control over sequence length, cap objects per image:
-```bash
-PYTHONPATH=. python public_data/scripts/filter_jsonl_max_objects.py \
-  --input  train.jsonl \
-  --output train.max60.jsonl \
-  --max-objects 60
-```
-
-`max_objects` is legacy policy for derived artifacts such as `max-60` views.
-Current compact-full training should prefer prebuilt view JSONLs over runtime
-object-count admission or truncation.
-
-### Total-Token Budget (Compact-Full)
-
-For latest compact-full training, prefer filtering by total compact-full token
-budget instead of object count. The 12k COCO view budget counts:
-
-- post-merge Qwen3-VL image patch tokens;
-- system/user chat-template tokens;
-- the rendered compact-full assistant detection sequence;
-- all rendered assistant object rows present after optional LVIS-proxy
-  augmentation.
-
-Use the same tokenizer as the target compact-full checkpoint:
-
-```bash
-PYTHONPATH=. python public_data/scripts/build_coco_length_budget_artifacts.py \
-  --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
-  --source-preset public_data/coco/rescale_32_1024_bbox \
-  --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \
-  --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 \
-  --projection-root temp/coco_lvis_projection_length_budget \
-  --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv \
-  --max-total-tokens 12000 \
-  --splits train val \
-  --build-lvis-proxy \
-  --force
-```
-
-The legacy length-budget roots above are derived JSONL/meta-only artifacts.
-Phase 1 canonical views write the same policy under
-`public_data/coco/views/{coco80,coco80-lvis-proxy}/len-12000/` and resolve
-`images[]` through `public_data/coco/images/res-1024/`. Do not copy images into
-each annotation view.
-
----
-
-## Automation: One-Shot Wrapper
-
-Preferred automation is the dataset runner, which wires together download/convert/rescale/coord/validate in a preset:
-
-```bash
-# VG (download+convert+rescale+coord+validate)
-./public_data/run.sh vg all --preset rescale_32_768_bbox
-
-# LVIS polygons (segmentation -> poly)
-./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon --poly-max-points 20
-```
-
-For LVIS, there is also a legacy single-script baseline:
-
-```bash
-# End-to-end LVIS pipeline: convert + smart-resize + coord + tiny
-bash public_data/scripts/lvis_full_pipeline.sh
-```
-
-## Offline Bbox-Format Branches
-
-Use the offline bbox-format branch only when you need a non-canonical
-model-facing training surface such as `cxcy_logw_logh` or `cxcywh`.
-
-- Source contract:
-  - the source preset remains canonical `xyxy`
-  - the first supported branch surface is `bbox_2d`-only
-  - `poly` or mixed-geometry presets fail fast
-- Output contract:
-  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.jsonl`
-    stores norm1000 integer `bbox_2d` slots in `[cx, cy, logw, logh]`
-  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.norm.jsonl`
-    keeps the same numeric lattice in preset-compatible layout
-  - `public_data/<dataset>/<preset>_cxcy_logw_logh/<split>.coord.jsonl`
-    stores the tokenized form of the same lattice
-  - `public_data/<dataset>/<preset>_cxcywh/<split>.jsonl`
-    stores norm1000 integer `bbox_2d` slots in `[cx, cy, w, h]`
-  - `public_data/<dataset>/<preset>_cxcywh/<split>.norm.jsonl`
-    keeps the same numeric lattice in preset-compatible layout
-  - `public_data/<dataset>/<preset>_cxcywh/<split>.coord.jsonl`
-    stores the tokenized form of the same lattice
-  - `pipeline_manifest.json` records canonical source lineage plus
-    prepared-bbox provenance
-- Training contract:
-  - `custom.train_jsonl` / `custom.val_jsonl` for non-canonical
-    `custom.bbox_format` values (`cxcy_logw_logh`, `cxcywh`) must point at
-    the derived preset artifacts
-  - runtime dataset code must not convert canonical `xyxy` sources into
-    another bbox chart on the fly
-
----
-
-## Quality & Visualization
-
-- **Validation**: `python public_data/scripts/validate_jsonl.py <path.jsonl>`
-- **Visualization**: `python public_data/vis_tools/visualize_lvis.py --num_samples 3 --mode both --save`
-- **Chat template inspection**: `python scripts/tools/inspect_chat_template.py --jsonl <path> --index 0`
-
----
-
-## LVIS Geometry Ablations (Dataset-Fixed)
-
-For dataset-fixed geometry experiments (bbox-only vs polygon with semantic fallback), use:
-
-```bash
-bash public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh
-```
-
-This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `public_data/lvis/README.md` for details and output paths.
-
----
-
-## Quality Checklist (Before Training)
-
-- JSONL matches `CONTRACT.md` (width/height present; one geometry field per object).
-- No coord tokens outside 0-999 (coord-token JSONLs).
-- Resized images exist and match paths in JSONL.
-- Tiny splits load without errors (use a quick smoke run before launching large training).
-
----
-
-## Handoff to Training
-
-- Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
-- For `custom.bbox_format: cxcy_logw_logh`, point them to the offline-prepared
-  derived preset root such as
-  `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl`, not to
-  the canonical preset root.
-- For `custom.bbox_format: cxcywh`, point them to the offline-prepared
-  derived preset root such as
-  `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl`, not to the
-  canonical preset root.
-- For LVIS, pick a dataset-fixed variant that matches your ablation goal:
-  - Geometry ablations: use `public_data/scripts/export_lvis_bbox_poly_prefer_semantic_max60.sh` outputs under `public_data/lvis/`.
-  - Legacy sequence-length control: consume a prepared `max-60` / `max_objects`
-    artifact when that historical comparison is intentional.
-  - Optional: apply low-diversity filtering (`filter_low_diversity_images.py`) if you want to drop dense repetitive scenes.
-- Multi-dataset training:
-  - merge JSONLs offline (see `public_data/scripts/merge_jsonl.py`)
-  - runtime fusion config authoring has been removed from the supported training surface
-
----
-
-## See Also
-
-- **JSONL Contract**: [`CONTRACT.md`](CONTRACT.md)
-- **Public Data Submodule**: `public_data/README.md`
-- **LVIS Geometry Ablations**: `public_data/lvis/README.md`
+For a new dataset or alternate coordinate/label policy, establish a bounded
+conversion and validation contract before introducing an entry. The prior LVIS,
+proxy, alternate-bbox and legacy tokenizer/factory implementations remain Git
+history, not current commands.

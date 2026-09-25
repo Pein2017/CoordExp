@@ -159,19 +159,16 @@ canonical views.
 }
 ```
 
-## Source Families
+## Source and recovery boundaries
 
-- `public_data/*` converters produce LVIS/COCO/Objects365-style exports;
-  polygons include `poly_points`; descriptions are English classes/phrases.
-- Generated LVIS bbox Stage-1 exports are expected under
-  `public_data/lvis/rescale_32_1024_bbox_max60/{train,val}.coord.jsonl` after
-  `bash public_data/lvis/reproduce_max60_exports.sh`.
-- Before citing a generated export, verify sorted-order and contract validity on
-  the actual files present in the checkout or artifact root.
+The current [COCO recovery contract](../../manifests/public_data_provenance/README.md)
+provides a dependency-complete path for retained training inputs. Old LVIS, proxy
+and alternate-format exports may still exist externally, but their historical
+identity does not imply a maintained converter or runnable command in HEAD.
+Verify order, geometry, labels and exact content before comparing any version.
 
-All future domains MUST emit this contract to remain compatible with the shared chat template pipeline.
-
-For an exact view of how a record plus the default prompts are rendered by the Qwen3-VL chat template, run:
-```
-PYTHONPATH=. python scripts/tools/inspect_chat_template.py --jsonl <path/to/data.jsonl> --index 0
-```
+New domains must satisfy the current reader/template contracts, including the
+correct geometry representation and image-path origin. Rendering is owned by
+`src/templates/` and `src/qwen/encoding.py`; input planning and its real processor
+fixtures are tested in `tests/inference/test_input_preparation.py`. No retired
+inspection launcher is needed or implicitly supported.

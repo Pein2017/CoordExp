@@ -1,59 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "artifact_type": "annotation_view",
   "relative_path": "public_data/coco/views/coco80/len-12000",
-  "producer_script": "public_data/scripts/build_coco_views.py",
-  "working_dir": ".",
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full coco80/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
-  "inputs": [
-    {
-      "kind": "image_store_manifest",
-      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
-      "notes": "Shared Phase 1 COCO 1024 image-store contract."
-    },
-    {
-      "kind": "parent_view_manifest",
-      "path": "manifests/public_data_provenance/coco/views/coco80/full.json",
-      "notes": "Canonical full COCO80 view filtered by the compact detection length-budget policy."
-    },
-    {
-      "kind": "training_config",
-      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
-      "notes": "Latest compact-full prompt/model/template contract used for total-token length estimation."
-    }
-  ],
-  "key_params": {
-    "dataset": "coco",
-    "view": "coco80/len-12000",
-    "annotation_policy": "coco80",
-    "sample_policy": "length_budget",
-    "max_total_tokens": 12000,
-    "image_store": "public_data/coco/images/res-1024",
-    "image_path_semantics": "image_store_relative",
-    "coordinate_space": "norm1000",
-    "coordinate_storage": "integer",
-    "coordinate_range": [
-      0,
-      999
-    ],
-    "assistant_coordinate_rendering": "qwen_coord_tokens",
-    "length_budget_template_id": "compact-detection-v1",
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
-    "view_summary": {
-      "records": 122218,
-      "rendered_object_count": 886282,
-      "support_sidecar_count": 0,
-      "rendered_proxy_candidate_count": 0,
-      "object_supervision_count": 0
-    },
-    "length_budget_scope": {
-      "excluded_sidecars": [
-        "metadata.supervision.support_objects"
-      ],
-      "rendered_families": [
-        "objects"
-      ]
-    }
+  "support": "historical",
+  "origin": {
+    "commit": "0f5b505866525cf0dc9bf946a81c6acca280ebaf",
+    "manifest_path": "manifests/public_data_provenance/coco/views/coco80/len-12000.json",
+    "manifest_sha256": "7b1afa7149264893547c7c6dc87aa45c806a07fab0fc8df4464a78693f869d49"
   },
   "checksums": {
     "scope": "jsonl_training_samples_only",
@@ -74,6 +27,10 @@
         "records": 4952
       }
     ]
+  },
+  "recovery": {
+    "mode": "historical_only",
+    "reason": "No retained configuration consumes this version and no independent recovery replica was verified. Checksum/provenance is historical, not a promise of an executable producer. Raw-generation details remain at origin.commit:origin.manifest_path."
   },
   "metadata": {
     "view_metadata": {
@@ -99,10 +56,5 @@
       }
     }
   },
-  "code_ref": {
-    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
-    "git_dirty_allowed": true
-  },
-  "generated_at_utc": null,
-  "notes": "Phase 1 canonical COCO80 length-budget annotation view. The local generated artifact currently keeps all full-view records under the 12k token budget."
+  "notes": "Not a supported current recovery command. Existing external materializations and old identities were not changed."
 }

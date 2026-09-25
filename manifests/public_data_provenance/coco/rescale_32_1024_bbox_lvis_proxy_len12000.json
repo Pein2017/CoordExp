@@ -1,5 +1,13 @@
 {
+  "schema_version": 2,
   "artifact_type": "processed_directory",
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
+  "support": "historical",
+  "origin": {
+    "commit": "0f5b505866525cf0dc9bf946a81c6acca280ebaf",
+    "manifest_path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_lvis_proxy_len12000.json",
+    "manifest_sha256": "3da107ae1f252ad3e74a0ebdc49b3e2956ef9c346026c12e07828400c8611340"
+  },
   "checksums": {
     "aggregate_sha256": "50c9290fe987fed2e9251d235dbe898276ef854865ebb87f38ffc5f4c40c3a47",
     "aggregate_source": "sorted path sha256 size_bytes records lines",
@@ -32,56 +40,9 @@
     ],
     "scope": "jsonl_training_samples_only"
   },
-  "code_ref": {
-    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
-    "git_dirty_allowed": true
+  "recovery": {
+    "mode": "historical_only",
+    "reason": "No retained configuration consumes this version and no independent recovery replica was verified. Checksum/provenance is historical, not a promise of an executable producer. Raw-generation details remain at origin.commit:origin.manifest_path."
   },
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force --build-lvis-proxy",
-  "generated_at_utc": "2026-05-17T07:44:11Z",
-  "inputs": [
-    {
-      "kind": "processed_base",
-      "notes": "Length-filtered COCO coord-token base branch.",
-      "path": "public_data/coco/rescale_32_1024_bbox_len12000"
-    },
-    {
-      "kind": "semantic_mapping",
-      "notes": "Versioned LVIS-to-COCO proxy mapping decisions.",
-      "path": "openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv"
-    },
-    {
-      "kind": "raw_annotations",
-      "notes": "COCO instance annotations used for original image dimensions.",
-      "path": "public_data/coco/raw/annotations"
-    },
-    {
-      "kind": "raw_annotations",
-      "notes": "LVIS instance annotations used to build projection artifacts.",
-      "path": "public_data/lvis/raw/annotations"
-    }
-  ],
-  "key_params": {
-    "image_factor": 32,
-    "image_storage_policy": "share_same_resolution_image_root",
-    "lvis_proxy": true,
-    "max_objects": null,
-    "max_pixels": 1048576,
-    "max_total_tokens": 12000,
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
-    "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
-    "template": "compact_full",
-    "token_budget_components": [
-      "image_patch_tokens_post_merge",
-      "system_prompt_tokens",
-      "user_chat_tokens",
-      "assistant_compact_full_detection_tokens"
-    ],
-    "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
-  },
-  "notes": "COCO 1024 LVIS-proxy compact-full dataset filtered by final total 12k token budget after proxy augmentation.",
-  "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
-  "relative_path": "public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000",
-  "schema_version": 1,
-  "working_dir": "."
+  "notes": "Not a supported current recovery command. Existing external materializations and old identities were not changed."
 }

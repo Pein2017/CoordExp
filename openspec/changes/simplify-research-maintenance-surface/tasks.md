@@ -26,3 +26,12 @@
 
 - [x] 5.1 Create a registered isolated integration worktree from latest clean canonical, resolve target/canonical semantic conflicts and validate the complete integrated tree.
 - [x] 5.2 Recheck exact canonical HEAD, cleanliness and holders, ff-only adopt the validated commit, then verify final canonical status and report precise commits, scope and residual justified owners.
+
+## 6. Post-review acceptance corrections (P1/P2)
+
+- [x] 6.1 Reverify all checkouts, holders, actual config consumers, recorded/current data identity and available recovery sources; select an evidenced recovery design.
+- [x] 6.2 Implement the minimum supported data-recovery closure with dry-run, no-overwrite publication and checksum/image checks; prove actual current-view reconstruction without altering external assets.
+- [x] 6.3 Reconcile all ten manifests and their schema/README: distinguish supported current recovery from historical identity, preserve old hashes via exact provenance, and test each declared command/dependency.
+- [x] 6.4 Consolidate storage policy and remove stale operational routes, including code blocks; update consumer links and regression tests.
+- [x] 6.5 Run focused recovery, complete CPU, imports/collection, OpenSpec/knowledge and full diff checks; correct earlier verification claims and record exact scope and limitations.
+- [ ] 6.6 Append a correction commit, independently verify it, then ff-only canonical and existing integration on unchanged clean roots; no push, archive or worktree cleanup.

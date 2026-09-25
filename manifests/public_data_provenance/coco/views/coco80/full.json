@@ -1,49 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "artifact_type": "annotation_view",
   "relative_path": "public_data/coco/views/coco80/full",
-  "producer_script": "public_data/scripts/build_coco_views.py",
-  "working_dir": ".",
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full --image-store-mode reuse-existing",
-  "inputs": [
-    {
-      "kind": "image_store_manifest",
-      "path": "manifests/public_data_provenance/coco/images/res-1024.json",
-      "notes": "Shared Phase 1 COCO 1024 image-store contract."
-    },
-    {
-      "kind": "processed_dataset_manifest",
-      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox.json",
-      "notes": "Legacy full-object COCO 1024 source JSONL provenance."
-    },
-    {
-      "kind": "processed_dataset",
-      "path": "public_data/coco/rescale_32_1024_bbox",
-      "notes": "Resized pixel-space source rows converted into canonical norm1000 integer view rows."
-    }
-  ],
-  "key_params": {
-    "dataset": "coco",
-    "view": "coco80/full",
-    "annotation_policy": "coco80",
-    "sample_policy": "full",
-    "image_store": "public_data/coco/images/res-1024",
-    "image_path_semantics": "image_store_relative",
-    "coordinate_space": "norm1000",
-    "coordinate_storage": "integer",
-    "coordinate_range": [
-      0,
-      999
-    ],
-    "assistant_coordinate_rendering": "qwen_coord_tokens",
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
-    "view_summary": {
-      "records": 122218,
-      "rendered_object_count": 886282,
-      "support_sidecar_count": 0,
-      "rendered_proxy_candidate_count": 0,
-      "object_supervision_count": 0
-    }
+  "support": "historical",
+  "origin": {
+    "commit": "0f5b505866525cf0dc9bf946a81c6acca280ebaf",
+    "manifest_path": "manifests/public_data_provenance/coco/views/coco80/full.json",
+    "manifest_sha256": "b2a33784d52d354bb5544d534f87afade35ff590a89f125c9609b77c519257d8"
   },
   "checksums": {
     "scope": "jsonl_training_samples_only",
@@ -65,6 +28,10 @@
       }
     ]
   },
+  "recovery": {
+    "mode": "historical_only",
+    "reason": "No retained configuration consumes this version and no independent recovery replica was verified. Checksum/provenance is historical, not a promise of an executable producer. Raw-generation details remain at origin.commit:origin.manifest_path."
+  },
   "metadata": {
     "view_metadata": {
       "path": "public_data/coco/views/coco80/full/meta.json",
@@ -77,10 +44,5 @@
       "size_bytes": 2494
     }
   },
-  "code_ref": {
-    "git_commit": "593e9357ae2fc2126521b30fcc6c239cbd5af304",
-    "git_dirty_allowed": true
-  },
-  "generated_at_utc": null,
-  "notes": "Phase 1 canonical COCO80 full annotation view with image-store-relative image paths and norm1000 integer geometry."
+  "notes": "Not a supported current recovery command. Existing external materializations and old identities were not changed."
 }

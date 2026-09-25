@@ -1,89 +1,141 @@
 {
+  "schema_version": 2,
   "artifact_type": "processed_directory",
+  "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
+  "support": "current",
+  "origin": {
+    "commit": "0f5b505866525cf0dc9bf946a81c6acca280ebaf",
+    "manifest_path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json",
+    "manifest_sha256": "0806e0f062087dd74141df572764048de91632061f6b747ff8755f5ef0f2d45c"
+  },
   "checksums": {
-    "aggregate_sha256": "d56e565e5fdc292860a2942391f37a3ff89ca61fedd330b51c34a1628c62c5f6",
-    "aggregate_source": "sorted path sha256 size_bytes records lines",
+    "scope": "jsonl_training_samples_only",
     "algorithm": "sha256",
     "files": [
       {
-        "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
-        "records": 117266,
-        "sha256": "e61a7f7e2bddadeb3ffe5550f83feac1ecccc99149c7f98271113e9a3f9580f8",
-        "size_bytes": 172531224
-      },
-      {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.jsonl",
-        "records": 117266,
-        "sha256": "93cf023169dfec0406c0e9148345f2e70976535d21717866acb403d9a5989aaf",
-        "size_bytes": 131997248
+        "sha256": "24710157eeed5ee6d44eda2aca078fbf6b3c65c5a6088b00e20043fd49d4fcf2",
+        "size_bytes": 131992404,
+        "records": 117266
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl",
-        "records": 117266,
-        "sha256": "d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a",
-        "size_bytes": 131733768
+        "sha256": "f1ab7912556a744a2d81a886020b4577e3a4c26a139d66750d9c0f26104a007c",
+        "size_bytes": 118925869,
+        "records": 117266
       },
       {
-        "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
-        "records": 4952,
-        "sha256": "b5100edc926c1adbffdb7b7976477a3489902ef9fd58c7d75aaf3c7bce3a3d27",
-        "size_bytes": 7331214
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
+        "sha256": "4bc00be57d78d4d76e0874cd83f89329d1dc2cd471c208f3f2e30e0365dd96ee",
+        "size_bytes": 159723517,
+        "records": 117266
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.jsonl",
-        "records": 4952,
-        "sha256": "64042f65d3e7e9b662b55592fccf9ab41a8b475c3483ed02fd1cb9269acdece3",
-        "size_bytes": 5598645
+        "sha256": "2d13f94742718b7d7fa5bcfa8cdde4db748df8f3edd8a3cf7cfe5a5934aa7430",
+        "size_bytes": 5598508,
+        "records": 4952
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
-        "records": 4952,
-        "sha256": "a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795",
-        "size_bytes": 5587134
+        "sha256": "44ab9fd985890129128bdacb07081cc00bd4affe8c6768d5e49609ca20a72e52",
+        "size_bytes": 5056739,
+        "records": 4952
+      },
+      {
+        "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+        "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894",
+        "size_bytes": 6808307,
+        "records": 4952
+      }
+    ]
+  },
+  "asset_version": "curated-observed-2026-09-25",
+  "recovery": {
+    "mode": "raw_archives",
+    "module": "public_data.recover_coco",
+    "recipe": "curated-len12000-v1",
+    "raw_archives": [
+      {
+        "path": "train2017.zip",
+        "sha256": "69a8bb58ea5f8f99d24875f21416de2e9ded3178e903f1f7603e283b9e06d929",
+        "size_bytes": 19336861798,
+        "url": "http://images.cocodataset.org/zips/train2017.zip"
+      },
+      {
+        "path": "val2017.zip",
+        "sha256": "4f7e2ccb2866ec5041993c9cf2a952bbed69647b115d0f74da7ce8f4bef82f05",
+        "size_bytes": 815585330,
+        "url": "http://images.cocodataset.org/zips/val2017.zip"
+      },
+      {
+        "path": "annotations_trainval2017.zip",
+        "sha256": "113a836d90195ee1f884e704da6304dfaaecff1f023f49b6ca93c4aaae470268",
+        "size_bytes": 252907541,
+        "url": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
       }
     ],
-    "scope": "jsonl_training_samples_only"
-  },
-  "code_ref": {
-    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
-    "git_dirty_allowed": true
-  },
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force",
-  "generated_at_utc": "2026-05-17T07:44:10Z",
-  "inputs": [
-    {
-      "kind": "processed_base",
-      "notes": "COCO 1024 resized pixel-space base preset.",
-      "path": "public_data/coco/rescale_32_1024_bbox"
+    "environment": {
+      "python": "3.12",
+      "pillow": "11.3.0",
+      "libjpeg_turbo": "3.1.1"
     },
-    {
-      "kind": "training_config",
-      "notes": "Latest compact-full prompt/model/template contract.",
-      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
-    }
-  ],
-  "key_params": {
-    "image_factor": 32,
-    "image_storage_policy": "share_same_resolution_image_root",
-    "lvis_proxy": false,
-    "max_objects": null,
-    "max_pixels": 1048576,
-    "max_total_tokens": 12000,
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
-    "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
-    "template": "compact_full",
-    "token_budget_components": [
-      "image_patch_tokens_post_merge",
-      "system_prompt_tokens",
-      "user_chat_tokens",
-      "assistant_compact_full_detection_tokens"
+    "image_canaries": [
+      {
+        "split": "train",
+        "member": "train2017/000000000009.jpg",
+        "width": 1152,
+        "height": 864,
+        "raw_sha256": "35cdfe8259aca40d564baf33ee749d82ce852446bd9574f0c47551d8bfffda99",
+        "resized_sha256": "258702149ad4205e87c1905b5f56146282ccb6f5a006328c9b5a47301d4712c0"
+      },
+      {
+        "split": "train",
+        "member": "train2017/000000291780.jpg",
+        "width": 1248,
+        "height": 832,
+        "raw_sha256": "5cebb9bdb6b583b0c2601106eff2fecfa9349f1be82c33b7cdb1815b9701734b",
+        "resized_sha256": "f85072b1f7a4edbb916a8d1a589053373939bcdfedb1f50d65b897b4b7d1c0f6"
+      },
+      {
+        "split": "train",
+        "member": "train2017/000000581929.jpg",
+        "width": 1088,
+        "height": 864,
+        "raw_sha256": "ddf07c79d321aa18e5c31429495eedf8c84b4405e6b8c3e579adbc2e018bbbe6",
+        "resized_sha256": "124bacaefb74ce762f9aa90f37986c0bbb27bfa0ff8998ba1888e36306a0908e"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000000139.jpg",
+        "width": 1248,
+        "height": 832,
+        "raw_sha256": "ffe0f0cec3b2e27aab1967229cdf0a0d7751dcdd5800322f0b8ac0dffb3b8a8d",
+        "resized_sha256": "99475180da0ad018a3ff8cb84445c468a149d58f4b92c3601d9fad05a2c3020c"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000289586.jpg",
+        "width": 832,
+        "height": 1248,
+        "raw_sha256": "915f8d37726e95c51d35ee998c841a4d8e1dcd648990e2acec76ea4e9bd736b6",
+        "resized_sha256": "a6434cb3b02dd1d6a32a3aad5c89295c2289d72f5c484021828b807ac2b8f39d"
+      },
+      {
+        "split": "val",
+        "member": "val2017/000000581781.jpg",
+        "width": 1152,
+        "height": 864,
+        "raw_sha256": "59b1da30af12f76b691990363e0d221050a59cf53fc4a97e776bcb00228c6c2a",
+        "resized_sha256": "af308c744e621bf3db9e0ea959508ed2843de7f0967e7ee576e7ce8f10164f70"
+      }
     ],
-    "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    "image_contract": "Pillow RGB/LANCZOS/default JPEG from bound raw ZIPs; full generation plus six frozen byte canaries, not a full stored image-checksum inventory.",
+    "annotation_delta": {
+      "path": "public_data/coco_annotation_delta.json",
+      "sha256": "1f18736002e96472f06e467f7b7ef778ec642e52e348581917f2f9a75c393a16",
+      "size_bytes": 151209
+    }
   },
-  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget.",
-  "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
-  "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
-  "schema_version": 1,
-  "working_dir": "."
+  "notes": "Current consumed bytes, with explicit observed annotation corrections and compact serialization. This is a separate version from the origin manifest; no prior receipt or input is rewritten. Fixed raw corpus had zero length-filtered images; this recovery is not a general tokenizer/12k filtering factory."
 }
