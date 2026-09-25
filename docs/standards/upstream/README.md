@@ -17,7 +17,6 @@ debugging.
 ## Pages
 
 - [QWEN_VL.md](QWEN_VL.md): Transformers Qwen-VL family.
-- [MS_SWIFT.md](MS_SWIFT.md): ms-swift local training framework.
 - [FLASH_ATTENTION.md](FLASH_ATTENTION.md): FlashAttention v2 and Transformers attention dispatch.
 - [TRAINING_ECOSYSTEM.md](TRAINING_ECOSYSTEM.md): Accelerate, PEFT, TRL, Liger, and wrapper boundaries.
 

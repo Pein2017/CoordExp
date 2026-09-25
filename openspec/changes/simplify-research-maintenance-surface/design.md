@@ -1,172 +1,108 @@
 ## Context
 
-See [proposal](proposal.md) for the authorization and scope. The reviewed target
-is a clean named checkout at d4763fd; canonical has three newer recurrence commits.
-No canonical content is imported into this change.
-
-Observed seams:
-
-- `check_research_knowledge.py` requires all 91 current-schema states in the
-  frontier, although 90 are closed. Its catalog already validates complete state
-  ownership, result/protocol targets and orphan rejection.
-- DoRA consumers obtain native row/request operations through Source/Rweak
-  experiment modules although `src.eval.native_rows` and
-  `src.inference.bound_requests` already own the identical callables.
-- Exact token/text span operations live privately inside `geometric_dedup` but
-  have completion-route consumers. Completion `route_bank` also duplicates its
-  family's artifact encoding and file bindings.
-- The old inference launcher imports the removed `src.infer.pipeline`; three
-  shell launchers form its executable caller chain. Saved-output analysis is a
-  distinct consumer and should not be deleted with the launchers.
-- Current knowledge tests and COCO22 direction tests sit outside default pytest
-  discovery. The exposure test reads a canonical absolute root then assumes the
-  returned paths belong to the test checkout.
+See proposal.md. The exact architecture checkpoint is 476e1c359f9164a6e7cd152c5e516f7220d1a787;
+the canonical scientific intake is 108dede0154abfd90a54d18234d9e0bac780a3ba.
+The latter contains 5,934 tracked files, including 1,418 legacy source objects,
+638 docs/history files, 157 progress files and 1,664 experiment files. A clean
+working tree does not prove process inactivity, scientific equivalence or receipt
+continuability. Intake inspected running holders separately.
 
 ## Goals / Non-Goals
 
-**Goals:** remove redundant caller knowledge, make supported scope explicit,
-restore trustworthy inexpensive checks, and lower the cost of the later family
-cutover. Preserve output-QP and readout-norm implementations and decisive CPU
-evidence readers. Keep required teacher/DoRA dependencies until their actual
-callers are addressed.
-
-**Non-Goals:** no numerical algorithm change, new model policy, corpus selection,
-receipt rewrite, source-archive restoration, whole-repository runtime claim or
-mandatory experiment framework. No active canonical edits or canonical package
-switch; the target's package cutover is included by the follow-on authorization.
+Keep a small supported research workset plus the maintained core. Preserve the
+meaning of decision-bearing evidence while removing operational repetition.
+Restore useful searches and explicit ownership. Do not preserve whole producer
+lineages just because their tests import each other. Do not rewrite sealed result
+bytes, launch model work, create an archive, or infer unsupported positive/null
+results from missing records.
 
 ## Decisions
 
-### Complete discovery versus selected frontier
+### Retention is rooted in a capability, not a directory
 
-The catalog is the complete retrieval owner; the index must actually link it.
-Keep existing catalog/state, local-link and frozen-exposure checks. Remove only
-the all-states-on-front-page requirement. Add counterexamples for a missing or
-fake/fenced catalog link and an orphan state. Compact the target's index into a
-checkout-scoped route, linking questions and a small selection of exact states;
-do not import or invent the canonical branch's newer scientific results.
+Review supported roots and their actual import/config/CLI closure. Retain reusable
+output-QP solver/certificate and readout-norm methods, current readers/evaluators,
+core production interfaces and integrity boundaries. Remove dated orchestration
+once its unique method details are distilled. A test is a validation consumer,
+not independent justification for an otherwise dead capability. Keep a narrow
+shared operation only with retained consumers or an explicit integrity duty.
+The former family map does not prescribe the final package set.
 
-Alternative: automatically render a complete status table on every front page.
-Rejected because it retains the same reading burden and duplicates state.
+Alternative: keep all closed producers in newly named families. Rejected because
+it moves search noise and continuation liabilities without reducing them.
 
-### Small mechanisms, explicit science
+### Distilled knowledge has one current owner
 
-Import already-public native row/request operations directly. Take loaded
-composition evidence from its actual module, not a training producer. Extract
-exact token-to-character mapping into a pure inference operation with the same
-failure behavior; it must not retokenize, accept ambiguous boundaries or acquire
-duplicate-selection/loss semantics. Family JSON encoders remain separate from
-the strict global artifact encoder because their bytes differ.
+Keep the existing topic question files as the authoritative scientific summaries,
+with story as the short argument map and catalog as the complete historical
+locator. A distilled/historical row records unit ID, topic owner, evidence label,
+bounded conclusion, original commit/path and external artifact locations. It
+must state unsupported continuation; it need not carry a live state file.
+Decision-bearing topic sections retain question/estimand, contrasts, populations,
+model/config identity, strongest positive and negative evidence, inference limits
+and stop/reopen criteria. Preserve distinct label versions and scientific
+estimands. No per-unit Markdown tombstone or second state ledger.
 
-Alternative: add a broad `probes.shared` facade or universal profile class.
-Rejected; this would hide which contract a caller actually uses and create a
-new catch-all. Changing imports must not silently change frozen source bindings.
+Alternative: retain stage logs for provenance. Rejected: Git plus the catalog can
+recover their exact detail without exposing the logs to default worktree search.
+Historical records not actually executed remain planned/invalid/partial as found.
 
-### Tests follow the maintained contract
+### Execution identity fails closed, while history remains readable
 
-Move current knowledge tests into `tests/knowledge` and include that directory
-in default discovery. Move current COCO22 tests beside the completion package.
-Bind exposure tests explicitly to the tested checkout without changing the
-producer's frozen absolute data-binding behavior. Do not include every old
-environment-dependent research test just to claim broader coverage.
+Historical Git locators support explanation and source recovery, not execution
+permission. Maintained decision-bearing commands bind a clean commit, tree and
+explicit regular source paths with content identities. Continuation validates the
+same current checkout and exact source bytes before any model/update/output
+mutation. Missing source, dirty work, legacy envelope, changed path/tree/commit or
+malformed identity rejects with an unsupported-continuation error. There is no
+fallback to whichever file exists today, no filename-only match, no automatic
+requalification and no object corpus. Pure numerical operators and read-only
+historical result inspection remain separate from continuation.
 
-### Retirement removes unsupported execution, not evidence
+Current/ignored external run artifacts are untouched. Retired snapshot helpers
+and their consumers are removed as a closure; any required current identity
+operation is small and tested with real temporary Git repositories and negative
+cases. This does not claim exact GPU numerical replay.
 
-Remove the unsupported legacy inference launcher chain and its launcher-only
-tests after explicit source and document reference review. Keep format-aware
-saved-result readers; update their recommendations without rewriting historical
-receipts. Record exact dispositions and validation in this change's verification
-record rather than a permanent lifecycle framework.
+### Delete by a guarded finite set
 
-### Memory and documentation
+Before removal, read candidate sources and current consumer relationships, record
+hashes locally for this operation and ensure no candidate is held by active work.
+Only selected tracked files or this task's newly authored files are removed, with
+symlink/realpath checks. Never traverse output/data links, delete ignored external
+artifacts, or clean unrelated files. The recovery commit holds detailed sources;
+transient inventories remain ignored and are not a new maintained framework.
 
-Memory contains non-reconstructible context and links, not live research state.
-Replace stale automatic-write policy with explicit user authorization. Preserve
-unique historical memory in an attributed note before replacing its current
-router; delete consumed one-time bootstrap instructions after reference checks.
-Correct the obsolete Human13 v1 archive-fallback statement to current v2 support.
+### Integration is a separate verified boundary
 
-### Family cutover after the accepted first tranche
-
-Move the retained closures into route learning (including explicit fixed-teacher
-and Source256 objectives), recurrence dynamics, readout geometry, coordinate
-representation and visual grounding. Profiles in one family may share mechanics;
-one historical run need not acquire a new package. Where consumers span families,
-extract only the actual shared operation, not the predecessor's entire runner.
-
-The UTF-8/newline research JSON codec and frozen row-accounting operations get
-specific `src` owners without changing their bytes or estimands. Fixed Source256
-and mature tied/untied composition are named model profiles, not interchangeable
-generic loaders. Profile selection, source-gate inputs and cohort bindings remain
-explicit. A small model-profile support owner is allowed because multiple retained
-families already consume those exact profiles; it is not an experiment framework,
-scheduler, registry or a home for arbitrary helper functions.
-
-Preserve historical schema strings and external artifact locators. Rewrite Python
-imports, current module command strings and current source locations through an
-explicit finite move map. Review `__file__`-relative accesses separately. A move
-changes the current producer identity, never the recorded original identity.
-Tests exercise current fixtures; source-bound historical integration failures
-remain reported rather than being repaired with invented old receipts.
-
-Inspect canonical's newer consumers read-only. The verified target has no other
-working-directory holder, so its own cutover does not require stopping canonical
-research. Do not copy canonical additions or leave executable old aliases. The
-finite move map is review/intake metadata, not an import loader or runtime registry.
-
-Alternative: split only by filename prefix and retain cross-family runner imports.
-Rejected because it changes the directory view without reducing caller knowledge.
-Alternative: require each family to copy every loader and scorer. Rejected because
-it recreates redundant mechanisms and risks metric and identity drift.
-
-### Remaining legacy and knowledge boundaries
-
-Keep supported data factories, reusable strict admission/journal contracts and
-their actual consumers. For legacy code, distinguish a readable historical result
-from a maintained executable command. Retire only explicit consumer-closed shells;
-document unsupported preparation instead of reviving the removed `src.datasets`
-surface or weakening its contracts. Consolidate one-time knowledge transport only
-after its useful content has an owning research source. Frozen exposure data stay
-at their original paths for this change.
-
-The documentation path resolver belongs to knowledge tooling, not model artifact
-infrastructure. Current catalog/state/link validation should not require a past
-migration inventory merely to validate a new unit. Historical path recovery and
-the frozen exposure check remain explicit, independently tested operations. Fill
-OpenSpec Purpose placeholders from each existing capability's requirements without
-changing those requirements.
-
-Closed-unit source citations can outlive the current source path. Preserve the
-original Markdown: accept a separate document-version Git reference only when
-the closed unit's document is byte-identical to its recorded commit and that
-same commit contains the regular source blob. Current routers, changed/new
-documents and missing data still fail. This reads no old source into execution,
-creates no restored source corpus and makes no executed-receipt identity claim.
-Report these references separately from existing live files.
+Prepare target commits, then create one explicitly registered temporary worktree
+from the latest canonical commit. Merge the reduced target there, resolving
+research synthesis semantically and retaining canonical-only conclusions without
+promoting their runners. Run a fresh surviving suite, knowledge, imports/CLI,
+strict specs, exact diff and source-identity negative tests. Rebuild Codegraph on
+retained owners using the installed local capability. Immediately before ff-only
+adoption recheck canonical HEAD, clean tracked/untracked status and holders.
+Do not reset/rebase/rewrite either branch. A changed canonical base requires fresh
+reconciliation, not a forced update.
 
 ## Risks / Trade-offs
 
-- A compact index can conceal evidence -> complete catalog and exact-link tests
-  remain mandatory; question and original result owners are not deleted.
-- Import cleanup changes source identity -> old receipts/captures stay immutable;
-  newly authorized runs must bind their current sources. CPU parity is not GPU
-  or native-greedy model parity.
-- Historical scripts cite retired paths -> keep them as historical references,
-  not executable support promises; do not repair sealed hashes.
-- Canonical advances during work -> no whole-directory overwrite or integration;
-  publish a precise staged diff and handoff boundary.
-- Novelty-based pruning can destroy a control -> retain actual dependencies and
-  baseline value, even for ordinary fitting or DoRA operations.
+- Scientific overcompression: retain incompatible populations and counterexamples,
+  and verify every decision-bearing statement against a catalogued Git/artifact source.
+- Fewer tests can conceal damage: compare only surviving contracts, identify tests
+  removed with retired capability and require zero unexplained regression.
+- Obsolete source bindings: explicitly reject continuation rather than repair hashes.
+- Production transitive inputs: inspect real callers and source-gate/data fixtures
+  before pruning; keep necessary assets even when their location looks historical.
+- Integration drift: exact HEAD/clean fences, isolated validation and ff-only merge.
+- Codegraph daemon state: use supported indexing commands, no database surgery,
+  broad process kill or falsely reported indexed counts.
 
 ## Migration Plan
 
-Perform navigation/governance first, then narrow import/helper seams, then the
-unsupported launch-chain retirement and test placement. Validate each wave with
-bounded CPU tests, read-only knowledge checks, exact diff and preserved-evidence
-checks. Keep source edits uncommitted in the target worktree. Rollback, if needed,
-is a separately reviewed inverse edit of this change's files, never reset/stash
-or overwriting another agent's work. The first tranche was completed before this
-follow-on authorization. Continue with protected-byte baselines, shared seams,
-family moves, legacy/knowledge ownership and differential CPU acceptance. Retain
-the first verification and add the actual final evidence; do not relabel prior
-collection-only or partial checks as complete model validation.
+Checkpoint (completed); revise this plan; select retained roots and scientifically
+read/distill evidence; implement strict continuation and new catalog validation;
+delete archives and dead closures; reconcile current guides; test surviving tree;
+commit; integrate in isolated canonical-based checkout; final fenced adoption.
+Keep local commits for recovery. Recovery of an intermediate stage is an explicit
+future Git checkout/worktree operation, not an automatic destructive reset.

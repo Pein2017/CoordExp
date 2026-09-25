@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.inference.bound_requests import materialize_bound_case
+from src.inference.input_materialization import materialize_bound_single_image_case
 from src.inference.inputs import build_single_step_decode_requests
 
 
@@ -18,16 +18,16 @@ def test_rebase_uses_verified_absolute_image_without_mutating_case(tmp_path):
         "input_record": {"images": ["old/location"], "nested": {"value": 2}}}
     original = copy.deepcopy(case)
     config = {"data": {"input_jsonl": str(tmp_path / "new/rows.jsonl")}}
-    actual = materialize_bound_case(case, config)
+    actual = materialize_bound_single_image_case(case, config)
     assert actual["input_record"]["images"] == ["../original.bin"]
     actual["input_record"]["nested"]["value"] = 3
     assert case == original
     image.write_bytes(b"changed")
     with pytest.raises(ValueError, match="bytes changed"):
-        materialize_bound_case(case, config)
+        materialize_bound_single_image_case(case, config)
     case["image_path"] = "relative.bin"
     with pytest.raises(ValueError, match="image missing"):
-        materialize_bound_case(case, config)
+        materialize_bound_single_image_case(case, config)
 
 
 def test_single_step_request_keeps_planner_identity_and_budget(monkeypatch):

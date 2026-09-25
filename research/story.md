@@ -1,102 +1,40 @@
----
-title: From object support to a learned set-completion policy
-role: research-story
-authority: non_normative_research
-updated: 2026-09-17
----
-# The research story
+# Research argument map
 
-Read [research entry](index.md) for the actual task and latest user boundary. This page explains why the questions changed. It is a synthesis of retained records, not a new experiment, an exhaustive causal identification, or a mandate to run every unresolved branch. Exact metrics remain in the cited results; [the catalog](experiments/catalog.jsonl) contains the full chronology.
+The target is a natural policy that enumerates more distinct physical owners,
+not only a high teacher-forced likelihood or an attractive box metric.
 
-## Before July: why the earlier ideas still matter
+**Capacity is not the whole problem.** Shared output-QP and internal fitting can
+solve finite panels, while broader native behavior and preservation still fail.
+This separates feasible representation/readout from a transferable policy.
+[Evidence and limits](questions/capacity-and-readout.md).
 
-The [June binding synthesis](../docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/findings.md) already separated attention routing, helpful value contribution, residual readability, coordinate repair and actual row/instance repair. Conditional rescue did not prove universal visual sufficiency. Pre-onset duplication and coordinate-key effects were selected-case leads, not a learned detector or a universally special layer/head.
+**Support is not a trajectory.** Sampling unions reveal missed alternatives, but
+conditional route preference, teacher selection and joint native realization
+remain separate. [Discovery](questions/discovery-and-route-value.md) and
+[compilation](questions/greedy-compilation.md) own their different estimands.
 
-[Prefix denoising](experiments/2026-06-17-inert-objective-root-cause/unit.md) tried clean/noisy coordinate histories with clean targets. After a real branch-isolation repair, the tested compact checkpoint still showed almost identical clean/noisy distributions, while its stronger baseline was confounded. The matched denoising-OFF contrast remained missing. Later checkpoint-sensitive coordinate interventions do not retroactively answer it, but prevent importing the old insensitivity claim into every model.
+**A gain can conceal a loss.** Net owner count can rise while source owners or
+output validity deteriorate. Credit and preservation need explicit populations,
+matched dose and separate debt accounting. [Preservation](questions/preservation-and-credit.md).
 
-The next lineage used explicit visual designation: painted marks steered rows; anti-copy training and corrupted wrong-object controls narrowed mere geometry copying into bounded object binding. Exact feature/residual replay worked in selected conditions, but simple cross-image delta reuse and pooled-feature endogenous synthesis did not establish reusable control. Finally, target-specific held-out proposal information coexisted with a harmful, control-reproduced learned behavioral bridge. This is the concrete ancestry of today's distinction between available support, a useful actuator, and actual greedy consumption. [Visual designation and causal use](questions/visual-designation-and-causal-use.md) retains the complete argument and its limits.
+**Labels are not physical truth.** IoU and missing annotations nominate review;
+they do not settle owner identity, groups, visibility or novelty. A finite review
+is not a population missing-owner census. [Physical evaluation](questions/physical-evaluation.md).
 
-Consequently the old idea folders are no longer parallel research authorities. Their tested results feed the questions below; unanswered denoising, structured rendering and specialization alternatives remain in [alternatives](alternatives.md). Historical review machinery, temporary worktrees and old launch plans are not scientific premises or current obligations.
+**Actuation is not a complete mechanism.** Privileged visual signals and local
+history/KV interventions can alter logits or rows, yet normal progress can be
+harmed and simple copying/clock/norm explanations meet decisive counterexamples.
+[Visual use](questions/visual-designation-and-causal-use.md) and
+[history/repetition](questions/history-repetition-stopping.md) contain those bounds.
+The latest report-quality weak pilot is NONPASS; the strong contrast remains
+unsupported. No training-origin mechanism is established.
 
-## 1. Recognition was not the same as complete enumeration
+**Technical validity is a separate axis.** An invalid run has not answered the
+question, and source recovery is not numerical replay. Current clean-Git source
+qualification replaces legacy continuation assumptions.
+[Runtime/evidence](questions/runtime-and-evidence.md).
 
-The starting puzzle was that descriptions and individual localizations could be plausible while one dense-scene rollout stopped early, repeated owners or assembled bad extents. Spatial crops, masked canvases and repeated whole-image samples were different interventions, not interchangeable ways of measuring one hidden recognition capacity.
-
-The [masked-scope comparison](experiments/2026-07-13-spatial-scope-history-disentanglement/results.md) found a local one-opportunity benefit without a safe final-policy advantage over matched-call bagging. Cumulative accepted-row history could hurt, but that bundled length, content, order and visibility consistency. It did not identify a pure context-length disease or prove that the vision tower was innocent.
-
-The next question therefore became: **at the same state, are alternative useful object actions supported, and what does a completed row change?** [Fixed-prefix sampled rescue](experiments/2026-07-14-sampled-rescue-object-transition-causal-replay/results.md) supplied multiple local object modes and description-conditioned binding, without a universal commit-to-uncovered operation. A [phrase/geometry factorial](experiments/2026-07-15-prefix-state-phrase-geometry-factorial/results.md) showed that neither phrase alone nor geometry alone explained one transition. Its scope was one state, not a reusable ledger architecture.
-
-## 2. History is executable state, but not a verified set ledger
-
-Earlier emitted rows, their order and their coordinates change future behavior. [Same-covered-set permutations](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md) changed many future owner sets while changing completion much less often. [Random-versus-sorted training](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md) changed path sensitivity but did not create useful general covered-set invariance. The problem was not solved by choosing a different serialization order.
-
-[Complete-row scoring](experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md) also separated the highest full-row score from the earliest token fork followed by greedy decoding. An owner cannot be identified universally at `x1`: [progressive forced-path release](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md) required different intervention depths for different outcomes. Acquiring a target and preserving its full suffix were separate obligations.
-
-This sequence made an explicit ledger/commit token a hypothesis, not a prerequisite. More recently, [magnitude-matched wrong-region KV interventions](experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md) could also escape a repetition pattern. That weakens a uniquely instance-specific interpretation; it does not erase the existence of useful conditional continuations. [History and stopping](questions/history-repetition-stopping.md) keeps the distinctions together.
-
-## 3. Finite fitting succeeded, so a universal capacity excuse no longer fit
-
-The Image2299 output-QP sequence progressed from protected/norm-limited failures to a direct [canonical 46-owner witness](experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md). A [shared Human13 output residual](experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md) then compiled all 392 annotated owners on the fixed panel. It was one shared residual, not thirteen image-selected heads. Despite the old filename, this was same-panel overfit, not identity generalization.
-
-Crucially, [ordinary internal magnitude-only CE replay](experiments/2026-09-05-human13-pure-ce-replay/results.md) also completed Human13. This disproved the practical need for output-QP or new architecture merely to fit that finite task. It did **not** prove that every trusted physical-owner task, every parameter surface or every optimization recipe would be easy.
-
-The follow-up shifted toward reusable corrections. The [Image2299 payload's legacy12 transfer](experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md) was damaging on its bound checkpoint. The separate [N256 target-blind screen](experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-results-v1.md) stopped at N2, whereas later train-only semantic/null ladder results showed bounded structural compression. Those are different estimands. A low norm is not evidence of generalization; an incomplete null arm is not a scientific null. See [capacity](questions/capacity-and-readout.md).
-
-## 4. The difficulty became joint realization and preservation
-
-A selected target can improve while useful old owners disappear. Early [single-route imitation](experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md), [multi-route preservation work](experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md), and later [native entrance CE](experiments/2026-09-10-native-entrance-ce-feasibility/results.md) each exposed variants of this trade-off. These are bounded recipe results, not a theorem that CE cannot learn sets.
-
-Candidate supply and learning realization also separated. The [natural K4 opportunity census](experiments/2026-09-09-natural-candidate-opportunity/results.md) found better complete outputs under the same checkpoint; the [first RLOO update](experiments/2026-09-09-round1-greedy-realization/results.md) did not realize the registered gained owners in greedy. [Fixed-witness scoring](experiments/2026-09-10-fixed-witness-route-access/results.md) found some probability improvement without first-fork crossings. Thus “a useful sequence exists,” “its likelihood rose,” and “greedy now executes a useful sequence” were not the same event.
-
-Protection losses needed equal care. The [greedy-preservation microscope](experiments/2026-09-11-greedy-preservation-microscope/results.md) found many actual discrete changes despite small average KL. A [decision-aware margin treatment](experiments/2026-09-11-margin-preserved-positive-branch/results.md) improved the aggregate, but did not preserve every repair. Its [positive-progress-matched control](experiments/2026-09-11-positive-progress-matched-control/results.md) weakened a simple scalar-dose account without proving universal margin efficacy or transfer.
-
-Likewise, reducing a geometric repeat proxy could shift output toward invalid boxes rather than genuine coverage. [Stable50 dedup](experiments/2026-09-11-stable50-geometric-dedup/results.md) is the concrete counterexample. An earlier [positive-versus-negative-event comparison](experiments/2026-09-11-positive-branch-vs-repeat-event/results.md) had no sampled negative events, so identical endpoints were not evidence about negative-learning efficacy. [Preservation and credit](questions/preservation-and-credit.md) records what each control actually distinguished.
-
-## 5. Two measurement and supervision gaps became unavoidable
-
-The later [native owner scale/state result](experiments/2026-09-12-native-owner-scale-and-state/results.md) gave ordinary-parameter natural recovery and a positive fresh-panel GT proxy, but retained physical and incumbent-owner debt. The [broader successor pair](experiments/2026-09-13-owner-successor-scale-throughput/results.md) reduced strict repetition while losing confirmation coverage. Larger supply did not automatically mean a better compiled policy.
-
-The [label-versus-compilation follow-up](experiments/2026-09-14-label-vs-compilation/results.md) then separated two facts. First, annotation-relative F1 could rise while reviewed atomic-owner presence fell. Second, from identical supplied histories, both models could realize the trusted first row and immediate successor while later owner sets diverged or an already completed owner was repeated. An objective protecting only `c` and immediate `w` could not distinguish a good full continuation from `c → w → c → ...`.
-
-Neither fact uniquely identified historical missing-label causality, exposure bias, insufficient optimization or a KV storage defect. GT-unmatched proposals were a mixture; a prediction-union audit could not discover objects missed by every model. The [supply audit](experiments/2026-09-14-label-vs-compilation/supply/result.md) was an admission funnel, not a count of missing labels. See [physical evaluation](questions/physical-evaluation.md).
-
-## 6. The user chose a training-first cumulative question
-
-Rather than continuing to test tiny local fixes against an early generalization veto, the user chose a versioned trusted set: GT plus verified old/new physical owners, coherent route learning, and stage completion before image growth. The [original task record](experiments/2026-09-14-training-set-completion-curriculum/retained-unit-6f6b2bd4e0.md) preserves every phase and correction; the [fourth-fit result](experiments/2026-09-14-training-set-completion-curriculum/results.md) is an accepted intermediate comparison.
-
-More updates on the unchanged CE recipe substantially improved natural coverage, invalid-output burden and stopping. Some owners and clean-image completions were gained, but one image lost old owners and the overall stage remained incomplete. The teacher-forced expected-coordinate hinge reached zero while greedy geometry errors remained. Lower loss was useful evidence of learning, not a completion certificate or a diagnosis of the remaining mechanism.
-
-That stage's unmatched-only review policy changed how physical summaries were formed. Its frozen training target and supplemental all-known population remain separate. This is why the old experiment history cannot be flattened into one leaderboard or one timeless meaning of “strict owner.”
-
-Later [paired-start fitting](experiments/2026-09-14-training-set-completion-curriculum/dual-start-results.md) and [sample/token CE normalization](experiments/2026-09-15-coco227-ce-normalization/results.md) reached clean227/227, followed by [22-image cumulative fitting](experiments/2026-09-15-coco22-cumulative-expansion/results.md) at376/376 with old227 retained. The latter completed at saved128/256; its conditional Source arm was not needed. These close the finite fixed-teacher question at those scales. They do not identify whether extra labels or self-rollout history caused the benefit, establish an online-refresh advantage, or make full annotation a prerequisite for further research.
-
-## 7. Learning useful continuations still incurred preservation costs
-
-The [direction workshop](experiments/2026-09-16-research-direction-workshop/results.md) restored the original aim: reduce physical misses under incomplete labels, then learn useful discovery into natural greedy. The [Source256 fixed-history comparison](experiments/2026-09-16-source256-fixed-prefix-completion/results.md) passed its scarcity gate but did not beat canonical learning at the fixed dose. [CE normalization](experiments/2026-09-16-source256-completion-ce-normalization/results.md) reduced forgetting and output errors while reducing gains too. These are completed matched learning tests, not an isolated fixed-versus-online-refresh comparison.
-
-[Complete-output ranking repair](experiments/2026-09-16-source256-output-ranking-repair/results.md) improved some train/dev FN measures but failed the joint promotion gate: reference-external coverage deteriorated, repetitions increased, and many starting gained identities were replaced. Better local coverage therefore did not imply a stable retained set. The next question became why a model with available object support re-enters concentrated repetitive trajectories.
-
-## 8. Readout control changes trajectories, without identifying the full loop cause
-
-The [corner-loop diagnosis](experiments/2026-09-16-corner-loop-mechanism/results.md) and [readout/state decomposition](experiments/2026-09-16-endpoint-loop-readout-state/results.md) narrowed simple cache mismatch and newly changed coordinate-embedding explanations. Selected one-bin edits failed; whole-row category/extent bridges temporarily released owners but relapsed. Effective output-row norms could change particular winning coordinates, including legitimate border decisions, while many endpoint wins survived equalization.
-
-A fixed output-only norm policy then rescued two [original-image, empty-prefix cases](experiments/2026-09-16-endpoint-loop-natural-readout-norm/results.md). In [fresh128](experiments/2026-09-17-readout-norm-fresh128/results.md), invalid rows fell476→5, strict repeat rows604→40 and caps2→0, but known matches578→592 included30 gains and16 losses. Healthy119 images netted only+1; nine abnormal images netted+13. The image-bootstrap interval included zero and selective physical review was incomplete. This is accepted inference evidence for structural improvement, not a population physical-recall claim or a promoted global policy. Later shadow changes also prevent treating the exact rescued routes as the consequence of only one early edit.
-
-## 9. Human review shifts attention toward distinct-owner progress
-
-The user's [fresh128 image review and the replayed CPU census](experiments/2026-09-17-readout-norm-fresh128/human-review-duplication-discussion.md) change the practical priority. Many nonduplicate unmatched predictions appear to be real objects; annotation extent, visibility and part/group granularity account for further ambiguity. These observations are not a measured population rate or automatic label admission. The overlay's overlap-pair hints must be separated from exact repeated rows and repeated physical identity. Most strict repeats were concentrated in a few images, so category totals do not establish a category-specific mechanism or annotation-origin cause.
-
-The proposed next discriminator is whether a complete-row change at a naturally reached confirmed recurrence restores **subsequent free distinct-owner enumeration**, while retaining credible old and unlabeled owners. A same-owner alternative row is an important control for a distinct-owner row; the supplied owner earns no recovery credit. This proposal is unlaunched. It must retain the older spatial-history counterexample and failed dedup-to-recovery shortcuts: fewer repeats can also mean jitter, invalid boxes or premature EOS. Co-DETR remains optional screening support; neither exhaustive GT completion nor a new training sweep is the default next step.
-
-## The unresolved problem is structured, not one missing module
-
-| Obligation | What a decisive test must distinguish |
-|---|---|
-| Trusted support | Is the object real and individually attributable, or is it a group/part/unknown? |
-| Useful action | Does a candidate improve the declared complete consequence, not just the next row? |
-| Conditional fitting | Under the target history, are the required decisions actually learned? |
-| Natural access | Does the original-input policy reach useful decisions without a supplied prefix? |
-| Continuation / exclusion | After success, are old and new owners preserved without reselection or invalid-output escape? |
-| Measurement | Are changes physical coverage, category/extent changes, matching artifacts or review-policy changes? |
-
-Several obligations may fail simultaneously. The next research choice should identify the cheapest discriminator for the current failure, not re-brand all of them as exposure bias, absent vision information, optimizer impossibility or a missing ledger. [Ideas and reopening conditions](alternatives.md) retains alternatives; no item there is a standing execution grant.
+Every detailed unit is recoverable through the [catalog](experiments/catalog.jsonl)
+at Git `108dede0154abfd90a54d18234d9e0bac780a3ba`. The catalog is historical context,
+not a queue. New investigation requires a discriminating prediction and explicit
+population, inputs, metric and stopping boundary; it need not inherit old runners.

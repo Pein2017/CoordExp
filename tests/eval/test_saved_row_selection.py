@@ -1,7 +1,5 @@
 from src.eval.saved_rows import flatten_raw_rows, one_to_one_matches, pairwise_iou95
 from src.eval.saved_rows import termination_metrics
-from probes.route_learning.readback_selectors import validate_unique_image_rows
-import pytest
 
 
 def test_matching_is_class_agnostic_and_one_to_one():
@@ -45,8 +43,3 @@ def test_exact_cap_length_stop_is_cap_debt_but_natural_eos_can_end_at_cap():
     assert natural["natural_eos"] and not natural["capped"] and natural["cap_debt"] == 0
     forced = termination_metrics(3, [1, 2, 151645], "forced_eos", cap=3)
     assert not forced["natural_eos"] and forced["eos_debt"]
-
-
-def test_duplicate_readback_images_fail_closed():
-    with pytest.raises(ValueError, match="duplicate readback image rows"):
-        validate_unique_image_rows([{"image_id": 210457}, {"image_id": 210457}])

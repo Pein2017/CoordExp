@@ -1,20 +1,24 @@
 # Physical evaluation: what is being counted?
 
+## Question and evidence unit
+
+The unit of inference is an explicitly defined physical owner or declared group, at the actually executed image scale. Category, geometry, physical identity, visibility and annotation coverage are separate axes. Algorithmic unmatched rows and near-IoU rows are nomination signals, not verified truth.
+
 **Question:** are we seeing real owner gains/losses, annotation-relative matching changes, category/extent changes, or a changed review policy? A dataset annotation and a physical instance are related but not interchangeable.
 
 ## Evidence chain
 
-[Human-audited rare-object genealogy](../experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md) separated semantic support from part-sized, multi-instance and axis-wise box failures. [FP visual distribution](../experiments/2026-09-09-fp-visual-distribution/results.md) later separated strict repetition, visible objects lacking current GT coverage, class/extent errors and unresolved cases. These sampled audits are not an exhaustive physical census.
+Human-audited rare-object genealogy (catalog:2026-07-16-human-audited-rare-object-trajectory-genealogy) separated semantic support from part-sized, multi-instance and axis-wise box failures. FP visual distribution (catalog:2026-09-09-fp-visual-distribution) later separated strict repetition, visible objects lacking current GT coverage, class/extent errors and unresolved cases. These sampled audits are not an exhaustive physical census.
 
-The [blind physical accounting](../experiments/2026-09-14-label-vs-compilation/physical/result.md) is a decisive measurement counterexample: annotation-relative F1 could improve while reviewed atomic-owner presence decreased. Many lost old predictions were GT50-unmatched, but that status alone does not prove that the instance had no annotation. Threshold, extent, class and assignment also matter. A union-of-predictions audit cannot see instances all compared models missed.
+The blind physical accounting (catalog:2026-09-14-label-vs-compilation) is a decisive measurement counterexample: annotation-relative F1 could improve while reviewed atomic-owner presence decreased. Many lost old predictions were GT50-unmatched, but that status alone does not prove that the instance had no annotation. Threshold, extent, class and assignment also matter. A union-of-predictions audit cannot see instances all compared models missed.
 
-The [frozen supply audit](../experiments/2026-09-14-label-vs-compilation/supply/result.md) records nomination, candidate-successor and admission funnels. A no-nomination image or unknown-neutral HOLD group is not a missing-label count. Evaluation bias, information available to today's acquisition, and the causal effect of historical SFT annotation omissions are separate questions.
+The frozen supply audit (catalog:2026-09-14-label-vs-compilation) records nomination, candidate-successor and admission funnels. A no-nomination image or unknown-neutral HOLD group is not a missing-label count. Evaluation bias, information available to today's acquisition, and the causal effect of historical SFT annotation omissions are separate questions.
 
 ## Evaluation identities must remain explicit
 
-The [accepted fourth-fit report](../experiments/2026-09-14-training-set-completion-curriculum/results.md) inherited class-agnostic one-to-one IoU≥0.5 matches and visually reviewed only residual unmatched valid predictions. Earlier stricter matched-row visual judgments remain historical observations; they do not retroactively veto that experiment's inherited matches. This is an experiment-specific convention, not a timeless physical truth rule.
+The accepted fourth-fit report (catalog:2026-09-14-training-set-completion-curriculum) inherited class-agnostic one-to-one IoU≥0.5 matches and visually reviewed only residual unmatched valid predictions. Earlier stricter matched-row visual judgments remain historical observations; they do not retroactively veto that experiment's inherited matches. This is an experiment-specific convention, not a timeless physical truth rule.
 
-The [fresh128 accepted result](../experiments/2026-09-17-readout-norm-fresh128/results.md) also uses class-agnostic one-to-one IoU≥0.5, whereas its human comparison export uses class-aware matching. Keep both named. The renderer's same-category pixel-IoU≥.30 pair count includes matched/matched pairs; the study's strict counter counts each later valid row once against any earlier bin-IoU>.95 box irrespective of category. Neither count certifies repeated physical identity. [Human-review discussion and CPU census](../experiments/2026-09-17-readout-norm-fresh128/human-review-duplication-discussion.md) preserve the definitions, examples and raw annotation context.
+The fresh128 accepted result (catalog:2026-09-17-readout-norm-fresh128) also uses class-agnostic one-to-one IoU≥0.5, whereas its human comparison export uses class-aware matching. Keep both named. The renderer's same-category pixel-IoU≥.30 pair count includes matched/matched pairs; the study's strict counter counts each later valid row once against any earlier bin-IoU>.95 box irrespective of category. Neither count certifies repeated physical identity. Human-review discussion and CPU census (catalog:2026-09-17-readout-norm-fresh128) preserve the definitions, examples and raw annotation context.
 
 Keep the frozen training population and the later all-known supplemental population separately versioned. New discoveries do not retroactively become training targets. One predicted row credits at most one atomic owner; group boxes remain separate. Unknown class does not necessarily mean unknown physical identity, and a physical match does not establish category correctness.
 
@@ -44,10 +48,18 @@ User ruling2026-09-16: future unmatched diagnosis follows the project-wide
 the preferred primary proxy, with no default VLM judge; unresolved instances go
 to lead/subagent review. Detector agreement supports nomination, not automatic GT
 or training admission. The
-[detector-only retained-output diagnostic and user adjudication](../experiments/2026-09-16-codetr-only-review-proxy/results.md)
+detector-only retained-output diagnostic and user adjudication (catalog:2026-09-16-codetr-only-review-proxy)
 is closed. Crop/context detector support may assist selective review, but new
 calibration remains unproven and is not the next research gate.
 
-When a proposed result changes its matching/review rule, apply it symmetrically to the intended paired raw outputs or keep the result non-comparable. Preserve the previous evaluation and publish a new evaluation identity. A model judge remains a screening instrument until the intended error/admission boundary is independently tested; [the automated evaluator pilot](../experiments/2026-09-10-autonomous-unmatched-evaluator/results.md) did not create an oracle or a hard reward authority.
+When a proposed result changes its matching/review rule, apply it symmetrically to the intended paired raw outputs or keep the result non-comparable. Preserve the previous evaluation and publish a new evaluation identity. A model judge remains a screening instrument until the intended error/admission boundary is independently tested; the automated evaluator pilot (catalog:2026-09-10-autonomous-unmatched-evaluator) did not create an oracle or a hard reward authority.
 
 Do not move confirmation images into training, infer hallucination from FP alone, or remove uncertain owners to make a stage pass. The current user's latest explicit task rule takes precedence over an earlier scientific convention, without silently rewriting the earlier experiment's meaning.
+
+## Current reopening boundary
+
+Reopen a physical label only with identified new visual evidence and a versioned adjudication. Keep common ambiguity shared across compared arms. A finite audit is not a population precision/FN estimate, and candidate-only review cannot reveal objects missed by every generator.
+
+## Provenance
+
+Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

@@ -1,64 +1,54 @@
 ## Why
 
-The research checkout has useful shared mechanisms, but its maintained execution
-surface is obscured by experimental import detours, obsolete launchers, misplaced
-tests and competing current-state entry points. The user approved selective code
-retirement and staged ownership repair while preserving decision-relevant methods,
-hyperparameters, outcomes and immutable evidence.
+The research checkout is still dominated by closed-run implementations, repeated
+operating records and migration archives. Package relocation does not remove
+that search and maintenance cost. The user now selects a current working set:
+retain supported capabilities and distilled scientific knowledge, use Git for
+historical detail, and retire unsupported continuation rather than restoring an
+archive to make old receipts appear compatible.
 
 ## What Changes
 
-- Define maintenance by supported capabilities and their real consumers, not by
-  the presence of an old script or the novelty of its name. Output-QP and readout
-  norm are priority reuse candidates; dependent fitting/DoRA mechanics remain
-  until their callers have a supported replacement.
-- Make the experiment catalog the complete state-discovery route. The frontier
-  index is selective; closed states do not require repeated home-page summaries.
-  Memory is continuity rather than a second live research status ledger.
-- Route existing native-row/request/composition consumers directly to their
-  actual owners and consolidate byte-identical completion artifact operations.
-- Put current governance and direction tests under their actual owners, with
-  explicit default discovery and checkout-isolated frozen-data checks.
-- **BREAKING:** retire the unsupported legacy inference launch chain whose
-  `src.infer.pipeline` dependency no longer exists, after checking its callers.
-  Preserve useful saved-result readers and historical research evidence.
-- Complete a dependency-led family split for `training_set_completion`, with
-  shared operations at their concept owners and no old execution aliases.
-- Separate named model profiles from experimental producers, current knowledge
-  checks from migration-only locators, and unsupported legacy preparation paths
-  from maintained data consumers. Retain decisive independent CPU readers.
+- **BREAKING:** remove retired producer/test/config/launcher closures, legacy
+  source objects, long-lived history/progress trees and absorbed OpenSpec archives.
+- Distill closed units into authoritative questions, story and the existing
+  catalog. Historical catalog entries do not require live unit directories.
+  Each retained decision-bearing claim keeps population, identity, limitations,
+  artifact locators and an exact historical Git recovery point.
+- Select executable roots by actual supported use, not tests, age, novelty or
+  mutual imports of old runners. Output-QP and readout-norm methods are explicit
+  reuse priorities; ordinary learning mechanics survive only with real consumers.
+- **BREAKING:** reject continuation of legacy receipts lacking currently verified
+  source identity. New decision-bearing reuse binds clean Git commit/tree/path
+  identity; a new qualification is distinct from resuming historical execution.
+- Simplify current navigation and knowledge validation. No per-file tombstones,
+  runtime registry, experiment DSL or replacement source archive is introduced.
+- Integrate the validated result into the canonical research worktree using an
+  isolated worktree rooted at its exact latest clean commit and ff-only adoption.
 
 ## Capabilities
 
 ### New Capabilities
 
-None. No experiment framework, registry, trainer DSL or new storage protocol.
+None. Narrow source identity validation is part of maintained research behavior,
+not a new experiment-management platform.
 
 ### Modified Capabilities
 
-- `research-probe-development`: maintained capabilities are selected explicitly,
-  knowledge survives implementation retirement, and complete state discovery
-  belongs to the catalog instead of duplicated frontier/current-memory ledgers.
+- `research-probe-development`: current working-set selection, distilled catalog,
+  Git-backed historical traceability and fail-closed continuation.
+
+- `coordexp-infras-training-artifacts`: clean-source training qualification and schema-2 fail-closed resume gate before deserialization.
 
 ## Impact
 
-Initial implementation is limited to the registered
-`research-probes-web-codex` checkout, based on
-`d4763fd048f1e651ca6067045e5f6d56798cdc07`. At intake the canonical branch has
-advanced to `48ba07071993c5b953a37e537b38ef46163cc88f`, with new recurrence code
-and records. This change does not merge, rebase, copy or modify that checkout.
+Existing architecture work is preserved exactly in local checkpoint
+`476e1c359f9164a6e7cd152c5e516f7220d1a787` (not final acceptance). Canonical intake is
+`108dede0154abfd90a54d18234d9e0bac780a3ba`, initially clean. Its newer recurrence and
+report-quality conclusions are scientific inputs, not automatic code promotion.
 
-Affected surfaces are current navigation/policy, the knowledge checker,
-consumer imports, test placement and selected obsolete CLI files. Research
-protocols/results/acceptance receipts, the 106 frozen exposure JSON records,
-external outputs/checkpoints/data and current-run source captures retain their
-identity. The retired migration `SourceArchive` and tracked source-snapshot
-corpus are not restored. No model/GPU work, historical research replay, commit,
-push or shared-agent runtime change is included.
-
-The user authorized all remaining target-checkout phases on 2026-09-25. The
-first tranche's verification remains a historical checkpoint within this change;
-later tasks complete the family cutover in this target only. Canonical integration
-is not implicit: compare its added consumers and record their migration needs,
-but do not modify, merge or copy its active work. Numerical model parity and old
-research execution remain outside this architecture task.
+The five-family split and its migration map are an inventory only. The final tree
+will retain only justified consumer closures. Current production train/infer/eval
+contracts and meaningful integrity tests stay protected. External outputs, model
+checkpoints, datasets, runtime services, unrelated worktrees and remote refs are
+outside deletion scope. No GPU, historical model rerun, push or history rewrite.

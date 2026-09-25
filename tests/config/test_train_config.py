@@ -31,17 +31,6 @@ ACTIVE_TRAIN_CONFIG_ROOTS = (
     Path("configs/coordexp_infras/prod"),
     Path("configs/coordexp_infras/smoke"),
 )
-INFRASTRUCTURE_DELETION_ALLOWLIST = (
-    "runtime.backend",
-    "runtime.deepspeed",
-    "runtime.accelerate.gradient_accumulation_steps",
-    "runtime.accelerate.mixed_precision",
-    "training.logging",
-    "debug.dry_run_writes_artifacts",
-)
-ACTIVE_PROFILE_BASELINE = Path(
-    "tests/config/fixtures/active_profile_wave2_baseline.json"
-)
 
 
 def test_smoke_config_loads_and_writes_resolved_artifacts(tmp_path: Path) -> None:
@@ -654,67 +643,9 @@ def test_production_relaunch_configs_load_strictly() -> None:
     assert smoke.checkpoint.steps == (2,)
 
 
-def test_active_profile_migration_changes_only_infrastructure_allowlist() -> None:
-    """Guard the migration against scientific drift in every active profile."""
-    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    assert baseline["baseline_revision"] == "d86be1b3"
-    assert tuple(baseline["normalization_allowlist"]) == (
-        INFRASTRUCTURE_DELETION_ALLOWLIST
-    )
-    current_paths = {
-        str(path)
-        for root in ACTIVE_TRAIN_CONFIG_ROOTS
-        for path in root.rglob("*.yaml")
-    }
-    assert current_paths == set(baseline["profiles"])
-
-    payloads = {
-        path: yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        for path in baseline["profiles"]
-    }
-    mismatches = _profile_digest_mismatches(payloads, baseline["profiles"])
-    assert mismatches == {}
-
-@pytest.mark.parametrize(
-    ("field_path", "value"),
-    [
-        ("runtime.seed", 18),
-        ("eval.forward.every_fraction", 0.2),
-        ("checkpoint.every_fraction", 0.2),
-    ],
-)
-def test_active_profile_semantic_digest_detects_non_allowlisted_drift(
-    field_path: str,
-    value: Any,
-) -> None:
-    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    path, expected = next(iter(baseline["profiles"].items()))
-    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    assert _profile_digest_mismatches({path: payload}, {path: expected}) == {}
-
-    _set_nested(payload, field_path, value)
-
-    mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
-    assert set(mismatches) == {path}
-    assert mismatches[path]["expected"] == expected
-    assert mismatches[path]["actual"] != expected
 
 
-def test_active_profile_semantic_digest_keeps_nondefault_new_fields_visible() -> None:
-    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    path, expected = next(iter(baseline["profiles"].items()))
-    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
 
-    _set_nested(
-        payload,
-        "model.special_token_embeddings.tie_word_embeddings",
-        False,
-    )
-
-    mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
-    assert set(mismatches) == {path}
-    assert mismatches[path]["expected"] == expected
-    assert mismatches[path]["actual"] != expected
 
 
 @pytest.mark.parametrize(
@@ -965,56 +896,24 @@ def _set_nested(payload: dict[str, Any], dotted: str, value: Any) -> None:
     current[parts[-1]] = value
 
 
-def _remove_infrastructure_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
-    normalized = json.loads(json.dumps(payload))
-    runtime = normalized["runtime"]
-    runtime.pop("backend", None)
-    runtime.pop("deepspeed", None)
-    accelerate = runtime.get("accelerate")
-    if accelerate is not None:
-        accelerate.pop("gradient_accumulation_steps", None)
-        accelerate.pop("mixed_precision", None)
-        if not accelerate:
-            runtime.pop("accelerate")
-    training = normalized.get("training")
-    if training is not None:
-        training.pop("logging", None)
-    debug = normalized.get("debug")
-    if debug is not None:
-        debug.pop("dry_run_writes_artifacts", None)
-        if not debug:
-            normalized.pop("debug")
-    return normalized
 
 
-def _active_profile_semantic_digest(payload: dict[str, Any]) -> str:
-    normalized = _remove_infrastructure_allowlist(payload)
-    resolved_mapping = TrainConfig.model_validate(normalized).model_dump(mode="json")
-
-    # These fields were added after the frozen profile baseline. Project away
-    # only their legacy-neutral defaults so the digest continues to represent
-    # historical semantics; explicit non-neutral values remain visible.
-    special_tokens = resolved_mapping["model"]["special_token_embeddings"]
-    if special_tokens.get("tie_word_embeddings") is True:
-        special_tokens.pop("tie_word_embeddings")
-    if resolved_mapping["model"].get("coordinate_codebook") is None:
-        resolved_mapping["model"].pop("coordinate_codebook", None)
-    if resolved_mapping["training"].get("resume_from_checkpoint") is None:
-        resolved_mapping["training"].pop("resume_from_checkpoint", None)
-    optimizer_groups = resolved_mapping["optimizer"]["groups"]
-    if optimizer_groups.get("coordinate_codebook") is None:
-        optimizer_groups.pop("coordinate_codebook", None)
-
-    return sha256_json(resolved_mapping)
 
 
-def _profile_digest_mismatches(
-    payloads: dict[str, dict[str, Any]],
-    expected_digests: dict[str, str],
-) -> dict[str, dict[str, str]]:
-    mismatches = {}
-    for path, expected in expected_digests.items():
-        actual = _active_profile_semantic_digest(payloads[path])
-        if actual != expected:
-            mismatches[path] = {"expected": expected, "actual": actual}
-    return mismatches
+
+
+@pytest.mark.parametrize("field_path,value", [("runtime.seed",18), ("eval.forward.every_fraction",0.2), ("checkpoint.every_fraction",0.2)])
+def test_current_semantic_fingerprint_detects_changed_values(field_path, value):
+    # A current explicit fixture, not an outdated migration baseline inventory.
+    original = TrainConfig.model_validate(_minimal_config()).model_dump(mode="json")
+    modified = json.loads(json.dumps(original))
+    _set_nested(modified, field_path, value)
+    modified = TrainConfig.model_validate(modified).model_dump(mode="json")
+    assert sha256_json(original) != sha256_json(modified)
+
+
+def test_current_fingerprint_keeps_untied_embedding_choice_visible():
+    original = TrainConfig.model_validate(_minimal_config()).model_dump(mode="json")
+    modified = json.loads(json.dumps(original))
+    modified["model"]["special_token_embeddings"]["tie_word_embeddings"] = False
+    assert sha256_json(original) != sha256_json(TrainConfig.model_validate(modified).model_dump(mode="json"))

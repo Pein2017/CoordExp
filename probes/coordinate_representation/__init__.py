@@ -1,1 +1,0 @@
-"""Coordinate representation research package."""

@@ -1,56 +1,31 @@
-# Research capabilities and ownership
+# Retained research operators
 
-Scientific state and results belong to the [research entry](../research/index.md)
-and [complete catalog](../research/experiments/catalog.jsonl). This page owns
-implementation routing, not another live result or authorization ledger.
+Scientific decisions belong to [research](../research/index.md), not these files.
+The small implementation set is explicit; there is no universal trainer, profile
+registry or compatibility alias for a retired experiment.
 
-## Choose an implementation owner
+| Capability | Entry and contract |
+|---|---|
+| Output-QP | `python -m probes.output_qp --capture <six-array.npz> --output <fresh.json>`; selected-output-row minimum-Frobenius solve with exhaustive supplied-state FP32 certificate |
+| Readout norm | `python -m probes.readout_norm --input <explicit-arrays.json> --output <fresh.json>`; effective OUTPUT-row lower-median norm scaling, selected logits only |
+| Saved row evaluator | `src.eval.saved_rows`; explicit raw/case/reference-bank inputs, class-agnostic matching, validity and recurrence separately |
 
-| Research capability | Family | Scope |
-|---|---|---|
-| Fixed/reviewed route learning | [Route learning](route_learning/README.md) | Teacher fitting, masked CE, Source256 paired completion and output ranking retain distinct objectives |
-| History, position and repeated output | [Recurrence dynamics](recurrence_dynamics/README.md) | Native history/KV interventions and independent recurrence readbacks |
-| Output norm and readout analysis | [Readout geometry](readout_geometry/README.md) | Priority readout-norm reuse, tied/untied and coordinate margin diagnostics |
-| Coordinate representation | [Coordinate representation](coordinate_representation/README.md) | Codebook, address, legality and spatial-progress profiles |
-| Visual causal evidence | [Visual grounding](visual_grounding/README.md) | Instance binding and visual-detail dependence |
-| Concrete model composition | [Model profiles](model_profiles/README.md) | Shared Source256 and mature tied/untied configurations, not an experiment framework |
-| Output-QP | [Human13](human13/README.md) | Priority selected-output-row minimum-norm fitting/certificate; fresh greedy gate remains separate |
-| Owner learning/control | [DoRA owner learning](dora_owner_learning/README.md), `native_owner_scale`, `owner_successor_scale`, `parallel_owner_research` | Retained owner-credit, supply and preservation profiles; existing scientific dependencies are not universal utilities |
-| Other finite interventions | [Source/Rweak](source_rweak_row_cross/README.md), [logit lens](logit_lens/README.md), `unmatched_judge` | Use the exact profile contract, not an old launch command alone |
+QP NPZ fields are hidden_states, target_ids, route_token_ids, base_route_logits,
+top_ids and top_logits. No pickle, model loading or image/panel selection occurs.
+The certificate is for the supplied states, not native generation or transfer.
+Norm JSON fields are effective_output_rows, scores and token_ids. FP64 factors
+multiply selected FP32 scores; input embeddings and nonselected columns remain
+unchanged. Tied and untied model selection remains the caller's responsibility.
 
-`training_set_completion` is retired as a code package. The new families have
-no old import aliases. Historical schema strings and receipt/source paths retain
-their original spelling; they are not instructions to recreate old directories.
-The finite cutover map is in the OpenSpec change's migration record, not a runtime
-registry. Existing study directories have not moved to mirror code packages.
+Pure functions support CPU tests. CLI qualification binds clean Git commit/tree,
+required source files and input bytes before work and again before publication.
+`--source-receipt` accepts only the exact current qualification identity and same
+input; legacy receipts fail closed. A new qualification is not a recovered
+historical run or an execution grant. External artifacts are not rewritten.
 
-## Dependency and maintenance contract
-
-`src/<domain>` owns actual reusable mechanics. The five extracted families use
-these operations and explicit model profiles instead of another experiment's
-runner. Profiles within a family may share concrete code. Do not duplicate
-loaders merely to claim independence or promote every two-call helper to a new
-framework. Scientific selection, losses, denominators, metrics and stop rules
-remain with their recipe owners.
-
-Output-QP and readout norm are priority reusable methods, not claims of academic
-novelty. Teacher fitting and DoRA remain while actual consumers or controls need
-them. Finite profiles are not arbitrary-data launchers. Closed-grant runners may
-be useful implementation references without promising execution against changed
-source hashes. At phase boundaries, extract necessary method details and retire
-unconsumed preparation, launch and transport shells. Retain decisive independent
-CPU readers rather than replacing them with producer summaries.
-
-## Tests and provenance
-
-Family tests live beside their implementation, shared contracts under
-`tests/<domain>`, and knowledge checks under `tests/knowledge`. Default collection
-includes these surfaces. Historical source-bound integration failures are
-reported separately; no expected hash is weakened to make a run pass.
-
-The [mechanics guide](../docs/RESEARCH_PROBE_INFRA_BASE.md),
-[storage policy](../docs/OUTPUT_STORAGE_POLICY.md) and
-[command map](../scripts/README.md) own their details. CPU tests do not certify
-full-model numerical parity. Original results, frozen data and required current
-run captures remain evidence; preserving them does not require every historical
-producer to run on today's checkout.
+The former finite-panel producers, model-specific convenience loaders, stage
+controllers and repair/closeout chains are no longer maintained. Their useful
+results and exact historical recovery points are in the existing catalog.
+Core training still retains its consumed DoRA/loss/packing mechanisms, regardless
+of scientific novelty. New implementation requires an actual current question or
+consumer, not another broad default directory.

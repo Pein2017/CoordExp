@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from probes.native_owner_scale import evaluation as legacy
+import hashlib
 from src.data.examples import raw_example_from_jsonl_row
 from src.inference.input_materialization import materialize_bound_single_image_case
 
@@ -12,7 +12,7 @@ from src.inference.input_materialization import materialize_bound_single_image_c
 def _case(image: Path, *, images: list[str] | None = None) -> dict:
     return {
         "image_path": str(image),
-        "image_plan": {"image_content_sha256": legacy.file_hash(image)},
+        "image_plan": {"image_content_sha256": hashlib.sha256(image.read_bytes()).hexdigest()},
         "input_record": {
             "images": ["old/location.jpg"] if images is None else images,
             "file_name": image.name,
@@ -34,7 +34,7 @@ def _case(image: Path, *, images: list[str] | None = None) -> dict:
     }
 
 
-def test_public_materializer_matches_legacy_without_mutating_source(tmp_path):
+def test_public_materializer_preserves_bound_payload_without_mutation(tmp_path):
     image_dir = tmp_path / "images"
     image_dir.mkdir()
     image = image_dir / "bound.jpg"
@@ -44,7 +44,8 @@ def test_public_materializer_matches_legacy_without_mutating_source(tmp_path):
     target = tmp_path / "target" / "fresh.jsonl"
     config = {"data": {"input_jsonl": str(target)}}
 
-    expected = legacy._candidate_materialized_case(case, config)
+    expected = copy.deepcopy(case)
+    expected["input_record"]["images"] = [os.path.relpath(image, target.parent)]
     actual = materialize_bound_single_image_case(case, config)
 
     assert actual == expected

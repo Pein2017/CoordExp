@@ -1,77 +1,133 @@
 ## MODIFIED Requirements
 
+### Requirement: Independent direction execution
+
+Retained research capabilities SHALL use documented same-checkout module or CLI
+entries and declared installed dependencies. Shared `src` mechanisms MUST NOT
+import research directions. A supported numerical operator or offline reader is
+not an authorization to run a historical experiment. Undeclared historical
+worktree code and retired import aliases MUST NOT be required.
+
+#### Scenario: Retained operator starts independently
+
+- **WHEN** the current checkout contains the retained capability and its declared dependencies
+- **THEN** its documented offline command and interface tests resolve without retired modules or sibling-worktree code
+
+#### Scenario: A result is inspected without continuation
+
+- **WHEN** a reader inspects saved output as historical evidence
+- **THEN** it reports the original source and limits without treating readable data as executable continuation authority
+
 ### Requirement: Direction profiles keep separate scientific meanings
 
-The maintained direction set SHALL be selected by supported entry points, actual
-consumer dependencies and explicitly retained reusable baselines, rather than an
-immutable list of all historical producers. A direction SHALL be able to contain
-multiple protocol/configuration profiles without a package per run or a global
-experiment registry. Each supported entry SHALL identify its research owner and
-preserve profile-specific objectives, populations, metrics, stopping choices and
-artifact meaning. Ordinary module files are not automatically command entries.
+The maintained set SHALL be selected from actual supported execution consumers,
+explicit reusable operators/evaluators/controls, and integrity boundaries.
+Historical tests, old results or possible future usefulness alone SHALL NOT
+oblige continued maintenance. Removing a capability SHALL remove only its dead
+implementation/test/config/launcher closure; consumers and semantic controls
+shared with retained capabilities MUST survive.
 
-Unselected historical producers SHALL NOT be repackaged or kept as forwarding
-aliases solely to make old launch commands executable at the latest revision.
-Their necessary methods, parameters and result interpretation SHALL remain with
-the research owner. Existing receipt-required source captures and frozen data
-SHALL retain their identities; this does not require restoring a retired
-migration-time source library. Operational agent benchmarks MUST remain distinct
-from scientific producers and their result interpretation.
+#### Scenario: An ordinary loss remains in use
 
-#### Scenario: A profile moves out of the production directory
+- **WHEN** current training consumes a non-novel loss or adapter operation
+- **THEN** it remains with its precise reduction and identity contract regardless of novelty
 
-- **WHEN** a maintained direction loads the same valid source configuration from its package
-- **THEN** shared resolution and value validation preserve its effective values and fingerprint without enabling debug mode; the production loader retains its authoring restrictions
+#### Scenario: A closed orchestration chain has no retained consumer
 
-#### Scenario: Two learning objectives inhabit one direction
-
-- **WHEN** coordinate-credit and full-action profiles reuse a direction's execution operations
-- **THEN** their selection and reduction remain explicit and separately testable instead of being unified by a common default
-
-#### Scenario: Completed historical solver is not maintained
-
-- **WHEN** a closed solver has no supported execution consumer and is not an explicitly retained baseline
-- **THEN** its disposable implementation can retire after method and reference checks, while its research record and required evidence remain discoverable without a claim that today's checkout can replay it
-
-#### Scenario: Non-novel operation is still required
-
-- **WHEN** a supported probe consumes a fitting, adapter or input operation
-- **THEN** the operation remains supported or receives a behavior-verified replacement before deletion, irrespective of its novelty
+- **WHEN** its method and result information are distilled and its original implementation is recoverable from Git
+- **THEN** the chain can leave HEAD without a forwarding alias, replacement archive or package-per-run requirement
 
 ### Requirement: Knowledge survives retirement
 
-Before a direction is retired, its unique accepted research records SHALL be
-reachable from question-oriented navigation and the complete experiment catalog.
-The catalog SHALL retain every current-schema state owner, including closed and
-paused units. The frontier index SHALL link the catalog and select the current
-reading route without requiring a direct home-page link to every state. Missing,
-duplicate or orphan state owners and invalid selected links MUST still fail
-validation. The catalog SHALL NOT infer scientific outcome or execution authority.
+The existing research catalog SHALL permit distilled historical rows without
+live unit directories. Each such row SHALL identify its authoritative topic,
+original Git commit and record path, evidence status, and unsupported continuation.
+Authoritative topic summaries SHALL preserve the estimand, decisive population
+and model/config context, strongest positive and counterevidence, bounded
+inference, reopen conditions and artifact/Git traceability. Different populations,
+label versions, technical invalidity and scientific nonpass MUST NOT be pooled.
 
-Current synthesis SHALL distinguish observations, bounded interpretation,
-incomplete/invalid execution and historical status. Original facts and evidence
-locations MUST remain traceable; incompatible findings MUST NOT be pooled or
-replaced merely by recency. Memory and handoff text MUST NOT own a second live
-state ledger. Decision-relevant CPU verification SHALL be retained where selected
-for continuing support; temporary reporting shells do not thereby acquire a
-permanent execution-support promise.
+Current index, questions, story and catalog SHALL form one coherent navigation
+surface. No second state ledger or per-file Markdown tombstones are required.
+Current live units, when present, SHALL still have unambiguous state ownership.
 
-#### Scenario: Two directions address the same question
+#### Scenario: A closed unit is distilled
 
-- **WHEN** results use different populations, metrics or interventions
-- **THEN** the synthesis explains the differences and links the original records rather than pooling incompatible outcomes or maintaining duplicate current summaries
+- **WHEN** its authoritative topic and catalog row preserve the required evidence and recovery context
+- **THEN** knowledge validation accepts removal of its stage directories and duplicate state documents
 
-#### Scenario: Partial evidence is integrated
+#### Scenario: Provenance is absent or invented
 
-- **WHEN** an incomplete null solve, CPU preparation or selected-panel contrast enters navigation
-- **THEN** its evidence limit remains explicit and is not promoted to a completed comparison or population result
+- **WHEN** a distilled entry lacks a valid full commit, original record path, topic owner or declared evidence boundary
+- **THEN** validation fails rather than inferring a completed experiment from its title
 
-#### Scenario: A closed state leaves the frontier
+#### Scenario: A failed support screen precedes a weak pilot
 
-- **WHEN** a closed unit remains completely catalogued but is no longer selected on the frontier page
-- **THEN** knowledge validation accepts it and users can still reach its state, protocol and accepted result through the catalog
+- **WHEN** a strong physical-control contrast is unsupported but a weaker conditional pilot was executed
+- **THEN** their outcomes and semantics remain separate; pilot nonpass does not become a strong scientific null
 
-#### Scenario: Complete discovery route is missing
+### Requirement: Preserve content before removing worktrees
 
-- **WHEN** the frontier has no actual local Markdown link to the experiment catalog, or a current-schema state has no catalog owner
-- **THEN** knowledge validation fails instead of silently dropping discoverability
+Cleanup SHALL first preserve unique relevant uncommitted source in an explicitly
+authorized local Git checkpoint. Deletion MUST be limited to verified owned paths
+and MUST NOT traverse external outputs, checkpoints, datasets or runtime symlinks.
+Historical source detail MAY leave HEAD once its useful knowledge is distilled
+and Git recovery is identified. An unavailable exact historical source MUST NOT
+be replaced with a weaker verification to resume execution.
+
+#### Scenario: Architecture changes are still uncommitted
+
+- **WHEN** large cleanup starts from a dirty implementation worktree
+- **THEN** its exact owned bytes receive a recoverable checkpoint before deletion; unrelated work is not staged or overwritten
+
+#### Scenario: An external run depends on a candidate
+
+- **WHEN** a running external consumer uses a candidate deletion path
+- **THEN** deletion and integration pause for that dependency rather than stopping the process or forcing the change
+
+### Requirement: One permanent research base
+
+The existing `research-probes` worktree SHALL remain canonical. Large cleanup
+SHALL use the authorized target and a separately registered isolated integration
+worktree based on an exact canonical commit. Canonical adoption MUST be ff-only
+and gated on unchanged expected HEAD, clean tracked and untracked state, no
+conflicting active holder and successful integrated verification. No push or
+history rewrite is implied by local integration authority.
+
+#### Scenario: Canonical is unchanged and clean
+
+- **WHEN** the integrated result is validated against that exact canonical base
+- **THEN** canonical advances only by ff-only to the validated descendant commit
+
+#### Scenario: Canonical changes during validation
+
+- **WHEN** expected HEAD or cleanliness no longer matches
+- **THEN** adoption fails closed until the new state is reconciled and revalidated without reset or overwrite
+
+## ADDED Requirements
+
+### Requirement: Current source identity gates continuation
+
+Decision-bearing retained commands SHALL bind a clean Git commit, tree and
+explicit regular source paths separately from external input identities. A
+continuation receipt SHALL be accepted only after its supported identity schema,
+full commit/tree, source paths and current content match a clean checkout.
+Legacy receipts with missing, unverifiable or changed source identity MUST fail
+closed before execution effects. Requalification under current code SHALL create
+a new run identity, not repair the old receipt or imply equivalent historical
+model behavior. Historical inspection SHALL remain read-only and distinct.
+
+#### Scenario: Legacy receipt has only a path or retired hash
+
+- **WHEN** continuation is requested without a verifiable current Git source binding
+- **THEN** it is rejected as historical/unsupported before computation or output publication; no source-archive fallback occurs
+
+#### Scenario: Source or tree changed
+
+- **WHEN** the receipt commit/tree differs, a source is missing or changed, or tracked/untracked source dirt is present
+- **THEN** continuation is rejected and no automatically substituted identity is emitted
+
+#### Scenario: Qualified current CPU run
+
+- **WHEN** current source and explicit input bindings pass and a fresh destination is supplied
+- **THEN** the command can publish a separately identified bounded result; this certifies no GPU or physical-recall outcome

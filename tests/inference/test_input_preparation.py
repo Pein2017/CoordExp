@@ -19,7 +19,7 @@ from src.qwen.native import prepare_native_inputs
 
 
 FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack")
-PROFILE = Path('probes/model_profiles/configs/source256.yaml')
+PROFILE = FIXTURE / "input_profile.json"
 
 
 def _digest(value):
@@ -123,32 +123,17 @@ def test_reused_target_image_plan_rejects_another_row(context):
 
 
 def test_actual_profile_requests_preserve_tokens_policies_and_lazy_planning(context, monkeypatch):
-    from probes.human13.runtime import _build_requests
-    from probes.logit_lens import causal
-    import src.data
+    from src.inference.inputs import build_single_step_decode_requests
 
     config, components, rows = context
     frontend = SimpleNamespace(qwen=components)
     golden = json.loads((FIXTURE / "expected_probe_inputs.json").read_text())["rows"]
     with patch.object(type(components.processor.image_processor), "__call__", side_effect=AssertionError("eager pixels")):
-        requests = _build_requests(config, frontend, rows)
+        requests = build_single_step_decode_requests(config, frontend, rows)
     assert [request.request_id for request in requests] == [row.example_id for row in rows]
     assert all(request.generation_policy.max_new_tokens == 1 for request in requests)
     for request, expected in zip(requests, golden, strict=True):
         assert _digest(list(request.expected_executed_prompt_token_ids)) == expected["prompt_token_ids_sha256"]
-    # The retained Logit selector requires physical IDs at the end of the ID.
-    # Keep real fixture contents/media; adapt only that selector's ID spelling.
-    selected = tuple(replace(row, example_id=row.example_id.removesuffix("__smoke2obj")) for row in rows)
-    monkeypatch.setattr(src.data, "load_raw_examples", lambda _: selected)
-    request, native, tokens, receipt = causal.request_and_inputs_for_image(
-        components=components, frontend=frontend, config=config, image_id=30, request_id="condition-A",
-    )
-    assert request.request_id == "condition-A"
-    assert request.generation_policy.max_new_tokens == 768
-    assert request.generation_policy.repetition_penalty == 1.0
-    assert _digest(tokens) == golden[0]["prompt_token_ids_sha256"]
-    assert receipt["executed_rgb_sha256"] == golden[0]["executed_rgb_sha256"]
-    assert native["input_ids"].shape == (1, golden[0]["generation_prefix_length"])
 
 
 @pytest.mark.parametrize("length", [0, -1, True, 1.5])

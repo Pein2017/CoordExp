@@ -24,7 +24,7 @@ python -m src.infer --config configs/coordexp_infras/infer/<config>.yaml
 The config selects the data, model composition, output directory and backend.
 HF loads the base, adapters and selected-token embedding delta dynamically;
 vLLM uses the immutable execution-model composition. Backend/source ownership
-is in the [implementation map](../IMPLEMENTATION_MAP.md), with exact support
+is in the [implementation map](../SYSTEM_OVERVIEW.md), with exact support
 in the [backend/trace contract](../../openspec/specs/coordexp-infras-infer-backend-trace/spec.md).
 A backend or raw-score channel requires its own current support evidence.
 
@@ -94,7 +94,7 @@ score channel and evaluator settings. Check the evaluation receipt and
 
 Old confidence post-op, raw-text/non-canonical boxes, proxy/LVIS, Oracle-K and
 visualization-sidecar conventions are preserved in the
-[legacy evaluation reference](../history/evaluation/2026-09-09-legacy-eval-reference.md).
-The [COCO test-dev runbook](COCO_TEST_SUBMISSION.md) is historical; it does not
+legacy evaluation reference (recoverable in Git 108dede0154abfd90a54d18234d9e0bac780a3ba).
+The [COCO test-dev runbook](../../openspec/specs/coordexp-infras-detection-evaluator/spec.md) is historical; it does not
 establish a current Swift submission route. Historical commands must not be
 mixed into this artifact pipeline.

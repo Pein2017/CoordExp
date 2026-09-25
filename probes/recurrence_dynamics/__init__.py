@@ -1,1 +1,0 @@
-"""Recurrence dynamics research package."""

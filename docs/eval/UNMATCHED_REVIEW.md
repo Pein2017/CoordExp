@@ -16,14 +16,15 @@ updated: 2026-09-16
 Effective2026-09-16, per the user's explicit project-wide registration request.
 Future unmatched investigations use this vocabulary, separating reference-relative
 matching, physical evidence, geometry and learning admission. This document owns
-interpretation and review policy; it does not claim that existing producers emit
+review terminology; the authoritative physical interpretation is in
+[the physical-evaluation question](../../research/questions/physical-evaluation.md). It it does not claim that existing producers emit
 all these fields, replace the production evaluator, or rewrite frozen results.
 The [metric interpretation](INTERPRETATION.md) and each run's frozen contract
 continue to own their declared matching and denominator semantics.
 
-Current user preference: Co-DETR is the primary screening proxy; no default
-Qwen-VL semantic judge. Residual ambiguity goes to bounded lead/subagent visual
-review. Prefer deferring a label to training an incorrect object/category/box.
+Detector outputs may nominate bounded visual review; no detector or VLM result
+automatically grants a positive or negative label. Prefer deferring a label to
+training an incorrect object/category/box.
 
 ## 1. TIDE reference-relative vocabulary
 
@@ -115,58 +116,20 @@ image's original-format JSONL `unlabeled`, with stable owner ID and provenance,
 only after lead admission. Unknown category remains unknown. Maintain raw
 `objects`, previous versions and frozen teachers/evaluation sidecars.
 
-## 4. Co-DETR-first routing
+## 4. Proxy evidence is not a current experiment queue
 
-Co-DETR crop+resize detections are a **proxy reference**, not automatically GT.
-They can drive `proxy_tide` diagnostics and review priorities without changing
-benchmark ground truth or granting a training label. The historical
-[Co-DETR profile](../../probes/unmatched_judge/codetr_profile/README.md) combines
-Co-DETR with8B; it remains an immutable predecessor, not the new detector-only
-implementation.
+Detector crop/resize agreement is correlated proxy evidence, not ground truth.
+Record the crop window, original input hash and exact coordinate transform;
+map results back to source pixels once. Candidate-selected crops bias the view.
+Do not average coordinates across possible different owners or silently replace
+a rollout box. Lack of detector support remains unknown, not a negative label.
 
-Recommended next candidate, pending independent calibration:
+Historical Co-DETR/8B and detector-only recipes are recoverable through the
+[research catalog](../../research/experiments/catalog.jsonl). They are not retained
+launchers or current default runs. A new proxy requires independent calibration
+on its declared population. Newly admitted owner/category/geometry targets need
+explicit reviewed provenance; do not alter frozen label versions or denominators.
 
-1. Parse/match against the frozen trusted ledger first. Retain all parse debt.
-   Cache original-image detections once per image. Use unpainted input to the
-   detector; class and candidate edges are not prompts to it.
-2. Add a context crop (initial inherited recipe:3x candidate width/height,
-   minimum128 source pixels/side, clipped to image) and normal detector resize.
-   Keep the crop window, input hash and exact resize/coordinate transform. Map
-   boxes back to source pixels exactly once. Candidate-selected crops bias the
-   view; agreement across views from one model is correlated evidence.
-3. Compare trusted GT, rollout predictions and detector boxes separately. Store
-   same/different-class overlap, four-edge residuals, containment, view agreement,
-   crop truncation and competing-owner/duplicate flags. Do not average coordinates
-   across potentially different owners or silently replace the rollout box.
-4. Route single-owner consistent support to `supported_candidate`; observed
-   category/extent/view/identity conflicts to review; absence of support to
-   `unknown`. A diagnostic loose box can retain entity credit while failing
-   geometry admission. Detector-supported repairs are separate proposals with
-   provenance, not automatically accepted teacher targets.
-5. Until qualified on the intended population, **all newly promoted teacher
-   owners/category/box repairs require lead admission**, with visual evidence.
-   No automated negative labels or penalties for detector non-detections. Refusing
-   to add a candidate is not proof that the complete training objective is neutral
-   to that object; complete-output SFT and masking semantics remain explicit.
-6. Review residuals with full image plus bbox overlay and context crop. Batch by
-   image and reuse accepted owner evidence; only lead/subagents needed for
-   decision-bearing uncertainty and calibration/audit samples. No exhaustive
-   review of all raw proposals is a freeze gate.
-
-The old score.50 / IoU.75 rule is a screening anchor, not a safe training threshold.
-Avoid tuning on already revealed64-image historical labels and calling that a
-fresh validation. Independent calibration must measure false support, clean
-retention, uncertainty, review workload and proposal/owner denominators. Sample
-supported, conflicting and unknown groups; for distribution estimates record
-sampling probabilities, weight strata by population size and report uncertainty.
-A selected good-case sample cannot estimate the whole unmatched population.
-
-## 5. What is registered versus implemented
-
-This page is the shared terminology and user-approved conservative routing.
-Existing scorers are not silently converted to TIDE; historical labels are not
-automatically migrated. The detector-only retained-output diagnostic and concrete
-follow-on design are owned by the
-[2026-09-16 proxy record](../../research/experiments/2026-09-16-codetr-only-review-proxy/unit.md).
-New multi-view inference, exact automatic classification rules and calibration
-must have explicit versioned execution evidence before being called operational.
+The kept evaluator computes its declared algorithmic output. Physical conclusions,
+visibility rules and reopening conditions have one owner in the
+[physical-evaluation question](../../research/questions/physical-evaluation.md).

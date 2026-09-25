@@ -42,8 +42,7 @@ SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
     "coordexp-infras-special-token-embedding-delta-v1"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
-    "docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/"
-    "special-token-embeddings.md"
+    "docs/adapters/selected-embedding-qualification.md"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"

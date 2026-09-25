@@ -65,7 +65,7 @@ The current direct consumer constructs a COCO-shaped GT from inline objects and
 sets their `iscrowd` to zero. It uses the COCO metric implementation but does not
 thereby recover crowd, ignore or missing-object information discarded upstream.
 An official-dataset claim must verify raw annotation/category scope and the
-appropriate export path; see [submission scope](COCO_TEST_SUBMISSION.md).
+appropriate export path; see [submission scope](../../openspec/specs/coordexp-infras-detection-evaluator/spec.md).
 
 ## Explain an unmatched row before naming its cause
 

@@ -23,7 +23,7 @@ Use this folder for stable repo policy and engineering conventions.
   - upstream dependencies and boundary rules
 - [upstream/](upstream)
   - focused upstream notes for Qwen-VL, ms-swift, FlashAttention, and the HF training ecosystem
-- [PORTING.md](PORTING.md)
+- [PORTING.md](CODE_STYLE.md)
   - porting notes and compatibility guidance
 - [OUTPUT_SYNC_AND_DATA_PROVENANCE.md](OUTPUT_SYNC_AND_DATA_PROVENANCE.md)
   - output backup ownership and processed-data provenance

@@ -1,1 +1,0 @@
-"""Visual grounding research package."""
