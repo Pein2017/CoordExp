@@ -202,5 +202,80 @@ class CandidateLocalCPU(unittest.TestCase):
         self.assertEqual(probe.negative_evidence([synthetic],self.tokenizer)['complete_geometry_invalid'],[])
 
 
+def score_fixture():
+    records,_,raw=fixture();visible,truth=probe.split_views(records)
+    t=probe.admission_inputs(visible,raw)['unique_candidates'][0]
+    neighbor={**t,'prediction_id':'neighbor','coord_bins_1000':[600,200,800,400]}
+    requests=[];local=[]
+    for scale in (1,2):
+        r=dict(request_id=f"{t['prediction_id']}:local:{scale}",image_id=1,arm='local',width=1024,height=1024,crop=[0,0,1024,1024],target_prediction_id=t['prediction_id'],view_scale=scale,seed=None,temperature=0.0)
+        requests.append(r);local.append({**raw[0],**r})
+    return dict(bank=[t,neighbor],selected=[t],requests=requests),local,truth
+
+
+class VerificationCPU(unittest.TestCase):
+    def test_neighbor_repeats_and_pairing(self):
+        plan,raw,_=score_fixture()
+        for r in raw:r['text']=r['text'].replace('coord_100','coord_600').replace('coord_300','coord_800')
+        x=probe.compact_local(plan,raw)['targets'][0]
+        self.assertEqual((x['L1'],x['L2'],x['A'],x['U']),(0,0,0,1))
+        self.assertEqual(x['witnesses'][0]['strongest_competitor_id'],'neighbor')
+        self.assertEqual(x['witnesses'][0]['target_minus_competitor'],-1)
+        repeated=copy.deepcopy(raw)
+        for r in repeated:r['text']*=342
+        y=probe.compact_local(plan,repeated)['targets'][0]
+        self.assertEqual({k:x[k] for k in ('B','L1','L2','U','A')},{k:y[k] for k in ('B','L1','L2','U','A')})
+        self.assertEqual(y['views'][0]['literal_unique'],1)
+        bad=copy.deepcopy(raw);bad[0]['target_prediction_id']='wrong'
+        with self.assertRaisesRegex(ValueError,'pairing'):probe.compact_local(plan,bad)
+        bad=copy.deepcopy(raw);bad[0]['view_scale']=2
+        with self.assertRaisesRegex(ValueError,'pairing'):probe.compact_local(plan,bad)
+        with self.assertRaisesRegex(ValueError,'missing'):probe.compact_local(plan,raw[:1])
+
+    def test_annotation_outcomes_and_hidden_score_independence(self):
+        plan,raw,truth=score_fixture();scores=probe.compact_local(plan,raw);t=plan['selected'][0];w=scores['targets'][0]['witnesses']
+        self.assertEqual(scores['targets'][0]['A'],1)
+        self.assertEqual(probe.annotation_proxy(t,w,truth[0])['outcome'],'same_singleton_target')
+        near=copy.deepcopy(w)
+        for x in near:x['prediction']['coord_bins_1000']=[600,200,800,400]
+        ref=copy.deepcopy(truth[0]);ref['objects'].append(dict(coco_ann_id=-2,bbox_2d=[600,200,800,400],desc='bird'))
+        self.assertEqual(probe.annotation_proxy(t,near,ref)['outcome'],'same_singleton_neighbor')
+        self.assertEqual(probe.annotation_proxy(t,[w[0],near[1]],ref)['outcome'],'witness_disagreement')
+        empty=copy.deepcopy(ref);empty['objects']=[]
+        self.assertEqual(probe.annotation_proxy(t,w,empty)['outcome'],'unsupported_or_incomplete')
+        multiple=copy.deepcopy(ref);multiple['objects'].append(dict(coco_ann_id=-3,bbox_2d=[100,200,300,400],desc='bird'))
+        self.assertEqual(probe.annotation_proxy(t,w,multiple)['outcome'],'ambiguous_multiple')
+        unsupported=copy.deepcopy(t);unsupported['coord_bins_1000']=[900,900,950,950]
+        self.assertTrue(probe.annotation_proxy(unsupported,w,ref)['possible_repair_addition'])
+        before=probe.verification_diagnostics(plan,scores,raw,truth)
+        after=probe.verification_diagnostics(plan,scores,raw,[empty])
+        self.assertNotEqual(before['targets'],after['targets'])
+        self.assertEqual(scores,probe.compact_local(plan,raw))
+        with self.assertRaises(AssertionError):
+            self.assertEqual(scores['targets'][0]['A']+len(truth[0]['objects']),scores['targets'][0]['A']+len(empty['objects']))
+        self.assertTrue(all(c['retained']==1 and c['tie_count']==1 for c in before['curves']))
+        no_detection=copy.deepcopy(raw)
+        for r in no_detection:r['text']=''
+        z=probe.compact_local(plan,no_detection)['targets'][0]
+        self.assertEqual([z[k] for k in ('L1','L2','U','A')],[0,0,0,0]);self.assertEqual(z['witnesses'],[])
+
+    def test_class_agnostic_coverage_with_post_assignment_category(self):
+        plan,raw,truth=score_fixture();target=plan['selected'][0]
+        wrong={**target,'description':'boat'}
+        coverage=probe.original_coverage(truth,[wrong])['combined']
+        self.assertEqual(coverage['hidden'],1)
+        self.assertEqual(coverage['category_disagreements'],1)
+        self.assertEqual(coverage['category_agreeing_hidden'],0)
+        self.assertEqual(coverage['hidden_denominator'],1)
+        self.assertEqual(coverage['visible_denominator'],1)
+
+    def test_real_smoke_neighbor_only_regression(self):
+        root=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-01')
+        plan=probe.load(root/'selection.json');raw=probe.read_frozen(root/'smoke');ids={r['target_prediction_id'] for r in raw}
+        plan['selected']=[t for t in plan['selected'] if t['prediction_id'] in ids];plan['requests']=[r for r in plan['requests'] if r['target_prediction_id'] in ids]
+        out=probe.compact_local(plan,raw);x=next(x for x in out['targets'] if x['image_id']==1584)
+        self.assertGreater(x['U'],.52);self.assertEqual((x['L1'],x['L2'],x['A']),(0,0,0))
+
+
 if __name__=='__main__':
     unittest.main()

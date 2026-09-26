@@ -545,15 +545,142 @@ def local_readback(visible, pilot, local_records):
     return dict(evidence=result,invalid=invalid,admission='none; localization/competition evidence only')
 
 
+def compact_local(plan, records):
+    """Frozen prediction-only scores, one paired ROI at a time, no edge ledger."""
+    from collections import Counter
+    from src.eval.saved_rows import iou_xyxy
+    expected = {r['request_id']:r for r in plan['requests']}
+    actual = {r['request_id']:r for r in records}
+    if len(actual)!=len(records) or set(actual)!=set(expected):
+        raise ValueError('missing/duplicate/unexpected local requests')
+    for rid,r in actual.items():
+        if any(r.get(k)!=v for k,v in expected[rid].items()):
+            raise ValueError('target/view request pairing changed')
+    result=[]
+    for t in plan['selected']:
+        pools=[];burdens=[]
+        for scale in (1,2):
+            rid=f"{t['prediction_id']}:local:{scale}"
+            if rid not in actual:
+                raise ValueError('selected target lacks paired views')
+            r=actual[rid]; valid,invalid=candidates([r]);unique={}
+            for d in sorted(valid,key=lambda d:d['prediction_id']):
+                unique.setdefault((d['description'],tuple(d['coord_bins_1000'])),d)
+            pool=[d for d in unique.values() if d['description']==t['description']]
+            pools.append(pool)
+            burdens.append(dict(request_id=rid,stop_reason=r['stop_reason'],generated_tokens=r['generated_tokens'],
+                valid_occurrences=len(valid),literal_unique=len(unique),same_category_unique=len(pool),
+                invalid=len(invalid),invalid_reasons=dict(Counter(d['reason'] for d in invalid))))
+        overlaps=[[iou_xyxy(t['coord_bins_1000'],d['coord_bins_1000']) for d in pool] for pool in pools]
+        U,A=0.0,0.0;pair=None
+        for i,a in enumerate(pools[0]):
+            for j,b in enumerate(pools[1]):
+                u=iou_xyxy(a['coord_bins_1000'],b['coord_bins_1000']);U=max(U,u)
+                score=min(overlaps[0][i],overlaps[1][j],u)
+                if pair is None or score>A:
+                    A=score;pair=(a,b)
+        witnesses=[]
+        for d in pair or ():
+            competitors=sorted((q for q in plan['bank'] if q['image_id']==t['image_id'] and q['description']==t['description'] and q['prediction_id']!=t['prediction_id']),key=lambda q:q['prediction_id'])
+            best=None;best_iou=0.0
+            for q in competitors:
+                v=iou_xyxy(q['coord_bins_1000'],d['coord_bins_1000'])
+                if best is None or v>best_iou:
+                    best=q['prediction_id'];best_iou=v
+            target_iou=iou_xyxy(t['coord_bins_1000'],d['coord_bins_1000'])
+            witnesses.append(dict(prediction={k:d[k] for k in ('prediction_id','image_id','description','coord_bins_1000')},target_iou=target_iou,
+                strongest_competitor_id=best,strongest_competitor_iou=best_iou,target_minus_competitor=target_iou-best_iou))
+        result.append(dict(target_prediction_id=t['prediction_id'],image_id=t['image_id'],
+            stratum=dict(arm=t['arm'],known=t['known_iou50_proxy'],support_nonzero=t['verification_scores']['other_query_iou50_support']>0,boundary=t['crop_boundary']),
+            B=t['verification_scores']['other_query_iou50_support'],L1=max(overlaps[0],default=0.0),L2=max(overlaps[1],default=0.0),U=U,A=A,witnesses=witnesses,views=burdens))
+    return dict(status='prediction_only_no_admission',targets=result)
+
+
+def annotation_proxy(target, witnesses, reference):
+    """Offline same-category annotation sets; never consumed by scoring."""
+    from src.eval.saved_rows import iou_xyxy
+    def G(box):
+        return [dict(annotation_id=str(o['coco_ann_id']),hidden=o['coco_ann_id']<0,cohort=reference['cohort'])
+                for o in reference['objects'] if o['desc']==box['description'] and iou_xyxy(o['bbox_2d'],box['coord_bins_1000'])>=0.5]
+    groups=[G(target)]+[G(w['prediction']) for w in witnesses]
+    groups+= [[] for _ in range(3-len(groups))]
+    sets=[{o['annotation_id'] for o in g} for g in groups];gt,ga,gb=sets
+    if any(len(g)>1 for g in sets):
+        outcome='ambiguous_multiple'
+    elif len(gt)==len(ga)==len(gb)==1 and gt==ga==gb:
+        outcome='same_singleton_target'
+    elif len(ga)==len(gb)==1 and ga==gb and ga!=gt:
+        outcome='same_singleton_neighbor'
+    elif len(ga)==len(gb)==1 and ga!=gb:
+        outcome='witness_disagreement'
+    else:
+        outcome='unsupported_or_incomplete'
+    return dict(G_target=groups[0],G_native=groups[1],G_double=groups[2],empty=[not x for x in sets],multiple=[len(x)>1 for x in sets],
+                outcome=outcome,possible_repair_addition=not gt and bool(ga or gb))
+
+
+def original_coverage(truth, predictions):
+    """Existing class-agnostic matcher, category agreement only after assignment."""
+    from src.eval.saved_rows import one_to_one_matches
+    per_image=[]
+    for r in truth:
+        pool=[p for p in predictions if p['image_id']==r['image_id']]
+        refs=[dict(owner_id=str(o['coco_ann_id']),reference_coord_bins_1000=o['bbox_2d']) for o in r['objects']]
+        matched=one_to_one_matches(refs,pool,0.5);by={p['prediction_id']:p for p in pool}
+        row=dict(image_id=r['image_id'],cohort=r['cohort'],selected=len(pool),hidden_denominator=sum(o['coco_ann_id']<0 for o in r['objects']),visible_denominator=sum(o['coco_ann_id']>=0 for o in r['objects']),hidden=0,visible=0,category_agreeing_hidden=0,category_agreeing_visible=0,category_disagreements=0,unmatched=len(pool)-len(matched))
+        for m in matched:
+            o=r['objects'][m['reference_index']];kind='hidden' if o['coco_ann_id']<0 else 'visible';row[kind]+=1
+            if o['desc']==by[m['prediction_id']]['description']:row['category_agreeing_'+kind]+=1
+            else:row['category_disagreements']+=1
+        per_image.append(row)
+    fields=[k for k in per_image[0] if k not in ('image_id','cohort')]
+    def total(rows):return {k:sum(r[k] for r in rows) for k in fields}
+    return dict(combined=total(per_image),cohorts={c:total([r for r in per_image if r['cohort']==c]) for c in sorted({r['cohort'] for r in truth})},images=per_image)
+
+
+def verification_diagnostics(plan, scores, records, truth):
+    """Offline annotation proxies and all tied thresholds, no operating selection."""
+    from collections import Counter
+    targets={p['prediction_id']:p for p in plan['selected']};refs={r['image_id']:r for r in truth}
+    if set(targets)!={x['target_prediction_id'] for x in scores['targets']}:
+        raise ValueError('score/target identity mismatch')
+    outcomes={x['target_prediction_id']:annotation_proxy(targets[x['target_prediction_id']],x['witnesses'],refs[x['image_id']]) for x in scores['targets']}
+    strata={canonical(x['stratum']) for x in scores['targets']}
+    def summarize(chosen, compact=False):
+        ids=[x['target_prediction_id'] for x in chosen]
+        coverage=original_coverage(truth,[targets[i] for i in ids])
+        result=dict(retained=len(ids),outcomes=dict(Counter(outcomes[i]['outcome'] for i in ids)),possible_repair_addition=sum(outcomes[i]['possible_repair_addition'] for i in ids),original_coverage=coverage['combined'] if compact else coverage)
+        if not compact:
+            result['outcomes_by_image']={str(r['image_id']):dict(Counter(outcomes[i]['outcome'] for i in ids if targets[i]['image_id']==r['image_id'])) for r in truth}
+            result['outcomes_by_cohort']={c:dict(Counter(outcomes[i]['outcome'] for i in ids if refs[targets[i]['image_id']]['cohort']==c)) for c in sorted({r['cohort'] for r in truth})}
+        return result
+    curves=[]
+    for name in ('B','L1','L2','A'):
+        for threshold in sorted({x[name] for x in scores['targets']},reverse=True):
+            chosen=[x for x in scores['targets'] if x[name]>=threshold]
+            curves.append(dict(score=name,threshold=threshold,tie_count=sum(x[name]==threshold for x in scores['targets']),
+                **summarize(chosen),strata={key:summarize([x for x in chosen if canonical(x['stratum'])==key],compact=True) for key in sorted(strata)}))
+    # Coverage uses all literal occurrences and the existing matcher, never IoU clusters.
+    local,invalid=candidates(records)
+    scale={r['request_id']:r['view_scale'] for r in records}
+    local_coverage={str(s):original_coverage(truth,[p for p in local if s=='union' or scale[p['prediction_id'].rsplit(':p',1)[0]]==s]) for s in (1,2,'union')}
+    return dict(status='offline_annotation_proxy_no_admission',outcome_rule='Multiple sets take ambiguous precedence; otherwise same singleton target, same singleton neighbor, disagreeing singleton witnesses, then unsupported/incomplete. Empty-target supported-witness repair flag is separate.',
+        targets=[dict(target_prediction_id=x['target_prediction_id'],image_id=x['image_id'],cohort=refs[x['image_id']]['cohort'],stratum=x['stratum'],**outcomes[x['target_prediction_id']]) for x in scores['targets']],
+        selected_baseline=summarize(scores['targets']),curves=curves,local_output_coverage=local_coverage,local_invalid=len(invalid),
+        scope='Fixed diagnostic strata; annotation IDs/extent proxies, not physical precision. Refined5 redraw identity unresolved. No threshold chosen.')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=['prepare','plan','acquire','review','evaluate','local-plan','local-acquire','local-select','negative','local-review'])
+    p.add_argument('mode', choices=['prepare','plan','acquire','review','evaluate','local-plan','local-acquire','local-select','negative','local-review','local-score','local-diagnostics'])
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--visible', type=Path)
     p.add_argument('--policy', type=Path)
     p.add_argument('--raw', type=Path)
     p.add_argument('--truth', type=Path)
     p.add_argument('--pilot', type=Path)
+    p.add_argument('--selection', type=Path)
+    p.add_argument('--scores', type=Path)
     p.add_argument('--reviews', type=Path)
     p.add_argument('--image-ids', type=int, nargs='*')
     a = p.parse_args()
@@ -567,6 +694,10 @@ def main():
         from transformers import AutoTokenizer
         tokenizer=AutoTokenizer.from_pretrained(BASE,local_files_only=True)
         write(a.output,negative_evidence(read_frozen(a.pilot),tokenizer))
+    elif a.mode=='local-score':
+        write(a.output,compact_local(load(a.selection),read_frozen(a.raw)))
+    elif a.mode=='local-diagnostics':
+        write(a.output,verification_diagnostics(load(a.selection),load(a.scores),read_frozen(a.raw),load(a.truth)))
     elif a.mode=='local-review':
         write(a.output,local_readback(load(a.visible),read_frozen(a.pilot),read_frozen(a.raw)))
     elif a.mode in ('plan','acquire'):
