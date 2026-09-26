@@ -125,5 +125,82 @@ class RecoveryCPU(unittest.TestCase):
             self.assertFalse((root/'run').exists())
 
 
+class CandidateLocalCPU(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from transformers import AutoTokenizer
+        cls.root=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26')
+        cls.raw=probe.read_frozen(cls.root/'pilot-01')
+        cls.visible=probe.load(cls.root/'preparation-v3/acquisition/visible.json')
+        cls.tokenizer=AutoTokenizer.from_pretrained(probe.BASE,local_files_only=True)
+
+    def test_real18_hidden_invariance_and_wrong_dependency(self):
+        truth=probe.load(self.root/'preparation-v3/evaluator/truth.json')
+        changed=copy.deepcopy(truth)
+        for r in changed:
+            r['objects']=[o for o in r['objects'] if o['coco_ann_id']>=0]+[
+                dict(coco_ann_id=-987,bbox_2d=[1,2,3,4],desc='changed',category_id=999,category_name='changed')]
+            r['hidden_objects']=r['objects'][-1:]
+        def boundary(records):
+            visible,_=probe.split_views(records)
+            return probe.local_plan(visible,self.raw),probe.negative_evidence(self.raw,self.tokenizer)
+        before=boundary(truth);after=boundary(changed)
+        self.assertEqual(before,after)
+        self.assertEqual(len(before[0]['bank']),2111)
+        self.assertLessEqual(len(before[0]['selected']),216)
+        self.assertEqual(len(before[0]['requests']),2*len(before[0]['selected']))
+        self.assertEqual(len(before[1]['complete_geometry_invalid']),342)
+        self.assertEqual(len(before[1]['malformed_or_censored']),2)
+        with self.assertRaises(AssertionError):
+            self.assertEqual((before,len(truth[0]['objects'])),(after,len(changed[0]['objects'])))
+
+    def test_local_caller_offset_edge_and_two_scales(self):
+        from unittest.mock import patch
+        from PIL import Image
+        from types import SimpleNamespace
+        records,_,raw=fixture();visible,_=probe.split_views(records)
+        raw[0]['text']=raw[0]['text'].replace('coord_100','coord_0').replace('coord_200','coord_500').replace('coord_300','coord_50').replace('coord_400','coord_600')
+        plan=probe.local_plan(visible,raw)
+        self.assertEqual(len(plan['requests']),2)
+        self.assertEqual(plan['requests'][0]['crop'],[0,448,128,672])
+        with tempfile.TemporaryDirectory() as d:
+            image=Path(d)/'image.png';Image.new('RGB',(1024,1024)).save(image)
+            processor=SimpleNamespace(apply_chat_template=lambda *a,**kw:'fixed class-blind prompt')
+            seen=[]
+            def prepare(processor,requests,**kw):
+                # Inspect the actual NativeRequest image, before its owning caller closes it.
+                seen.append(requests[0].image.size)
+                return requests[0].image.size
+            for r in plan['requests']:
+                r.update(image_path=str(image),image_sha256=probe.digest(image))
+                with patch('src.qwen.native.prepare_native_inputs',side_effect=prepare):
+                    probe.native_request(r,{'prompt':{'system':'s','user':'u'}},processor)
+                mapped=probe.candidates([{**r,'text':fixture()[2][0]['text']}])[0][0]
+                self.assertEqual(mapped['coord_bins_1000'],[12.5,481.25,37.5,525.0])
+            self.assertEqual(seen,[(128,224),(256,448)])
+
+    def test_real_token_row_alignment_rejection_and_dead_end(self):
+        _,drops=probe.candidates(self.raw)
+        d=next(x for x in drops if x['reason']=='geometry_invalid')
+        r=next(x for x in self.raw if x['request_id']==d['request_id'])
+        encoded=self.tokenizer(r['text'],add_special_tokens=False,return_offsets_mapping=True)
+        probe.aligned_invalid(r,d,encoded,self.tokenizer)
+        bad=copy.deepcopy(r);bad['token_ids'][0]+=1
+        with self.assertRaisesRegex(ValueError,'alignment'):
+            probe.aligned_invalid(bad,d,encoded,self.tokenizer)
+        wrong=copy.deepcopy(d);wrong['generated_order']+=1
+        with self.assertRaisesRegex(ValueError,'alignment'):
+            probe.aligned_invalid(r,wrong,encoded,self.tokenizer)
+        synthetic=copy.deepcopy(r)
+        synthetic['text']='<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_999|><|coord_0|><|coord_999|><|coord_999|><|box_end|>'
+        synthetic['token_ids']=self.tokenizer.encode(synthetic['text'],add_special_tokens=False)
+        bank=probe.negative_evidence([synthetic],self.tokenizer)['complete_geometry_invalid']
+        self.assertEqual(bank[0]['empty_legal_set_predecessor_slots'],[0])
+        self.assertLess(bank[0]['earlier_dead_end_token_positions'][0],bank[0]['first_illegal_token_position'])
+        synthetic['text']=synthetic['text'].replace('<|coord_999|>','<|coord_0|>',1)
+        synthetic['token_ids']=self.tokenizer.encode(synthetic['text'],add_special_tokens=False)
+        self.assertEqual(probe.negative_evidence([synthetic],self.tokenizer)['complete_geometry_invalid'],[])
+
+
 if __name__=='__main__':
     unittest.main()

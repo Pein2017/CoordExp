@@ -201,6 +201,12 @@ def native_request(item, policy, processor):
         raise ValueError('image bytes changed')
     with Image.open(item['image_path']) as source:
         image = source.convert('RGB').crop(item['crop'])
+    if item.get('view_scale', 1) == 2:
+        resized = image.resize((image.width * 2, image.height * 2), Image.Resampling.BICUBIC)
+        image.close()
+        image = resized
+    elif item.get('view_scale', 1) != 1:
+        raise ValueError('unsupported local view scale')
     messages = [{'role':'system','content':policy['prompt']['system']}, {'role':'user','content':[{'type':'image'}, {'type':'text','text':policy['prompt']['user']}]}]
     chat = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     try:
@@ -210,7 +216,7 @@ def native_request(item, policy, processor):
     return batch
 
 
-def execute(visible_path, policy_path, output, image_ids, generate=False):
+def execute(visible_path, policy_path, output, image_ids, generate=False, local_raw=None):
     visible, policy = load(visible_path), load(policy_path)
     if generate and policy.get('policy_status') != 'lead_released':
         raise ValueError('GPU acquisition policy is not released')
@@ -218,7 +224,14 @@ def execute(visible_path, policy_path, output, image_ids, generate=False):
     selected = [r for r in visible if not image_ids or r['image_id'] in image_ids]
     if image_ids and {r['image_id'] for r in selected} != set(image_ids):
         raise ValueError('unknown image selection')
-    plan = request_plan(selected, policy)
+    if local_raw is None:
+        plan = request_plan(selected, policy)
+    else:
+        local = local_plan(visible, read_frozen(local_raw))
+        plan = local['requests']
+        if image_ids:
+            chosen = {min((p for p in local['selected'] if p['image_id']==i), key=local_hash)['prediction_id'] for i in image_ids}
+            plan = [r for r in plan if r['target_prediction_id'] in chosen]
     global_request_ids = [r['request_id'] for r in plan]
     rank, world = int(os.environ.get('RANK', '0')), int(os.environ.get('WORLD_SIZE', '1'))
     if generate and world > 1:
@@ -265,6 +278,12 @@ def execute(visible_path, policy_path, output, image_ids, generate=False):
         record = {**item, 'image_grid_thw':grid, 'visual_tokens':math.prod(grid)//qwen.processor_identity.merge_size**2,
                   'actual_pixels':(item['crop'][2]-item['crop'][0])*(item['crop'][3]-item['crop'][1]),
                   'prompt_token_ids':list(batch.prompt_token_ids[0]), 'media_sha256':batch.media_sha256[0], 'prepare_seconds':time.monotonic()-start}
+        if local_raw is not None:
+            roi_w, roi_h = item['crop'][2]-item['crop'][0], item['crop'][3]-item['crop'][1]
+            record.update(original_roi_pixels=roi_w*roi_h, resized_dimensions=[roi_w*item['view_scale'],roi_h*item['view_scale']],
+                          actual_pixels=roi_w*roi_h*item['view_scale']**2,
+                          processed_dimensions=[grid[1]*qwen.processor_identity.patch_size,grid[2]*qwen.processor_identity.patch_size],
+                          processed_pixels=grid[1]*grid[2]*qwen.processor_identity.patch_size**2)
         if generate:
             torch.cuda.synchronize()
             start = time.monotonic()
@@ -277,7 +296,7 @@ def execute(visible_path, policy_path, output, image_ids, generate=False):
     if generate:
         from src.artifacts.git_identity import verify_source_identity
         verify_source_identity(source_identity, required_paths=source_paths)
-    write(output/'frozen.json', dict(status='generated' if generate else 'cpu_plan', source_identity=source_identity,
+    write(output/'frozen.json', dict(local_raw=str(local_raw) if local_raw else None, status='generated' if generate else 'cpu_plan', source_identity=source_identity,
         visible_sha256=digest(visible_path), policy_sha256=digest(policy_path), load_seconds=load_seconds, global_request_ids=global_request_ids,
         requests={r['request_id']:digest(output/f"{r['request_id'].replace(':','-')}.json") for r in results}))
 
@@ -412,19 +431,144 @@ def evaluate(truth, records, reviews):
     return dict(status='annotation_proxy_only', curves=curves, unexecuted_image_ids=[r['image_id'] for r in truth if r['image_id'] not in executed], reports=reports, verification_seconds=sum(r['seconds'] for r in reviews), costs=[{k:r[k] for k in ('request_id','actual_pixels','visual_tokens','generated_tokens','model_calls','generation_seconds','prepare_seconds','stop_reason')} for r in records])
 
 
+def local_hash(candidate):
+    return hashlib.sha256(('926-local-v1:' + candidate['prediction_id']).encode()).hexdigest()
+
+
+def local_plan(visible, records):
+    """Prediction/visible-only diagnostic strata; never consume evaluation truth."""
+    bank = admission_inputs(visible, records)['unique_candidates']
+    images = {r['image_id']: r for r in visible}
+    cells = {}
+    for p in bank:
+        cell = (p['image_id'], p['arm'], p['known_iou50_proxy'],
+                p['verification_scores']['other_query_iou50_support'] > 0, p['crop_boundary'])
+        if cell not in cells or local_hash(p) < local_hash(cells[cell]):
+            cells[cell] = p
+    selected = sorted(cells.values(), key=lambda p:(p['image_id'],local_hash(p)))
+    requests = []
+    for p in selected:
+        r = images[p['image_id']]
+        w,h = r['width'],r['height']
+        b = p['coord_bins_1000']
+        pixel = [b[0]*w/1000,b[1]*h/1000,b[2]*w/1000,b[3]*h/1000]
+        cx,cy = (pixel[0]+pixel[2])/2,(pixel[1]+pixel[3])/2
+        sx,sy = max(192,2*(pixel[2]-pixel[0])),max(192,2*(pixel[3]-pixel[1]))
+        roi = [max(0,32*math.floor((cx-sx/2)/32)),max(0,32*math.floor((cy-sy/2)/32)),
+               min(w,32*math.ceil((cx+sx/2)/32)),min(h,32*math.ceil((cy+sy/2)/32))]
+        for scale in (1,2):
+            requests.append({**{k:r[k] for k in ('image_id','image_path','image_sha256','width','height')},
+                'request_id':f"{p['prediction_id']}:local:{scale}", 'arm':'local',
+                'target_prediction_id':p['prediction_id'], 'view_scale':scale,
+                'crop':roi, 'seed':None, 'temperature':0.0})
+    if len(selected)>12*len(visible):
+        raise ValueError('local cell bound exceeded')
+    return dict(bank=bank,selected=selected,requests=requests)
+
+
+def aligned_invalid(record, drop, encoded, tokenizer):
+    """Reject text/token/row drift before exposing an own-prefix illegal slot."""
+    import re
+    text, ids = record['text'],record['token_ids']
+    if list(encoded['input_ids']) != ids or tokenizer.decode(ids,skip_special_tokens=False) != text:
+        raise ValueError('token alignment differs from saved text')
+    a,z = drop['char_start'],drop['char_end']
+    starts = [m.start() for m in re.finditer(re.escape('<|object_ref_start|>'),text)]
+    order = drop['generated_order']
+    if drop['row_id'] != record['request_id'] or order is None or order>=len(starts) or starts[order]!=a or text[a:z]!=drop['raw_text']:
+        raise ValueError('row alignment differs from parser span')
+    spans = drop['coord_token_spans']
+    if len(spans)!=4 or not drop['raw_text'].endswith('<|box_end|>'):
+        raise ValueError('complete invalid evidence requires four coordinates and box end')
+    positions, bins = [],[]
+    offsets = [tuple(x) for x in encoded['offset_mapping']]
+    for sp in spans:
+        matches = [i for i,off in enumerate(offsets) if off==(sp['char_start'],sp['char_end'])]
+        if len(matches)!=1 or ids[matches[0]]!=tokenizer.convert_tokens_to_ids(sp['text']):
+            raise ValueError('coordinate token alignment differs')
+        positions.append(matches[0]); bins.append(int(sp['text'][8:-2]))
+    if positions != list(range(positions[0],positions[0]+4)) or ids[positions[-1]+1]!=tokenizer.convert_tokens_to_ids('<|box_end|>'):
+        raise ValueError('coordinate row token alignment differs')
+    illegal = [j for j in (2,3) if bins[j]<=bins[j-2]]
+    if not illegal:
+        raise ValueError('valid boundary contact is not invalid geometry')
+    dead = [j for j in (0,1) if bins[j]==999]
+    return dict(coordinate_bins=bins,coordinate_token_positions=positions,
+                coordinate_token_ids=[ids[i] for i in positions],own_prefix=dict(x1=bins[0],y1=bins[1]),
+                first_illegal_slot=illegal[0],first_illegal_token_position=positions[illegal[0]],
+                illegal_slots=illegal,empty_legal_set_predecessor_slots=dead,
+                earlier_dead_end_token_positions=[positions[j] for j in dead])
+
+
+def negative_evidence(records, tokenizer):
+    from src.inference.parsing import parse_compact_object_box_closed
+    complete, other = [],[]
+    for r in records:
+        encoded = tokenizer(r['text'],add_special_tokens=False,return_offsets_mapping=True)
+        if list(encoded['input_ids'])!=r['token_ids'] or tokenizer.decode(r['token_ids'],skip_special_tokens=False)!=r['text']:
+            raise ValueError('saved request token alignment differs')
+        parsed = parse_compact_object_box_closed(r['text'],row_id=r['request_id'],row_index=0,
+            image_width=r['crop'][2]-r['crop'][0],image_height=r['crop'][3]-r['crop'][1])
+        for d in parsed.dropped_predictions:
+            entry = dict(request_id=r['request_id'],image_id=r['image_id'],arm=r['arm'],crop=r['crop'],
+                         stop_reason=r['stop_reason'],parser_drop=d)
+            if d['reason']=='geometry_invalid':
+                entry.update(aligned_invalid(r,d,encoded,tokenizer))
+                entry['literal_repeat_key'] = hashlib.sha256(canonical([r['image_id'],r['arm'],d['raw_text']]).encode()).hexdigest()
+                complete.append(entry)
+            else:
+                entry['censored'] = r['stop_reason'] != 'eos' and d['char_end']==len(r['text']) and not d['raw_text'].endswith('<|box_end|>')
+                other.append(entry)
+    counts = {}
+    for d in complete:
+        key=d['literal_repeat_key'];counts[key]=counts.get(key,0)+1
+    for d in complete:
+        d['literal_repeat_count']=counts[d['literal_repeat_key']]
+    return dict(complete_geometry_invalid=complete,malformed_or_censored=other,literal_repeat_counts=counts,
+                scope='Own-prefix evidence only; no gradients, invalid-GT construction, or automatic positives')
+
+
+def local_readback(visible, pilot, local_records):
+    from src.eval.saved_rows import iou_xyxy
+    plan = local_plan(visible,pilot)
+    bank = {p['prediction_id']:p for p in plan['bank']}
+    predictions, invalid = candidates(local_records)
+    result=[]
+    for r in local_records:
+        target=bank[r['target_prediction_id']]
+        detections=[p for p in predictions if p['prediction_id'].startswith(r['request_id']+':p')]
+        peers=[p for p in predictions if p['image_id']==r['image_id'] and p['prediction_id'].startswith(r['target_prediction_id']+':local:') and not p['prediction_id'].startswith(r['request_id']+':p')]
+        result.append(dict(request_id=r['request_id'],target_prediction_id=target['prediction_id'],detections=[
+            dict(prediction=p,target_iou=iou_xyxy(target['coord_bins_1000'],p['coord_bins_1000']),category_agrees=target['description']==p['description'],
+                 same_category_competitors=[dict(prediction_id=q['prediction_id'],iou=iou_xyxy(q['coord_bins_1000'],p['coord_bins_1000'])) for q in bank.values() if q['image_id']==p['image_id'] and q['prediction_id']!=target['prediction_id'] and q['description']==p['description']],
+                 cross_view=[dict(prediction_id=q['prediction_id'],category_agrees=q['description']==p['description'],iou=iou_xyxy(q['coord_bins_1000'],p['coord_bins_1000'])) for q in peers]) for p in detections]))
+    return dict(evidence=result,invalid=invalid,admission='none; localization/competition evidence only')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=['prepare','plan','acquire','review','evaluate'])
+    p.add_argument('mode', choices=['prepare','plan','acquire','review','evaluate','local-plan','local-acquire','local-select','negative','local-review'])
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--visible', type=Path)
     p.add_argument('--policy', type=Path)
     p.add_argument('--raw', type=Path)
     p.add_argument('--truth', type=Path)
+    p.add_argument('--pilot', type=Path)
     p.add_argument('--reviews', type=Path)
     p.add_argument('--image-ids', type=int, nargs='*')
     a = p.parse_args()
     if a.mode=='prepare':
         prepare(a.output)
+    elif a.mode in ('local-plan','local-acquire'):
+        execute(a.visible,a.policy,a.output,a.image_ids,generate=a.mode=='local-acquire',local_raw=a.pilot)
+    elif a.mode=='local-select':
+        write(a.output,local_plan(load(a.visible),read_frozen(a.pilot)))
+    elif a.mode=='negative':
+        from transformers import AutoTokenizer
+        tokenizer=AutoTokenizer.from_pretrained(BASE,local_files_only=True)
+        write(a.output,negative_evidence(read_frozen(a.pilot),tokenizer))
+    elif a.mode=='local-review':
+        write(a.output,local_readback(load(a.visible),read_frozen(a.pilot),read_frozen(a.raw)))
     elif a.mode in ('plan','acquire'):
         execute(a.visible,a.policy,a.output,a.image_ids,generate=a.mode=='acquire')
     elif a.mode=='review':
