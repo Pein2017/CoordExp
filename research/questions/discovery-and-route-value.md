@@ -56,8 +56,13 @@ boxes do not. Corrected teacher training proceeds separately, with a matched
 checkpoint comparison before any later learning-anchor change.
 The local smoke provides a concrete neighbor-verification counterexample: two
 same-category re-detections agree atIoU0.527338 but both miss their proposal atIoU0.
-The next frozen189-target experiment tests target-anchored support against saved
-agreement, with no per-item visual approval and no automatic positive admission.
+The completed189-target experiment favors enlarged-view localization as ranking
+evidence, while joint target support loses hidden coverage at matched retention.
+Local outputs add31 hidden IDs beyond the complete pilot's independent support
+union, with30 additional IDs by the category-agreeing counterpart;85.7% of their
+supported IDs were already available. This is useful bounded proposal repair,
+not an automatic positive gate or learning result. The stage is closed; further
+work needs a matched repair/negative-supervision design or new-teacher qualification.
 
 ## Provenance
 

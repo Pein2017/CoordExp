@@ -1,18 +1,15 @@
 {
   "unit_id": "2026-09-26-hidden-human-annotation-recovery",
-  "lifecycle": "ready",
+  "lifecycle": "closed",
   "evidence": "partial",
-  "status": "lead-accepted-local-smoke",
-  "boundary": "Autonomous stage goal active; compact target-anchored evaluator and one full frozen189-candidate/378-query inference round released; no production training",
+  "status": "lead-accepted-stage-closed",
+  "boundary": "Autonomous stage complete: fixed189-target verifier experiment accepted within annotation-proxy limits; no next package or production training",
   "not_authorized": [
-    "queries beyond frozen378-request round",
-    "restart after actual GPU failure",
+    "additional research package without a new finite lead assignment",
     "automatic positive admission",
-    "threshold or score-weight fitting",
     "production training without separate explicit user authorization",
     "dataset edits",
-    "publication",
-    "worker source edits outside probe/tests"
+    "publication"
   ],
   "protocol": "research/experiments/2026-09-26-hidden-human-annotation-recovery/unit.md",
   "state_source": "research/experiments/2026-09-26-hidden-human-annotation-recovery/pilot-results.md",
@@ -20,23 +17,19 @@
   "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
-  "job_state": "Eight-query smoke exited0; all10 owned PIDs absent; next full package released, entry/exit recorded separately",
-  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-acceptance-05.json",
-  "pending": [
-    "compact prediction-only scalar evaluator and offline annotation-proxy curves",
-    "one full378-query torchrun8 invocation",
-    "lead stage decision on target-anchored verification versus saved agreement and proposal repair"
-  ],
+  "job_state": "All fixed runs exited; all owned PIDs absent; worker stopped at package boundary; no next job scheduled",
+  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-acceptance-06.json",
+  "pending": [],
   "anchor": "untied-axis001-step2444",
   "user_rulings": "unit.md",
-  "scientific_status": "Mechanics qualified; concrete neighbor-agreement and valid-repetition failures require target-anchored verification test; no admitted positives",
+  "scientific_status": "Enlarged localization supports ranking/repair; joint-view verification not promoted. Local evidence adds31hidden IDs to historical independent union,30by category-agreeing counterpart; no trusted positive or learning benefit established",
   "active_preparation": "preparation-v3",
   "superseded_preparation": [
     "preparation-v1",
     "preparation-v2",
     "preparation-v4-tied"
   ],
-  "lead_acceptance": "CPU plan/negative evidence and eight-query smoke accepted technically; automatic-verification utility unresolved",
+  "lead_acceptance": "Full technical/scoring replay and bounded scientific stage result accepted; autonomous goal complete at stage boundary",
   "original_candidate_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/preparation-receipt.json",
   "correction": "norm1000 fractional crop mapping only",
   "correction_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/correction-01/correction-receipt.json",
@@ -46,6 +39,13 @@
   "retraining_task": "01a0b28f-ddec-74f0-89bd-7d3f094059bd",
   "retraining_authority": "Chinese user-authorized handoff sent; production requires subsequent explicit user authorization",
   "scope_ruling": "Beverage cans are bottle; retain annotations/denominators; case011 category override only",
-  "autonomy": "User authorized autonomous iteration to stage result/convergence/not-worthwhile; long event waits and no polling",
-  "local_smoke_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-01/candidate.receipt.json"
+  "autonomy": "User-authorized autonomous stage completed with long event waits/no polling; no further sweep justified by current result",
+  "local_smoke_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-01/candidate.receipt.json",
+  "full_local_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-full-01/candidate.receipt.json",
+  "stage_decision": "Stop this acquisition/verification schedule; prioritize enlarged proposal repair or own-prefix negative-supervision qualification in a new matched design",
+  "reopening_conditions": [
+    "Qualified retrained teacher available for fixed-protocol comparison",
+    "Finite enlarged-view repair experiment with a new decision-changing contrast",
+    "Own-prefix illegal-mass gradient/learning qualification with matched control and preserved CE/type-gate scope"
+  ]
 }

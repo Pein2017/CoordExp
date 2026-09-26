@@ -174,3 +174,81 @@ pair support against saved-query agreement, with separate neighbor/reference
 ambiguity and proposal-repair outputs. It requires no per-case assistant visual
 judgment. Definitions and stop conditions are frozen in the current unit package;
 no automatic training or production launch follows technical acceptance.
+
+## Full automatic-verification experiment: accepted stage result
+
+The full189-target/378-query run is technically accepted at source
+17642c6d1ffcf9130a20e594d400678f33527e82. It exited0 in3780.629s, generated212246
+tokens, and retained316 EOS/62 cap outcomes. The lead rehashed436 package artifacts,
+six decisive inputs and two source files; replayed378 exact input identities,
+eight source receipts,378 token decodes and eight identical smoke controls; and
+exactly reproduced scores plus all476 offline curve groups. All ten owned PIDs
+are absent. Fifteen tests and the focused evaluator review pass. The initial lead
+hash checker resolved relative source paths against the output directory; correcting
+that checker changed no candidate, metric or runtime. Its failure log is retained.
+
+No per-item assistant visual judgment enters this round. At the same94 retained
+original proposals, the frozen comparison is:
+
+| Score | Empty same-class target reference set | Hidden IDs covered /302 |
+|---|---:|---:|
+| B: saved-query support |36|9|
+| L1: native localization |28|5|
+| L2: enlarged localization |14|11|
+| A: joint target-anchored support |29|6|
+
+At the other two attainable nontrivial B counts26/34, L2 also has fewer empty
+reference sets, but hidden coverage3/4 versus B4/5. A covers1/2. Thus L2 supplies
+useful annotation-localization ranking evidence without uniformly dominating B;
+A is not a better general coverage rule. A<=min(L1,L2) by construction, so a
+poor native view can veto an enlarged-view success. This explains a possible
+selection bottleneck, not the cause of native model failure. No operating point
+was chosen; full ties, cohorts, images and strata remain in the saved curves.
+The plot `candidate-local-full-01/verification-curves.png` displays all attainable
+groups; these are annotation proxies, not physical precision or false-object rates.
+
+Over all189 witness pairs,34 are same-singleton target,18 same-singleton neighbor,
+two witness disagreement, nine multiple-reference ambiguity and126 unsupported
+or incomplete. Eleven targets have U>0 but A=0. Median U is0.892 for neighbor
+agreement versus0.910 for target agreement; agreement alone cannot certify the
+target. Thirty-nine targets have no same-class reference overlap while a local
+witness does: possible repair/addition, not retrospective validation of the target.
+
+Local-output coverage must be compared with the COMPLETE earlier bank, not only
+the189 selected originals. The lead independently replayed this CPU comparison:
+
+| Independent matched-ID support unions | Hidden /302 | Visible /268 | Category-agreeing hidden / visible |
+|---|---:|---:|---:|
+| Historical greedy/full/region |153|220|151 /217|
+| Historical plus local native/2x |184|232|181 /228|
+| Increment |31|12|30 /11|
+
+New hidden support splits24 Human13 and7 refined5. Native adds8 hidden IDs beyond
+the historical bank;2x adds28. Native adds only3 after historical+2x. Of local
+union114hidden/186visible support,83hidden/174visible were already available:
+85.7% of supported IDs are re-detections under this proxy. This is a bounded
+increment, not31 new physical entities or31 admitted labels; refined5 redraw
+ambiguity and same-class matching limits remain.
+
+A single pooled rematch of all original+new predictions yields184hidden/232visible
+and179/227 category-agreeing, versus155/220 and150/216 for the original pool:
+increment29hidden/12visible. The difference from the31-ID support-union increment
+is assignment semantics, not missing data. Both definitions and exact IDs/matches
+are retained in `lead-marginal-support-candidate.json` and independently checked
+in `lead-marginal-replay.json`; do not mix their baselines.
+
+The new round used378 calls/212246 generated tokens/63.01min versus the earlier
+162 calls/29744 tokens/7.79min. These wall figures are descriptive, not matched
+compute-efficiency estimates. Native versus2x produced46/16 caps and3005/1337
+invalid spans; valid literal repetitions also persist. Compact full scoring takes
+about1.1s/65MiB/236KB and offline diagnostics16.1s/107MiB/5.4MB, so the CPU consumer
+does not require a Cartesian evidence ledger. Every raw output remains available.
+
+Decision: close this stage with useful automatic ranking/proposal-repair evidence,
+but no trustworthy automatic positive gate and no training benefit claim. Prefer
+enlarged-view repair and separate certain-invalid own-prefix supervision in a new
+matched learning design; do not blindly increase repeated/crop queries or require
+joint-view agreement. The342 original complete-invalid records remain a qualified
+negative-evidence bank; generated-prefix gradients and optimizer integration are
+not implemented or accepted. No further query, label admission or production run
+is scheduled. The autonomous goal is complete at this stage boundary.

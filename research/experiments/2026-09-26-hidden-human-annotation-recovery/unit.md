@@ -1,6 +1,6 @@
 # Hidden human-annotation recovery
 
-Status: candidate-local CPU preparation and eight-query smoke lead-accepted technically. The full frozen 189-candidate paired verification experiment and its compact offline evaluation are released below. Current teacher remains frozen; no production training is authorized.
+Status: autonomous stage completed and lead-accepted. The full frozen189-candidate experiment adds bounded annotation support and favors enlarged-view localization/repair over mandatory joint-view verification. No automatic positive admission, further query package or production training is released.
 
 ## Authority and ownership
 
@@ -398,7 +398,7 @@ Return a stable CPU plan, exact source diff/commit, eight-query smoke receipt an
 readback candidate directly to the lead. Stop. The full selected-bank run, more
 sampling, automatic admission and training need a subsequent lead release.
 
-## Current package: full frozen candidate-local verification experiment
+## Completed package: full frozen candidate-local verification experiment
 
 The user authorized autonomous mainline research on 2026-09-26 until a useful
 stage result, convergence, or evidence that further attempts are not worthwhile.
@@ -475,3 +475,26 @@ per-view localization adds annotation-specific separation beyond B, or local
 outputs are more useful as repaired proposals. If gains only reflect U, repeats
 or neighbors, automatic verification remains unsupported. Mixed results remain
 inconclusive; further queries require a new finite lead assignment, not a sweep.
+
+## Stage decision and closure — 2026-09-26
+
+The autonomous goal reached a reproducible stage result; no active package remains.
+See the final sections of [pilot-results.md](pilot-results.md) and output
+`lead-acceptance-06.json`. Technical execution and the frozen annotation-proxy
+results are accepted; physical precision, trusted positive admission and learning
+benefit remain unestablished. No score/threshold was selected for production.
+
+Enlarged-view localization provides useful ranking evidence in the fixed sample.
+Requiring both views through A creates a weak-view bottleneck and loses hidden
+coverage at the saved-support count controls. Local outputs supply31 additional
+hidden IDs beyond the complete historical pilot's independent matched-ID union
+(30 by the category-agreeing counterpart), largely from2x. Most local support is
+already available; repeating this schedule without a new discriminator is not
+worthwhile. Preserve the current teacher as historical development evidence.
+
+Next research, if reopened, should target enlarged-view proposal repair and a
+matched qualification on the separately retrained teacher, or a small own-prefix
+negative-supervision gradient/learning test with the corrected geometry term.
+These are reopening conditions, not scheduled jobs. Do not require per-item
+assistant visual approval, silently treat unknown candidates as negatives, or
+resume production training without the user's separate explicit authorization.
