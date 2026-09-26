@@ -14,8 +14,8 @@ readout interventions are not a general physical-owner routing mechanism.
 The authoritative result and reopening boundary are in
 [history/repetition](questions/history-repetition-stopping.md). The current
 [hidden human-annotation recovery unit](experiments/2026-09-26-hidden-human-annotation-recovery/unit.md)
-has lead-accepted corrected CPU preparation and a two-image GPU smoke release;
-GPU qualification and scientific outcomes remain pending. No training is released.
+has lead-accepted CPU preparation and two-image GPU smoke; the fixed 18-image
+pilot is released with unchanged policy. Pilot outcomes remain pending; no training is released.
 Prior intake canonical Git: `108dede0154abfd90a54d18234d9e0bac780a3ba`.
 
 ## Authoritative questions

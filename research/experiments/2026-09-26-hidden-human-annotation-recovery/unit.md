@@ -1,6 +1,6 @@
 # Hidden human-annotation recovery
 
-Status: corrected CPU preparation lead-accepted; two-image GPU smoke released below. No training released.
+Status: CPU preparation and two-image GPU smoke lead-accepted; fixed 18-image pilot released below. No training released.
 
 ## Authority and ownership
 
@@ -198,7 +198,7 @@ hidden GT. Warm-starting model weights is distinct from resuming optimizer or
 scheduler state. This requirement is recorded only: acquisition preparation
 contains no training implementation or launch.
 
-## Lead acceptance and current package: two-image GPU smoke — 2026-09-26
+## Lead acceptance and completed package: two-image GPU smoke — 2026-09-26
 
 This section supersedes the preparation package's no-commit/no-GPU restriction
 only for the following release. The lead accepts corrected CPU preparation after
@@ -249,3 +249,52 @@ after the smoke or a concrete failure. Do not alter source, restart a failed
 run, launch the 18-image pilot, add queries, train, or publish without a new lead
 assignment. The next decision is technical smoke acceptance, then release of the
 already intended fixed pilot if qualified. Existing user choices stay settled.
+
+## Current package: fixed 18-image pilot — 2026-09-26
+
+Smoke acceptance evidence: `smoke-01.report.md`, `smoke-01.receipt.json` and
+`smoke-01.lead-replay.json` in the task output root. The lead revalidated all
+52 receipt artifacts, 18 unique requests, eight source receipts, exact CPU-plan
+prompt/media/grid/crop/seed parity, and identical fresh screening/evaluation.
+The run exited 0 in 78.512 seconds with all 18 EOS stops and 2,629 new tokens.
+Successful committed loader receipts plus bound payload keys establish the
+DoRA and independent untied delta loading path; they are not live tensor dumps.
+Legacy singular metadata `tensor_key` is not evidence of tied execution.
+
+Raw two-image hidden coverage is greedy 16/36, full K4 19/36 (five new beyond
+greedy), region K4 24/36 (ten new). These are development-image annotation proxies,
+not admitted supervision or a population result. No threshold was selected.
+The model, data views, query policy, matching and screening stay unchanged.
+
+Release exactly one eight-rank invocation of the same `acquire` command above,
+omit `--image-ids`, and set output to
+`/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/pilot-01`.
+Use the identical `smoke-policy-01.json`; `lead-release-02.json` separately grants
+this cohort expansion and binds the clean local documentation commit. All 136
+runtime source files must equal the accepted smoke bytes. The pilot contains
+162 calls, at most 499,608 new tokens; expected input visual tokens are 17,660
+greedy, 70,640 full and 29,028 region. Record actual cost with no elapsed veto.
+Rerun both smoke images as part of this single complete invocation, keeping their
+smoke artifacts separate and checking repeat token parity; do not count them twice.
+This uses the existing complete-shard reader without adding a merge mechanism.
+
+Worker ownership remains outputs and ignored transport files only. Keep source
+clean, reconcile prior processes, start one invocation, preserve full logs and exit
+status, and return promptly on concrete failure without changing settings or
+restarting. Apply the smoke's composition, input parity, token/stop and durable
+readback checks to all 162 requests. Freeze raw outputs before offline scoring.
+Run existing screening/evaluation with explicit empty reviews; retain every raw
+candidate, invalid report and saved prefix/support curve, with no auto-admission.
+
+Report Human13 and refined5 separately, then the combined annotation proxy:
+hidden and known coverage, new IDs beyond greedy, greedy-covered IDs absent from
+each arm, category disagreements, unmatched/invalid/boundary cases, K1-K4/support
+curves and actual costs. Refined5 is confirmation for this frozen protocol, not
+globally unseen. Its 105 added region IDs are not proven distinct new physical
+owners. Image 7116 has no hidden denominator and remains a preservation control.
+Do not tune policy or select a threshold from confirmation truth. The lead may
+commit only these status/protocol updates locally; no publication is released.
+
+Return a stable candidate report and hashed receipt directly to the lead after
+the finite round; stop. No additional model queries, admission, training, source
+edits, restart or next round is authorized by this package.
