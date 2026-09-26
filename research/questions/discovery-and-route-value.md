@@ -42,8 +42,18 @@ from greedy and 32 region-only IDs. Full K4 has greater total support than nativ
 regions in both cohorts; regions use fewer visual tokens and add complementary
 IDs. These are saved annotation matches, not trusted physical labels. Agreement
 screening removes many recovered IDs, and nearby same-category witnesses can be
-assigned different annotations. The current next discriminator is an offline
+assigned different annotations. The next discriminator after that pilot was an offline
 visual complementarity audit; no training or natural-greedy improvement is claimed.
+
+That audit is now complete as assistant visual evidence: six selected targets
+were judged the same as a displayed full-query neighbor, eleven distinct and
+fifteen uncertain. This is not human adjudication or a precision sample. The
+candidate-local re-detection probe separates category/localization/ambiguity
+evidence before admission; original annotation support counts remain unchanged.
+The current teacher's342 complete geometry-invalid spans supply a separate,
+locally decidable negative-evidence surface; capped suffixes and unmatched valid
+boxes do not. Corrected teacher training proceeds separately, with a matched
+checkpoint comparison before any later learning-anchor change.
 
 ## Provenance
 

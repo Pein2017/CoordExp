@@ -1,6 +1,6 @@
 # Hidden human-annotation recovery
 
-Status: fixed 18-image pilot lead-accepted within its annotation-proxy boundary; CPU complementarity audit preparation released below. No further model query or training released.
+Status: pilot and complementarity audit accepted within their stated boundaries; candidate-local verification, CPU invalid-evidence extraction and eight-query smoke released below. Current teacher remains frozen for development; future learning must replace the expectation hinge. No full verification round or training released.
 
 ## Authority and ownership
 
@@ -174,7 +174,7 @@ confirmation outcomes. Policy is frozen for preparation but marked
 ## Final anchor and future learning boundary — 2026-09-26
 
 The user corrected the intervening tied-Source choice and froze the original
-**untied+axis001 step2444** for acquisition and the later learning starting point:
+**untied+axis001 step2444** for acquisition and, originally, the later learning starting point:
 `/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444`.
 Base:
 `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`.
@@ -187,12 +187,18 @@ tied Source. The tied instruction and `preparation-v4-tied` evidence are
 CPU processor evidence where identity matches; do not rerun preparation merely
 because the tied proposal intervened.
 
-For a later separately frozen learning contrast, the lead owns learning rates,
-weights, optimizer groups, scheduler, effective batch and exposure. Retain existing
-`base_ce`, `token_type_gate`, and `raw_axis_validity_hinge`. The geometry term
-constrains expected x2-x1 and y2-y1 by a margin; it is not GT regression or a
-promise of greedy-valid boxes. Do not invent GIoU, Gaussian/RPS or another loss
-under that name. Unknown-target and untrusted-terminal-EOS masking must be
+The user's subsequent 2026-09-26 correction supersedes the future-loss requirement
+to retain `raw_axis_validity_hinge`. Keep the three roles: `base_ce`,
+`token_type_gate`, and prefix-conditioned `conditional_order_gate` geometry.
+The old expectation hinge remains part of the frozen teacher's training history,
+not a correct implementation of strict emitted-coordinate validity. Do not rewrite
+historical scores or switch checkpoint mid-probe. A separately prepared fresh
+untied illegal-mass run belongs to task `01a0b28f-ddec-74f0-89bd-7d3f094059bd`;
+it is not launched by this unit. Compare a qualified new checkpoint on the same
+fixed probe before choosing the later learning anchor. The lead owns learning
+rates, weights, optimizer groups, scheduler, effective batch and exposure; equal
+numerical weights do not mean equal scales across the two geometry objectives.
+Unknown-target and untrusted-terminal-EOS masking must be
 consistent across CE, type gate and eligible geometry; acquisition cannot consult
 hidden GT. Warm-starting model weights is distinct from resuming optimizer or
 scheduler state. This requirement is recorded only: acquisition preparation
@@ -299,7 +305,7 @@ Return a stable candidate report and hashed receipt directly to the lead after
 the finite round; stop. No additional model queries, admission, training, source
 edits, restart or next round is authorized by this package.
 
-## Current package: CPU complementarity audit preparation — 2026-09-26
+## Completed package: CPU complementarity audit preparation — 2026-09-26
 
 Accepted interpretation and evidence are in [pilot-results.md](pilot-results.md)
 and output `lead-acceptance-03.json`. The next question is whether the 32 regional
@@ -324,3 +330,70 @@ Verify image/box mapping, input hashes, 32-case coverage and blinded fields.
 Return the stable packet, hashes and exact limits directly to the lead, then stop.
 The lead reviews entity/category, extent, instance/group/part, cross-candidate
 identity and uncertainty before deciding a candidate-local verification test.
+
+## Current package: candidate-local re-detection implementation and smoke
+
+From the same frozen untied teacher and pilot candidate bank, does class-blind
+local re-detection at native versus enlarged visual scale supply localization
+and ambiguity evidence beyond saved-query agreement? The immediate package
+qualifies mechanics, not a precision operating point. User ruling: beverage cans
+belong to `bottle` in this annotation scope; preserve the original references.
+
+Select candidates from the saved 2,111 literal-unique full/region records using
+predictions and visible labels only. Within each image, stratify by route,
+visible-known IoU>=.5 flag, zero versus nonzero saved-query support, and crop-boundary
+flag (full route always false). Choose one candidate per nonempty cell by minimum
+SHA256 of `926-local-v1:` plus prediction ID. This gives at most 12 cells/image,
+216 candidates and 432 future queries. Keep every original candidate in the bank;
+these strata are a diagnostic sample, not a population precision sample.
+
+For each selected candidate, make a centered original-pixel ROI with each side
+`max(192, 2 * predicted_side_length)`, snap boundaries outward to multiples of 32
+and clip to the image. Run the same ROI at native scale and exactly 2x bicubic
+resize, with identical trained COCO-80 prompt, no proposed category, candidate box
+overlay or hidden labels in the prompt. Both are empty-history greedy queries
+at the original frozen model/FP32/SDPA, EOS, repetition penalty 1 and max 3084
+new tokens. Cropping is proposal-conditioned; resizing supplies no new pixel
+information. Preserve actual model-input pixels/tokens and original crop geometry
+separately; both outputs map to original norm1000 coordinates without rounding.
+
+Implement the smallest change to the existing task probe/tests using maintained
+native generation and sharding. Preserve the original acquisition/readback behavior.
+Prepare CPU request identities and counts for the whole selected bank, including
+proof that hidden truth mutations cannot alter selection or queries. Test real
+caller geometry for offset, edge-clipped ROI and 2x view, record cost bounds, and
+replay prior probe tests. No new generic runner or external verifier.
+
+In the same CPU preparation, retain a separate certain-invalid evidence bank
+from all frozen raw requests. Reuse parser drops and exact saved token IDs: bind
+each complete geometry-invalid row to its request/crop, generated-order row,
+coordinate slots, own x1/y1 prefix and first illegal x2/y2 token. Preserve all
+342 occurrences and literal-repeat multiplicity; do not treat the 299 greedy geometry
+failures on image351017 as independent specimens. Keep the two capped incomplete
+rows separate. Reject wrong row/token alignment, and distinguish valid 0/999
+boundary contact from zero area. Hidden truth cannot affect this bank either.
+This is extraction/validation only, with no backward pass or optimizer update.
+
+The future negative-supervision rule is local to the actual supplied prefix:
+penalize x2<=x1 or y2<=y1 probability mass, without treating an entire invalid row,
+unmatched valid box, group, duplicate, or budget-truncated suffix as a negative
+target. A prior corner at999 creates an empty legal completion set; flag that
+earlier dead-end decision rather than taking log of an empty set. Generated
+invalid rows cannot be passed unchanged through a valid-GT target constructor.
+Own-prefix replay and its reduction/gradient qualification belong to a later
+learning package. No inference mask is added.
+
+The lead authorizes the worker to make one scoped local commit of probe/tests only
+after checks pass and the source is otherwise clean. Then run one torchrun8 smoke:
+one selected candidate in each of Human13 images1584,2299,2685,4134, chosen by the
+same stable hash, both views per candidate. Eight queries, <=24,672 new tokens;
+no time/GPU-hour veto. Reconcile live jobs first; retain existing runtime/identity
+and fresh-process frozen-readback requirements. If a check or actual run fails,
+return evidence without restart or numerical-policy changes. No unrelated edits.
+
+Save all re-detections, same-category target IoUs, competing matches, and cross-view
+geometry; retain ambiguity rather than promoting a positive. Ground truth enters
+offline diagnostics only. Do not fit a threshold or overwrite pilot metrics.
+Return a stable CPU plan, exact source diff/commit, eight-query smoke receipt and
+readback candidate directly to the lead. Stop. The full selected-bank run, more
+sampling, automatic admission and training need a subsequent lead release.
