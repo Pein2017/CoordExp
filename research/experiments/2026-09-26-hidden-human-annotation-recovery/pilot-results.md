@@ -145,3 +145,32 @@ training alone does not cover every generated prefix. Saved-teacher replay is
 off-policy for a changing student and needs separate gradient qualification.
 Do not equate lower invalid counts with recovery, correct localization or reduced
 repetition; the earlier archived order-gate study also separated those outcomes.
+
+## Candidate-local mechanics accepted; verification remains unproven
+
+At source2460dcc4b6aa3bb1570edaa6da50247220174997, the CPU bank selects189
+proposals/378 requests from2,111 proposals. All189 processor pairs retain2x
+dimensions/4x visual tokens. The342 complete invalid occurrences and two capped
+spans retain exact row/token identities. Eleven focused tests pass; the lead
+independently replayed CPU identity/mapping/negative checks and a focused source
+review found no blocker. No new claim is made from preparation alone.
+
+The single eight-query smoke exited0 in264.519s,3262 generated tokens,1325 visual
+tokens, seven EOS and one cap. The lead rehashed423 artifacts and two source files,
+verified eight clean source receipts and exact CPU input identities, reproduced
+the saved local readback exactly, and confirmed all ten owned PIDs absent.
+Output `candidate-local-01/lead-smoke-replay.json` is the direct replay evidence.
+The original candidate receipt and attempt/resumption records remain unchanged.
+
+The failures change the next contrast. On1584, two person detections agree at
+IoU0.527338 while both overlap their target atIoU0; each is closer to another bank
+proposal. Thus even class-restricted cross-view agreement can validate a neighbor.
+On2299, native produces342 valid occurrences/7 literal-unique boxes, one repeated
+330 times, and caps;2x produces9 unique boxes and EOS at82 tokens. This is local
+behavior, not population benefit or a duplication mechanism. No positive admitted.
+
+The next finite experiment keeps the prepared189 targets and tests target-anchored
+pair support against saved-query agreement, with separate neighbor/reference
+ambiguity and proposal-repair outputs. It requires no per-case assistant visual
+judgment. Definitions and stop conditions are frozen in the current unit package;
+no automatic training or production launch follows technical acceptance.

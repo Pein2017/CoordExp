@@ -1,6 +1,6 @@
 # Hidden human-annotation recovery
 
-Status: pilot and complementarity audit accepted within their stated boundaries; candidate-local verification, CPU invalid-evidence extraction and eight-query smoke released below. Current teacher remains frozen for development; future learning must replace the expectation hinge. No full verification round or training released.
+Status: candidate-local CPU preparation and eight-query smoke lead-accepted technically. The full frozen 189-candidate paired verification experiment and its compact offline evaluation are released below. Current teacher remains frozen; no production training is authorized.
 
 ## Authority and ownership
 
@@ -331,7 +331,7 @@ Return the stable packet, hashes and exact limits directly to the lead, then sto
 The lead reviews entity/category, extent, instance/group/part, cross-candidate
 identity and uncertainty before deciding a candidate-local verification test.
 
-## Current package: candidate-local re-detection implementation and smoke
+## Completed package: candidate-local re-detection implementation and smoke
 
 From the same frozen untied teacher and pilot candidate bank, does class-blind
 local re-detection at native versus enlarged visual scale supply localization
@@ -397,3 +397,81 @@ offline diagnostics only. Do not fit a threshold or overwrite pilot metrics.
 Return a stable CPU plan, exact source diff/commit, eight-query smoke receipt and
 readback candidate directly to the lead. Stop. The full selected-bank run, more
 sampling, automatic admission and training need a subsequent lead release.
+
+## Current package: full frozen candidate-local verification experiment
+
+The user authorized autonomous mainline research on 2026-09-26 until a useful
+stage result, convergence, or evidence that further attempts are not worthwhile.
+The active goal is scalable automatic supervision, without per-item visual review.
+Production training remains held for separate explicit user authorization.
+
+Question: does target-local evidence separate annotation-supported proposals
+from neighbor agreement and localization ambiguity better than saved-query
+agreement, while retaining hidden-reference coverage? The strongest alternative
+is that local queries consistently find a nearby object rather than validate the
+proposal. Smoke1584 already realizes this alternative: same-category cross-view
+IoU0.527338, but both target IoUs0. Repetition is also present with valid geometry.
+
+Freeze the existing selection: 189 candidates from2,111,18 images,378 paired
+native/2x requests in `candidate-local-01/selection.json` and `cpu-plan/`.
+No image/candidate omission, score-based reselection, prompt/category hint,
+numerical policy, model, crop or seed change. Reuse the existing CPU identities.
+Exactly one torchrun8 invocation, without an image filter, is released after the
+CPU evaluator checks and scoped source commit below. Max1,165,752 new tokens;
+120,145 planned visual tokens. No wall/GPU-hour veto. The eight smoke requests
+recur as identity controls and are never counted twice in scientific totals.
+No restart after an actual GPU failure; retain capped and invalid outcomes.
+
+Before generation, implement prediction-only compact scalar readback in the
+existing probe/test files. For target box/category t,c and literal-unique
+same-category detections D1,D2 from its two views, retain:
+
+- B: existing within-route other-query IoU>=.5 support count.
+- L1,L2: max IoU(t,d) separately for the two views, empty set=>0.
+- U: max IoU(a,b) across D1,D2, empty pair set=>0; diagnostic only.
+- A: max over pairs of min(IoU(t,a),IoU(t,b),IoU(a,b)), empty pair set=>0.
+- The A-maximizing witness pair, ties by prediction IDs, and each witness's
+  target IoU minus maximum IoU to any other same-category saved-bank proposal.
+  Preserve strongest competitor IDs; competitors can duplicate the same owner.
+
+Do not fit score weights or choose an operating threshold. Literal repeats never
+add support votes; retain their counts and every raw output. Save compact per-target
+scores/witnesses and raw references instead of serializing every Cartesian edge.
+Process one ROI pair at a time; qualify CPU time/RSS/artifact size on both the
+saved smoke and a full-cap repeated/unique-row counterexample. No new framework.
+Missing or corrupt requests are technical failures, not zero scores. Valid empty
+outputs have zero support; cap/EOS and invalid burdens remain separate fields.
+
+Offline only, define G(box) as original same-category annotation IDs with IoU>=.5.
+Retain G(t),G(a),G(b), their hidden/visible/cohort identities and empty/multiple
+flags. Report same-singleton target agreement, same-singleton neighbor agreement,
+witness disagreement and ambiguous/unsupported outcomes. Distinguish an unsupported
+target with supported local outputs as a possible repair/addition, not validation
+of the original proposal. These are annotation-localization proxies, never human
+adjudication or physical precision. Keep refined5 redraw uncertainty explicit.
+
+For every attainable threshold of B,L1,L2,A, retain complete tied-score groups.
+Report selected/retained counts, the above proxy outcomes, and hidden/visible
+coverage of retained ORIGINAL candidates, using the existing class-agnostic
+one-to-one matcher atIoU.5 plus its post-assignment category-agreement counts.
+Do not silently replace that matcher with category-constrained rematching.
+Keep coverage of newly generated local outputs separate (native,2x,union).
+Preserve full hidden302/visible268 denominators, image/cohort/selection-stratum
+breakdowns, and all18 images including the zero-hidden control. Comparisons are
+within this fixed diagnostic sample; no population precision or transfer claim.
+
+CPU acceptance must falsify neighbor-only agreement (1584), duplicate-vote
+inflation, wrong target/view pairing and truth-dependent scores. Show expected
+target agreement versus neighbor/ambiguous reference outcomes on small fixtures.
+Replay the existing11 tests when source changes. Preserve acquisition behavior;
+verify all378 prompt/media/crop/grid/seed identities against the existing plan.
+Only probe/tests may be edited and committed by the worker; records belong to
+the lead. Routine bounded CPU repairs may iterate; semantic/numerical conflicts
+return to the lead. One clean scoped commit precedes the one GPU invocation.
+
+Return the full run, compact readback/curves, costs, limits and bound receipts.
+Stop with zero admitted positives and no training. The decision is whether A or
+per-view localization adds annotation-specific separation beyond B, or local
+outputs are more useful as repaired proposals. If gains only reflect U, repeats
+or neighbors, automatic verification remains unsupported. Mixed results remain
+inconclusive; further queries require a new finite lead assignment, not a sweep.

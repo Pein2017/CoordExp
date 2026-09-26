@@ -2,18 +2,17 @@
   "unit_id": "2026-09-26-hidden-human-annotation-recovery",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "lead-accepted-complementarity-audit",
-  "boundary": "Current step2444 teacher retained for development; candidate-local re-detection implementation, CPU certain-invalid extraction and one eight-query inference smoke released; no training",
+  "status": "lead-accepted-local-smoke",
+  "boundary": "Autonomous stage goal active; compact target-anchored evaluator and one full frozen189-candidate/378-query inference round released; no production training",
   "not_authorized": [
-    "full selected-bank generation",
-    "model queries beyond the one eight-query smoke",
-    "restart after failed smoke",
-    "training",
-    "publication",
+    "queries beyond frozen378-request round",
+    "restart after actual GPU failure",
     "automatic positive admission",
-    "threshold selection",
-    "worker maintained edits outside probe/tests",
-    "dataset edits"
+    "threshold or score-weight fitting",
+    "production training without separate explicit user authorization",
+    "dataset edits",
+    "publication",
+    "worker source edits outside probe/tests"
   ],
   "protocol": "research/experiments/2026-09-26-hidden-human-annotation-recovery/unit.md",
   "state_source": "research/experiments/2026-09-26-hidden-human-annotation-recovery/pilot-results.md",
@@ -21,23 +20,23 @@
   "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
-  "job_state": "Prior jobs complete; next finite package released; entry and exit require separate runtime receipts",
-  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-acceptance-04.json",
+  "job_state": "Eight-query smoke exited0; all10 owned PIDs absent; next full package released, entry/exit recorded separately",
+  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-acceptance-05.json",
   "pending": [
-    "prediction-only candidate-local request plan and CPU invalid-evidence bank",
-    "one eight-query native/2x inference smoke after clean scoped source commit",
-    "later matched probe of a qualified new checkpoint before choosing learning anchor"
+    "compact prediction-only scalar evaluator and offline annotation-proxy curves",
+    "one full378-query torchrun8 invocation",
+    "lead stage decision on target-anchored verification versus saved agreement and proposal repair"
   ],
   "anchor": "untied-axis001-step2444",
   "user_rulings": "unit.md",
-  "scientific_status": "Finite annotation-ID support; assistant audit separates entity/extent/assignment ambiguity; 342 complete geometry-invalid occurrences available as local negative evidence; no admitted positives",
+  "scientific_status": "Mechanics qualified; concrete neighbor-agreement and valid-repetition failures require target-anchored verification test; no admitted positives",
   "active_preparation": "preparation-v3",
   "superseded_preparation": [
     "preparation-v1",
     "preparation-v2",
     "preparation-v4-tied"
   ],
-  "lead_acceptance": "Packet technical validity and bounded assistant diagnostic accepted; no human gold or physical precision claim",
+  "lead_acceptance": "CPU plan/negative evidence and eight-query smoke accepted technically; automatic-verification utility unresolved",
   "original_candidate_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/preparation-receipt.json",
   "correction": "norm1000 fractional crop mapping only",
   "correction_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/correction-01/correction-receipt.json",
@@ -46,5 +45,7 @@
   "future_geometry_loss": "conditional_order_gate replaces expected raw_axis_validity_hinge; no training authorized",
   "retraining_task": "01a0b28f-ddec-74f0-89bd-7d3f094059bd",
   "retraining_authority": "Chinese user-authorized handoff sent; production requires subsequent explicit user authorization",
-  "scope_ruling": "Beverage cans are bottle; retain annotations/denominators; case011 category override only"
+  "scope_ruling": "Beverage cans are bottle; retain annotations/denominators; case011 category override only",
+  "autonomy": "User authorized autonomous iteration to stage result/convergence/not-worthwhile; long event waits and no polling",
+  "local_smoke_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-01/candidate.receipt.json"
 }

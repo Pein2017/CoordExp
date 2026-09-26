@@ -54,6 +54,10 @@ The current teacher's342 complete geometry-invalid spans supply a separate,
 locally decidable negative-evidence surface; capped suffixes and unmatched valid
 boxes do not. Corrected teacher training proceeds separately, with a matched
 checkpoint comparison before any later learning-anchor change.
+The local smoke provides a concrete neighbor-verification counterexample: two
+same-category re-detections agree atIoU0.527338 but both miss their proposal atIoU0.
+The next frozen189-target experiment tests target-anchored support against saved
+agreement, with no per-item visual approval and no automatic positive admission.
 
 ## Provenance
 

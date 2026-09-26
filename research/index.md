@@ -17,7 +17,7 @@ The authoritative result and reopening boundary are in
 has an accepted [fixed-bank pilot](experiments/2026-09-26-hidden-human-annotation-recovery/pilot-results.md):
 full/region sampling supports 150 hidden annotation IDs, with 32 region-only IDs.
 Their visual audit shows mixed entity/extent/assignment effects; trusted supervision remains unresolved.
-Candidate-local re-detection, CPU certain-invalid evidence extraction and an eight-query smoke are released.
+Candidate-local mechanics and certain-invalid extraction are accepted; the frozen189-target automatic-verification experiment is released.
 The old checkpoint remains the development teacher; future geometry supervision replaces the expectation hinge.
 Prior intake canonical Git: `108dede0154abfd90a54d18234d9e0bac780a3ba`.
 
