@@ -1,6 +1,6 @@
 # Hidden human-annotation recovery
 
-Status: CPU preparation and two-image GPU smoke lead-accepted; fixed 18-image pilot released below. No training released.
+Status: fixed 18-image pilot lead-accepted within its annotation-proxy boundary; CPU complementarity audit preparation released below. No further model query or training released.
 
 ## Authority and ownership
 
@@ -250,7 +250,7 @@ run, launch the 18-image pilot, add queries, train, or publish without a new lea
 assignment. The next decision is technical smoke acceptance, then release of the
 already intended fixed pilot if qualified. Existing user choices stay settled.
 
-## Current package: fixed 18-image pilot — 2026-09-26
+## Completed package: fixed 18-image pilot — 2026-09-26
 
 Smoke acceptance evidence: `smoke-01.report.md`, `smoke-01.receipt.json` and
 `smoke-01.lead-replay.json` in the task output root. The lead revalidated all
@@ -298,3 +298,29 @@ commit only these status/protocol updates locally; no publication is released.
 Return a stable candidate report and hashed receipt directly to the lead after
 the finite round; stop. No additional model queries, admission, training, source
 edits, restart or next round is authorized by this package.
+
+## Current package: CPU complementarity audit preparation — 2026-09-26
+
+Accepted interpretation and evidence are in [pilot-results.md](pilot-results.md)
+and output `lead-acceptance-03.json`. The next question is whether the 32 regional
+witnesses absent from full K4 describe additional physical units or alternative
+extents/assignments of units already represented by full-query candidates.
+This audit uses evaluation-selected IDs; it is not a deployable admission rule.
+
+The same Astra/low worker prepares exactly 32 blinded cases from saved outputs.
+Each presents the target candidate, original-image context, readable local view,
+and nearby same-category full-query candidates. Show anonymous case/box labels
+and candidate descriptions; hide arm names, scores, annotation IDs, GT boxes and
+recovery status. Freeze the display-neighbor rule using prediction geometry only
+before rendering; neighbors are context, not inferred owner equivalences.
+Keep the hidden-ID/arm crosswalk and exact prediction provenance in a separate
+evaluator-only key. All 32 targets must survive without selecting nicer examples.
+
+Use existing maintained visualization operations, or one-off inline CPU drawing
+where appropriate. Owned writes are task outputs under `complementarity-audit-01`
+and ignored transport files. No maintained source change, model call, external
+model, training, candidate admission, threshold selection or dataset edit.
+Verify image/box mapping, input hashes, 32-case coverage and blinded fields.
+Return the stable packet, hashes and exact limits directly to the lead, then stop.
+The lead reviews entity/category, extent, instance/group/part, cross-candidate
+identity and uncertainty before deciding a candidate-local verification test.

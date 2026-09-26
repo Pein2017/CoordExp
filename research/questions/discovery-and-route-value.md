@@ -36,6 +36,15 @@ The former bagging decision is integrated here: stochastic unions expose candida
 
 Reopen candidate acquisition when a retained comparison shows a support bottleneck. Require an explicit independent estimate of route value and old-owner debt before using the candidate as a teacher. More K alone is not a success condition.
 
+The fixed hidden-human recovery pilot (catalog:2026-09-26-hidden-human-annotation-recovery)
+finds 150/302 hidden annotation IDs in the full/region K4 union, including 95 absent
+from greedy and 32 region-only IDs. Full K4 has greater total support than native
+regions in both cohorts; regions use fewer visual tokens and add complementary
+IDs. These are saved annotation matches, not trusted physical labels. Agreement
+screening removes many recovered IDs, and nearby same-category witnesses can be
+assigned different annotations. The current next discriminator is an offline
+visual complementarity audit; no training or natural-greedy improvement is claimed.
+
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

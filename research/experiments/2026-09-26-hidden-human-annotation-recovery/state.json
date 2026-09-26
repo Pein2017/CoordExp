@@ -2,40 +2,42 @@
   "unit_id": "2026-09-26-hidden-human-annotation-recovery",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "lead-accepted-smoke",
-  "boundary": "CPU preparation and two-image GPU smoke accepted; fixed 18-image 162-call eight-GPU pilot released with unchanged policy; no training",
+  "status": "lead-accepted-pilot",
+  "boundary": "Fixed18 pilot accepted as annotation-ID support; CPU preparation of 32-case visual complementarity audit released; no further inference or training",
   "not_authorized": [
+    "model queries",
     "training",
     "publication",
-    "automatic extra queries or rounds",
     "automatic admission",
-    "worker source edits or Git commit",
-    "worker run restart"
+    "threshold selection",
+    "worker maintained source edits or Git commit",
+    "dataset edits"
   ],
   "protocol": "research/experiments/2026-09-26-hidden-human-annotation-recovery/unit.md",
-  "state_source": "research/experiments/2026-09-26-hidden-human-annotation-recovery/preparation.md",
+  "state_source": "research/experiments/2026-09-26-hidden-human-annotation-recovery/pilot-results.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
   "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
-  "job_state": "Smoke exited 0; no owned processes remain; pilot release dispatch pending",
-  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-release-02.json",
+  "job_state": "Pilot exited 0; all owned processes gone; CPU audit preparation dispatch pending",
+  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-acceptance-03.json",
   "pending": [
-    "162-request GPU execution and readback",
-    "lead pilot evidence acceptance"
+    "32-case blinded audit packet",
+    "lead visual complementarity assessment"
   ],
   "anchor": "untied-axis001-step2444",
   "user_rulings": "unit.md",
-  "scientific_status": "two-development-image annotation proxy observed; no admission or population claim",
+  "scientific_status": "sampled hidden annotation support established; physical complementarity and admission unresolved",
   "active_preparation": "preparation-v3",
   "superseded_preparation": [
     "preparation-v1",
     "preparation-v2",
     "preparation-v4-tied"
   ],
-  "lead_acceptance": "lead-accepted CPU and smoke technical validity; pilot scientific result pending",
+  "lead_acceptance": "lead-accepted pilot technical validity and finite annotation-ID support; trusted supervision unresolved",
   "original_candidate_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/preparation-receipt.json",
   "correction": "norm1000 fractional crop mapping only",
   "correction_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/correction-01/correction-receipt.json",
-  "smoke_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/smoke-01.receipt.json"
+  "smoke_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/smoke-01.receipt.json",
+  "pilot_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/pilot-01.receipt.json"
 }
