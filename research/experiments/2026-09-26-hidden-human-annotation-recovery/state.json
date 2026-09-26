@@ -1,0 +1,39 @@
+{
+  "unit_id": "2026-09-26-hidden-human-annotation-recovery",
+  "lifecycle": "ready",
+  "evidence": "partial",
+  "status": "lead-accepted-cpu",
+  "boundary": "Corrected CPU preparation accepted; two-image 18-call eight-GPU smoke released; fixed 18-image pilot awaits smoke qualification; no training",
+  "not_authorized": [
+    "training",
+    "publication",
+    "18-image pilot before lead smoke acceptance",
+    "automatic extra queries or rounds",
+    "worker source edits or Git commit"
+  ],
+  "protocol": "research/experiments/2026-09-26-hidden-human-annotation-recovery/unit.md",
+  "state_source": "research/experiments/2026-09-26-hidden-human-annotation-recovery/preparation.md",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
+  "worker_model": "gpt-6-astra",
+  "worker_effort": "low",
+  "job_state": "CPU correction complete; smoke released, dispatch pending",
+  "receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/lead-release-01.json",
+  "pending": [
+    "GPU composition and runtime qualification",
+    "lead smoke acceptance before 18-image pilot"
+  ],
+  "anchor": "untied-axis001-step2444",
+  "user_rulings": "unit.md",
+  "scientific_status": "not_evaluated",
+  "active_preparation": "preparation-v3",
+  "superseded_preparation": [
+    "preparation-v1",
+    "preparation-v2",
+    "preparation-v4-tied"
+  ],
+  "lead_acceptance": "lead-accepted corrected CPU preparation; GPU and scientific outcomes pending",
+  "original_candidate_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/preparation-receipt.json",
+  "correction": "norm1000 fractional crop mapping only",
+  "correction_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/correction-01/correction-receipt.json"
+}
