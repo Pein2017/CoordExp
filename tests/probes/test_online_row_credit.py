@@ -166,6 +166,54 @@ class OnlineCreditTest(unittest.TestCase):
             qualifier['sha256']['hidden-truth']='mutated'
             with self.assertRaises(AssertionError):o.start(root,root)
 
+    def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
+        import tempfile
+        from pathlib import Path
+        parent=o.ROOT/'cpu-02';parent.mkdir(exist_ok=True)
+        original_load=o.p.load
+        for updates,schedule in ((1,(0,1)),(64,(0,1,2,4,8,16,32,64))):
+            with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
+                output=Path(tmp);written=[]
+                def producer(version):
+                    params={'parameter':str(version)}
+                    return dict(kind='live_online',update=version,parameter_sha256=o.identity(params)),params
+                def load(path):
+                    if path==output/'qualification.json':return {'sha256':{}}
+                    if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+                    if path.name=='complete.json':return dict(status='complete',updates=updates,artifacts={},source={'files':[]})
+                    if path.name.startswith('update-'):
+                        step=int(path.stem.split('-')[1])
+                        return dict(optimizer_steps=[step],optimizer_state_count=590,lrs=[1e-5,5e-6],
+                            synchronized_norms=['same']*8,forwards=[dict(sync=True,image_weight=8/18)])
+                    if path.name.startswith('producer-'):
+                        version=int(path.stem.split('-')[1]);p,params=producer(version)
+                        return dict(producer=p,parameters=params)
+                    return original_load(path)
+                def frozen(path,ids,freeze):
+                    version=int(path.name.split('-')[1]);p,_=producer(version)
+                    return [o.seal(dict(image_id=i,request_id=str(i),token_ids=[],text='',prompt_token_ids=[1],
+                        media_sha256='media',image_grid_thw=[1,2,2],stop_reason='im_end',generated_tokens=0),p) for i in range(18)]
+                (output/'frozen.json').write_text('frozen')
+                digest=o.p.digest
+                with patch.object(o.p,'load',side_effect=load), patch.object(o,'frozen_records',side_effect=frozen), \
+                     patch.object(o.p,'write',side_effect=lambda path,value:written.append(path.name)), \
+                     patch.object(o.p,'digest',side_effect=lambda path: 'frozen' if Path(path).name=='frozen.json' else digest(path)):
+                    with self.assertRaises((AssertionError,FileNotFoundError)):o.readback(output,output,updates)
+                    self.assertNotIn('readback.json',written)
+                    for step in schedule[:-1]:
+                        checkpoint=output/f'checkpoint-{step}';checkpoint.mkdir()
+                        (checkpoint/'payload').write_text(str(step))
+                        (checkpoint/'identity.json').write_text(__import__('json').dumps({'payload':digest(checkpoint/'payload')}))
+                    with self.assertRaises((AssertionError,FileNotFoundError)):o.readback(output,output,updates)
+                    checkpoint=output/f'checkpoint-{schedule[-1]}';checkpoint.mkdir()
+                    with self.assertRaises((AssertionError,FileNotFoundError)):o.readback(output,output,updates)
+                    (checkpoint/'payload').write_text('final')
+                    (checkpoint/'identity.json').write_text(__import__('json').dumps({'payload':digest(checkpoint/'payload')}))
+                    o.readback(output,output,updates);self.assertEqual(written,['readback.json'])
+                    written.clear();(checkpoint/'payload').write_text('corrupt')
+                    with self.assertRaises(AssertionError):o.readback(output,output,updates)
+                    self.assertFalse(written)
+
     def test_actual_unequal_rank_schedule_M_plus_quarter_R_no_skip(self):
         ids=list(range(18));plans={i:dict(redirect=None if i%2 else {}) for i in ids}
         # Use truthy redirects to exercise 2/3 forwards, unequal eligible counts.

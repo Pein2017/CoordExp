@@ -407,7 +407,12 @@ def readback(output, root, updates):
             assert len(set(evidence['synchronized_norms']))==1
             assert sum(x['sync'] for x in evidence['forwards'])==1 and evidence['forwards'][-1]['sync']
             assert all(x['image_weight']==8/18 for x in evidence['forwards'])
-    for checkpoint in sorted(output.glob('checkpoint-*')):
+    assert updates in (1,64)
+    scheduled=(0,1) if updates==1 else (0,1,2,4,8,16,32,64)
+    checkpoints={output/f'checkpoint-{step}' for step in scheduled}
+    assert set(output.glob('checkpoint-*'))==checkpoints, 'missing or unexpected scheduled export'
+    for checkpoint in sorted(checkpoints):
+        assert checkpoint.is_dir() and (checkpoint/'identity.json').is_file(), checkpoint
         for name,sha in p.load(checkpoint/'identity.json').items():assert p.digest(checkpoint/name)==sha
     for version in range(updates+1):
         records=frozen_records(output/f'rollout-{version}',set(inputs),freeze=True)
