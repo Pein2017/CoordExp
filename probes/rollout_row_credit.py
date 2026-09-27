@@ -238,7 +238,7 @@ def objective_positions(plan, record, arm):
 
 
 
-def forward_credit(q, model, plan, record, image, vocab, arm, fn=False):
+def forward_credit(q, model, plan, record, image, vocab, arm, fn=False, bookkeeping=False, diagnostics=False):
     """Native exact-prefix seam for the later released slice; not called by CPU prepare."""
     import torch
     from src.qwen.native import exact_history_inputs
@@ -259,13 +259,19 @@ def forward_credit(q, model, plan, record, image, vocab, arm, fn=False):
         logits=model(**kwargs).logits
     if fn:
         loss=p.image_loss(logits,sequence,vocab,positions)[0] if plan['F'] is not None else logits.sum()*0
-        detail={}
+        zero=logits.sum()*0
+        detail=dict(branches=dict(M=zero,F=loss,D=zero,G=zero))
     else:
         loss,detail=image_objective(arm,dict(plan,F=None),record,image,q.tokenizer,vocab,logits,positions)
     evidence=dict(image_id=image['image_id'],branch='F' if fn else 'M_D_G',tokens=len(full),
                   input_sha256=p.stable(p.canonical(list(full))),positions=list(positions),
                   logits_sha256=p.tensor_hash(logits),loss=float(loss.detach()),
                   row_probabilities=detail.get('row_probabilities',[]))
+    if bookkeeping:
+        counts=dict(M=0 if fn else len(plan['M']),F=int(fn and plan['F'] is not None),
+                    D=len(plan['D']) if not fn and arm=='C' else 0,G=len(plan['G']) if not fn and arm=='C' else 0)
+        evidence.update(branch_scalars={k:float(v.detach()) for k,v in detail['branches'].items()},branch_counts=counts)
+        if diagnostics: evidence['logit_diagnostics']=logit_diagnostics(detail['branches'],counts,logits)
     return loss,evidence
 
 
@@ -332,6 +338,245 @@ def slice_run(output, cpu_root, arm, reload_from=None):
              wall_seconds=time.monotonic()-start,peak_allocated=torch.cuda.max_memory_allocated(),peak_reserved=torch.cuda.max_memory_reserved()))
     if not reload_from: dist.destroy_process_group()
 
+
+FAMILY = ROOT/'family-01'
+
+
+def family_jobs(image_ids, arm, rank):
+    if arm not in ('A','B','C') or len(image_ids)!=18 or len(set(image_ids))!=18 or not 0<=rank<8:
+        raise ValueError('family requires A/B/C, exactly18images and rank0..7')
+    jobs=[dict(image_id=i,fn=fn,weight=8/18) for i in sorted(image_ids)[rank::8]
+          for fn in ([False] if arm=='A' else [False,True])]
+    return [dict(j,sync=k==len(jobs)-1) for k,j in enumerate(jobs)]
+
+
+def accumulate_family_step(model, jobs, forward):
+    """Same uneven-rank backward consumer for CPU falsification and real training."""
+    from contextlib import nullcontext
+    import torch
+    evidence=[]
+    for job in jobs:
+        with nullcontext() if job['sync'] else model.no_sync():
+            loss,row=forward(job)
+            assert torch.isfinite(loss)
+            (loss*job['weight']).backward()
+        evidence.append(dict(row,image_weight=job['weight'],sync=job['sync']))
+    return evidence
+
+
+def logit_diagnostics(branches, counts, logits):
+    """Stop autograd at existing logits; no parameter diagnostic backward or tensors saved."""
+    import torch
+    result={}
+    for name,loss in branches.items():
+        coefficient={'M':1.,'F':1.,'D':.1,'G':.01}[name]
+        def measure(grad):
+            grad=grad.detach().float()
+            assert torch.isfinite(grad).all()
+            return dict(l1=float(grad.abs().sum()),l2=float(grad.norm()),linf=float(grad.abs().max()),
+                        support_rows=int((grad.abs().sum(-1)>0).sum()),support_elements=int(torch.count_nonzero(grad)))
+        if counts[name]:
+            grad,=torch.autograd.grad(loss,logits,retain_graph=True)
+            norms=measure(grad)
+            if coefficient==1: weighted=norms.copy()
+            else:
+                weighted_grad,=torch.autograd.grad(coefficient*loss,logits,retain_graph=True)
+                weighted=measure(weighted_grad)
+        else:
+            norms=dict(l1=0.,l2=0.,linf=0.,support_rows=0,support_elements=0);weighted=norms.copy()
+        result[name]=dict(count=counts[name],coefficient=coefficient,unweighted=norms,weighted=weighted,
+                          support_rows=norms['support_rows'],support_elements=norms['support_elements'])
+    return result
+
+
+def family_data():
+    cpu=ROOT/'cpu-04'
+    return ({x['image_id']:x for x in p.load(cpu/'retained-10.json')},
+            {x['image_id']:x for x in p.load(cpu/'credit-plan.json')},
+            {x['image_id']:x for x in p.read_evaluation(ZERO)})
+
+
+def family_start(output, family_root):
+    import os,time,torch
+    from src.artifacts.git_identity import capture_source_identity
+    qualifier=p.load(family_root/'qualification.json')
+    for path,sha in qualifier['sha256'].items(): assert p.digest(path)==sha,path
+    rank=int(os.environ['RANK']);assert int(os.environ['WORLD_SIZE'])==8
+    sources=['probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
+             *sorted(str(x) for x in Path('src').rglob('*.py'))]
+    identity=capture_source_identity(sources)
+    out=output/f'rank-{rank}';out.mkdir(parents=True,exist_ok=False)
+    p.write(out/'entry.json',dict(pid=os.getpid(),rank=rank,source=identity,start=time.time()))
+    torch.cuda.set_device(int(os.environ['LOCAL_RANK']));torch.manual_seed(92711)
+    return rank,out,sources,identity
+
+
+def family_train(output, arm, family_root):
+    import os,time,math,torch
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel
+    from src.losses.vocab import build_token_vocabulary_groups
+    from src.artifacts.git_identity import verify_source_identity
+    rank,out,sources,identity=family_start(output,family_root);start=time.monotonic()
+    images,plans,records=family_data();jobs=family_jobs(list(images),arm,rank)
+    dist.init_process_group('nccl')
+    q,delta,composition=p.compose(Path(p.load(p.POLICY)['checkpoint']))
+    load_seconds=time.monotonic()-start;p.write(out/'composition.json',composition)
+    vocab=build_token_vocabulary_groups(q.token_identity,tokenizer=q.tokenizer)
+    params=[x for x in q.model.parameters() if x.requires_grad];delta_ids={id(x) for x in delta.delta_tensors().values()}
+    optimizer=torch.optim.AdamW([dict(params=[x for x in params if id(x) not in delta_ids],lr=1e-5),
+                                dict(params=list(delta.delta_tensors().values()),lr=5e-6)],betas=(.9,.999),eps=1e-8,weight_decay=0)
+    assert not optimizer.state
+    q.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False});q.model.enable_input_require_grads()
+    q.model.train();model=DistributedDataParallel(q.model,device_ids=[int(os.environ['LOCAL_RANK'])],broadcast_buffers=False)
+    if rank==0:p.save_checkpoint(q,delta,output/'checkpoint-0')
+    dist.barrier()
+    for step in range(1,9):
+        optimizer.zero_grad(set_to_none=True);before=time.monotonic()
+        def forward(job):
+            i=job['image_id']
+            return forward_credit(q,model,plans[i],records[i],images[i],vocab,arm,job['fn'],
+                                  bookkeeping=True,diagnostics=step in (1,8))
+        evidence=accumulate_family_step(model,jobs,forward)
+        norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
+        assert all(v is not None and math.isfinite(v) for v in norms.values())
+        assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
+        synchronized=[None]*8;dist.all_gather_object(synchronized,p.stable(p.canonical(norms)))
+        assert len(set(synchronized))==1,'rank gradient norms differ'
+        total=float(torch.nn.utils.clip_grad_norm_(params,1,error_if_nonfinite=True));optimizer.step()
+        assert all(torch.isfinite(x).all() for x in params)
+        torch.cuda.synchronize()
+        p.write(out/f'step-{step}.json',dict(step=step,microbatches=evidence,gradient_norms=norms,total_gradient_norm=total,
+                 synchronized_norm_hashes=synchronized,lrs=[g['lr'] for g in optimizer.param_groups],seconds=time.monotonic()-before))
+        if step in (4,8):
+            if rank==0:p.save_checkpoint(q,delta,output/f'checkpoint-{step}')
+            dist.barrier()
+    verify_source_identity(identity,required_paths=sources)
+    p.write(out/'complete.json',dict(status='complete',arm=arm,steps=8,source=identity,load_seconds=load_seconds,
+        wall_seconds=time.monotonic()-start,peak_allocated=torch.cuda.max_memory_allocated(),peak_reserved=torch.cuda.max_memory_reserved(),
+        artifacts={x.name:p.digest(x) for x in sorted(out.glob('*.json'))}))
+    dist.destroy_process_group()
+
+
+def family_evaluate(checkpoint, output, family_root):
+    import time,torch
+    from src.qwen.generation import generate_continuations,NativeGenerationPolicy
+    from src.artifacts.git_identity import verify_source_identity
+    rank,out,sources,identity=family_start(output,family_root);start=time.monotonic()
+    q,delta,composition=p.compose(checkpoint,evaluation=True);q.model.eval()
+    load_seconds=time.monotonic()-start;policy=p.load(p.POLICY);records=p.read_evaluation(ZERO);names=[]
+    for item in records[rank::8]:
+        before=time.monotonic();batch=p.native_request(item,policy,q.processor);prepared=time.monotonic()-before
+        assert list(batch.prompt_token_ids[0])==item['prompt_token_ids']
+        assert list(batch.image_grids[0])==item['image_grid_thw'] and batch.media_sha256[0]==item['media_sha256']
+        before=time.monotonic()
+        with torch.inference_mode():
+            result=generate_continuations(q.model,batch,extensions=[()],budgets=[3084],eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,
+                 policy=NativeGenerationPolicy(temperature=0,top_p=1,top_k=0,repetition_penalty=1,use_model_defaults=False),seed=None)[0]
+        record=dict(item,token_ids=list(result.token_ids),text=q.tokenizer.decode(result.token_ids,skip_special_tokens=False),stop_reason=result.stop_reason,
+                    generated_tokens=len(result.token_ids),generation_seconds=time.monotonic()-before,prepare_seconds=prepared,
+                    prompt_token_ids=list(batch.prompt_token_ids[0]),image_grid_thw=batch.image_grids[0],media_sha256=batch.media_sha256[0])
+        assert len(record['token_ids'])<=3084
+        name=str(item['image_id'])+'.json';p.write(out/name,record);names.append(name)
+    verify_source_identity(identity,required_paths=sources)
+    p.write(out/'complete.json',dict(status='complete',composition=composition,source=identity,load_seconds=load_seconds,
+            wall_seconds=time.monotonic()-start,artifacts={name:p.digest(out/name) for name in names}))
+
+
+def assess_outputs(truth, hidden_keys, records):
+    """Offline full-reference assignment plus raw output burdens, without selection feedback."""
+    from collections import Counter
+    from src.eval.saved_rows import iou_xyxy
+    hidden=set(map(tuple,hidden_keys));valid,invalid=p.candidates(records);result=[]
+    for image in truth:
+        i=image['image_id'];record=next(x for x in records if x['image_id']==i)
+        pool=[x for x in valid if x['image_id']==i];drops=[x for x in invalid if x['image_id']==i]
+        refs=[dict(owner_id=str(o['coco_ann_id']),reference_coord_bins_1000=o['bbox_2d']) for o in image['objects']]
+        matches=one_to_one_matches(refs,pool,.5);by={x['prediction_id']:x for x in pool}
+        ids={mode:{kind:[] for kind in ('retained','hidden')} for mode in ('raw','category')}
+        denominators={kind:[] for kind in ('retained','hidden')}
+        for o in image['objects']:denominators['hidden' if (i,o['coco_ann_id']) in hidden else 'retained'].append(o['coco_ann_id'])
+        for match in matches:
+            o=image['objects'][match['reference_index']];kind='hidden' if (i,o['coco_ann_id']) in hidden else 'retained'
+            ids['raw'][kind].append(o['coco_ann_id'])
+            if o['desc']==by[match['prediction_id']]['description']:ids['category'][kind].append(o['coco_ann_id'])
+        literal=[p.canonical([x['description'],x['coord_bins_1000']]) for x in pool]
+        complete=list(literal)
+        for d in drops:
+            if d['reason']=='geometry_invalid':
+                description=d['raw_text'].split('<|object_ref_start|>',1)[1].split('<|object_ref_end|>',1)[0]
+                complete.append(p.canonical([description,[int(s['text'][8:-2]) for s in d['coord_token_spans']]]))
+        near=sum(a['description']==b['description'] and a['coord_bins_1000']!=b['coord_bins_1000'] and
+                 iou_xyxy(a['coord_bins_1000'],b['coord_bins_1000'])>=.9 for j,a in enumerate(pool) for b in pool[j+1:])
+        reasons=Counter(x['reason'] for x in drops)
+        result.append(dict(image_id=i,cohort=image['cohort'],ids=ids,denominator_ids=denominators,matches=matches,
+            burdens=dict(valid_rows=len(pool),literal_valid_repeats=len(literal)-len(set(literal)),literal_complete_repeats=len(complete)-len(set(complete)),
+                         near_repeat_occurrence_pairs=near,geometry_invalid=reasons.get('geometry_invalid',0),
+                         malformed=len(drops)-reasons.get('geometry_invalid',0),generated_tokens=record['generated_tokens'],
+                         eos=int(record['stop_reason'] in ('im_end','eos')),caps=int(record['stop_reason'] not in ('im_end','eos')),
+                         unmatched=len(pool)-len(matches),category_disagreements=len(matches)-sum(map(len,ids['category'].values()))),
+            invalid_rows=drops,stop_reason=record['stop_reason']))
+    return result
+
+
+def family_outcomes(scored, selected_fn_keys):
+    """All gains/losses use the fixed full570 zero assignment in each declared mode."""
+    selected=set(map(tuple,selected_fn_keys));zero={x['image_id']:x for x in scored['zero']};result={}
+    for name,images in scored.items():
+        rows=[]
+        for image in images:
+            i=image['image_id'];base=zero[i]
+            for mode in ('raw','category'):
+                sets={};metrics={}
+                for kind in ('retained','hidden'):
+                    before=set(base['ids'][mode][kind]);after=set(image['ids'][mode][kind]);universe=set(image['denominator_ids'][kind])
+                    sets[kind]=dict(gained=sorted(after-before),lost=sorted(before-after),preserved=sorted(before&after))
+                    metrics.update({kind+'_denominator':len(universe),kind+'_incumbent_denominator':len(before),kind+'_FN_denominator':len(universe-before),
+                                    kind+'_coverage':len(after),kind+'_FN_acquired':len(after-before),kind+'_incumbent_lost':len(before-after),kind+'_incumbent_preserved':len(before&after)})
+                chosen={ann for img,ann in selected if img==i};now=set(image['ids'][mode]['retained'])&chosen;old=set(base['ids'][mode]['retained'])&chosen
+                metrics.update(selected_FN_denominator=len(chosen),selected_FN_coverage=len(now),selected_FN_acquired=len(now-old),selected_FN_lost=len(old-now),
+                               retained_utility=metrics['retained_FN_acquired']-metrics['retained_incumbent_lost'],
+                               total_coverage=metrics['retained_coverage']+metrics['hidden_coverage'])
+                rows.append(dict(image_id=i,cohort=image['cohort'],mode=mode,sets=sets,selected_FN_covered=sorted(now),
+                                 selected_FN_gained=sorted(now-old),selected_FN_lost=sorted(old-now),metrics=metrics,burdens=image['burdens']))
+        summary={}
+        for mode in ('raw','category'):
+            summary[mode]={}
+            for cohort in ('combined','human13','refined5'):
+                group=[x for x in rows if x['mode']==mode and (cohort=='combined' or x['cohort']==cohort)]
+                summary[mode][cohort]={part:{k:sum(x[part][k] for x in group) for k in rows[0][part]} for part in ('metrics','burdens')}
+        result[name]=dict(images=rows,summary=summary)
+    return result
+
+
+def family_offline(family_root):
+    roots={'zero':ZERO,**{f'{arm}-{step}':family_root/f'evaluation-{arm}-{step}' for arm in 'ABC' for step in (4,8)}}
+    # Readback freezes every shard set BEFORE opening any truth file.
+    frozen={name:p.read_evaluation(path) for name,path in roots.items()}
+    baseline={x['image_id']:x for x in frozen['zero']}
+    for records in frozen.values():
+        for record in records:
+            assert record['generated_tokens']==len(record['token_ids'])<=3084
+            for field in ('prompt_token_ids','image_grid_thw','media_sha256','crop','seed','temperature','image_sha256'):
+                assert record[field]==baseline[record['image_id']][field],field
+    p.write(family_root/'all-evaluations-frozen.json',{name:dict(path=str(path),sha256=p.digest(path/'frozen.json')) for name,path in roots.items()})
+    truth=p.load(TRUTH);partitions=p.load(ROOT/'cpu-03/evaluator-partitions.json')
+    assert p.digest(TRUTH)==partitions['truth_sha256']
+    assert len(truth)==18 and sum(len(x['objects']) for x in truth)==570
+    assert len(set(map(tuple,partitions['hidden10'])))==57
+    selected=[[x['image_id'],x['F']['annotation_id']] for x in p.load(ROOT/'cpu-04/credit-plan.json') if x['F']]
+    assert len(selected)==16 and not set(map(tuple,selected)) & set(map(tuple,partitions['hidden10']))
+    scored={name:assess_outputs(truth,partitions['hidden10'],records) for name,records in frozen.items()}
+    outcomes=family_outcomes(scored,selected);contrasts={}
+    for step in (4,8):
+        for later,earlier in (('B','A'),('C','B')):
+            a=outcomes[f'{earlier}-{step}'];b=outcomes[f'{later}-{step}']
+            contrasts[f'{later}-{earlier}-{step}']={mode:{cohort:{part:{k:b['summary'][mode][cohort][part][k]-a['summary'][mode][cohort][part][k]
+                for k in a['summary'][mode][cohort][part]} for part in ('metrics','burdens')} for cohort in ('combined','human13','refined5')} for mode in ('raw','category')}
+    p.write(family_root/'offline-results.json',dict(scored=scored,outcomes=outcomes,contrasts=contrasts,selected_FN_keys=selected,
+        truth_sha256=p.digest(TRUTH),hidden_keys=partitions['hidden10'],denominator=570,
+        limitations='Annotation-ID proxy; refined5 redraw uncertainty and prior exposure; overlap pairs are not physical negatives; no checkpoint selection.'))
+
 def evaluate_partition(truth, hidden_keys, records):
     """Offline only, membership is composite key, never sign of annotation ID."""
     hidden={tuple(x) for x in hidden_keys}; predictions,_=p.candidates(records); result=[]
@@ -386,12 +631,18 @@ def prepare(output):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','slice','reload']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
     parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABC'),default='C')
     parser.add_argument('--training-root',type=Path)
+    parser.add_argument('--family-root',type=Path,default=FAMILY);parser.add_argument('--checkpoint',type=Path)
     args=parser.parse_args()
     if args.command=='prepare':
         args.output.mkdir(parents=True,exist_ok=True);print(p.canonical(prepare(args.output)))
+    elif args.command=='family-train':family_train(args.output,args.arm,args.family_root)
+    elif args.command=='family-evaluate':
+        if args.checkpoint is None:parser.error('family-evaluate requires --checkpoint')
+        family_evaluate(args.checkpoint,args.output,args.family_root)
+    elif args.command=='family-offline':family_offline(args.family_root)
     else:
         if args.command=='reload' and args.training_root is None: parser.error('reload requires --training-root')
         slice_run(args.output,args.cpu_root,args.arm,args.training_root if args.command=='reload' else None)

@@ -209,5 +209,127 @@ class RowCreditTest(unittest.TestCase):
         self.assertFalse(torch.allclose(b,(a+terms['branches']['F'])/2))
         b.backward();self.assertGreater(float(x.grad.abs().sum()),0);self.assertGreater(float(y.grad.abs().sum()),0)
 
+    def test_family_scheduled_consumer_unequal_ranks_and_empty_F(self):
+        from contextlib import contextmanager
+        ids=[x['image_id'] for x in self.visible];plans={x['image_id']:x for x in self.plans}
+        class Rank:
+            def __init__(self): self.sync=True;self.trace=[]
+            @contextmanager
+            def no_sync(self):
+                self.sync=False
+                try:yield
+                finally:self.sync=True
+        for arm in 'ABC':
+            gradients=[];visited=[];wrong_rank_means=[];wrong_micro_means=[]
+            for rank in range(8):
+                model=Rank();parameter=torch.tensor(2.,requires_grad=True)
+                jobs=r.family_jobs(ids,arm,rank);values=[]
+                def forward(job):
+                    i=job['image_id'];value=(ids.index(i)+1)**2
+                    if job['fn']:value=(value+3) if plans[i]['F'] else 0
+                    values.append(value);visited.append((i,job['fn']));model.trace.append(model.sync)
+                    return parameter*value,dict(value=value)
+                evidence=r.accumulate_family_step(model,jobs,forward)
+                gradients.append(float(parameter.grad))
+                self.assertEqual(model.trace,[False]*(len(jobs)-1)+[True])
+                self.assertEqual(sum(e['sync'] for e in evidence),1)
+                wrong_rank_means.append(sum(values)/len(ids[rank::8]))
+                wrong_micro_means.append(sum(values)/len(values))
+            expected=sum((ids.index(i)+1)**2+(((ids.index(i)+1)**2+3) if arm!='A' and plans[i]['F'] else 0) for i in ids)/18
+            self.assertAlmostEqual(sum(gradients)/8,expected,5)
+            self.assertNotAlmostEqual(sum(wrong_rank_means)/8,expected,4)
+            if arm!='A':
+                self.assertNotAlmostEqual(sum(wrong_micro_means)/8,expected,4)
+                eligible=[i for i in ids if plans[i]['F']]
+                wrong_F=sum((ids.index(i)+1)**2 for i in ids)/18+sum((ids.index(i)+1)**2+3 for i in eligible)/len(eligible)
+                self.assertNotAlmostEqual(expected,wrong_F,4)
+                self.assertEqual(len(visited),36)
+                self.assertEqual(sum(plans[i]['F'] is None for i,fn in visited if fn),2)
+            else:self.assertEqual(len(visited),18)
+            self.assertEqual(sorted(i for i,fn in visited if not fn),sorted(ids))
+            self.assertEqual([len(r.family_jobs(ids,arm,k)) for k in range(8)],([3,3,2,2,2,2,2,2] if arm=='A' else [6,6,4,4,4,4,4,4]))
+        changed=copy.deepcopy(self.visible)
+        for image in changed:image['hidden_truth']={'objects':[{'bbox':[0,0,999,999]}]}
+        self.assertEqual(r.family_jobs(ids,'C',0),r.family_jobs([x['image_id'] for x in changed],'C',0))
+
+    def test_logit_diagnostics_actual_consumer_preserves_training_gradient(self):
+        obj=dict(coco_ann_id=-2,desc='person',bbox_2d=[10,10,100,100])
+        row=r.render_row(self.visible[0],obj).assistant_content_text
+        bad='<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_999|><|coord_10|><|coord_999|><|coord_100|><|box_end|>'
+        image,record,plan=self.fixture(row+row+bad+'<|im_end|>',[obj])
+        positions=r.objective_positions(plan,record,'C');base=torch.zeros(1,len(positions),self.vocab.vocab_size)
+        full=record['prompt_token_ids']+record['token_ids']
+        for j,pos in enumerate(positions):base[0,j,full[pos+1]]=math.log(4*(self.vocab.vocab_size-1))
+        signal=torch.zeros_like(base);signal[0,:,0]=1
+        for dtype in (torch.float32,torch.bfloat16):
+            gradients=[];losses=[]
+            for diagnostic in (False,True):
+                parameter=torch.tensor(.2,requires_grad=True);events=[]
+                parameter.register_hook(lambda grad:events.append(grad.detach().clone()))
+                logits=(base+parameter*signal).to(dtype)
+                loss,detail=r.image_objective('C',plan,record,image,self.t,self.vocab,logits,positions)
+                if diagnostic:
+                    counts=dict(M=len(plan['M']),F=0,D=len(plan['D']),G=len(plan['G']))
+                    values=r.logit_diagnostics(detail['branches'],counts,logits)
+                    self.assertIsNone(parameter.grad) # stop at logits, never parameter diagnostic backward
+                    self.assertEqual(events,[])
+                    self.assertEqual(values['F']['support_rows'],0)
+                    for name in ('M','D','G'):
+                        self.assertGreater(values[name]['support_rows'],0)
+                        expected=values[name]['coefficient']*values[name]['unweighted']['l2']
+                        self.assertAlmostEqual(values[name]['weighted']['l2'],expected,delta=.02*expected)
+                loss.backward();self.assertEqual(len(events),1)
+                gradients.append(parameter.grad.clone());losses.append(loss.detach())
+            self.assertTrue(torch.equal(gradients[0],gradients[1]));self.assertTrue(torch.equal(losses[0],losses[1]))
+        changed=dict(plan,hidden_truth={'all':'changed'},omitted_annotations=[{'class':'changed'}])
+        old,old_terms=r.image_objective('C',plan,record,image,self.t,self.vocab,base,positions)
+        new,new_terms=r.image_objective('C',changed,record,image,self.t,self.vocab,base,positions)
+        self.assertTrue(torch.equal(old,new));self.assertEqual(r.objective_positions(plan,record,'C'),r.objective_positions(changed,record,'C'))
+        self.assertTrue(all(torch.equal(old_terms['branches'][k],new_terms['branches'][k]) for k in old_terms['branches']))
+
+    def test_family_offline_full_matcher_and_overlap_burdens(self):
+        retained=dict(coco_ann_id=-2,desc='person',bbox_2d=[10,10,100,100])
+        hidden=dict(coco_ann_id=1,desc='person',bbox_2d=[500,500,900,900])
+        row=r.render_row(self.visible[0],retained).assistant_content_text
+        near=r.render_row(self.visible[0],dict(retained,bbox_2d=[11,10,100,100])).assistant_content_text
+        wrong=r.render_row(self.visible[0],dict(hidden,desc='car')).assistant_content_text
+        image,zero,_=self.fixture(row+'<|im_end|>',[retained,hidden])
+        _,later,_=self.fixture(row+row+near+wrong+'<|im_end|>',[retained,hidden])
+        hkeys=[[image['image_id'],1]]
+        scored={'zero':r.assess_outputs([image],hkeys,[zero]),'B-4':r.assess_outputs([image],hkeys,[later])}
+        burdens=scored['B-4'][0]['burdens']
+        self.assertEqual(burdens['literal_valid_repeats'],1);self.assertEqual(burdens['near_repeat_occurrence_pairs'],2)
+        self.assertEqual(burdens['category_disagreements'],1)
+        result=r.family_outcomes(scored,[[image['image_id'],-2]])
+        raw=result['B-4']['summary']['raw']['combined']['metrics'];cat=result['B-4']['summary']['category']['combined']['metrics']
+        self.assertEqual(raw['hidden_FN_acquired'],1);self.assertEqual(cat['hidden_FN_acquired'],0)
+        self.assertEqual(cat['retained_incumbent_preserved'],1);self.assertEqual(cat['selected_FN_coverage'],1)
+        self.assertEqual(cat['selected_FN_acquired'],0) # a selected-FN may already be full-matcher-covered
+        self.assertEqual(cat['hidden_denominator'],1);self.assertEqual(cat['retained_denominator'],1)
+        _,empty,_=self.fixture('<|im_end|>',[retained,hidden])
+        scored['C-4']=r.assess_outputs([image],hkeys,[empty]);lost=r.family_outcomes(scored,[])['C-4']['summary']['category']['combined']['metrics']
+        self.assertEqual(lost['retained_utility'],-1);self.assertEqual(lost['retained_incumbent_lost'],1)
+
+    def test_offline_truth_open_waits_for_all_six_frozen_outputs(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        class ReachedTruth(Exception): pass
+        opened=[];original_load=r.p.load
+        with tempfile.TemporaryDirectory(dir=r.FAMILY) as tmp:
+            root=Path(tmp);zero=root/'zero'
+            def readback(path):
+                opened.append(path);path.mkdir(parents=True,exist_ok=True)
+                r.p.write(path/'frozen.json',{'fixture':'already-qualified readback seam'})
+                return self.records
+            def load(path):
+                if Path(path)==r.TRUTH:
+                    self.assertEqual(len(opened),7)
+                    self.assertEqual(len(original_load(root/'all-evaluations-frozen.json')),7)
+                    raise ReachedTruth()
+                return original_load(path)
+            with patch.object(r,'ZERO',zero),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):
+                with self.assertRaises(ReachedTruth):r.family_offline(root)
+
 
 if __name__=='__main__': unittest.main()
