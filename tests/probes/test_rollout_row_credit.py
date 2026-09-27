@@ -509,5 +509,71 @@ class RowCreditTest(unittest.TestCase):
                     for cohort in mode.values():
                         self.assertTrue(all(v==0 for part in cohort.values() for v in part.values()))
 
+    def test_dose_freezes_all_outputs_before_truth(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);ref=root/'reference';ref.mkdir();opened=[]
+            r.p.write(root/'control-reuse.json',dict(reference_root=str(ref),dose_updates=16,retained_root=str(ref),sha256={}))
+            original=r.p.load
+            def readback(path):
+                opened.append(path);path.mkdir(exist_ok=True)
+                r.p.write(path/'frozen.json',{});return self.records
+            def load(path):
+                if Path(path)==r.TRUTH:
+                    self.assertEqual(set(opened),{root/'zero',ref/'evaluation-S-8',root/'evaluation-S-16'})
+                    self.assertEqual(len(original(root/'all-evaluations-frozen.json')),3)
+                    raise RuntimeError('truth reached after freeze')
+                return original(path)
+            with patch.object(r,'ZERO',root/'zero'),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):
+                with self.assertRaisesRegex(RuntimeError,'truth reached after freeze'):r.family_offline(root,ref)
+
+    def test_dose_schedule_and_checkpoint_gate(self):
+        import tempfile
+        from pathlib import Path
+        from safetensors.torch import save_file
+        self.assertEqual(r.family_schedule(),r.family_schedule(16)[:8])
+        self.assertEqual([x['step'] for x in r.family_schedule(16) if x['save']],[4,8,16])
+        self.assertEqual([x['step'] for x in r.family_schedule(16) if x['diagnostics']],[1,8])
+        for step in r.family_schedule(16):
+            jobs=[j for rank in range(8) for j in r.family_jobs(list(range(18)),'S',rank)]
+            self.assertEqual(len(jobs),18);self.assertTrue(all(j['weight']==8/18 and not j['fn'] for j in jobs))
+        with self.assertRaises(ValueError):r.family_schedule(32)
+        with tempfile.TemporaryDirectory() as d:
+            roots=[Path(d)/x for x in ('new','old')]
+            for root in roots:
+                root.mkdir();save_file({'delta':torch.ones(2)},str(root/'weights.safetensors'))
+                r.p.write(root/'identity.json',{'weights.safetensors':r.p.digest(root/'weights.safetensors')})
+            binding={str(roots[1]/'identity.json'):r.p.digest(roots[1]/'identity.json')}
+            self.assertEqual(r.checkpoint_gate(*roots,binding)['tensors'],1)
+            save_file({'delta':torch.zeros(2)},str(roots[0]/'weights.safetensors'))
+            (roots[0]/'identity.json').unlink();r.p.write(roots[0]/'identity.json',{'weights.safetensors':r.p.digest(roots[0]/'weights.safetensors')})
+            with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+            (roots[1]/'identity.json').write_text('{}')
+            with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+
+    def test_tail_event_boundary_and_hidden_independence(self):
+        from unittest.mock import patch
+        row=r.render_row(self.visible[0],dict(desc='person',bbox_2d=[1,2,3,4])).assistant_content_text
+        image,record,_=self.fixture(row+row+'<|im_end|>')
+        record['generated_tokens']=len(record['token_ids'])
+        with patch.object(r.p,'load',side_effect=AssertionError('truth/file access forbidden')):
+            prefix,event=r.tail_prefix(record,self.t,'literal_repeat')
+            self.assertEqual(prefix['text'],row);self.assertEqual(event['event']['order'],1)
+            unchanged,noevent=r.tail_prefix(record,self.t,'geometry_invalid')
+            self.assertEqual(unchanged,record);self.assertIsNone(noevent['event'])
+        import re
+        spans=list(re.finditer(r'<\|coord_\d+\|>',row))
+        self.assertEqual(len(spans),4)
+        bad=row[:spans[2].start()]+spans[0].group()+row[spans[2].end():]
+        _,invalid,_=self.fixture(row+bad+bad+'<|im_end|>')
+        invalid['generated_tokens']=len(invalid['token_ids'])
+        first,cut=r.tail_prefix(invalid,self.t,'geometry_invalid')
+        self.assertEqual(first['text'],row);self.assertEqual(cut['event']['order'],1)
+        repeat,cut=r.tail_prefix(invalid,self.t,'literal_repeat')
+        self.assertEqual(repeat['text'],row+bad);self.assertEqual(cut['event']['order'],2)
+        self.assertNotEqual(prefix['text'],record['text'])
+
 
 if __name__=='__main__': unittest.main()

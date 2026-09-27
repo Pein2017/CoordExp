@@ -487,12 +487,63 @@ def family_start(output, family_root):
     return rank,out,sources,identity
 
 
-def family_train(output, arm, family_root):
+def family_schedule(updates=8):
+    if updates not in (8,16):raise ValueError('only frozen eight or sixteen updates')
+    return [dict(step=step,save=step in (4,8,16),diagnostics=step in (1,8)) for step in range(1,updates+1)]
+
+
+def checkpoint_gate(checkpoint, reference, bindings):
+    """CPU exact tensor equality, with immutable control and input bindings."""
+    import torch
+    from safetensors.torch import load_file
+    for path,sha in bindings.items():assert p.digest(path)==sha,path
+    identities=[p.load(root/'identity.json') for root in (checkpoint,reference)]
+    assert set(identities[0])==set(identities[1])
+    tensors=0
+    for name in identities[0]:
+        for root,identity in zip((checkpoint,reference),identities):assert p.digest(root/name)==identity[name]
+        if name.endswith('.safetensors'):
+            a,b=load_file(str(checkpoint/name)),load_file(str(reference/name))
+            assert a.keys()==b.keys()
+            for key in a:
+                assert a[key].dtype==b[key].dtype and torch.equal(a[key],b[key]),(name,key)
+                tensors+=1
+        else:assert identities[0][name]==identities[1][name],name
+    assert tensors>0
+    return dict(status='exact',tensors=tensors,checkpoint=str(checkpoint),reference=str(reference),bindings=bindings)
+
+
+def tail_prefix(record, tokenizer, rule):
+    """Fixed prediction-only counterfactual; actual stop facts stay unchanged."""
+    assert rule in ('literal_repeat','geometry_invalid')
+    encoded=aligned_tokens(record,tokenizer);parsed=parse(record)
+    invalid=negative_evidence([record],tokenizer)['complete_geometry_invalid']
+    rows=[dict(o,invalid=False) for o in parsed.predictions]
+    for n in invalid:
+        d=n['parser_drop']
+        rows.append(dict(d,invalid=True,description=d['raw_text'].split('<|object_ref_start|>',1)[1].split('<|object_ref_end|>',1)[0],coord_bins=n['coordinate_bins']))
+    seen=set();event=None
+    for row in sorted(rows,key=lambda x:x['generated_order']):
+        key=p.canonical([row['description'],row['coord_bins']])
+        if (rule=='geometry_invalid' and row['invalid']) or (rule=='literal_repeat' and key in seen):
+            event=dict(order=row['generated_order'],key=key,char_cut=row['char_start'],token_cut=row_positions(row,encoded)[0]);break
+        seen.add(key)
+    cut=len(record['token_ids']) if event is None else event['token_cut']
+    text=record['text'] if event is None else record['text'][:event['char_cut']]
+    assert tokenizer.decode(record['token_ids'][:cut],skip_special_tokens=False)==text
+    return dict(record,text=text,token_ids=record['token_ids'][:cut],generated_tokens=cut),dict(rule=rule,event=event,
+        original_text_sha256=p.stable(record['text']),original_tokens_sha256=p.stable(p.canonical(record['token_ids'])),
+        original_stop_reason=record['stop_reason'],original_generated_tokens=len(record['token_ids']),prefix_tokens=cut)
+
+
+def family_train(output, arm, family_root, updates=8):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
+    schedule=family_schedule(updates)
+    assert updates==8 or arm=='S'
     rank,out,sources,identity=family_start(output,family_root);start=time.monotonic()
     if arm=='S':
         images={x['image_id']:x for x in p.load(ROOT/'cpu-04/retained-10.json')}
@@ -516,13 +567,14 @@ def family_train(output, arm, family_root):
     q.model.train();model=DistributedDataParallel(q.model,device_ids=[int(os.environ['LOCAL_RANK'])],broadcast_buffers=False)
     if rank==0:p.save_checkpoint(q,delta,output/'checkpoint-0')
     dist.barrier()
-    for step in range(1,9):
+    for scheduled in schedule:
+        step=scheduled['step']
         optimizer.zero_grad(set_to_none=True);before=time.monotonic()
         def forward(job):
             i=job['image_id']
             if arm=='S':return forward_retained(q,model,images[i],records[i],encodings[i],vocab)
             return forward_credit(q,model,plans[i],records[i],images[i],vocab,'B' if arm=='I' else arm,job['fn'],
-                                  bookkeeping=True,diagnostics=step in (1,8))
+                                  bookkeeping=True,diagnostics=scheduled['diagnostics'])
         evidence=accumulate_family_step(model,jobs,forward)
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
         assert all(v is not None and math.isfinite(v) for v in norms.values())
@@ -534,11 +586,11 @@ def family_train(output, arm, family_root):
         torch.cuda.synchronize()
         p.write(out/f'step-{step}.json',dict(step=step,microbatches=evidence,gradient_norms=norms,total_gradient_norm=total,
                  synchronized_norm_hashes=synchronized,lrs=[g['lr'] for g in optimizer.param_groups],seconds=time.monotonic()-before))
-        if step in (4,8):
+        if scheduled['save']:
             if rank==0:p.save_checkpoint(q,delta,output/f'checkpoint-{step}')
             dist.barrier()
     verify_source_identity(identity,required_paths=sources)
-    p.write(out/'complete.json',dict(status='complete',arm=arm,steps=8,source=identity,load_seconds=load_seconds,
+    p.write(out/'complete.json',dict(status='complete',arm=arm,steps=updates,source=identity,load_seconds=load_seconds,
         wall_seconds=time.monotonic()-start,peak_allocated=torch.cuda.max_memory_allocated(),peak_reserved=torch.cuda.max_memory_reserved(),
         artifacts={x.name:p.digest(x) for x in sorted(out.glob('*.json'))}))
     dist.destroy_process_group()
@@ -650,6 +702,8 @@ def family_offline(family_root, reference_root=None):
                    **{f'I-{step}':Path(reuse['insertion_root'])/f'evaluation-I-{step}' for step in (4,8)},
                    **{f'S-{step}':family_root/f'evaluation-S-{step}' for step in (4,8)}}
             pairs=(('S','zero'),('S','A'),('S','I'))
+    if reference_root is not None and reuse.get('dose_updates')==16:
+        roots={'zero':ZERO,'S-8':Path(reuse['retained_root'])/'evaluation-S-8','S-16':family_root/'evaluation-S-16'}
     # Readback freezes every shard set BEFORE opening any truth file.
     frozen={name:p.read_evaluation(path) for name,path in roots.items()}
     baseline={x['image_id']:x for x in frozen['zero']}
@@ -667,11 +721,14 @@ def family_offline(family_root, reference_root=None):
     assert len(selected)==16 and not set(map(tuple,selected)) & set(map(tuple,partitions['hidden10']))
     scored={name:assess_outputs(truth,partitions['hidden10'],records) for name,records in frozen.items()}
     outcomes=family_outcomes(scored,selected);contrasts={}
-    for step in (4,8):
-        for later,earlier in pairs:
-            a=outcomes['zero' if earlier=='zero' else f'{earlier}-{step}'];b=outcomes[f'{later}-{step}']
-            contrasts[f'{later}-{earlier}-{step}']={mode:{cohort:{part:{k:b['summary'][mode][cohort][part][k]-a['summary'][mode][cohort][part][k]
-                for k in a['summary'][mode][cohort][part]} for part in ('metrics','burdens')} for cohort in ('combined','human13','refined5')} for mode in ('raw','category')}
+    comparisons=[(f'{later}-{step}','zero' if earlier=='zero' else f'{earlier}-{step}',f'{later}-{earlier}-{step}') for step in (4,8) for later,earlier in pairs]
+    if 'S-16' in outcomes:comparisons=[('S-16','zero','S16-zero'),('S-16','S-8','S16-S8')]
+    for later_name,earlier_name,contrast_name in comparisons:
+        a=outcomes[earlier_name];b=outcomes[later_name]
+        contrasts[contrast_name]={mode:{cohort:{part:{k:b['summary'][mode][cohort][part][k]-a['summary'][mode][cohort][part][k]
+            for k in a['summary'][mode][cohort][part]} for part in ('metrics','burdens')} for cohort in ('combined','human13','refined5')} for mode in ('raw','category')}
+    if 'S-16' in scored:
+        p.write(family_root/'S16-versus-S8-ids.json',family_outcomes({'zero':scored['S-8'],'S-16':scored['S-16']},selected))
     p.write(family_root/'offline-results.json',dict(scored=scored,outcomes=outcomes,contrasts=contrasts,selected_FN_keys=selected,
         truth_sha256=p.digest(TRUTH),hidden_keys=partitions['hidden10'],denominator=570,
         limitations='Annotation-ID proxy; refined5 redraw uncertainty and prior exposure; overlap pairs are not physical negatives; no checkpoint selection.'))
@@ -851,12 +908,13 @@ def prepare(output):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','prepare-insert','prepare-retained','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','prepare-insert','prepare-retained','slice','reload','family-train','family-evaluate','family-offline','checkpoint-gate']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
     parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABCIS'),default='C')
     parser.add_argument('--training-root',type=Path)
     parser.add_argument('--family-root',type=Path,default=FAMILY);parser.add_argument('--checkpoint',type=Path)
     parser.add_argument('--reference-root',type=Path)
     parser.add_argument('--insertion-root',type=Path)
+    parser.add_argument('--updates',type=int,default=8)
     args=parser.parse_args()
     if args.command=='prepare':
         args.output.mkdir(parents=True,exist_ok=True);print(p.canonical(prepare(args.output)))
@@ -866,7 +924,11 @@ def main():
     elif args.command=='prepare-insert':
         if args.reference_root is None:parser.error('prepare-insert requires --reference-root')
         args.output.mkdir(parents=True,exist_ok=True);prepare_insert(args.output,args.reference_root)
-    elif args.command=='family-train':family_train(args.output,args.arm,args.family_root)
+    elif args.command=='family-train':family_train(args.output,args.arm,args.family_root,args.updates)
+    elif args.command=='checkpoint-gate':
+        reuse=p.load(args.family_root/'control-reuse.json')
+        bindings={**reuse['sha256'],**p.load(args.family_root/'qualification.json')['sha256']}
+        p.write(args.output,checkpoint_gate(args.checkpoint,Path(reuse['retained_root'])/'train-S/checkpoint-8',bindings))
     elif args.command=='family-evaluate':
         if args.checkpoint is None:parser.error('family-evaluate requires --checkpoint')
         family_evaluate(args.checkpoint,args.output,args.family_root)
