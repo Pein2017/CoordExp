@@ -107,6 +107,52 @@ class IterativePositiveTest(unittest.TestCase):
         b,seq2=p.encode(raw2,ids2,self.q)
         self.assertEqual(a.input_ids,b.input_ids);self.assertEqual(seq,seq2)
 
+    def test_novel_selection_real_bank_and_fractional_or_quantized(self):
+        bank=p.load(p.ROOT/'candidates.json')
+        ordinary,_=p.candidates(p.read_evaluation(p.ROOT/'round-01/evaluation-zero'))
+        selected=p.novel_selection(bank,ordinary)
+        old={c['candidate_id'] for c in p.diverse_selection(bank)['selected']}
+        covered=set(selected['ordinary_greedy_witnesses'])
+        self.assertTrue(old & covered)  # Deliberately omitting the new filter admits these.
+        self.assertFalse({c['candidate_id'] for c in selected['selected']} & covered)
+        self.assertEqual(len(selected['dispositions']),1200)
+        altered=copy.deepcopy(bank)
+        altered['hidden_truth']=[{'id':-999,'box':[1,2,3,4]}]
+        altered['omitted_annotations']={'all':'changed'}
+        self.assertEqual(selected,p.novel_selection(altered,ordinary))
+        for candidate in selected['selected']:
+            for pred in ordinary:
+                if pred['image_id']==candidate['image_id'] and pred['description']==candidate['description']:
+                    self.assertLess(max(p.iou_xyxy(candidate[key],pred['coord_bins_1000']) for key in ('coord_bins_1000','quantized_full_image_bins')),.5)
+        candidate=copy.deepcopy(next(c for c in bank['candidates'] if c['candidate_id'] in old))
+        prediction=dict(image_id=candidate['image_id'],description=candidate['description'],coord_bins_1000=[3.5,0,13.5,10],prediction_id='fixture')
+        for fractional,quantized in (([0,0,10,10],[1,0,11,10]),([1,0,11,10],[0,0,10,10])):
+            candidate.update(coord_bins_1000=fractional,quantized_full_image_bins=quantized)
+            result=p.novel_selection({'candidates':[candidate]},[prediction])
+            self.assertEqual(result['dispositions'][candidate['candidate_id']],'ordinary_greedy_covered')
+            wrong_category=dict(prediction,description='different')
+            self.assertEqual(len(p.novel_selection({'candidates':[candidate]},[wrong_category])['selected']),1)
+
+    def test_actual_empty_pseudo_context_and_mask(self):
+        plan=copy.deepcopy(self.plan)
+        plan['selection']['selected']=[]
+        raw,ids=p.raw_for(plan,'pseudo',1584)
+        encoded,sequence=p.encode(raw,ids,self.q)
+        self.assertTrue(raw.objects)
+        self.assertEqual(ids,set())
+        self.assertEqual(sequence.atoms,())
+        logits=torch.ones(1,1,self.vocab.vocab_size,requires_grad=True)
+        loss,terms=p.image_loss(logits,sequence,self.vocab,(len(encoded.input_ids)-1,))
+        loss.backward()
+        self.assertEqual(float(loss.detach()),0)
+        self.assertEqual(float(logits.grad.abs().sum()),0)
+        self.assertEqual(terms,dict(ce=0.,type=0.,order=0.))
+        changed=copy.deepcopy(plan);changed['hidden_truth']={'all':'different'}
+        raw2,ids2=p.raw_for(changed,'pseudo',1584)
+        encoded2,sequence2=p.encode(raw2,ids2,self.q)
+        self.assertEqual(encoded.input_ids,encoded2.input_ids)
+        self.assertEqual(sequence,sequence2)
+
     def test_schedule_and_separate_gradient_means(self):
         plan=self.plan
         excluded={r['image_id'] for r in plan['visible']}

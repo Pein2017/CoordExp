@@ -52,6 +52,45 @@ def diverse_selection(bank):
     return dict(selected=selected, dispositions=dispositions)
 
 
+def novel_selection(bank, ordinary_predictions):
+    """One prediction-only eligibility change; default diversity policy is unchanged."""
+    witnesses={}
+    for c in bank['candidates']:
+        if c['cohort']!='human13' or c['quantization_error'] or c['visible_conflict_ids'] or c['visible_same_category_ids']:
+            continue
+        for prediction in ordinary_predictions:
+            if prediction['image_id']!=c['image_id'] or prediction['description']!=c['description']:
+                continue
+            fractional=iou_xyxy(c['coord_bins_1000'],prediction['coord_bins_1000'])
+            quantized=iou_xyxy(c['quantized_full_image_bins'],prediction['coord_bins_1000'])
+            if max(fractional,quantized)>=.5:
+                witnesses[c['candidate_id']]=dict(prediction_id=prediction['prediction_id'],fractional_iou=fractional,quantized_iou=quantized)
+                break
+    remaining=[c for c in bank['candidates'] if c['candidate_id'] not in witnesses]
+    selection=diverse_selection({'candidates':remaining})
+    selection['dispositions']={**{c['candidate_id']:c['disposition'] for c in bank['candidates']},
+                               **selection['dispositions'],**{i:'ordinary_greedy_covered' for i in witnesses}}
+    selection['ordinary_greedy_witnesses']=witnesses
+    return selection
+
+
+def prepare_novel(output_root):
+    release=load(output_root/'lead-release-01.json')
+    assert digest(output_root/'lead-release-01.json')=='b127483a01fc435b87a18ade1d0f4f82d40545f4b23e015ea2267bad6cbb0ae5'
+    for path,expected in release['inputs'].items():
+        assert digest(path)==expected,path  # Hash diagnostics as evidence; never deserialize them here.
+    plan=load(ROOT/'learning-plan.json')
+    bank=load(ROOT/'candidates.json')
+    ordinary,_=candidates(read_evaluation(ROOT/'round-01/evaluation-zero'))
+    plan['selection']=novel_selection(bank,ordinary)
+    plan['inputs'].update({str(ROOT/'learning-plan.json'):digest(ROOT/'learning-plan.json'),
+                           str(ROOT/'round-01/evaluation-zero/frozen.json'):digest(ROOT/'round-01/evaluation-zero/frozen.json')})
+    plan['candidate_policy']='ordinary-greedy-novel: fractional OR quantized same-category IoU>=.5 withheld before unchanged ranking/diversity'
+    assert not (output_root/'learning-plan.json').exists()
+    write(output_root/'learning-plan.json',plan)
+    return plan
+
+
 def make_schedule(human_ids, replay_ids, steps=16):
     assert len(human_ids) == 13 and len(replay_ids) == 128
     return [dict(step=s+1, human=[human_ids[(s*8+j) % 13] for j in range(8)],
@@ -233,14 +272,14 @@ def save_checkpoint(q, delta, output):
     write(output/'identity.json',{str(p.relative_to(output)):digest(p) for p in output.rglob('*') if p.is_file()})
 
 
-def runtime_start(output):
+def runtime_start(output, root=ROOT):
     import torch
     from src.artifacts.git_identity import capture_source_identity
     rank,world = int(os.environ.get('RANK',0)),int(os.environ.get('WORLD_SIZE',1))
     assert world==8
     torch.cuda.set_device(int(os.environ['LOCAL_RANK']))
     torch.manual_seed(92701)
-    qualified=load(ROOT/'cpu-qualification-02.json')
+    qualified=load(root/'cpu-qualification-02.json')
     for path,expected in qualified['sha256'].items():
         assert digest(path)==expected,path
     sources = ['probes/iterative_positive.py','probes/hidden_human_recovery.py',*sorted(str(p) for p in Path('src').rglob('*.py'))]
@@ -274,16 +313,16 @@ def lr_factor(step):
     return step/2 if step<=2 else .5*(1+math.cos(math.pi*(step-2)/14))
 
 
-def train(output,arm,slice_run=False):
+def train(output,arm,slice_run=False,root=ROOT):
     import torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
-    rank,world,out,sources,identity = runtime_start(output)
+    rank,world,out,sources,identity = runtime_start(output,root=root)
     dist.init_process_group('nccl')
     start=time.monotonic()
-    plan=load(ROOT/'learning-plan.json')
+    plan=load(root/'learning-plan.json')
     q,delta,composition=compose(Path(load(POLICY)['checkpoint']))
     load_seconds=time.monotonic()-start
     write(out/'composition.json',composition)
@@ -345,14 +384,14 @@ def train(output,arm,slice_run=False):
     dist.destroy_process_group()
 
 
-def reload_slice(checkpoint,output,training_root):
+def reload_slice(checkpoint,output,training_root,root=ROOT):
     import torch
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
-    rank,world,out,sources,identity=runtime_start(output)
+    rank,world,out,sources,identity=runtime_start(output,root=root)
     q,delta,composition=compose(checkpoint)
     q.model.eval()
-    plan=load(ROOT/'learning-plan.json')
+    plan=load(root/'learning-plan.json')
     raw,selected=raw_for(plan,'pseudo',1584 if rank%2==0 else 2299)
     vocab=build_token_vocabulary_groups(q.token_identity,tokenizer=q.tokenizer)
     with torch.no_grad():
@@ -363,11 +402,11 @@ def reload_slice(checkpoint,output,training_root):
     write(out/'complete.json',dict(status='complete',composition=composition,forward=evidence,source=identity))
 
 
-def evaluate_checkpoint(checkpoint,output):
+def evaluate_checkpoint(checkpoint,output,root=ROOT):
     import torch
     from src.qwen.generation import generate_continuations,NativeGenerationPolicy
     from src.artifacts.git_identity import verify_source_identity
-    rank,world,out,sources,identity=runtime_start(output)
+    rank,world,out,sources,identity=runtime_start(output,root=root)
     start=time.monotonic()
     q,delta,composition=compose(checkpoint,evaluation=True)
     q.model.eval()
@@ -412,11 +451,13 @@ def read_evaluation(root):
     return records
 
 
-def offline_results(run_root):
+def offline_results(run_root, reference_root=None):
     """Only this post-freeze evaluator opens hidden truth; never called by training."""
     from collections import Counter
     from src.eval.saved_rows import one_to_one_matches
     roots={'zero':run_root/'evaluation-zero',**{f'{arm}-{step}':run_root/f'evaluation-{arm}-{step}' for arm in ('control','treatment') for step in (4,8,16)}}
+    if reference_root is not None:
+        roots.update({'zero':reference_root/'evaluation-zero',**{f'control-{step}':reference_root/f'evaluation-control-{step}' for step in (4,8,16)}})
     frozen={key:read_evaluation(root) for key,root in roots.items()}
     baseline={r['image_id']:r for r in frozen['zero']}
     for records in frozen.values():
@@ -464,18 +505,21 @@ def offline_results(run_root):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('command',choices=['prepare','train','reload','evaluate','offline'])
+    p.add_argument('command',choices=['prepare','prepare-novel','train','reload','evaluate','offline'])
     p.add_argument('--output',type=Path)
+    p.add_argument('--root',type=Path,default=ROOT)
+    p.add_argument('--reference-root',type=Path)
     p.add_argument('--checkpoint',type=Path)
     p.add_argument('--training-root',type=Path)
     p.add_argument('--arm',choices=['control','treatment'])
     p.add_argument('--slice',action='store_true')
     a=p.parse_args()
     if a.command=='prepare': prepare()
-    elif a.command=='train': train(a.output,a.arm,a.slice)
-    elif a.command=='offline': offline_results(a.output)
-    elif a.command=='reload': reload_slice(a.checkpoint,a.output,a.training_root)
-    else: evaluate_checkpoint(a.checkpoint,a.output)
+    elif a.command=='prepare-novel': prepare_novel(a.root)
+    elif a.command=='train': train(a.output,a.arm,a.slice,root=a.root)
+    elif a.command=='offline': offline_results(a.output,a.reference_root)
+    elif a.command=='reload': reload_slice(a.checkpoint,a.output,a.training_root,root=a.root)
+    else: evaluate_checkpoint(a.checkpoint,a.output,root=a.root)
 
 
 if __name__=='__main__': main()
