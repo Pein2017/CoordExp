@@ -553,6 +553,35 @@ class RowCreditTest(unittest.TestCase):
             (roots[1]/'identity.json').write_text('{}')
             with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
 
+    def test_checkpoint_gate_metadata_order(self):
+        import tempfile
+        from pathlib import Path
+        from safetensors.torch import save_file
+        with tempfile.TemporaryDirectory() as d:
+            roots=[Path(d)/x for x in ('new','reference')]
+            config=dict(target_modules=['q_proj','v_proj'],r=16)
+            def write(root,value):
+                (root/'adapter/adapter_config.json').write_text(r.p.canonical(value))
+                (root/'identity.json').write_text(r.p.canonical({str(x.relative_to(root)):r.p.digest(x) for x in root.rglob('*') if x.is_file() and x.name!='identity.json'}))
+            for root in roots:
+                (root/'adapter').mkdir(parents=True)
+                save_file({'delta':torch.ones(2)},str(root/'adapter/adapter_model.safetensors'))
+                write(root,config)
+            binding={str(roots[1]/'identity.json'):r.p.digest(roots[1]/'identity.json')}
+            write(roots[0],dict(config,target_modules=list(reversed(config['target_modules']))))
+            self.assertEqual(r.checkpoint_gate(*roots,binding)['tensors'],1)
+            for modules in (['q_proj','other'],['q_proj','v_proj','q_proj'],['q_proj'],'q_proj',None,[1,'q_proj']):
+                write(roots[0],dict(config,target_modules=modules))
+                with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+            write(roots[0],dict(config,r=32))
+            with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+            save_file({'delta':torch.zeros(2)},str(roots[0]/'adapter/adapter_model.safetensors'))
+            write(roots[0],config)
+            with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+            save_file({'delta':torch.ones(2)},str(roots[0]/'adapter/adapter_model.safetensors'))
+            write(roots[0],config);write(roots[1],dict(config,r=32))
+            with self.assertRaises(AssertionError):r.checkpoint_gate(*roots,binding)
+
     def test_tail_event_boundary_and_hidden_independence(self):
         from unittest.mock import patch
         row=r.render_row(self.visible[0],dict(desc='person',bbox_2d=[1,2,3,4])).assistant_content_text

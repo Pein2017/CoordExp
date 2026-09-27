@@ -508,6 +508,14 @@ def checkpoint_gate(checkpoint, reference, bindings):
             for key in a:
                 assert a[key].dtype==b[key].dtype and torch.equal(a[key],b[key]),(name,key)
                 tensors+=1
+        elif name=='adapter/adapter_config.json':
+            configs=[p.load(root/name) for root in (checkpoint,reference)]
+            for config in configs:
+                assert isinstance(config,dict),name
+                modules=config.get('target_modules')
+                assert isinstance(modules,list) and all(isinstance(x,str) for x in modules),name
+                config['target_modules']=sorted(modules)
+            assert configs[0]==configs[1],name
         else:assert identities[0][name]==identities[1][name],name
     assert tensors>0
     return dict(status='exact',tensors=tensors,checkpoint=str(checkpoint),reference=str(reference),bindings=bindings)
