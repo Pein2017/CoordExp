@@ -2,7 +2,7 @@
   "unit_id": "2026-09-27-rollout-row-credit",
   "lifecycle": "ready",
   "evidence": "accepted",
-  "status": "S16-historical-parity-failed-CPU-diagnosis",
+  "status": "lead-accepted-S16-training-within-run-eval-released",
   "protocol": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -10,7 +10,7 @@
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
   "goal_requested": false,
-  "boundary": "CPU-only saved training comparison; no retry or evaluation released",
+  "boundary": "Exactly two18image natural evaluations of saved same-run8and16 plus separate offline; no retraining",
   "not_authorized": [
     "0%-hide memorization experiment",
     "hidden truth in learning or selection",
@@ -20,15 +20,15 @@
     "publication"
   ],
   "pending": [
-    "Saved first8 divergence localization and full16 training receipt qualification",
-    "Lead decision on same-run checkpoint8/16 evaluation or closure"
+    "Fresh same-runS8/S16 raw outputs and frozen offline comparison",
+    "Independent runtime acceptance and bounded scientific decision"
   ],
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01",
-  "job_state": "Training exited0; checkpoint8gate exited1; eval/offline skipped; all11ownedPIDs absent",
+  "job_state": "No active model process; evaluation-only release issued, launch not yet asserted",
   "accepted_cpu_source": "835794b3b3006f8228ad1111ea41c0a9fa104bf9",
   "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/cpu-04",
   "lead_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-acceptance-02.json",
-  "runtime_release": null,
+  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-11.json",
   "accepted_runtime_source": "cb401f5f6f42ffa7a8dc917831f3ed3ed1d11ad4",
   "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-slice-acceptance-01.json",
   "implementation_release": null,
@@ -47,8 +47,10 @@
   "scientific_disposition": "Some retained learning and small hidden net gains; increased rollout burdens prevent robust recovery or promotion claim",
   "future_question": "Dose headroom versus degeneration from the same original zero; fixed-tail readback does not alter S16 recipe",
   "last_completed_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-10.json",
-  "active_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02",
+  "active_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/within-run-01",
   "accepted_dose_source": "4b2c1b9daa20e26b2b6adad5c296dca22854828e",
   "lead_dose_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/lead-acceptance-01.json",
-  "runtime_failure_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/runtime-failure-receipt.json"
+  "runtime_failure_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/runtime-failure-receipt.json",
+  "lead_saved_training_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/diagnosis-01/lead-acceptance-01.json",
+  "lead_within_run_preparation_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/within-run-01/lead-preparation-acceptance-01.json"
 }
