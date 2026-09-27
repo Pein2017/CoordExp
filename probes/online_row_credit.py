@@ -186,12 +186,63 @@ def redirect_objective(logits, positions, sequence, target, prompt_length, vocab
     return positive+margin, dict(redirect_positive=positive,redirect_margin=margin)
 
 
-def jobs(image_ids, rank, plans):
+def preservation_entry(image, record, tokenizer):
+    """Frozen incoming predictions, selected without evaluator truth."""
+    from src.eval.detection_categories import COCO_80_CLASS_NAMES
+    verify_producer([record],record['producer'],[image['image_id']])
+    assert record['producer']['kind']=='live_online' and record['producer']['update']==0
+    rows,_=observations(record,tokenizer);selected=[];dispositions=[]
+    for row in rows:
+        if not row['valid']:reason='invalid'
+        elif not row['first']:reason='literal_repeat'
+        elif row['description'] not in COCO_80_CLASS_NAMES:reason='out_of_scope'
+        else:
+            overlaps=[o for o in image['objects'] if iou_xyxy(row['bbox'],o['bbox_2d'])>=.5]
+            reason=('cross_category_conflict' if any(o['desc']!=row['description'] for o in overlaps)
+                    else 'same_category_withheld' if overlaps else 'eligible')
+        dispositions.append(dict(order=row['order'],key=row['key'],reason=reason))
+        if reason=='eligible':selected.append(row)
+    return dict(image_id=image['image_id'],record=record,rows=selected,dispositions=dispositions)
+
+
+def preservation_sequences(image, entry, tokenizer):
+    assert entry==preservation_entry(image,entry['record'],tokenizer), 'preservation eligibility or identity drift'
+    record=entry['record']
+    sequences=[r.positive_sequence(image,record,row,tokenizer) for row in entry['rows']]
+    positions=tuple(sorted(a.causal_logits_position for seq in sequences for a in seq.atoms))
+    assert len(positions)==len(set(positions))
+    return sequences,positions or (len(record['prompt_token_ids'])-1,)
+
+
+def preservation_objective(logits, positions, sequences, vocab, weight):
+    import torch
+    assert weight in (0,.25)
+    expected=tuple(sorted(a.causal_logits_position for seq in sequences for a in seq.atoms))
+    assert not expected or tuple(positions)==expected, 'preservation causal positions'
+    values=[p.image_loss(logits,seq,vocab,positions)[0] for seq in sequences]
+    value=torch.stack(values).mean() if values else logits.sum()*0
+    return weight*value,dict(P0_unweighted=value,P0_weighted=weight*value)
+
+
+def preservation_binding(root, weight, bank_sha):
+    assert weight in (0,.25)
+    spec=p.load(root/'qualification.json').get('preservation')
+    if spec is None:
+        assert weight==0 and bank_sha is None
+        return None,None
+    assert bank_sha==spec['sha256']==p.digest(spec['path']), 'wrong preservation bank identity'
+    bank=p.load(spec['path'])
+    assert bank['kind']=='fixed_incoming_prediction_preservation'
+    return dict(weight=weight,bank_sha256=bank_sha,bank_path=spec['path']),{x['image_id']:x for x in bank['images']}
+
+
+def jobs(image_ids, rank, plans, preservation_weight=0):
     assert len(image_ids)==len(set(image_ids))==18 and 0<=rank<8
+    assert preservation_weight in (0,.25)
     result = []
     for i in sorted(image_ids)[rank::8]:
         result += [dict(image_id=i,branch=b,weight=8/18) for b in
-                   (['trace','redirect','R'] if plans[i]['redirect'] else ['trace','R'])]
+                   (['trace']+(['redirect'] if plans[i]['redirect'] else [])+(['P0'] if preservation_weight else [])+['R'])]
     return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
 
 
@@ -219,10 +270,16 @@ def native_batch(q, item):
     return batch
 
 
-def forward(q, model, batch, image, record, plan, encoding, vocab, branch):
+def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0):
     import torch
     from src.qwen.native import exact_history_inputs
-    if branch=='R':
+    lineage=None
+    if branch=='P0':
+        sequences,positions=preservation_sequences(image,preservation,q.tokenizer)
+        record=preservation['record'];full=record['prompt_token_ids']+record['token_ids']
+        lineage=dict(kind='fixed_incoming_preservation',entry_sha256=identity(preservation),weight=preservation_weight,
+                     source_producer=record['producer'],source_raw_identity=record['raw_identity'])
+    elif branch=='R':
         _,sequence,row_ids = r.retained_sequence(image,q)
         assert list(sequence.input_ids)==encoding['input_ids']
         assert [a.to_artifact_dict() for a in sequence.atoms]==encoding['atoms']
@@ -237,7 +294,10 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch):
     kwargs = exact_history_inputs(q.model,batch.inputs,[full],pad_token_id=q.tokenizer.pad_token_id)
     kwargs['logits_to_keep'] = torch.tensor(positions,device='cuda')
     with torch.autocast('cuda',dtype=torch.bfloat16): logits = model(**kwargs).logits
-    if branch=='R':
+    if branch=='P0':
+        loss,terms=preservation_objective(logits,positions,sequences,vocab,preservation_weight)
+        rows=[dict(order=row['order'],atoms=len(seq.atoms)) for row,seq in zip(preservation['rows'],sequences)]
+    elif branch=='R':
         loss,terms,rows = retained_credit(logits,sequence,row_ids,vocab,positions)
     elif branch=='redirect':
         loss,terms = redirect_objective(logits,positions,sequence,plan['redirect'],len(record['prompt_token_ids']),vocab)
@@ -255,11 +315,13 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch):
                 comparison.append(dict(index=index,cached_logp=record['raw_logprobs'][index],replay_logp=lp,
                                        difference=lp-record['raw_logprobs'][index]))
                 if len(comparison)==4: break
-    return loss,dict(image_id=image['image_id'],branch=branch,producer=plan['producer'],raw_identity=record['raw_identity'],
+    evidence=dict(image_id=image['image_id'],branch=branch,producer=plan['producer'],raw_identity=record['raw_identity'],
         tokens=len(full),visual_tokens=int(__import__('math').prod(record['image_grid_thw'])//4),
         input_sha256=identity(list(full)),positions=list(positions),loss=float(loss.detach()),
         terms={k:float(v.detach()) for k,v in terms.items()},logit_derivatives=diagnostics(terms,logits),
         row_losses=rows,cached_replay=comparison,logits_sha256=p.tensor_hash(logits))
+    if lineage is not None:evidence['preservation']=lineage
+    return loss,evidence
 
 
 def parameter_identity(model):
@@ -280,7 +342,7 @@ def start(output, root):
     return rank,out,sources,source
 
 
-def run(output, root, updates=1):
+def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -288,11 +350,14 @@ def run(output, root, updates=1):
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     assert updates in (1,64)
+    binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
+    if binding is not None:p.write(out/'preservation.json',binding)
     images={x['image_id']:x for x in p.load(RETAINED)}
     inputs={x['image_id']:x for x in p.load(INPUTS)}
     encodings={x['image_id']:x for x in p.load(ENCODINGS)}
     assert set(images)==set(inputs)==set(encodings) and len(images)==18
+    if bank is not None:assert set(bank)==set(images)
     local=sorted(images)[rank::8];previous_metrics=None
     dist.init_process_group('nccl')
     q,delta,composition=p.compose(Path(p.load(p.POLICY)['checkpoint']),evaluation=False)
@@ -353,9 +418,10 @@ def run(output, root, updates=1):
         p.write(out/f'retained-metrics-{version}.json',metrics);previous_metrics=metrics
         if version==updates:break
         by={x['image_id']:x for x in records};q.model.train();optimizer.zero_grad(set_to_none=True)
-        evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans),
+        evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight),
             lambda job:forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
-                plans[job['image_id']],encodings[job['image_id']],vocab,job['branch']))
+                plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
+                bank[job['image_id']] if bank is not None else None,preservation_weight))
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
         assert all(v is not None and math.isfinite(v) for v in norms.values())
         assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
@@ -392,12 +458,14 @@ def frozen_records(root, image_ids, freeze=False):
     return sorted(records,key=lambda x:x['image_id'])
 
 
-def readback(output, root, updates):
+def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
+    binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
+        if binding is not None:assert p.load(directory/'preservation.json')==binding, 'wrong preservation arm'
         for name,sha in receipt['artifacts'].items():assert p.digest(directory/name)==sha
         for row in receipt['source']['files']:assert p.digest(row['path'])==row['sha256']
         for step in range(1,updates+1):
@@ -407,6 +475,19 @@ def readback(output, root, updates):
             assert len(set(evidence['synchronized_norms']))==1
             assert sum(x['sync'] for x in evidence['forwards'])==1 and evidence['forwards'][-1]['sync']
             assert all(x['image_weight']==8/18 for x in evidence['forwards'])
+            if binding is not None:
+                selected=[x for x in evidence['forwards'] if x['branch']=='P0']
+                local=sorted(inputs)[rank::8]
+                assert [x['image_id'] for x in selected]==(local if preservation_weight else [])
+                for row in selected:
+                    entry=bank[row['image_id']];record=entry['record']
+                    assert row['preservation']==dict(kind='fixed_incoming_preservation',entry_sha256=identity(entry),weight=preservation_weight,
+                        source_producer=record['producer'],source_raw_identity=record['raw_identity'])
+                    assert row['input_sha256']==identity(record['prompt_token_ids']+record['token_ids'])
+                    expected=sorted(len(record['prompt_token_ids'])+j-1 for target in entry['rows'] for j in target['positions'])
+                    assert row['positions']==(expected or [len(record['prompt_token_ids'])-1])
+                    assert row['row_losses']==[dict(order=x['order'],atoms=len(x['positions'])) for x in entry['rows']]
+                    assert row['terms']['P0_weighted']==preservation_weight*row['terms']['P0_unweighted']
     assert updates in (1,64)
     scheduled=(0,1) if updates==1 else (0,1,2,4,8,16,32,64)
     checkpoints={output/f'checkpoint-{step}' for step in scheduled}
@@ -428,9 +509,12 @@ def readback(output, root, updates):
     p.write(output/'readback.json',result)
 
 
-def offline(output, root, updates):
+def offline(output, root, updates, preservation_weight=0, preservation_bank_sha256=None):
     """Only this separate process opens evaluator truth, after all raw outputs freeze."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
+    binding,_=preservation_binding(root,preservation_weight,preservation_bank_sha256)
+    if binding is not None:
+        for rank in range(8):assert p.load(output/f'rank-{rank}/preservation.json')==binding
     read=p.load(output/'readback.json')
     assert [x['update'] for x in read]==list(range(updates+1))
     images=p.load(RETAINED);frozen={}
@@ -452,7 +536,9 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('command',choices=('run','readback','offline'))
     parser.add_argument('--root',type=Path,default=ROOT);parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--updates',type=int,choices=(1,64),default=1)
-    a=parser.parse_args();{'run':run,'readback':readback,'offline':offline}[a.command](a.output,a.root,a.updates)
+    parser.add_argument('--preservation-weight',type=float,choices=(0,.25),default=0)
+    parser.add_argument('--preservation-bank-sha256')
+    a=parser.parse_args();{'run':run,'readback':readback,'offline':offline}[a.command](a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256)
 
 
 if __name__=='__main__':main()

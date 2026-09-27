@@ -169,7 +169,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
         import tempfile
         from pathlib import Path
-        parent=o.ROOT/'cpu-02';parent.mkdir(exist_ok=True)
+        parent=o.ROOT/'preservation-01';parent.mkdir(exist_ok=True)
         original_load=o.p.load
         for updates,schedule in ((1,(0,1)),(64,(0,1,2,4,8,16,32,64))):
             with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
@@ -236,6 +236,132 @@ class OnlineCreditTest(unittest.TestCase):
         self.assertAlmostEqual(sum(rank_grads)/8,expected,places=5)
         wrong=sum(rank_grads[r]/len(ids[r::8]) for r in range(8))/8
         self.assertNotAlmostEqual(wrong,expected)
+
+    def test_preservation_eligibility_prefix_and_denied_hidden(self):
+        a=[10,20,100,200];b=[300,400,500,600]
+        image,record,_=self.fixture([a,a,b],[])
+        producer=dict(self.producer,kind='live_online')
+        record=o.seal(record,producer)
+        entry=o.preservation_entry(image,record,self.t)
+        self.assertEqual([x['reason'] for x in entry['dispositions']],['eligible','literal_repeat','eligible'])
+        seqs,positions=o.preservation_sequences(image,entry,self.t)
+        self.assertEqual(len(seqs),2)
+        for seq,row in zip(seqs,entry['rows']):
+            self.assertEqual(list(seq.input_ids),record['prompt_token_ids']+record['token_ids'])
+            self.assertEqual([a.causal_logits_position for a in seq.atoms],[len(record['prompt_token_ids'])+j-1 for j in row['positions']])
+            targets=[a.coordinate_target for a in seq.atoms if a.token_type=='coordinate']
+            self.assertEqual([a.bbox for a in targets],[tuple(row['bbox'])]*4)
+            self.assertEqual([a.slot_index for a in targets],list(range(4)))
+            self.assertEqual(seq.atoms[0].field,'object_ref_start');self.assertEqual(seq.atoms[-1].field,'box_end')
+        for mutation in ('repeat','eos','shift'):
+            bad=copy.deepcopy(entry)
+            if mutation=='repeat':bad['rows'].append(bad['rows'][0])
+            elif mutation=='eos':bad['rows'][0]['positions'].append(len(record['token_ids'])-1)
+            else:bad['rows'][0]['positions']=[j+1 for j in bad['rows'][0]['positions']]
+            with self.assertRaises(AssertionError):o.preservation_sequences(image,bad,self.t)
+        image['objects']=[dict(coco_ann_id=1,desc='person',bbox_2d=a),dict(coco_ann_id=2,desc='car',bbox_2d=a)]
+        withheld=o.preservation_entry(image,record,self.t)
+        self.assertEqual(withheld['dispositions'][0]['reason'],'cross_category_conflict')
+        image['objects'].pop();self.assertEqual(o.preservation_entry(image,record,self.t)['dispositions'][0]['reason'],'same_category_withheld')
+        with patch.object(o.p,'load',side_effect=AssertionError('hidden read')):
+            self.assertEqual(o.preservation_entry(dict(image,hidden={'box':[999]*4}),record,self.t),o.preservation_entry(image,record,self.t))
+        stale=o.seal(record,dict(producer,update=1))
+        with self.assertRaises(AssertionError):o.preservation_entry(image,stale,self.t)
+        with self.assertRaises(AssertionError):o.credit(image,record,self.t,dict(producer,update=1))
+
+    def test_preservation_actual_rowmean_empty_and_control_zero(self):
+        image,record,_=self.fixture([[10,20,100,200],[10,20,100,200],[300,400,500,600]],[])
+        record=o.seal(record,dict(self.producer,kind='live_online'))
+        entry=o.preservation_entry(image,record,self.t);seqs,positions=o.preservation_sequences(image,entry,self.t)
+        logits=torch.zeros(1,len(positions),self.vocab.vocab_size,requires_grad=True)
+        loss,terms=o.preservation_objective(logits,positions,seqs,self.vocab,.25)
+        expected=sum(o.p.image_loss(logits,s,self.vocab,positions)[0] for s in seqs)/2
+        self.assertTrue(torch.equal(loss,.25*expected))
+        loss.backward();self.assertTrue(torch.isfinite(logits.grad).all())
+        for seq in seqs:
+            for atom in (seq.atoms[0],seq.atoms[-1]):self.assertGreater(float(logits.grad[0,positions.index(atom.causal_logits_position)].abs().sum()),0)
+        unselected={len(record['prompt_token_ids'])+j-1 for j in range(len(record['token_ids']))}-set(positions)
+        self.assertIn(len(record['prompt_token_ids'])+len(record['token_ids'])-2,unselected)
+        with self.assertRaises(AssertionError):o.preservation_objective(logits,tuple(j+1 for j in positions),seqs,self.vocab,.25)
+        empty=torch.zeros(1,1,self.vocab.vocab_size,requires_grad=True)
+        zero,_=o.preservation_objective(empty,(0,),[],self.vocab,.25);zero.backward()
+        self.assertEqual(float(zero),0);self.assertEqual(float(empty.grad.abs().sum()),0)
+        ids=list(range(18));plans={i:dict(redirect=None) for i in ids}
+        class Model:
+            def no_sync(self):return nullcontext()
+        grads=[]
+        for rank in range(8):
+            self.assertEqual(o.jobs(ids,rank,plans),o.jobs(ids,rank,plans,0))
+            jobs=o.jobs(ids,rank,plans,.25)
+            self.assertEqual([j['branch'] for j in jobs],['trace','P0','R']*len(ids[rank::8]))
+            w=torch.tensor(1.,requires_grad=True)
+            o.r.accumulate_family_step(Model(),jobs,lambda j:(w*(j['image_id']+1)*(.25 if j['branch']=='P0' else 1),{}))
+            grads.append(float(w.grad))
+        self.assertAlmostEqual(sum(grads)/8,2.25*sum(range(1,19))/18,places=5)
+        # Actual zero-weight consumer adds neither loss nor gradient.
+        fresh=logits.detach().requires_grad_();base=fresh.square().sum()+fresh.sum()
+        before=torch.autograd.grad(base,fresh,retain_graph=True)[0]
+        z,_=o.preservation_objective(fresh,positions,seqs,self.vocab,0)
+        after=torch.autograd.grad(base+z,fresh)[0]
+        self.assertTrue(torch.equal(before,after));self.assertEqual(float(z),0)
+
+    def test_preservation_binding_wrong_bank_and_arm_rejected(self):
+        bank={'kind':'fixed_incoming_prediction_preservation','images':[{'image_id':1}]}
+        qualifier={'preservation':{'path':'bank','sha256':'expected'}}
+        with patch.object(o.p,'load',side_effect=lambda path:bank if path=='bank' else qualifier),patch.object(o.p,'digest',return_value='expected'):
+            binding,entries=o.preservation_binding(o.ROOT,.25,'expected')
+            self.assertEqual(binding['weight'],.25);self.assertEqual(set(entries),{1})
+            with self.assertRaises(AssertionError):o.preservation_binding(o.ROOT,.25,'wrong')
+            with self.assertRaises(AssertionError):o.preservation_binding(o.ROOT,.5,'expected')
+            with patch.object(o.p,'digest',return_value='corrupt'):
+                with self.assertRaises(AssertionError):o.preservation_binding(o.ROOT,.25,'expected')
+
+    def test_preservation_forward_consumer_and_unequal_rows(self):
+        from types import SimpleNamespace
+        image,record,_=self.fixture([[10,20,100,200],[300,400,500,600]],[])
+        text=record['text'].replace('person','traffic light',1)
+        ids=self.t.encode(text,add_special_tokens=False)
+        record=o.seal(dict(record,text=text,token_ids=ids,generated_tokens=len(ids)),dict(self.producer,kind='live_online'))
+        entry=o.preservation_entry(image,record,self.t);seqs,positions=o.preservation_sequences(image,entry,self.t)
+        self.assertNotEqual(len(seqs[0].atoms),len(seqs[1].atoms))
+        logits=torch.zeros(1,len(positions),self.vocab.vocab_size)
+        logits[:,len(seqs[0].atoms):,0]=8;logits.requires_grad_()
+        expected=[o.p.image_loss(logits,s,self.vocab,positions)[0] for s in seqs]
+        loss,_=o.preservation_objective(logits,positions,seqs,self.vocab,.25)
+        self.assertTrue(torch.equal(loss,.25*sum(expected)/2))
+        pooled=.25*sum(v*len(s.atoms) for v,s in zip(expected,seqs))/sum(len(s.atoms) for s in seqs)
+        self.assertNotAlmostEqual(float(loss),float(pooled),places=5)
+        # Exercise the actual forward dispatcher using CPU compact logits, no model call.
+        tensor=torch.tensor
+        q=SimpleNamespace(model=object(),tokenizer=self.t)
+        def compact(**kw):
+            self.assertEqual(kw['logits_to_keep'].tolist(),list(positions))
+            return SimpleNamespace(logits=logits)
+        with patch('src.qwen.native.exact_history_inputs',return_value={}) as history, \
+             patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+             patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data)):
+            actual,evidence=o.forward(q,compact,SimpleNamespace(inputs={}),image,record,{'producer':{'update':7}},None,self.vocab,'P0',entry,.25)
+        self.assertTrue(torch.equal(actual,loss))
+        self.assertEqual(history.call_args.args[2],[record['prompt_token_ids']+record['token_ids']])
+        self.assertEqual(evidence['preservation']['source_producer']['update'],0)
+        self.assertEqual(evidence['producer']['update'],7)
+        self.assertEqual(evidence['input_sha256'],o.identity(list(seqs[0].input_ids)))
+        self.assertEqual(evidence['row_losses'],[dict(order=x['order'],atoms=len(s.atoms)) for x,s in zip(entry['rows'],seqs)])
+
+    def test_preservation_readback_rejects_wrong_expected_weight(self):
+        root=o.ROOT/'preservation-01/cpu';output=root/'not-a-runtime'
+        qualifier={'sha256':{},'preservation':{'path':'bank','sha256':'expected'}}
+        bank={'kind':'fixed_incoming_prediction_preservation','images':[{'image_id':i} for i in range(18)]}
+        def load(path):
+            if path==root/'qualification.json':return qualifier
+            if path=='bank':return bank
+            if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+            if path.name=='complete.json':return dict(status='complete',updates=1)
+            if path.name=='preservation.json':return dict(weight=.25,bank_sha256='expected',bank_path='bank')
+            self.fail(str(path))
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='expected'):
+            with self.assertRaisesRegex(AssertionError,'wrong preservation arm'):o.readback(output,root,1,0,'expected')
+            with self.assertRaisesRegex(AssertionError,'wrong preservation bank identity'):o.readback(output,root,1,.25,'swapped')
 
 
 if __name__=='__main__':unittest.main()
