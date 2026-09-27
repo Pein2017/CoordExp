@@ -2,7 +2,7 @@
   "unit_id": "2026-09-27-online-row-credit",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "64-round-accepted-preservation-CPU-next",
+  "status": "preservation-CPU-accepted-one-update-release-next",
   "protocol": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,12 +11,12 @@
   "worker_effort": "low",
   "goal_requested": true,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01",
-  "boundary": "CPU preparation of fixed147prediction-preservation bank and matched control/treatment consumer; no model release",
+  "boundary": "One treatment real-entry update and ordinary before/after acquisition; full matched64 not released",
   "pending": [
-    "CPU candidate for control versus additional .25P0",
-    "Lead real-entry acceptance then matched64round contrast"
+    "Validate live P0 masks/gradients/fixed-source identity/empty branch/memory",
+    "Accept one-update slice before matched64 runtime"
   ],
-  "job_state": "Finite64 chain complete; all owned processes absent; no next model invocation",
+  "job_state": "No preservation model launched; CPU accepted",
   "not_authorized": [
     "decode logits processor or hard mask",
     "hidden truth in training or candidate selection",
@@ -25,9 +25,9 @@
     "publication or model/label promotion"
   ],
   "predecessor": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
-  "accepted_cpu_source": "8311b75f746c176e4ce88d34f4f0cf7bc793ab7d",
-  "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/cpu-02",
-  "lead_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/cpu-02/lead-acceptance-01.json",
+  "accepted_cpu_source": "2cf8e3dfea8a824cccff194258da3d64c0885c15",
+  "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/preservation-01/cpu",
+  "lead_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/preservation-01/cpu/lead-acceptance-01.json",
   "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/lead-runtime-release-02.json",
   "result": "research/experiments/2026-09-27-online-row-credit/results.md",
   "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/round-01/lead-runtime-acceptance-01.json",

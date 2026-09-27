@@ -37,3 +37,11 @@ The lead's separate final-hidden-loss diagnostic finds all7lost incumbents well 
 User authority now explicitly permits autonomous best-design continuation without a compute cap until convergence; finite packages remain lead-owned. The active goal tracks that request; it supersedes the earlier no-goal preference for this continuation. Do not extend the64run blindly or let the worker self-release a next recipe. The original protocol is preserved in round-01/protocol-at-launch.md and Git launch commit.
 
 Evidence root: /data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/round-01. Decision receipt: lead-runtime-acceptance-01.json; independent checks: lead-replay-check-01.json and lead-payload-check-01.json. All-round plot: lead-all-round-curves-01.png. User authorization: ../lead-autonomous-continuation-01.json.
+
+## Prediction-preservation CPU acceptance
+
+Lead independently passed15focused tests,27artifact/2source/256qualifier hashes, rebuilt all18bank entries and147rows/1363atoms, and verified original prompt/media/grid/crop identities. A bounded source/artifact falsification found no blocker in actual-prefix masks/own-box positions, row/image/DDP normalization or separation of frozen preservation from fresh correction. Initial fixture-schema failure and its authorized correction remain preserved. Implementation2cf8e3dfea8a824cccff194258da3d64c0885c15 changes only the online probe/test. No model has run under this new recipe.
+
+The fixed bank has147eligible rows,185same-category withheld and1cross-category conflict, with16nonempty images and2empty graphs; no hidden truth or physical admission. P0 adds18forwards/33599input/17660visual per update,1363selected atoms. One treatment slice will measure actual memory, current-weight P0 gradients, fixed/fresh lineage and save/readback behavior while preserving all original correction terms. Both original baseline and post-update18trajectories are acquired in the same resident run. Full matched64control/treatment remains contingent on that live qualification.
+
+Evidence: ../online-row-credit-01/preservation-01/cpu/lead-acceptance-01.json under the output parent, with lead-tests-01.log and lead-cpu-replay-01.json. The bank is experimental prediction preservation, not trusted pseudo labels or missing-label efficacy.
