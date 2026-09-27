@@ -2,7 +2,7 @@
   "unit_id": "2026-09-27-rollout-row-credit",
   "lifecycle": "ready",
   "evidence": "accepted",
-  "status": "lead-accepted-S16-CPU-finite-runtime-released",
+  "status": "S16-historical-parity-failed-CPU-diagnosis",
   "protocol": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -10,7 +10,7 @@
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
   "goal_requested": false,
-  "boundary": "One16update S training, exactS8 CPU gate, one18image eval16, separate offline; no adaptive continuation",
+  "boundary": "CPU-only saved training comparison; no retry or evaluation released",
   "not_authorized": [
     "0%-hide memorization experiment",
     "hidden truth in learning or selection",
@@ -20,15 +20,15 @@
     "publication"
   ],
   "pending": [
-    "Released S16 runtime candidate and exact checkpoint8 gate",
-    "Independent runtime acceptance and scientific synthesis"
+    "Saved first8 divergence localization and full16 training receipt qualification",
+    "Lead decision on same-run checkpoint8/16 evaluation or closure"
   ],
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01",
-  "job_state": "Runtime release issued; launch not yet asserted",
+  "job_state": "Training exited0; checkpoint8gate exited1; eval/offline skipped; all11ownedPIDs absent",
   "accepted_cpu_source": "835794b3b3006f8228ad1111ea41c0a9fa104bf9",
   "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/cpu-04",
   "lead_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-acceptance-02.json",
-  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-10.json",
+  "runtime_release": null,
   "accepted_runtime_source": "cb401f5f6f42ffa7a8dc917831f3ed3ed1d11ad4",
   "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-slice-acceptance-01.json",
   "implementation_release": null,
@@ -46,8 +46,9 @@
   "lead_retained_sft_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-01/lead-runtime-acceptance-01.json",
   "scientific_disposition": "Some retained learning and small hidden net gains; increased rollout burdens prevent robust recovery or promotion claim",
   "future_question": "Dose headroom versus degeneration from the same original zero; fixed-tail readback does not alter S16 recipe",
-  "last_completed_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-08.json",
+  "last_completed_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-10.json",
   "active_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02",
   "accepted_dose_source": "4b2c1b9daa20e26b2b6adad5c296dca22854828e",
-  "lead_dose_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/lead-acceptance-01.json"
+  "lead_dose_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/lead-acceptance-01.json",
+  "runtime_failure_receipt": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-dose-02/runtime-failure-receipt.json"
 }
