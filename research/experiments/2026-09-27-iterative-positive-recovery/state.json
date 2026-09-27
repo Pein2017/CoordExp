@@ -1,25 +1,21 @@
 {
   "unit_id": "2026-09-27-iterative-positive-recovery",
-  "lifecycle": "ready",
-  "evidence": "partial",
-  "status": "lead-accepted-round1-released-greedy-novel-followup",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "status": "lead-accepted-two-comparisons-closed-no-sustained-net-benefit",
   "protocol": "research/experiments/2026-09-27-iterative-positive-recovery/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
   "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
-  "pending": [
-    "ordinary-greedy-novel candidate selection and masked CPU input qualification",
-    "single matched16-step treatment and three18-image natural evaluations",
-    "lead stop or recursive-refresh decision"
-  ],
-  "job_state": "First round exited0; all own processes gone; follow-up not yet launched",
+  "pending": [],
+  "job_state": "Both finite comparisons complete; all own processes absent; no next job",
   "candidate_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01",
   "user_gpu_ruling": "Launch normally alongside production; no GPU idle/free-memory checks; report actual OOM",
   "production_owner": "01a0b28f-ddec-74f0-89bd-7d3f094059bd",
   "production_intervention_authorized": false,
   "gold_admission": false,
-  "boundary": "One same-zero-teacher16-step treatment with prediction-only ordinary-greedy novelty filter; reuse verified common control; no recursive round or production promotion",
+  "boundary": "Closed tested low-weight52-positive16-step route after two candidate policies; no recursive refresh or promotion",
   "not_authorized": [
     "interference with production owner",
     "hidden truth in training or candidate selection",
@@ -31,5 +27,8 @@
   "state_source": "research/experiments/2026-09-27-iterative-positive-recovery/results.md",
   "result": "research/experiments/2026-09-27-iterative-positive-recovery/results.md",
   "first_round_replay": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01/lead-round-01-replay.json",
-  "followup_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-02"
+  "followup_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-02",
+  "followup_replay": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-02/lead-runtime-replay.json",
+  "scientific_disposition": "Small treatment-minus-control effects; no sustained positive absolute preservation utility or endpoint target-acquisition advantage",
+  "reopen_condition": "New bounded decision-changing teacher/objective contrast; no automatic dose/query/seed expansion"
 }

@@ -64,6 +64,19 @@ supported IDs were already available. This is useful bounded proposal repair,
 not an automatic positive gate or learning result. The stage is closed; further
 work needs a matched repair/negative-supervision design or new-teacher qualification.
 
+The subsequent user-authorized noisy-positive learning comparison
+(catalog:2026-09-27-iterative-positive-recovery) tests this gap without requiring
+perfect labels. Two52-row candidate policies share a matched16-step control.
+The ordinary-greedy novelty filter increases initially missing annotation-supported
+targets from2to7, but treatment/control acquire1/1at the endpoint; an extra
+step8acquisition is transient. Both treatment endpoints retain negative primary
+preservation utility, despite small relative aggregate advantages and broad
+coverage improvements shared with common supervision. The tested route is closed:
+proposal support and teacher-forced fitting are insufficient evidence for
+recursive self-improvement. This is not a general self-training impossibility;
+a new teacher or objective needs its own discriminating contrast. See the
+[accepted results](../experiments/2026-09-27-iterative-positive-recovery/results.md).
+
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

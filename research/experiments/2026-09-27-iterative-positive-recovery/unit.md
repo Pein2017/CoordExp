@@ -1,6 +1,6 @@
 # Iterative noisy-positive recovery
 
-Status: first learning round technically accepted with mixed scientific evidence; a prediction-only ordinary-greedy novelty discriminator is released below. Lead owns decisions;926-worker implements. No model promotion or recursive second-round claim.
+Status: closed; both finite learning comparisons are technically lead-accepted. Scientific outcome: small relative effects without sustained net added-discovery benefit; no recursive teacher refresh or model promotion. See results.md for the final decision. Release sections below preserve executed authority and authorize no remaining job.
 
 ## Current contract and authority
 
