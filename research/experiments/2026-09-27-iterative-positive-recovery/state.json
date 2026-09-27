@@ -2,24 +2,24 @@
   "unit_id": "2026-09-27-iterative-positive-recovery",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "lead-released-first-learning-round",
+  "status": "lead-accepted-round1-released-greedy-novel-followup",
   "protocol": "research/experiments/2026-09-27-iterative-positive-recovery/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
   "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
   "pending": [
-    "partial-positive consumer and diverse selection",
-    "matched one-update save/reload slice",
-    "16-step matched learning and18-image natural evaluations"
+    "ordinary-greedy-novel candidate selection and masked CPU input qualification",
+    "single matched16-step treatment and three18-image natural evaluations",
+    "lead stop or recursive-refresh decision"
   ],
-  "job_state": "CPU preparation returned; no learning GPU job yet",
+  "job_state": "First round exited0; all own processes gone; follow-up not yet launched",
   "candidate_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01",
   "user_gpu_ruling": "Launch normally alongside production; no GPU idle/free-memory checks; report actual OOM",
   "production_owner": "01a0b28f-ddec-74f0-89bd-7d3f094059bd",
   "production_intervention_authorized": false,
   "gold_admission": false,
-  "boundary": "One same-teacher matched16-step control/treatment round after minimal real-entry qualification; updated proposals need next finite lead package",
+  "boundary": "One same-zero-teacher16-step treatment with prediction-only ordinary-greedy novelty filter; reuse verified common control; no recursive round or production promotion",
   "not_authorized": [
     "interference with production owner",
     "hidden truth in training or candidate selection",
@@ -28,5 +28,8 @@
     "unbounded repeated training or queries",
     "publication"
   ],
-  "state_source": "research/experiments/2026-09-27-iterative-positive-recovery/unit.md"
+  "state_source": "research/experiments/2026-09-27-iterative-positive-recovery/results.md",
+  "result": "research/experiments/2026-09-27-iterative-positive-recovery/results.md",
+  "first_round_replay": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01/lead-round-01-replay.json",
+  "followup_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-02"
 }
