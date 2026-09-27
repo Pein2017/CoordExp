@@ -1,0 +1,29 @@
+{
+  "unit_id": "2026-09-27-online-row-credit",
+  "lifecycle": "planned",
+  "evidence": "none",
+  "status": "CPU-implementation-released",
+  "protocol": "research/experiments/2026-09-27-online-row-credit/unit.md",
+  "state_source": "research/experiments/2026-09-27-online-row-credit/unit.md",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
+  "worker_model": "gpt-6-astra",
+  "worker_effort": "low",
+  "goal_requested": false,
+  "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01",
+  "boundary": "CPU-only resident online loop and actual-prefix credit qualification; GPU slice requires lead release",
+  "pending": [
+    "Fresh-trajectory credit consumer and resident-loop CPU candidate",
+    "Real-entry generation/update/regeneration qualification",
+    "Finite online natural efficacy"
+  ],
+  "job_state": "No new online model invocation",
+  "not_authorized": [
+    "decode logits processor or hard mask",
+    "hidden truth in training or candidate selection",
+    "0%-hide or20%-hide experiment",
+    "production intervention",
+    "publication or model/label promotion"
+  ],
+  "predecessor": "research/experiments/2026-09-27-rollout-row-credit/unit.md"
+}

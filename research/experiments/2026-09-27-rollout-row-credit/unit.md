@@ -1,6 +1,6 @@
 # Rollout row credit under controlled missing annotations
 
-Status: A/B/C/I/S stage remains lead-accepted with mixed scientific results. S16 saved training and CPU divergence diagnosis are accepted; historical S8 parity remains failed. A new within-run8versus16 evaluation-only contrast is released below. Lead owns scientific decisions;926-worker executes with Astra/low. No goal requested or created.
+Status: closed, lead-accepted. The same-run S8/S16 comparison loses22 category-agreeing annotation matches and worsens invalidity, repetition and caps; retained-only dose extension stops. Historical S8 parity remains failed. The user-authorized successor is [fresh online row credit](../2026-09-27-online-row-credit/unit.md), which starts again from the original anchor. Earlier releases below are historical, not active launch authority. No goal requested or created.
 
 ## Authority and predecessor
 
