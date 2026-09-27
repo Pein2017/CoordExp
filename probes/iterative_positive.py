@@ -193,7 +193,8 @@ def compose(checkpoint, evaluation=False):
     selection = SpecialTokenSelection(token_strings=metadata['token_strings'],token_ids=metadata['token_ids'])
     assert metadata['tie_word_embeddings'] is False
     delta = install_special_token_embedding_deltas(q.model,selection,tie_word_embeddings=False)
-    loaded = load_special_token_embedding_deltas(delta,checkpoint/'special_token_embeddings',expected_base_model_path=q.base_model_path)
+    loaded = load_special_token_embedding_deltas(delta,checkpoint/'special_token_embeddings',expected_base_model_path=q.base_model_path,
+        expected_base_config_sha256=q.base_config_sha256,expected_tokenizer_sha256=q.tokenizer_sha256)
     source = load_file(str(checkpoint/'adapter/adapter_model.safetensors'))
     live = {normalize_dora_state_key(k,adapter_name='default'):v for k,v in get_peft_model_state_dict(q.model,adapter_name='default').items()}
     for key,t in source.items():
@@ -239,7 +240,7 @@ def runtime_start(output):
     assert world==8
     torch.cuda.set_device(int(os.environ['LOCAL_RANK']))
     torch.manual_seed(92701)
-    qualified=load(ROOT/'cpu-qualification.json')
+    qualified=load(ROOT/'cpu-qualification-02.json')
     for path,expected in qualified['sha256'].items():
         assert digest(path)==expected,path
     sources = ['probes/iterative_positive.py','probes/hidden_human_recovery.py',*sorted(str(p) for p in Path('src').rglob('*.py'))]

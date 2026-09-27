@@ -18,6 +18,37 @@ class IterativePositiveTest(unittest.TestCase):
         cls.q=load_qwen_components_from_options(QwenLoadOptions(p.load(p.POLICY)['base_model'],'fp32','sdpa',load_model=False))
         cls.vocab=build_token_vocabulary_groups(cls.q.token_identity,tokenizer=cls.q.tokenizer)
 
+    def test_compose_supplies_embedding_metadata_identities(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from src.qwen.untied_embeddings import (SpecialTokenEmbeddingInstallReceipt,
+            load_special_token_embedding_deltas)
+        checkpoint=Path(p.load(p.POLICY)['checkpoint'])
+        metadata=p.load(checkpoint/'special_token_embeddings/special_token_embeddings.json')
+        class Loaded(Exception): pass
+        def install(model,selection,**kwargs):
+            values={k:torch.nn.Parameter(torch.zeros(metadata['tensor_shape']))
+                    for k in ('input_embed_delta','output_embed_delta')}
+            receipt=SpecialTokenEmbeddingInstallReceipt(semantics='additive_delta',
+                tensor_key='input_embed_delta',tie_word_embeddings=False,token_selection=selection,
+                delta_shape=tuple(metadata['tensor_shape']),delta_dtype='float32',
+                delta_parameter_names=tuple(values),base_embedding_parameter_name=None,base_lm_head_parameter_name=None)
+            return SimpleNamespace(receipt=receipt,shared_embed_delta=values['input_embed_delta'],delta_tensors=lambda:values)
+        def consume(result,path,**kwargs):
+            # Real maintained metadata validation and payload consumption, reached through compose.
+            receipt=load_special_token_embedding_deltas(result,path,**kwargs)
+            self.assertTrue(receipt.loaded)
+            self.assertEqual(kwargs['expected_base_config_sha256'],self.q.base_config_sha256)
+            self.assertEqual(kwargs['expected_tokenizer_sha256'],self.q.tokenizer_sha256)
+            self.assertFalse(torch.equal(*result.delta_tensors().values()))
+            raise Loaded()  # Stop before later model/GPU operations; no fake loader success.
+        with patch('src.qwen.runtime_loading.load_qwen_components_from_options',return_value=self.q), \
+             patch('src.adapters.dora.load_live_dora_adapter',return_value=(torch.nn.Identity(),{})), \
+             patch('src.qwen.untied_embeddings.install_special_token_embedding_deltas',side_effect=install), \
+             patch('src.qwen.untied_embeddings.load_special_token_embedding_deltas',side_effect=consume):
+            with self.assertRaises(Loaded):
+                p.compose(checkpoint)
+
     def test_real_diversity_and_hidden_independence(self):
         bank=p.load(p.ROOT/'candidates.json')
         selected=p.diverse_selection(bank)
