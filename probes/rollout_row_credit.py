@@ -169,9 +169,18 @@ def row_unlikelihood(logits, positions, full_ids, targets):
     import torch
     rows=selected_logits(logits,positions,targets)
     labels=torch.tensor([full_ids[t] for t in targets],device=rows.device)
-    logp=rows.log_softmax(-1).gather(1,labels[:,None]).sum()
-    # Stable -log(1-exp(logp)); complete row probability, no length normalization.
-    loss=-torch.log(-torch.expm1(logp)) if logp > -0.6931471805599453 else -torch.log1p(-torch.exp(logp))
+    target=rows.gather(1,labels[:,None]).squeeze(1)
+    rest=rows.scatter(1,labels[:,None],-torch.inf).logsumexp(-1)
+    token_logp=-torch.nn.functional.softplus(rest-target)
+    logp=token_logp.sum()
+    if logp > -0.6931471805599453:
+        # Disjoint first-failure events retain the complement even when p rounds to1.
+        log_failure=-torch.nn.functional.softplus(target-rest)
+        prefix=torch.cat((token_logp.new_zeros(1),token_logp.cumsum(0)[:-1]))
+        loss=-torch.logsumexp(prefix+log_failure,0)
+    else:
+        # Small row probabilities must not gain cancellation noise from 1-P.
+        loss=-torch.log1p(-torch.exp(logp))
     return loss,logp.exp()
 
 

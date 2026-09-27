@@ -87,6 +87,45 @@ class RowCreditTest(unittest.TestCase):
         wrong,_=r.row_unlikelihood(logits,(0,1,2,3),[1,1,0,0,1],[1,2])
         self.assertNotAlmostEqual(float(loss),float(wrong),4)
 
+    def test_C_complete_row_extreme_confidence_and_uniform_control(self):
+        # Actual C consumer, nine saved targets at their causal rows; M/F/G absent.
+        vocabulary=151936
+        record=dict(prompt_token_ids=[0],token_ids=list(range(1,10)))
+        plan=dict(M=[],F=None,D=[dict(positions=list(range(9)))],G=[])
+        positions=tuple(range(9))
+        for target_logit in (40.,1000.,0.):
+            with self.subTest(target_logit=target_logit):
+                logits=torch.zeros(1,9,vocabulary)
+                logits[0,torch.arange(9),torch.arange(1,10)]=target_logit
+                logits.requires_grad_()
+                loss,terms=r.image_objective('C',plan,record,None,None,None,logits,positions)
+                d=terms['branches']['D']
+                self.assertTrue(torch.isfinite(d));self.assertTrue(torch.isfinite(loss))
+                loss.backward()
+                self.assertTrue(torch.isfinite(logits.grad).all())
+                target_grad=logits.grad[0,torch.arange(9),torch.arange(1,10)]
+                if target_logit:
+                    expected=target_logit-math.log(9*(vocabulary-1))
+                    self.assertAlmostEqual(float(d.detach()),expected,places=4)
+                    self.assertTrue(torch.all(target_grad>0))
+                    self.assertTrue(torch.all(logits.grad[0,:,0]<0))
+                    self.assertTrue(torch.allclose(target_grad,torch.full((9,),.1/9),atol=1e-6))
+                else:
+                    # Small-P FP32 underflow must stay zero, not acquire complement noise.
+                    self.assertEqual(float(d.detach()),0.)
+                    self.assertEqual(float(logits.grad.abs().sum()),0.)
+
+    def test_UL_ordinary_regimes_match_direct_formula(self):
+        for probs in ((.05,.2,.1),(.8,.5),(.95,.99),(.999,.9999)):
+            logits=torch.tensor([[math.log(p),math.log1p(-p)] for p in probs]).unsqueeze(0).requires_grad_()
+            ids=[1]+[0]*len(probs);positions=tuple(range(len(probs)))
+            value,_=r.row_unlikelihood(logits,positions,ids,list(range(1,len(ids))))
+            direct=-torch.log1p(-logits.log_softmax(-1)[0,:,0].sum().exp())
+            self.assertTrue(torch.allclose(value,direct,rtol=2e-4,atol=1e-6))
+            actual=torch.autograd.grad(value,logits,retain_graph=True)[0]
+            expected=torch.autograd.grad(direct,logits)[0]
+            self.assertTrue(torch.allclose(actual,expected,rtol=2e-4,atol=1e-6))
+
     def test_literal_votes_neighbors_invalids_and_cap(self):
         def row(box): return '<|object_ref_start|>person<|object_ref_end|><|box_start|>'+''.join(f'<|coord_{i}|>' for i in box)+'<|box_end|>'
         a=row([10,10,100,100]);neighbor=row([11,10,100,100]);bad=row([999,10,999,100])
