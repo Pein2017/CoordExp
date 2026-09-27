@@ -2,7 +2,7 @@
   "unit_id": "2026-09-27-rollout-row-credit",
   "lifecycle": "ready",
   "evidence": "accepted",
-  "status": "lead-accepted-insertion-result-released-retained90-CPU",
+  "status": "lead-accepted-retained90-CPU-released-finite-runtime",
   "protocol": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -10,7 +10,7 @@
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
   "goal_requested": false,
-  "boundary": "Fixed16 route closed; one coherent513-retained/57-hidden efficacy baseline, CPU only",
+  "boundary": "One S8-update training plus evaluations4/8, coherent513-retained/57-hidden recipe versus immutable zero/A/I",
   "not_authorized": [
     "0%-hide memorization experiment",
     "hidden truth in learning or selection",
@@ -20,15 +20,15 @@
     "publication"
   ],
   "pending": [
-    "coherent retained-label actual-consumer and frontend qualification",
-    "lead finite baseline runtime decision"
+    "finite S runtime and frozen readback",
+    "lead separate retained-learning and hidden-recovery efficacy assessment"
   ],
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01",
-  "job_state": "all29insertion-ownedPIDs absent; baseline CPU package pending dispatch",
+  "job_state": "CPU accepted; finite S runtime pending dispatch",
   "accepted_cpu_source": "835794b3b3006f8228ad1111ea41c0a9fa104bf9",
   "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/cpu-04",
   "lead_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-acceptance-02.json",
-  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-06.json",
+  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-08.json",
   "accepted_runtime_source": "cb401f5f6f42ffa7a8dc917831f3ed3ed1d11ad4",
   "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-slice-acceptance-01.json",
   "implementation_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-07.json",
@@ -41,5 +41,7 @@
   "accepted_insertion_source": "e31b49a0f08e30ebb81c426729b15f4b91763867",
   "lead_insertion_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/family-insert-01/lead-acceptance-01.json",
   "lead_insertion_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/family-insert-01/lead-runtime-acceptance-01.json",
-  "next_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-01"
+  "next_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-01",
+  "accepted_retained_sft_source": "41e645a23f434bc2132ab0572d3472be649ba776",
+  "lead_retained_sft_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/retained-sft-01/lead-acceptance-01.json"
 }

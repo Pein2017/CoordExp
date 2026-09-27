@@ -1,6 +1,6 @@
 # Rollout row credit under controlled missing annotations
 
-Status: active; finite A/B/C and FN-insertion results lead-accepted; fixed16-target route closed; coherent90%-retained baseline released for CPU preparation only. Lead owns scientific decisions;926-worker executes with restored Astra/low. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
+Status: active; finite A/B/C and FN-insertion results lead-accepted; fixed16-target route closed; coherent90%-retained CPU baseline accepted and one finite S runtime chain released. Lead owns scientific decisions;926-worker executes with restored Astra/low. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
 
 ## Authority and predecessor
 
@@ -105,3 +105,5 @@ Use the two existing owned probe/test files and ordinary maintained renderer/los
 Freeze all new natural outputs before separate full570 one-to-one IoU.5 evaluation/category checking. Report S-zero/S-A/S-I at both checkpoints with retained acquired/lost/preserved IDs, hidden acquired/lost/preserved IDs, selected16F coverage as descriptive continuity only, Human13/refined5/per-image views, invalid/malformed/repeats/near pairs/tokens/EOS/caps and actual costs. Retained gains establish learning of available labels; missing-label recovery requires hidden gains net of hidden incumbent losses. These exposed18images are adaptation data, not independent validation. No0%-hide experiment,20%execution, teacher refresh, threshold/weight sweep or promotion.
 
 Stop at CPU candidate for lead acceptance and separate runtime release. After the finite baseline, synthesize efficacy and limits before any further training; no automatic dose extension if natural net coverage/hidden preservation fails to improve. This is a fresh bounded continuation of the user's learning question, not an extension of the closed16-target placement recipe.
+
+S CPU acceptance: source41e645a23f434bc2132ab0572d3472be649ba776 passed independent20-test replay,17candidate/202qualifier/22control-binding hash checks, exact513row/4800atom inspection and focused actual-consumer review. Row logits are selected before FP32 loss conversion; live peak memory remains unmeasured. Measured training plan144forwards/230080input/141280visual; max1890input and568compact logit rows. Release rollout-row-credit-01/lead-release-08.json authorizes exactly one8-update S training, two18-image evaluations and separate offline scoring. First model-stage failure short-circuits without retry; no new result is claimed before frozen readback.
