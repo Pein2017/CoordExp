@@ -219,7 +219,7 @@ class RowCreditTest(unittest.TestCase):
                 self.sync=False
                 try:yield
                 finally:self.sync=True
-        for arm in 'ABC':
+        for arm in 'ABCI':
             gradients=[];visited=[];wrong_rank_means=[];wrong_micro_means=[]
             for rank in range(8):
                 model=Rank();parameter=torch.tensor(2.,requires_grad=True)
@@ -330,6 +330,87 @@ class RowCreditTest(unittest.TestCase):
                 return original_load(path)
             with patch.object(r,'ZERO',zero),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):
                 with self.assertRaises(ReachedTruth):r.family_offline(root)
+
+    def test_insert_real18_targets_cuts_masks_and_terminal_substitution(self):
+        frozen=r.p.load(r.ROOT/'cpu-04/credit-plan.json')
+        self.assertEqual(self.plans,frozen)
+        moved=r.insertion_plan(frozen,self.records)
+        records={x['image_id']:x for x in self.records};images={x['image_id']:x for x in self.visible}
+        selected=conflicts=rejected_terminal=0
+        for old,new in zip(frozen,moved,strict=True):
+            i=old['image_id'];record=records[i];image=images[i]
+            self.assertEqual(new['M'],old['M'])
+            self.assertEqual(r.objective_positions(new,record,'B'),r.objective_positions(old,record,'B'))
+            for row in old['M']:
+                self.assertEqual(r.positive_sequence(image,record,row,self.t),
+                                 r.positive_sequence(image,record,new['M'][old['M'].index(row)],self.t))
+            if old['F'] is None:
+                self.assertEqual(new,old);continue
+            selected+=1;fn=new['F'];target=tuple(fn['bbox'][:2])
+            greater=[x for x in old['observations'] if tuple(x['bbox'][:2])>target]
+            successor=min(greater,key=lambda x:x['order']);cut=successor['positions'][0]
+            self.assertEqual(fn['prefix_cut'],cut)
+            self.assertTrue(all(tuple(x['bbox'][:2])<=target for x in old['observations'] if x['order']<successor['order']))
+            self.assertEqual({k:v for k,v in fn.items() if k not in ('positions','prefix_cut')},
+                             {k:v for k,v in old['F'].items() if k!='positions'})
+            expected=tuple(record['prompt_token_ids']+record['token_ids'][:cut]+old['F']['token_ids'])
+            seq=r.positive_sequence(image,record,fn,self.t,True)
+            self.assertEqual(seq.input_ids,expected)
+            self.assertEqual([a.token_id for a in seq.atoms],old['F']['token_ids'])
+            self.assertEqual([a.target_position for a in seq.atoms],list(range(len(record['prompt_token_ids'])+cut,len(expected))))
+            self.assertTrue(all(a.causal_logits_position==a.target_position-1 for a in seq.atoms))
+            self.assertTrue(all(a.token_type!='eos' for a in seq.atoms))
+            self.assertEqual(seq.atoms[0].field,'object_ref_start');self.assertEqual(seq.atoms[-1].field,'box_end')
+            coords=[a.to_artifact_dict()['coordinate_target'] for a in seq.atoms if a.token_type=='coordinate']
+            self.assertEqual([x['bbox'] for x in coords],[fn['bbox']]*4)
+            conflicts+=any(x['positions'][0]==cut for x in old['M'])
+            # Actual consumer with the old terminal row is a deliberate wrong placement.
+            terminal=r.positive_sequence(image,record,old['F'],self.t,True)
+            with self.assertRaises(AssertionError):self.assertEqual(terminal.input_ids,expected)
+            rejected_terminal+=1
+        self.assertEqual((selected,conflicts,rejected_terminal),(16,9,16))
+        for rank in range(8):self.assertEqual(r.family_jobs(list(images),'I',rank),r.family_jobs(list(images),'B',rank))
+        changed=copy.deepcopy(self.truth)
+        for image in changed:
+            for obj in image['objects']:
+                if [image['image_id'],obj['coco_ann_id']] in self.hidden:obj.update(desc='hidden mutation',bbox_2d=[1,2,3,4])
+        visible,_=r.split_reference(changed,10)
+        self.assertEqual(r.insertion_plan(r.credit_plan(visible,self.records,self.t),self.records),moved)
+
+    def test_insert_selected_loss_own_prefix_and_empty_F(self):
+        plan=r.insertion_plan([self.plans[0]],[self.records[0]])[0]
+        image=self.visible[0];record=self.records[0];seq=r.positive_sequence(image,record,plan['F'],self.t,True)
+        positions=tuple(a.causal_logits_position for a in seq.atoms)+(len(seq.input_ids)-1,)
+        logits=torch.zeros(1,len(positions),self.vocab.vocab_size,requires_grad=True)
+        loss,detail=r.p.image_loss(logits,seq,self.vocab,positions);loss.backward()
+        self.assertTrue(torch.isfinite(loss));self.assertTrue(all(logits.grad[0,j].abs().sum()>0 for j in range(len(positions)-1)))
+        self.assertEqual(float(logits.grad[0,-1].abs().sum()),0)
+        small=dict(plan,M=[],F=None,D=[],G=[])
+        value,terms=r.image_objective('B',small,record,image,self.t,self.vocab,logits,positions)
+        self.assertEqual(float(value),0);self.assertEqual(float(terms['branches']['F']),0)
+
+    def test_insert_offline_binds_controls_and_freezes_before_truth(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        class ReachedTruth(Exception):pass
+        opened=[];original_load=r.p.load
+        with tempfile.TemporaryDirectory(dir=r.ROOT/'family-insert-01') as tmp:
+            root=Path(tmp);reference=root/'reference';zero=root/'zero'
+            r.p.write(root/'control-reuse.json',dict(reference_root=str(reference),sha256={}))
+            expected={zero,*[reference/f'evaluation-{arm}-{step}' for arm in 'AB' for step in (4,8)],
+                      *[root/f'evaluation-I-{step}' for step in (4,8)]}
+            def readback(path):
+                opened.append(path);path.mkdir(parents=True,exist_ok=True);r.p.write(path/'frozen.json',{})
+                return self.records
+            def load(path):
+                if Path(path)==r.TRUTH:
+                    self.assertEqual(set(opened),expected);self.assertEqual(len(opened),7)
+                    self.assertEqual(len(original_load(root/'all-evaluations-frozen.json')),7)
+                    raise ReachedTruth()
+                return original_load(path)
+            with patch.object(r,'ZERO',zero),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):
+                with self.assertRaises(ReachedTruth):r.family_offline(root,reference)
 
 
 if __name__=='__main__': unittest.main()

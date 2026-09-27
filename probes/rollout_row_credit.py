@@ -132,6 +132,25 @@ def credit_plan(visible, records, tokenizer):
     return result
 
 
+def insertion_plan(plans, records):
+    """Move only the frozen F row to the first greater observed anchor."""
+    records={x['image_id']:x for x in records};result=[]
+    for plan in plans:
+        fn=plan['F']
+        if fn is None:
+            result.append(dict(plan));continue
+        successor=next(o for o in sorted(plan['observations'],key=lambda o:o['order'])
+                       if tuple(o['bbox'][:2])>tuple(fn['bbox'][:2]))
+        cut=successor['positions'][0];record=records[plan['image_id']]
+        assert record['token_ids'][cut]==fn['token_ids'][0]
+        assert 0<=cut<len(record['token_ids'])-1
+        moved=dict(fn,prefix_cut=cut,positions=list(range(cut,cut+len(fn['token_ids']))))
+        result.append(dict(plan,F=moved,insertion=dict(cut=cut,terminal_cut=len(record['token_ids'])-1,
+            successor_order=successor['order'],successor_bbox=successor['bbox'],
+            successor_M_credit=any(o['positions'][0]==cut for o in plan['M']))))
+    return result
+
+
 def positive_sequence(image, record, row, tokenizer, fn=False):
     """Render atom metadata only; saved causal IDs remain authoritative for M."""
     from src.packing.planner import PackedSegment, PackedSequence
@@ -143,7 +162,9 @@ def positive_sequence(image, record, row, tokenizer, fn=False):
     history=list(record['token_ids'])
     if fn:
         assert history[-1]==tokenizer.convert_tokens_to_ids('<|im_end|>')
-        history=history[:-1]+row['token_ids']
+        cut=row.get('prefix_cut',len(history)-1)
+        assert 0<=cut<=len(history)-1
+        history=history[:cut]+row['token_ids']
     if [history[i] for i in positions]!=ids:
         raise ValueError('positive rendered metadata differs from saved row tokens')
     prompt=record['prompt_token_ids']; full=tuple(prompt+history)
@@ -343,8 +364,8 @@ FAMILY = ROOT/'family-01'
 
 
 def family_jobs(image_ids, arm, rank):
-    if arm not in ('A','B','C') or len(image_ids)!=18 or len(set(image_ids))!=18 or not 0<=rank<8:
-        raise ValueError('family requires A/B/C, exactly18images and rank0..7')
+    if arm not in ('A','B','C','I') or len(image_ids)!=18 or len(set(image_ids))!=18 or not 0<=rank<8:
+        raise ValueError('family requires A/B/C/I, exactly18images and rank0..7')
     jobs=[dict(image_id=i,fn=fn,weight=8/18) for i in sorted(image_ids)[rank::8]
           for fn in ([False] if arm=='A' else [False,True])]
     return [dict(j,sync=k==len(jobs)-1) for k,j in enumerate(jobs)]
@@ -419,6 +440,10 @@ def family_train(output, arm, family_root):
     from src.artifacts.git_identity import verify_source_identity
     rank,out,sources,identity=family_start(output,family_root);start=time.monotonic()
     images,plans,records=family_data();jobs=family_jobs(list(images),arm,rank)
+    if arm=='I':
+        moved=insertion_plan(list(plans.values()),list(records.values()))
+        assert moved==p.load(family_root/'credit-plan.json')
+        plans={x['image_id']:x for x in moved}
     dist.init_process_group('nccl')
     q,delta,composition=p.compose(Path(p.load(p.POLICY)['checkpoint']))
     load_seconds=time.monotonic()-start;p.write(out/'composition.json',composition)
@@ -435,7 +460,7 @@ def family_train(output, arm, family_root):
         optimizer.zero_grad(set_to_none=True);before=time.monotonic()
         def forward(job):
             i=job['image_id']
-            return forward_credit(q,model,plans[i],records[i],images[i],vocab,arm,job['fn'],
+            return forward_credit(q,model,plans[i],records[i],images[i],vocab,'B' if arm=='I' else arm,job['fn'],
                                   bookkeeping=True,diagnostics=step in (1,8))
         evidence=accumulate_family_step(model,jobs,forward)
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
@@ -549,8 +574,16 @@ def family_outcomes(scored, selected_fn_keys):
     return result
 
 
-def family_offline(family_root):
+def family_offline(family_root, reference_root=None):
     roots={'zero':ZERO,**{f'{arm}-{step}':family_root/f'evaluation-{arm}-{step}' for arm in 'ABC' for step in (4,8)}}
+    pairs=(('B','A'),('C','B'))
+    if reference_root is not None:
+        reuse=p.load(family_root/'control-reuse.json')
+        assert str(reference_root)==reuse['reference_root']
+        for path,sha in reuse['sha256'].items():assert p.digest(path)==sha,path
+        roots={'zero':ZERO,**{f'{arm}-{step}':reference_root/f'evaluation-{arm}-{step}' for arm in 'AB' for step in (4,8)},
+               **{f'I-{step}':family_root/f'evaluation-I-{step}' for step in (4,8)}}
+        pairs=(('I','A'),('I','B'))
     # Readback freezes every shard set BEFORE opening any truth file.
     frozen={name:p.read_evaluation(path) for name,path in roots.items()}
     baseline={x['image_id']:x for x in frozen['zero']}
@@ -569,13 +602,74 @@ def family_offline(family_root):
     scored={name:assess_outputs(truth,partitions['hidden10'],records) for name,records in frozen.items()}
     outcomes=family_outcomes(scored,selected);contrasts={}
     for step in (4,8):
-        for later,earlier in (('B','A'),('C','B')):
+        for later,earlier in pairs:
             a=outcomes[f'{earlier}-{step}'];b=outcomes[f'{later}-{step}']
             contrasts[f'{later}-{earlier}-{step}']={mode:{cohort:{part:{k:b['summary'][mode][cohort][part][k]-a['summary'][mode][cohort][part][k]
                 for k in a['summary'][mode][cohort][part]} for part in ('metrics','burdens')} for cohort in ('combined','human13','refined5')} for mode in ('raw','category')}
     p.write(family_root/'offline-results.json',dict(scored=scored,outcomes=outcomes,contrasts=contrasts,selected_FN_keys=selected,
         truth_sha256=p.digest(TRUTH),hidden_keys=partitions['hidden10'],denominator=570,
         limitations='Annotation-ID proxy; refined5 redraw uncertainty and prior exposure; overlap pairs are not physical negatives; no checkpoint selection.'))
+
+def prepare_insert(output, reference_root):
+    """CPU frontend qualification of the fixed insertion targets and controls."""
+    images,original,records=family_data()
+    plans=insertion_plan(list(original.values()),list(records.values()))
+    old={x['image_id']:x for x in p.load(ROOT/'cpu-04/encodings.json')}
+    q=frontend();encodings=[];cuts=[];input_tokens=0;visual_tokens=0
+    for plan in plans:
+        i=plan['image_id'];image=images[i];record=records[i];before=original[i]
+        assert plan['M']==before['M']
+        batch=p.native_request(record,p.load(p.POLICY),q.processor)
+        assert list(batch.prompt_token_ids[0])==record['prompt_token_ids']
+        assert list(batch.image_grids[0])==old[i]['grid'] and batch.media_sha256[0]==old[i]['media_sha256']
+        assert list(batch.inputs['pixel_values'].shape)==old[i]['pixel_values_shape']
+        rows=[]
+        for branch,values in (('M',plan['M']),('F',[plan['F']] if plan['F'] else [])):
+            for row in values:
+                seq=positive_sequence(image,record,row,q.tokenizer,branch=='F')
+                rows.append(dict(branch=branch,input_sha256=p.stable(p.canonical(seq.input_ids)),tokens=len(seq.input_ids),
+                                 atoms=[a.to_artifact_dict() for a in seq.atoms]))
+        assert [x for x in rows if x['branch']=='M']==[x for x in old[i]['rows'] if x['branch']=='M']
+        full=record['prompt_token_ids']+record['token_ids'];fn_tokens=len(full)
+        if plan['F']:
+            for key in ('annotation_id','description','bbox','token_ids'):assert plan['F'][key]==before['F'][key]
+            cut=plan['insertion']['cut'];seq=positive_sequence(image,record,plan['F'],q.tokenizer,True)
+            assert list(seq.input_ids)==record['prompt_token_ids']+record['token_ids'][:cut]+before['F']['token_ids']
+            assert [a.token_id for a in seq.atoms]==before['F']['token_ids']
+            fn_tokens=len(seq.input_ids)
+            cuts.append(dict(image_id=i,annotation_id=plan['F']['annotation_id'],target_bbox=plan['F']['bbox'],
+                             target_tokens=plan['F']['token_ids'],**plan['insertion'],input_tokens=fn_tokens,
+                             terminal_input_tokens=next(x['tokens'] for x in old[i]['rows'] if x['branch']=='F')))
+        encodings.append(dict(old[i],rows=rows,selected_logit_positions={'I':old[i]['selected_logit_positions']['B']},
+                              original_input_tokens=len(full),F_input_tokens=fn_tokens))
+        input_tokens+=len(full)+fn_tokens;visual_tokens+=2*old[i]['visual_tokens']
+    assert len(cuts)==16 and sum(x['successor_M_credit'] for x in cuts)==9
+    assert visual_tokens*8==282560
+    p.write(output/'credit-plan.json',plans);p.write(output/'encodings.json',encodings);p.write(output/'cuts.json',cuts)
+    # Explicit immutable reference binding; old readback validates its frozen shards.
+    references=[ZERO,*[reference_root/f'evaluation-{arm}-{step}' for arm in 'AB' for step in (4,8)]]
+    for root in references:p.read_evaluation(root)
+    bindings={str(root/'frozen.json'):p.digest(root/'frozen.json') for root in references}
+    for root in [reference_root/'train-A/checkpoint-0',reference_root/'train-B/checkpoint-0']:
+        bindings[str(root/'identity.json')]=p.digest(root/'identity.json')
+        for name,sha in p.load(root/'identity.json').items():
+            assert p.digest(root/name)==sha;bindings[str(root/name)]=sha
+    for path in (p.POLICY,reference_root/'family-plan.json',reference_root/'zero-equivalence.json',
+                 ROOT/'cpu-04/retained-10.json',ROOT/'cpu-04/credit-plan.json',ROOT/'cpu-04/encodings.json'):
+        bindings[str(path)]=p.digest(path)
+    p.write(output/'control-reuse.json',dict(reference_root=str(reference_root),sha256=bindings,
+        semantics='Reuse accepted A/B and zero; same M atoms/history,18-image mean,seed,teacher,optimizer,LRs and losses. Only F prefix changes.'))
+    prefix=['torchrun','--standalone','--nnodes=1','--nproc_per_node=8','-m','probes.rollout_row_credit']
+    commands=[prefix+['family-train','--arm','I','--family-root',str(output),'--output',str(output/'train-I')]]
+    commands += [prefix+['family-evaluate','--checkpoint',str(output/f'train-I/checkpoint-{step}'),
+                        '--family-root',str(output),'--output',str(output/f'evaluation-I-{step}')] for step in (4,8)]
+    p.write(output/'family-plan.json',dict(status='CPU candidate; runtime not released',arm='I',reference_root=str(reference_root),
+        images=sorted(images),seed=92711,updates=8,learning_rates=[1e-5,5e-6],F_coefficient=1,original_image_mean=18,
+        rank_jobs={str(rank):family_jobs(list(images),'I',rank) for rank in range(8)},
+        training_forwards=288,training_input_tokens=input_tokens*8,training_visual_tokens=visual_tokens*8,
+        natural_queries=36,natural_visual_tokens=35320,generated_token_bound=111024,commands=commands,
+        offline_command=['python','-m','probes.rollout_row_credit','family-offline','--family-root',str(output),'--reference-root',str(reference_root)]))
+
 
 def evaluate_partition(truth, hidden_keys, records):
     """Offline only, membership is composite key, never sign of annotation ID."""
@@ -631,18 +725,22 @@ def prepare(output):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
-    parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABC'),default='C')
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','prepare-insert','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
+    parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABCI'),default='C')
     parser.add_argument('--training-root',type=Path)
     parser.add_argument('--family-root',type=Path,default=FAMILY);parser.add_argument('--checkpoint',type=Path)
+    parser.add_argument('--reference-root',type=Path)
     args=parser.parse_args()
     if args.command=='prepare':
         args.output.mkdir(parents=True,exist_ok=True);print(p.canonical(prepare(args.output)))
+    elif args.command=='prepare-insert':
+        if args.reference_root is None:parser.error('prepare-insert requires --reference-root')
+        args.output.mkdir(parents=True,exist_ok=True);prepare_insert(args.output,args.reference_root)
     elif args.command=='family-train':family_train(args.output,args.arm,args.family_root)
     elif args.command=='family-evaluate':
         if args.checkpoint is None:parser.error('family-evaluate requires --checkpoint')
         family_evaluate(args.checkpoint,args.output,args.family_root)
-    elif args.command=='family-offline':family_offline(args.family_root)
+    elif args.command=='family-offline':family_offline(args.family_root,args.reference_root)
     else:
         if args.command=='reload' and args.training_root is None: parser.error('reload requires --training-root')
         slice_run(args.output,args.cpu_root,args.arm,args.training_root if args.command=='reload' else None)
