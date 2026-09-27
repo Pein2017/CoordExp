@@ -1,4 +1,4 @@
 interface:
   display_name: "Native Agent Team Guide"
   short_description: "Strong lead, bounded workers, early questions and handoff"
-  default_prompt: "Use $native-agent-team-guidance for my current lead or worker role: bound execution, ask parent early, report milestones, and hand durable runtime monitoring to root."
+  default_prompt: "Use $native-agent-team-guidance for my current lead or worker role: bound assignments, coordinate ownership, report decision-bearing changes, and keep an explicit owner and return route for durable jobs."

@@ -47,8 +47,10 @@ accepted results, question-oriented synthesis and historical transport have
 separate roles. A historical `running` field or old compute grant is not live
 state or permission. Handoffs are consumed transport, not permanent frontiers.
 Do not append every run to the current context or duplicate full result tables
-across routers. Archive original evidence byte-faithfully before compression;
-check path/hash-bound consumers before relocating code or records.
+across routers. Preserve raw intake byte-faithfully until its owner verifies an
+exact recovery path. Closed records follow the research base's
+`research/CONVENTIONS.md` and `docs/OUTPUT_STORAGE_POLICY.md` for Git recovery
+and distillation. Check path/hash-bound consumers before relocating code or records.
 
 ## Authority
 
@@ -145,8 +147,9 @@ A change to checkpoint family or ordering, conditioning surface, intervention
 sequence, acceptance/debt policy, architecture, claim, critical path, or stop
 rule is a phase reset. Close or detach the old contract and create a fresh unit
 or continuation packet before execution; do not let old terms silently acquire
-new meanings. Start a fresh task when the lead must reconstruct more than one
-prior iteration from conversation rather than from the packet.
+new meanings. Choose continuation or handoff under
+[Durability and efficiency](../../AGENTS.md#durability-and-efficiency), based on
+context reliability and responsibility changes rather than an iteration count.
 
 ## Work
 

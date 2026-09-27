@@ -31,9 +31,10 @@ proceed; do not silently convert it to passed.
 2. Name the top execution risks and the exact real seam that exposes each one.
 3. Choose the smallest sample, rank count, and step count that reaches those
    seams without changing their execution shape.
-4. Force at least one checkpoint save when production saves.
-5. Force at least one evaluation step when production evaluates.
-6. State the artifacts, counters, and resource bounds that prove each stage
+4. For a final smoke, force at least one checkpoint save and evaluation step
+   when each is enabled in production. For an early slice, require them only
+   when needed to exercise a named risk or its downstream consumer.
+5. State the artifacts, counters, and resource bounds that prove each stage
    before launch.
 
 Allowed smoke overrides are output location, sample limits, enough steps to
@@ -64,7 +65,8 @@ AGENTS.md authority for executor and recovery ownership.
 
 ## Required Path Through The System
 
-Exercise every conclusion-bearing stage that applies:
+For an early slice, exercise the stages needed by its named risks and consumers.
+For a final smoke, exercise every applicable conclusion-bearing production stage:
 
 - data read and sample contract;
 - multimodal template and encoding;
@@ -86,6 +88,11 @@ whose ranks have intentionally different local work while preserving the
 required collective choreography. A single-rank result cannot close that risk.
 
 ## Acceptance
+
+The checks below apply to the final smoke's applicable production stages. For
+an early slice, apply those needed by its named risks and consumers, reach the
+declared end of the slice, and mark unexercised stages `unproven`. Passing an
+early slice does not establish full integration or scale readiness.
 
 - The run reaches its planned terminal step, not only the first optimizer step.
 - The checkpoint contains the same class of model, adapter, and auxiliary

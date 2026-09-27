@@ -11,14 +11,11 @@ This skill grants neither extra agents nor research launches.
 
 ## Priority: no polling
 
-Use event-driven, long waits within actual tool and instruction limits, not
-status/log/sleep loops. Lead and workers exchange assignments, rulings and
-self-contained reports directly; use native completion notifications for
-subagents and [lead-worker](../lead-worker/SKILL.md) for persistent sessions.
-Do useful independent work while waiting. Long external jobs use the durable
-handoff below; do not default to wake-me-up or a wake-then-read-chat chain.
-Reconcile any existing monitor when replacing its delivery route; never
-duplicate or silently abandon one.
+Follow [Checkpoints and waiting](../../AGENTS.md#checkpoints-and-waiting).
+Use native completion notifications for subagents and direct reports through
+[lead-worker](../lead-worker/SKILL.md) for persistent sessions. Long external
+jobs use the durable handoff below; do not default to a wake-then-read-chat chain.
+Reconcile any existing monitor when replacing its delivery route.
 
 ## Main lead/thread
 
@@ -31,7 +28,7 @@ corrections. Keep one writer per surface. A research-worker-main may implement
 directly or coordinate execution children within its assigned package; it does
 not independently schedule the research program.
 
-The lead owns direction, minimal implementation approach, shared interfaces,
+The lead owns direction, agreed implementation constraints, shared interfaces,
 acceptance, runtime continuation and scientific interpretation. Workers execute
 bounded outcomes including local diagnosis, implementation and relevant checks.
 Broader design or research autonomy must be explicit in the assignment.
@@ -46,9 +43,12 @@ split by layers merely to create parallel work. For a mechanical migration that
 cannot stay valid in slices, choose a coherent integration boundary and its
 verification; add transitional compatibility only when it is actually needed.
 Assignments may change as facts emerge; make the new ownership explicit.
-For research or review assignments, name what next action each plausible result
-changes. If none changes, do not delegate; unresolved findings stay `HOLD` and
-do not become new mandatory gates.
+For delegated acceptance or review, follow
+[Acceptance and review](../../AGENTS.md#acceptance-and-review): name the decision
+that a finding could change. For authorized exploration, name the uncertainty
+and useful evidence output within the assignment's resource limits and stop
+condition; a result need not prescribe an immediate next action. Unresolved
+findings do not create new mandatory gates.
 Between peer leads, prefer one decision-specific question with source pointers.
 Return the finding, strongest limit and effect on the requester's decision; send
 later results only when they change that decision or a shared input/owner.
@@ -81,6 +81,8 @@ Before selecting models, effort or fork context, read
 [Agent topology and delegation](../../AGENTS.md#agent-topology-and-delegation).
 For pairing with a persistent worker and dispatching its assignment, read
 [lead-worker](../lead-worker/SKILL.md).
+For an unresolved consequential decision that could change the next action,
+use [ask-advisor](../ask-advisor/SKILL.md) for bounded native Astra consultation.
 When briefing Luna on inherited configuration, caller-sensitive checks or
 artifact compatibility, or repairing a misunderstanding at those boundaries,
 use the worked examples in [Luna delegation](references/luna-delegation.md).
@@ -89,9 +91,9 @@ Routine mechanical assignments do not need this additional reference.
 Answer worker questions with the smallest decision promptly. Check whether the
 brief caused the detour; narrow scope, choose the missing seam or take over
 uncertain design instead of repeatedly returning the same misunderstanding.
-Use `followup_task` for a new bounded assignment to an idle child, not for a
-status check or acknowledgment. Bundle related corrections where possible; if
-the package or ownership has changed, reconsider whether that child's context
+Use `followup_task` for a new or resumed bounded assignment to a non-running
+child, not for a status check or acknowledgment. Bundle related corrections where
+possible; if the package or ownership has changed, reconsider whether that child's context
 still helps before resuming it.
 After a demonstrated semantic misunderstanding, clarify the governing invariant
 or take over the coupled part; increasing effort alone is not a correction.
@@ -105,11 +107,8 @@ candidate. This does not require serializing independent work.
 
 ### Accept and learn
 
-Inspect the fixed candidate's exact diff and smallest decision-bearing check;
-completion notifications and worker self-report are not acceptance. Keep
-execution validity separate from scientific success. Reuse valid evidence rather
-than repeating completed work. Bundle blocking corrections; do not add
-another broad review after an unchanged contract has passed its checks.
+Apply [Acceptance and review](../../AGENTS.md#acceptance-and-review) to the stable
+candidate. Keep execution validity separate from scientific success.
 For decision-bearing semantics, include a source-grounded check that distinguishes
 the intended interpretation from the nearest plausible wrong one. A self-check
 using the implementation's own assumed constants is insufficient evidence.
@@ -162,9 +161,9 @@ the lead. Unaffected work can continue.
 
 ### Report and coordinate
 
-Send parent a short milestone report when a real check completes, scope starts
-to expand, an uncertainty blocks work, a durable job launches, or work fails.
-Routine keystrokes and elapsed time need no report. Use:
+Use the [checkpoint policy](../../AGENTS.md#checkpoints-and-waiting) for report
+triggers and prompt failure escalation. A completed check alone needs no message;
+bundle routine results into the next necessary report. For a report, use:
 
 ```text
 finding/result -> evidence path -> impact -> action needed (or none)
@@ -179,9 +178,11 @@ If another correction is needed, notify the lead before editing, agree ownership
 then return the updated candidate with affected checks rerun. The lead may take
 over a bounded repair; never write concurrently with its acceptance work.
 
-For native subagents, use send_message for active peers/parent and followup_task
-to resume an idle non-root worker. For persistent sessions, send messages in
-both directions through the route in [lead-worker](../lead-worker/SKILL.md),
+For native subagents, `send_message` queues information without scheduling a
+turn; use `followup_task` to resume an idle or interrupted non-root worker.
+After an interruption, reconcile the roster once before waiting and resume
+still-authorized work on the existing child. For persistent sessions, send messages
+in both directions through the route in [lead-worker](../lead-worker/SKILL.md),
 including its idle-session delivery. Roster lookup is for reconciliation, not
 polling. Interrupting an agent does not establish that its external job has
 stopped; reconcile process ownership before any replacement launch.
