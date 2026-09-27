@@ -1,6 +1,6 @@
 # Rollout row credit under controlled missing annotations
 
-Status: active; finite A/B/C and FN-insertion results lead-accepted; fixed16-target route closed; coherent90%-retained CPU baseline accepted and one finite S runtime chain released. Lead owns scientific decisions;926-worker executes with restored Astra/low. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
+Status: bounded stage closed; A/B/C, FN-insertion and coherent90%-retained S results lead-accepted; scientific outcome mixed. No further runtime or continuation package is released. Lead owns scientific decisions;926-worker executes with restored Astra/low. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
 
 ## Authority and predecessor
 
@@ -107,3 +107,10 @@ Freeze all new natural outputs before separate full570 one-to-one IoU.5 evaluati
 Stop at CPU candidate for lead acceptance and separate runtime release. After the finite baseline, synthesize efficacy and limits before any further training; no automatic dose extension if natural net coverage/hidden preservation fails to improve. This is a fresh bounded continuation of the user's learning question, not an extension of the closed16-target placement recipe.
 
 S CPU acceptance: source41e645a23f434bc2132ab0572d3472be649ba776 passed independent20-test replay,17candidate/202qualifier/22control-binding hash checks, exact513row/4800atom inspection and focused actual-consumer review. Row logits are selected before FP32 loss conversion; live peak memory remains unmeasured. Measured training plan144forwards/230080input/141280visual; max1890input and568compact logit rows. Release rollout-row-credit-01/lead-release-08.json authorizes exactly one8-update S training, two18-image evaluations and separate offline scoring. First model-stage failure short-circuits without retry; no new result is claimed before frozen readback.
+
+
+## Stage closeout
+
+The completed S result and cross-recipe synthesis are accepted in results.md. S has retained net+7/+14 and hidden net+2/+1 at4/8, with increased invalid/repeated/capped output. This is evidence of some learning and limited annotation-level hidden recovery, not a reliable self-improvement loop. All frozen comparisons, denominators, unfavorable outcomes and routing provenance remain authoritative.
+
+This finite stage is complete. No best checkpoint is promoted and no20%mask, refreshed teacher, dose extension or new training is released. A future frozen-trajectory tail-separation question is proposed in results.md; it requires its own bounded continuation if pursued. User's no0%-hide, no-goal, shared-GPU and evaluator-only-hidden boundaries remain intact.
