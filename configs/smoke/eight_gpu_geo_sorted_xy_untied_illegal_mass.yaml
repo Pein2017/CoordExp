@@ -1,0 +1,14 @@
+schema_version: 1
+extends: eight_gpu_geo_sorted_xy_untied.yaml
+run:
+  name: geo-sorted-xy-untied-illegal-mass-eight-gpu-smoke
+losses:
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      mode: enabled
+      weight: 0.1
+  auxiliary:
+    conditional_order_gate:
+      weight: 0.01

@@ -413,12 +413,12 @@ class ProtectedLossesConfig(StrictConfigModel):
         return value
 
 
-class RawAxisValidityHingeLossConfig(WeightedLossConfig):
-    margin: float = Field(default=1.0 / 999.0, ge=0.0, allow_inf_nan=False)
+class ConditionalOrderGateLossConfig(WeightedLossConfig):
+    pass
 
 
 class AuxiliaryLossesConfig(StrictConfigModel):
-    raw_axis_validity_hinge: RawAxisValidityHingeLossConfig | None = None
+    conditional_order_gate: ConditionalOrderGateLossConfig | None = None
     coord_gaussian_rps: CoordGaussianRPSLossConfig | None = None
 
 

@@ -29,7 +29,7 @@ from src.coordinate_targets import CoordinateLossTarget
 from src.losses import LossContext, LossRunner, TokenVocabularyGroups
 from src.losses.bindings import (
     BASE_CE_BINDING,
-    RAW_AXIS_VALIDITY_HINGE_BINDING,
+    CONDITIONAL_ORDER_GATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
     COORDINATE_TOKEN_TYPES,
     PROTECTED_BASE_CE_WEIGHT,
@@ -133,14 +133,14 @@ def test_binding_inventory_is_exactly_the_four_implemented_losses() -> None:
         "base_ce",
         "token_type_gate",
         "coord_gaussian_rps",
-        "raw_axis_validity_hinge",
+        "conditional_order_gate",
     ]
     assert len(TOKEN_LOSS_BINDINGS) == 4
     assert TOKEN_LOSS_BINDINGS == (
         BASE_CE_BINDING,
         TOKEN_TYPE_GATE_BINDING,
         COORD_GAUSSIAN_RPS_BINDING,
-        RAW_AXIS_VALIDITY_HINGE_BINDING,
+        CONDITIONAL_ORDER_GATE_BINDING,
     )
 
 

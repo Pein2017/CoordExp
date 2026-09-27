@@ -1,0 +1,17 @@
+schema_version: 1
+extends: untied.yaml
+run:
+  name: qwen3-vl-2b-geo-sorted-xy-untied-illegal-mass001-ebs24-4epoch
+losses:
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      mode: enabled
+      weight: 0.1
+  auxiliary:
+    conditional_order_gate:
+      weight: 0.01
+resume:
+  mode: exact_same_world_size
+  checkpoint_dir: null

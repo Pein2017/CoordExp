@@ -15,7 +15,7 @@ from src.config.models import LossesConfig
 from src.losses.base_ce import BaseTokenCE
 from src.losses.bindings import (
     BASE_CE_BINDING,
-    RAW_AXIS_VALIDITY_HINGE_BINDING,
+    CONDITIONAL_ORDER_GATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
     COORDINATE_TOKEN_TYPES,
     PROTECTED_BASE_CE_WEIGHT,
@@ -30,7 +30,7 @@ from src.losses.normalizers import (
     SegmentBalancedDenominator,
     segment_balanced_contribution,
 )
-from src.losses.raw_axis_validity_hinge import RawAxisValidityHingeLoss
+from src.losses.conditional_order_gate import ConditionalOrderGateLoss
 from src.losses.token_type_gate import TokenTypeGateLoss
 from src.losses.vocab import V1_TOKEN_TYPES
 from src.supervision import TokenSequence
@@ -157,7 +157,7 @@ class _ActiveTokenLoss:
 
     binding: TokenLossBinding
     weight: float
-    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss | RawAxisValidityHingeLoss
+    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss | ConditionalOrderGateLoss
     token_types: tuple[str, ...] | None
 
     @property
@@ -179,8 +179,8 @@ class LossRunner:
     token_type_gate_groups: tuple[str, ...]
     coord_gaussian_rps_weight: float = 0.0
     coord_gaussian_rps: CoordGaussianRPSLoss | None = None
-    raw_axis_validity_hinge_weight: float = 0.0
-    raw_axis_validity_hinge: RawAxisValidityHingeLoss | None = None
+    conditional_order_gate_weight: float = 0.0
+    conditional_order_gate: ConditionalOrderGateLoss | None = None
 
     def __post_init__(self) -> None:
         _validate_weight(BASE_CE_BINDING.name, self.base_ce_weight)
@@ -188,7 +188,7 @@ class LossRunner:
         _validate_weight(
             COORD_GAUSSIAN_RPS_BINDING.name, self.coord_gaussian_rps_weight
         )
-        _validate_weight(RAW_AXIS_VALIDITY_HINGE_BINDING.name, self.raw_axis_validity_hinge_weight)
+        _validate_weight(CONDITIONAL_ORDER_GATE_BINDING.name, self.conditional_order_gate_weight)
         _validate_token_type_groups(self.token_type_gate_groups)
         # Fail closed at construction: the composition path is the only place
         # zero policies are decided, so run it once here.
@@ -273,9 +273,9 @@ class LossRunner:
                         token_types=COORDINATE_TOKEN_TYPES,
                     )
                 )
-            elif binding is RAW_AXIS_VALIDITY_HINGE_BINDING:
-                weight = float(self.raw_axis_validity_hinge_weight)
-                term = self.raw_axis_validity_hinge
+            elif binding is CONDITIONAL_ORDER_GATE_BINDING:
+                weight = float(self.conditional_order_gate_weight)
+                term = self.conditional_order_gate
                 if weight == 0.0:
                     if term is not None:
                         raise LossContractError(
@@ -286,8 +286,8 @@ class LossRunner:
                     continue
                 if term is None:
                     raise LossContractError(
-                        "raw_axis_validity_hinge weight requires a configured loss term",
-                        code="loss.raw_axis_validity_hinge_missing_term",
+                        "conditional_order_gate weight requires a configured loss term",
+                        code="loss.conditional_order_gate_missing_term",
                         context={"weight": weight},
                     )
                 active.append(_ActiveTokenLoss(
@@ -315,8 +315,8 @@ class LossRunner:
                 context={"normalizer": config.normalizer},
             )
         auxiliary = config.auxiliary
-        axis_cfg = auxiliary.raw_axis_validity_hinge if auxiliary is not None else None
-        axis_weight = 0.0 if axis_cfg is None else float(axis_cfg.weight)
+        order_cfg = auxiliary.conditional_order_gate if auxiliary is not None else None
+        order_weight = 0.0 if order_cfg is None else float(order_cfg.weight)
         coord_cfg = auxiliary.coord_gaussian_rps if auxiliary is not None else None
         coord_weight = 0.0 if coord_cfg is None else float(coord_cfg.weight)
         # `omit`: an absent or zero-weight auxiliary is never instantiated.
@@ -339,10 +339,10 @@ class LossRunner:
             token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
             coord_gaussian_rps_weight=coord_weight,
             coord_gaussian_rps=coord_term,
-            raw_axis_validity_hinge_weight=axis_weight,
-            raw_axis_validity_hinge=(
-                RawAxisValidityHingeLoss(margin=axis_cfg.margin)
-                if axis_cfg is not None and axis_weight > 0.0 else None
+            conditional_order_gate_weight=order_weight,
+            conditional_order_gate=(
+                ConditionalOrderGateLoss()
+                if order_cfg is not None and order_weight > 0.0 else None
             ),
         )
 
@@ -610,7 +610,7 @@ def _compute_token_term_contribution(
     name: str,
     context: LossContext,
     weight: float,
-    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss | RawAxisValidityHingeLoss,
+    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss | ConditionalOrderGateLoss,
     token_types: tuple[str, ...] | None,
     denominator: SegmentBalancedDenominator,
     local_micro_step_index: int,

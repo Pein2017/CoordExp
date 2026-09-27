@@ -70,8 +70,8 @@ COORD_GAUSSIAN_RPS_BINDING = TokenLossBinding(
     zero_policy="omit",
 )
 
-RAW_AXIS_VALIDITY_HINGE_BINDING = TokenLossBinding(
-    name="raw_axis_validity_hinge",
+CONDITIONAL_ORDER_GATE_BINDING = TokenLossBinding(
+    name="conditional_order_gate",
     role="auxiliary",
     normalizer="segment_balanced",
     zero_policy="omit",
@@ -82,7 +82,7 @@ TOKEN_LOSS_BINDINGS: tuple[TokenLossBinding, ...] = (
     BASE_CE_BINDING,
     TOKEN_TYPE_GATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
-    RAW_AXIS_VALIDITY_HINGE_BINDING,
+    CONDITIONAL_ORDER_GATE_BINDING,
 )
 
 #: The protected base-CE weight; the `forbid` zero policy admits no other.
@@ -112,7 +112,7 @@ def binding_for(name: str) -> TokenLossBinding:
 
 
 __all__ = [
-    "RAW_AXIS_VALIDITY_HINGE_BINDING",
+    "CONDITIONAL_ORDER_GATE_BINDING",
     "BASE_CE_BINDING",
     "COORDINATE_TOKEN_TYPES",
     "COORD_GAUSSIAN_RPS_BINDING",
