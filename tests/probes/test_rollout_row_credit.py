@@ -412,5 +412,102 @@ class RowCreditTest(unittest.TestCase):
             with patch.object(r,'ZERO',zero),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):
                 with self.assertRaises(ReachedTruth):r.family_offline(root,reference)
 
+    def test_retained_real18_identity_order_and_hidden_independence(self):
+        enc=r.p.load(r.ROOT/'retained-sft-01/encodings.json')
+        images={x['image_id']:x for x in self.visible};keys=[]
+        for e in enc:
+            image=images[e['image_id']]
+            ordered=sorted(image['objects'],key=lambda o:(o['bbox_2d'][0],o['bbox_2d'][1],o['coco_ann_id']))
+            self.assertEqual(e['annotation_ids'],[o['coco_ann_id'] for o in ordered])
+            self.assertEqual(e['row_ids'],['retained:'+str(o['coco_ann_id']) for o in ordered])
+            self.assertEqual(e['prefix_source'],'rendered_retained_labels')
+            for oid,obj in zip(e['row_ids'],ordered,strict=True):
+                atoms=[a for a in e['atoms'] if a['object_id']==oid]
+                self.assertEqual(self.t.decode([a['token_id'] for a in atoms if a['token_type']=='desc_text']),obj['desc'])
+                coords=[a['coordinate_target'] for a in atoms if a['token_type']=='coordinate']
+                self.assertEqual([x['bbox'] for x in coords],[obj['bbox_2d']]*4)
+                self.assertEqual([x['slot_index'] for x in coords],[0,1,2,3])
+                self.assertEqual(atoms[0]['field'],'object_ref_start');self.assertEqual(atoms[-1]['field'],'box_end')
+                keys.append([e['image_id'],obj['coco_ann_id']])
+            for atom in e['atoms']:
+                self.assertEqual(e['input_ids'][atom['target_position']],atom['token_id'])
+                self.assertEqual(atom['target_position']-1,atom['causal_logits_position'])
+                self.assertNotEqual(atom['token_type'],'eos')
+        self.assertEqual(len(enc),18);self.assertEqual(len(keys),513);self.assertEqual(len(set(map(tuple,keys))),513)
+        self.assertFalse(set(map(tuple,keys))&set(map(tuple,self.hidden)))
+        changed=copy.deepcopy(self.truth)
+        for image in changed:
+            for obj in image['objects']:
+                if [image['image_id'],obj['coco_ann_id']] in self.hidden:obj.update(desc='mutated hidden',bbox_2d=[1,2,3,4])
+        retained,_=r.split_reference(changed,10);self.assertEqual(retained,self.visible)
+        _,before,ids=r.retained_sequence(self.visible[0],self.q)
+        _,after,newids=r.retained_sequence(retained[0],self.q)
+        self.assertEqual(before,after);self.assertEqual(ids,newids)
+        for rank in range(8):self.assertEqual(r.family_jobs(list(images),'S',rank),r.family_jobs(list(images),'A',rank))
+
+    def test_retained_actual_consumer_closure_EOS_and_omission(self):
+        from src.packing.planner import PackedSequence
+        from src.supervision.tokens import build_token_sequence_from_packed_supervision
+        image=next(x for x in self.visible if x['image_id']==7116)
+        _,seq,ids=r.retained_sequence(image,self.q)
+        terminal=range(max(a.target_position for a in seq.atoms)+1,len(seq.input_ids))
+        positions=tuple(a.causal_logits_position for a in seq.atoms)+tuple(i-1 for i in terminal)
+        logits=torch.zeros(1,len(positions),self.vocab.vocab_size,requires_grad=True)
+        loss,rows=r.retained_objective(logits,seq,ids,self.vocab,positions);loss.backward()
+        self.assertEqual(len(rows),len(image['objects']));self.assertTrue(torch.isfinite(loss))
+        for atom in seq.atoms:
+            if atom.field in ('object_ref_start','box_end'):
+                self.assertGreater(float(logits.grad[0,positions.index(atom.causal_logits_position)].abs().sum()),0)
+        for pos in terminal:self.assertEqual(float(logits.grad[0,positions.index(pos-1)].abs().sum()),0)
+        pack=PackedSequence(seq.pack_index,seq.input_ids,seq.segments,r.p.MAX_LENGTH)
+        omitted=build_token_sequence_from_packed_supervision(pack,[a for a in seq.atoms if a.object_id!=ids[-1]])
+        with self.assertRaises(AssertionError):r.retained_objective(logits,omitted,ids,self.vocab,positions)
+        end=next(iter(terminal))
+        leaked=replace(seq.atoms[-1],target_position=end,logical_target_position=end,logical_target_end=end+1,
+                       token_id=seq.input_ids[end],token_type='eos',text='<|im_end|>',field='eos',coordinate_target=None)
+        leak=build_token_sequence_from_packed_supervision(pack,seq.atoms+(leaked,))
+        with self.assertRaises(AssertionError):r.retained_objective(logits,leak,ids,self.vocab,positions)
+
+    def test_retained_unequal_real_row_and_image_means(self):
+        means=[];all_rows=[];pooled_tokens=[]
+        for index,i in enumerate((7116,13348)):
+            image=next(x for x in self.visible if x['image_id']==i)
+            _,seq,ids=r.retained_sequence(image,self.q)
+            positions=tuple(a.causal_logits_position for a in seq.atoms)
+            logits=torch.zeros(1,len(positions),self.vocab.vocab_size)
+            for j,atom in enumerate(seq.atoms):logits[0,j,atom.token_id]=1+index+ids.index(atom.object_id)*.2
+            loss,rows=r.retained_objective(logits,seq,ids,self.vocab,positions)
+            self.assertAlmostEqual(float(loss),sum(x['loss'] for x in rows)/len(rows),5)
+            means.append(float(loss));all_rows.extend(rows)
+            pooled_tokens.append(sum(x['loss']*x['atoms'] for x in rows)/sum(x['atoms'] for x in rows))
+        expected=sum(means)/2
+        self.assertNotAlmostEqual(expected,sum(x['loss'] for x in all_rows)/len(all_rows),4)
+        self.assertNotAlmostEqual(expected,sum(pooled_tokens)/2,4)
+
+    def test_retained_offline_freeze_and_zero_A_I_contrasts(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        original_load=r.p.load;opened=[]
+        with tempfile.TemporaryDirectory(dir=r.ROOT/'retained-sft-01') as tmp:
+            root=Path(tmp);reference=root/'A';insertion=root/'I';zero=root/'zero'
+            r.p.write(root/'control-reuse.json',dict(arm='S',reference_root=str(reference),insertion_root=str(insertion),sha256={}))
+            expected={zero,*[reference/f'evaluation-A-{s}' for s in (4,8)],*[insertion/f'evaluation-I-{s}' for s in (4,8)],*[root/f'evaluation-S-{s}' for s in (4,8)]}
+            def readback(path):
+                opened.append(path);path.mkdir(parents=True,exist_ok=True);r.p.write(path/'frozen.json',{})
+                return self.records
+            def load(path):
+                if Path(path)==r.TRUTH:
+                    self.assertEqual(set(opened),expected);self.assertEqual(len(opened),7)
+                    self.assertEqual(len(original_load(root/'all-evaluations-frozen.json')),7)
+                return original_load(path)
+            with patch.object(r,'ZERO',zero),patch.object(r.p,'read_evaluation',side_effect=readback),patch.object(r.p,'load',side_effect=load):r.family_offline(root,reference)
+            result=original_load(root/'offline-results.json')
+            self.assertEqual(set(result['contrasts']),{f'S-{a}-{s}' for a in ('zero','A','I') for s in (4,8)})
+            for contrast in result['contrasts'].values():
+                for mode in contrast.values():
+                    for cohort in mode.values():
+                        self.assertTrue(all(v==0 for part in cohort.values() for v in part.values()))
+
 
 if __name__=='__main__': unittest.main()

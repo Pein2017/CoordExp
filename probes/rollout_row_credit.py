@@ -180,6 +180,61 @@ def positive_sequence(image, record, row, tokenizer, fn=False):
     return build_token_sequence_from_packed_supervision(pack,atoms)
 
 
+def retained_sequence(image, q):
+    """Coherent retained-label teacher forcing, never a generated-history prefix."""
+    from src.data.examples import RawExample, RawObject, ImageRef, SourceProvenance
+    objects=sorted(image['objects'],key=lambda o:(o['bbox_2d'][0],o['bbox_2d'][1],o['coco_ann_id']))
+    row_ids=tuple('retained:'+str(o['coco_ann_id']) for o in objects)
+    assert len(set(row_ids))==len(objects)
+    raw=RawExample(str(image['image_id']),ImageRef(image['image_path'],Path(image['image_path']),image['width'],image['height'],{}),
+        tuple(RawObject(oid,o['desc'],tuple(o['bbox_2d']),{}) for oid,o in zip(row_ids,objects,strict=True)),{},
+        SourceProvenance(ROOT/'cpu-04/retained-10.json',1,'frozen_retained90','rendered_retained_labels'))
+    encoded,sequence=p.encode(raw,set(row_ids),q)
+    assert tuple(dict.fromkeys(a.object_id for a in sequence.atoms))==row_ids
+    return encoded,sequence,row_ids
+
+
+def retained_objective(logits, sequence, row_ids, vocab, positions):
+    """Existing within-row loss, then row mean for this one original image."""
+    import torch
+    from src.packing.planner import PackedSequence
+    from src.supervision.tokens import build_token_sequence_from_packed_supervision
+    assert len(set(row_ids))==len(row_ids)
+    assert tuple(dict.fromkeys(a.object_id for a in sequence.atoms))==tuple(row_ids)
+    assert all(a.token_type in ('schema','desc_text','coordinate') and a.object_id in row_ids for a in sequence.atoms)
+    pack=PackedSequence(sequence.pack_index,sequence.input_ids,sequence.segments,p.MAX_LENGTH)
+    losses=[];details=[]
+    for oid in row_ids:
+        atoms=tuple(a for a in sequence.atoms if a.object_id==oid)
+        assert {a.field for a in atoms}>={'object_ref_start','description','object_ref_end','box_start','box_end','bbox[0]','bbox[1]','bbox[2]','bbox[3]'}
+        row=build_token_sequence_from_packed_supervision(pack,atoms)
+        loss,detail=p.image_loss(logits,row,vocab,positions);losses.append(loss)
+        details.append(dict(object_id=oid,atoms=len(atoms),loss=float(loss.detach()),**detail))
+    return torch.stack(losses).mean() if losses else logits.sum()*0,details
+
+
+def forward_retained(q, model, image, record, expected, vocab):
+    import torch
+    from src.qwen.native import exact_history_inputs
+    encoded,sequence,row_ids=retained_sequence(image,q)
+    positions=tuple(a.causal_logits_position for a in sequence.atoms)
+    assert list(sequence.input_ids)==expected['input_ids'] and list(row_ids)==expected['row_ids']
+    assert [a.to_artifact_dict() for a in sequence.atoms]==expected['atoms']
+    assert list(positions)==expected['positions']
+    batch=p.native_request(record,p.load(p.POLICY),q.processor)
+    assert list(batch.prompt_token_ids[0])==record['prompt_token_ids']
+    assert list(sequence.input_ids[:len(record['prompt_token_ids'])])==record['prompt_token_ids']
+    assert list(batch.image_grids[0])==record['image_grid_thw']==list(encoded.image_encoding.image_grid_thw)
+    assert batch.media_sha256[0]==record['media_sha256']
+    kwargs=exact_history_inputs(q.model,batch.inputs,[sequence.input_ids],pad_token_id=q.tokenizer.pad_token_id)
+    kwargs['logits_to_keep']=torch.tensor(positions,device='cuda')
+    with torch.autocast('cuda',dtype=torch.bfloat16):logits=model(**kwargs).logits
+    loss,rows=retained_objective(logits,sequence,row_ids,vocab,positions)
+    return loss,dict(image_id=image['image_id'],branch='S',prefix_source='rendered_retained_labels',row_count=len(row_ids),
+        tokens=len(sequence.input_ids),input_sha256=p.stable(p.canonical(sequence.input_ids)),positions=list(positions),
+        atoms_sha256=p.stable(p.canonical(expected['atoms'])),logits_sha256=p.tensor_hash(logits),loss=float(loss.detach()),row_losses=rows)
+
+
 def selected_logits(logits, positions, targets):
     lookup={v:i for i,v in enumerate(positions)}
     if len(lookup)!=len(positions): raise ValueError('duplicate logit positions')
@@ -364,10 +419,10 @@ FAMILY = ROOT/'family-01'
 
 
 def family_jobs(image_ids, arm, rank):
-    if arm not in ('A','B','C','I') or len(image_ids)!=18 or len(set(image_ids))!=18 or not 0<=rank<8:
-        raise ValueError('family requires A/B/C/I, exactly18images and rank0..7')
+    if arm not in ('A','B','C','I','S') or len(image_ids)!=18 or len(set(image_ids))!=18 or not 0<=rank<8:
+        raise ValueError('family requires A/B/C/I/S, exactly18images and rank0..7')
     jobs=[dict(image_id=i,fn=fn,weight=8/18) for i in sorted(image_ids)[rank::8]
-          for fn in ([False] if arm=='A' else [False,True])]
+          for fn in ([False] if arm in ('A','S') else [False,True])]
     return [dict(j,sync=k==len(jobs)-1) for k,j in enumerate(jobs)]
 
 
@@ -439,7 +494,12 @@ def family_train(output, arm, family_root):
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     rank,out,sources,identity=family_start(output,family_root);start=time.monotonic()
-    images,plans,records=family_data();jobs=family_jobs(list(images),arm,rank)
+    if arm=='S':
+        images={x['image_id']:x for x in p.load(ROOT/'cpu-04/retained-10.json')}
+        records={x['image_id']:x for x in p.load(family_root/'inputs.json')}
+        encodings={x['image_id']:x for x in p.load(family_root/'encodings.json')}
+    else:images,plans,records=family_data()
+    jobs=family_jobs(list(images),arm,rank)
     if arm=='I':
         moved=insertion_plan(list(plans.values()),list(records.values()))
         assert moved==p.load(family_root/'credit-plan.json')
@@ -460,6 +520,7 @@ def family_train(output, arm, family_root):
         optimizer.zero_grad(set_to_none=True);before=time.monotonic()
         def forward(job):
             i=job['image_id']
+            if arm=='S':return forward_retained(q,model,images[i],records[i],encodings[i],vocab)
             return forward_credit(q,model,plans[i],records[i],images[i],vocab,'B' if arm=='I' else arm,job['fn'],
                                   bookkeeping=True,diagnostics=step in (1,8))
         evidence=accumulate_family_step(model,jobs,forward)
@@ -584,6 +645,11 @@ def family_offline(family_root, reference_root=None):
         roots={'zero':ZERO,**{f'{arm}-{step}':reference_root/f'evaluation-{arm}-{step}' for arm in 'AB' for step in (4,8)},
                **{f'I-{step}':family_root/f'evaluation-I-{step}' for step in (4,8)}}
         pairs=(('I','A'),('I','B'))
+        if reuse.get('arm')=='S':
+            roots={'zero':ZERO,**{f'A-{step}':reference_root/f'evaluation-A-{step}' for step in (4,8)},
+                   **{f'I-{step}':Path(reuse['insertion_root'])/f'evaluation-I-{step}' for step in (4,8)},
+                   **{f'S-{step}':family_root/f'evaluation-S-{step}' for step in (4,8)}}
+            pairs=(('S','zero'),('S','A'),('S','I'))
     # Readback freezes every shard set BEFORE opening any truth file.
     frozen={name:p.read_evaluation(path) for name,path in roots.items()}
     baseline={x['image_id']:x for x in frozen['zero']}
@@ -603,12 +669,72 @@ def family_offline(family_root, reference_root=None):
     outcomes=family_outcomes(scored,selected);contrasts={}
     for step in (4,8):
         for later,earlier in pairs:
-            a=outcomes[f'{earlier}-{step}'];b=outcomes[f'{later}-{step}']
+            a=outcomes['zero' if earlier=='zero' else f'{earlier}-{step}'];b=outcomes[f'{later}-{step}']
             contrasts[f'{later}-{earlier}-{step}']={mode:{cohort:{part:{k:b['summary'][mode][cohort][part][k]-a['summary'][mode][cohort][part][k]
                 for k in a['summary'][mode][cohort][part]} for part in ('metrics','burdens')} for cohort in ('combined','human13','refined5')} for mode in ('raw','category')}
     p.write(family_root/'offline-results.json',dict(scored=scored,outcomes=outcomes,contrasts=contrasts,selected_FN_keys=selected,
         truth_sha256=p.digest(TRUTH),hidden_keys=partitions['hidden10'],denominator=570,
         limitations='Annotation-ID proxy; refined5 redraw uncertainty and prior exposure; overlap pairs are not physical negatives; no checkpoint selection.'))
+
+def prepare_retained(output, reference_root, insertion_root):
+    """CPU-only all-retained serialization; zero supplies input identities only."""
+    visible=p.load(ROOT/'cpu-04/retained-10.json');zero=p.read_evaluation(ZERO);q=frontend()
+    fields=('image_id','request_id','image_path','image_sha256','width','height','crop','prompt_token_ids','image_grid_thw','media_sha256')
+    records={x['image_id']:{k:x[k] for k in fields} for x in zero}
+    encodings=[];keys=[];total_tokens=total_visual=0
+    for image in visible:
+        i=image['image_id'];record=records[i];encoded,sequence,row_ids=retained_sequence(image,q)
+        batch=p.native_request(record,p.load(p.POLICY),q.processor)
+        assert list(batch.prompt_token_ids[0])==record['prompt_token_ids']==list(sequence.input_ids[:len(record['prompt_token_ids'])])
+        assert list(batch.image_grids[0])==record['image_grid_thw']==list(encoded.image_encoding.image_grid_thw)
+        assert batch.media_sha256[0]==record['media_sha256']
+        positions=[a.causal_logits_position for a in sequence.atoms]
+        ordered=sorted(image['objects'],key=lambda o:(o['bbox_2d'][0],o['bbox_2d'][1],o['coco_ann_id']))
+        assert len(row_ids)==len(ordered) and len(positions)==len(set(positions))
+        for oid,obj in zip(row_ids,ordered,strict=True):
+            own=[a for a in sequence.atoms if a.object_id==oid]
+            assert q.tokenizer.decode([a.token_id for a in own if a.token_type=='desc_text'],skip_special_tokens=False)==obj['desc']
+            coords=[a.to_artifact_dict()['coordinate_target'] for a in own if a.token_type=='coordinate']
+            assert len(coords)==4 and all(c['bbox']==obj['bbox_2d'] for c in coords)
+            assert [c['slot_index'] for c in coords]==[0,1,2,3]
+            keys.append([i,obj['coco_ann_id']])
+        assert all(a.token_type!='eos' and sequence.input_ids[a.target_position]==a.token_id for a in sequence.atoms)
+        visual=encoded.image_token_count;assert visual==record['image_grid_thw'][0]*record['image_grid_thw'][1]*record['image_grid_thw'][2]//4
+        encodings.append(dict(image_id=i,prefix_source='rendered_retained_labels',row_ids=list(row_ids),
+            annotation_ids=[o['coco_ann_id'] for o in ordered],input_ids=list(sequence.input_ids),
+            input_sha256=p.stable(p.canonical(sequence.input_ids)),atoms=[a.to_artifact_dict() for a in sequence.atoms],
+            positions=positions,tokens=len(sequence.input_ids),visual_tokens=visual,
+            terminal_masked_positions=list(range(max(a.target_position for a in sequence.atoms)+1,len(sequence.input_ids))),
+            grid=record['image_grid_thw'],media_sha256=record['media_sha256'],pixel_values_shape=list(batch.inputs['pixel_values'].shape),
+            compact_logits_bf16_bytes=len(positions)*len(q.tokenizer)*2,compact_logits_fp32_bytes=len(positions)*len(q.tokenizer)*4))
+        total_tokens+=len(sequence.input_ids);total_visual+=visual
+    assert len(visible)==18 and len(keys)==len(set(map(tuple,keys)))==513
+    assert total_visual*8==141280 and max(x['tokens'] for x in encodings)<=p.MAX_LENGTH
+    p.write(output/'inputs.json',list(records.values()));p.write(output/'encodings.json',encodings)
+    p.write(output/'annotation-keys.json',keys);p.write(output/'frontend.json',q.to_artifact_dict())
+    refs=[ZERO,*[reference_root/f'evaluation-A-{step}' for step in (4,8)],*[insertion_root/f'evaluation-I-{step}' for step in (4,8)]]
+    for root in refs:p.read_evaluation(root)
+    bindings={str(root/'frozen.json'):p.digest(root/'frozen.json') for root in refs}
+    for root in [reference_root/'train-A/checkpoint-0',insertion_root/'train-I/checkpoint-0']:
+        bindings[str(root/'identity.json')]=p.digest(root/'identity.json')
+        for name,sha in p.load(root/'identity.json').items():assert p.digest(root/name)==sha;bindings[str(root/name)]=sha
+    for path in (p.POLICY,ROOT/'cpu-04/retained-10.json',reference_root/'family-plan.json',reference_root/'zero-equivalence.json',insertion_root/'family-plan.json'):
+        bindings[str(path)]=p.digest(path)
+    p.write(output/'control-reuse.json',dict(arm='S',reference_root=str(reference_root),insertion_root=str(insertion_root),sha256=bindings))
+    prefix=['torchrun','--standalone','--nnodes=1','--nproc_per_node=8','-m','probes.rollout_row_credit']
+    commands=[prefix+['family-train','--arm','S','--family-root',str(output),'--output',str(output/'train-S')]]
+    commands += [prefix+['family-evaluate','--checkpoint',str(output/f'train-S/checkpoint-{step}'),'--family-root',str(output),'--output',str(output/f'evaluation-S-{step}')] for step in (4,8)]
+    p.write(output/'family-plan.json',dict(status='CPU candidate; runtime not released',arm='S',prefix_source='rendered_retained_labels',
+        retained_file=str(ROOT/'cpu-04/retained-10.json'),retained_sha256=p.digest(ROOT/'cpu-04/retained-10.json'),
+        images=sorted(records),annotation_rows=513,seed=92711,updates=8,learning_rates=[1e-5,5e-6],image_mean=18,
+        objective='rowmean(CE+.1type_gate+.01conditional_order_gate); object local closures included; EOS/terminal-only atoms masked',
+        rank_jobs={str(rank):family_jobs(list(records),'S',rank) for rank in range(8)},training_forwards=144,
+        training_input_tokens=total_tokens*8,training_visual_tokens=total_visual*8,natural_queries=36,natural_visual_tokens=35320,
+        generated_token_bound=111024,max_input_tokens=max(x['tokens'] for x in encodings),max_selected_logits=max(len(x['positions']) for x in encodings),
+        vocab_size=len(q.tokenizer),max_compact_logits_bf16_bytes=max(x['compact_logits_bf16_bytes'] for x in encodings),
+        max_compact_logits_fp32_bytes=max(x['compact_logits_fp32_bytes'] for x in encodings),commands=commands,
+        offline_command=['python','-m','probes.rollout_row_credit','family-offline','--family-root',str(output),'--reference-root',str(reference_root)]))
+
 
 def prepare_insert(output, reference_root):
     """CPU frontend qualification of the fixed insertion targets and controls."""
@@ -725,14 +851,18 @@ def prepare(output):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','prepare-insert','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
-    parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABCI'),default='C')
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['prepare','prepare-insert','prepare-retained','slice','reload','family-train','family-evaluate','family-offline']);parser.add_argument('--output',type=Path,default=ROOT/'cpu-01')
+    parser.add_argument('--cpu-root',type=Path,default=ROOT/'cpu-03');parser.add_argument('--arm',choices=list('ABCIS'),default='C')
     parser.add_argument('--training-root',type=Path)
     parser.add_argument('--family-root',type=Path,default=FAMILY);parser.add_argument('--checkpoint',type=Path)
     parser.add_argument('--reference-root',type=Path)
+    parser.add_argument('--insertion-root',type=Path)
     args=parser.parse_args()
     if args.command=='prepare':
         args.output.mkdir(parents=True,exist_ok=True);print(p.canonical(prepare(args.output)))
+    elif args.command=='prepare-retained':
+        if args.reference_root is None or args.insertion_root is None:parser.error('prepare-retained requires reference-root and insertion-root')
+        args.output.mkdir(parents=True,exist_ok=True);prepare_retained(args.output,args.reference_root,args.insertion_root)
     elif args.command=='prepare-insert':
         if args.reference_root is None:parser.error('prepare-insert requires --reference-root')
         args.output.mkdir(parents=True,exist_ok=True);prepare_insert(args.output,args.reference_root)
