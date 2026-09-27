@@ -41,7 +41,7 @@ python -m codex_usage_ledger \
   --sessions "$CODEX_HOME/sessions" \
   --root-thread-id "$SESSION_A_THREAD_ID" \
   --include-root \
-  --prices prices-gpt56-standard.toml \
+  --prices prices-standard-2026-09-25.toml \
   --format json \
   --summary-out /tmp/session-a-summary.json \
   --pretty
@@ -103,7 +103,7 @@ attempt, edit it down to explicit valid outcomes, then use strict accounting:
 ```bash
 python -m codex_usage_ledger \
   --sessions "$CODEX_HOME/sessions" \
-  --prices prices-gpt56-standard.toml \
+  --prices prices-standard-2026-09-25.toml \
   --outcomes-template-out /tmp/routing-outcomes-template.jsonl \
   --summary-out /tmp/codex-routing-summary.json
 ```
@@ -113,7 +113,7 @@ After replacing `REPLACE_ME` dispositions:
 ```bash
 python -m codex_usage_ledger \
   --sessions "$CODEX_HOME/sessions" \
-  --prices prices-gpt56-standard.toml \
+  --prices prices-standard-2026-09-25.toml \
   --outcomes /path/to/routing-outcomes.jsonl \
   --disposition-policy strict \
   --format json \
@@ -150,9 +150,11 @@ bill those fields the same way. Each `route_pairs` entry aggregates these
 billable dimensions, measured usage, estimated cost, and labeled rollout wall
 time with observation count, total, mean, median, and nearest-rank P90.
 
-`prices-gpt56-standard.toml` is a local snapshot populated from the user's
-GPT-5.6 Standard API price screenshot on 2026-08-06. Treat it as an estimate
-input and replace it when the provider price sheet changes.
+`prices-gpt56-standard.toml` is the preserved 2026-08-06 historical snapshot.
+Use `prices-standard-2026-09-25.toml` for current GPT-5.6 and GPT-6 Standard
+short-context API estimates. It does not adjust for prompts above 272K input
+tokens, Fast mode, or regional processing, and remains an estimate rather than
+an invoice.
 
 ## Interpretation limits
 
