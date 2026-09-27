@@ -1,0 +1,61 @@
+# Iterative noisy-positive recovery
+
+Status: active; CPU candidate intake accepted as preparation, bounded learning implementation and first round released. Lead owns decisions;926-worker implements. No learned result yet.
+
+## Current contract and authority
+
+From the frozen untied+axis001 step2444 teacher, does adding low-weight, enlarged-view partial positives improve natural full-image annotation recovery after incumbent losses, relative to the same original-supervision updates?
+
+The user on2026-09-27 explicitly authorized promising noisy candidate positives, fine-tuning and refreshed proposals, without requiring full label recovery or perfect per-item certification. The user also authorized GPU coexistence with task01a0b28f-ddec-74f0-89bd-7d3f094059bd and explicitly rejected GPU idle/free-memory prechecks: launch normally and report actual OOM. No interference with that production owner, its source, processes or outputs. Long event waits, no polling. This is a finite research pilot, not promotion of candidates to gold.
+
+Lead:01a0dd7c-0899-7b81-90a2-2f50da3476d1. Persistent worker:01a0de41-cc56-7a62-8c56-c2d9850b95b5, user-selected gpt-6-astra/low. Research source/worktree:/data/CoordExp/.worktrees/research-probes. Output:/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01.
+
+## Settled predecessor and change
+
+The closed2026-09-26 hidden-human recovery experiment established additional annotation support from local2x queries, but no trustworthy scalar positive gate. The accepted full round adds31 hidden IDs to historical matched-ID support unions (30 category-agreeing);85.7percent of local support was already available. A joint native/enlarged gate loses recovery at saved-support matched counts. We now test learning utility rather than require trusted-label certification first.
+
+Historical positive-row imitation (catalog2026-07-21-best-sampled-trajectory-positive-row-imitation-screen) shifted behavior toward sampled-route owners while losing incumbents. This is a reason for a matched preserved-supervision control, not a claim that pseudo-positive learning cannot work. Full-image learning from stronger crop evidence is the intervention; crop-conditioned rehearsal alone cannot establish it.
+
+## Frozen inputs and population
+
+Teacher:/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444; base:/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent. Preserve language-only rank16/alpha32 all-linear DoRA and both independent input/output deltas. Weight-only start, fresh optimizer; no implicit new tower or checkpoint substitution. The new production checkpoint remains a separate future comparison.
+
+Candidate input:candidates.json SHA2560707deaefc06f8bedad59731404e42c17ca539daa6e2b7e0dd9c4f8aef11b8d1 in the output root;1200 literal-unique enlarged candidates, all unused/rejected records preserved. Existing visible/truth/policy inputs remain bound to2026-09-26 preparation-v3/smoke-policy-01. Hidden truth is evaluation-only; no selected target/category/box or quota may depend on it. Can-as-bottle semantics retained.
+
+Human13 is the adaptation playground (197hidden/195visible); refined5 (105hidden/73visible) receives no new training exposure. It is an already-examined development monitor, not globally unseen or independent validation. Both cohorts and all18 denominators remain in evaluation, including zero-hidden7116.
+
+## Proposal policy v2: budget diversity, not owner adjudication
+
+Keep the CPU candidate's source validity, full-image quantization, visible-overlap/conflict handling, distinct-query support and stable hash ordering. Refined5 stays excluded. Re-traverse eligible Human13 candidates by descending support and SHA256(926-positive-v1:+representative_prediction_id). After exact quantized deduplication, retain up to4/image, skipping a candidate when its same-category quantized box has IoU>=0.8 with any already-selected box. Preserve skipped rows under an explicit diversity-withheld disposition. This reduces repeated training of nearly identical geometry; it does not prove physical owner equivalence and may omit overlapping real owners. Do not average/repair boxes or use GT. No native-view agreement or old-target overlap gate.
+
+This changes the frozen CPU top4 proposal only for training: lead found pair IoU0.988 in1584, all six2299 pairs>=0.80, and all six14439 pairs>=0.91. Preserve original candidates.json and emit a separately bound v2 selection; no historical metric is rewritten. These examples are the selection test counterexamples, not new physical annotations.
+
+## First matched update
+
+Use ordinary maintained imports in this checkout. Implement a small research consumer, not changes to the live production worktree or a new generic training framework. Source allowance:probes/iterative_positive.py, tests/probes/test_iterative_positive.py, and only necessary small shared fixes separately identified to the lead. Reuse existing rendering/encoding, TokenSequence, three loss terms, native Qwen loading/forward/generation and checkpoint save/load operations.
+
+Both arms start from identical teacher weights and common seed92701. Train language DoRA and both special-token deltas only. AdamW:languageLR2e-5,deltaLR1e-5,betas(.9,.999),eps1e-8,decay0,clip1;16 optimizer steps, cosine schedule with2 warmup steps. BF16/FA2 training and FP32/SDPA evaluation, identical conversion path in both arms. Preserve the original master/payload precision where supported; do not silently count a BF16 round-trip as learning. Qualification records the exact zero-update baseline after the chosen path.
+
+Per update:original-supervision EBS24 =8 Human13 visible-only presentations +16 original COCO replay presentations. Select128 replay images deterministically by SHA256(927-replay-v1:+image_id) from the existing117266-row original train file, excluding ALL18 fixed images before sampling; cycle them for256 presentations over16 steps. Human13 stream cycles fixed image order for128 presentations; treatment pseudo stream uses those same8 Human13 image identities per update. Original replay file SHA256ecf07a40856ee96a92c9093139abe24facfa600136e04f3c1bcbd02e039aaad1. No public dataset edit or broad cache generation. Save exact schedule and resolved image identities.
+
+The common loss is a per-image mean of the24 original-supervision examples. Original COCO rows retain existing complete supervision. Human13 visible-only rows are explicitly partial: mask terminal EOS/untrusted global closure, preserving complete visible object rows. In the treatment only, add0.05 times the separately normalized per-image pseudo branch over8 images. Its full-image teacher-forcing context is visible+selected objects sorted_xy, and supervised atoms are ALL tokens owned by selected complete object rows, including row opener, description, coordinate and row-local closing syntax. Mask nonselected rows and untrusted global completion/EOS. Do not accidentally mask the row opener: generating a new row is part of the learning question. Preserve complete4-coordinate groups and their actual same-object predecessors. Neither branch may read hidden truth.
+
+Each branch uses CE1.0 + type_gate0.1 + conditional_order_gate0.01; raw_axis_validity_hinge and unrelated losses are off. The historical teacher type gate was0, so BOTH arms share the new objective. Separately normalize original and pseudo branches before adding them; do not dilute original gradients by concatenation. Empty pseudo support contributes differentiable zero and correct DDP bookkeeping, not an invented target. Omissions remain non-neutral through competing tokens/context even with completion censoring; this is measured, not claimed solved.
+
+Eight ranks preferred, one example at a time with gradient accumulation; normal shared-GPU launch, no idle/free-memory wait. Sequential control and treatment keep one invocation per arm and do not require two models/rank. DDP accumulation/reduction must realize stated24/8 image means. Do not alter policy or silently retry after an actual GPU failure; report its logs/owned job state. User requested reporting actual OOM. Routine CPU implementation repairs remain local.
+
+## Necessary implementation evidence and launch sequence
+
+CPU consumer checks target actual loss consumption: complete selected row including opener; no EOS/nonselected leakage; same-object coordinate causal alignment; separate mean invariance; hidden-truth independence; deterministic diversity selection; empty support and rank-disjoint microsteps. Use mutation/counterexample evidence where load-bearing. No broad unrelated suites.
+
+The real-entry slice uses the SAME intended model/optimizer/masking path for one matched update per arm on1584/2299, with a save and fresh-process reload/forward. Verify both input/output payloads and DoRA values on zero-update start, expected trainable groups and nonzero gradients, omitted-position masks, finite updates, and exact loaded checkpoint tensor identity. Frozen reference and zero-update-converted inference must be distinguished if precision conversion changes outputs. Log a real memory peak as a byproduct, not a prelaunch gate. A changed source after GPU entry needs a new identified slice.
+
+On success, the same worker may proceed without another user approval to the16-step control/treatment round using the qualified source, preserving separate launch/exit receipts. Save checkpoints at4,8,16. Evaluate zero-update plus each arm's4/8/16 checkpoints on all18 fixed full images, empty history, original greedy/EOS/RP1/max3084, FP32/SDPA. Reuse saved unchanged baseline only if exact model/input/precision identity is proven; otherwise obtain fresh zero-update output. No retry or denominator removal for cap/invalid outcomes.
+
+## Decision and bounded iteration
+
+Primary evidence:category-agreeing one-to-one IoU.5 annotated-ID coverage, class-agnostic assignment then category check, with hidden and visible gains/losses separated for Human13/refined5. Always retain the raw-assignment counterpart. Stage utility=hidden gains-hidden losses-visible incumbent losses versus zero-update; compare treatment and matched control at the SAME step, not separately optimized checkpoints. Save natural predictions, category disagreements, unmatched annotation proxies, literal duplicates, geometry-invalid rows, EOS/caps, cost and all intermediate checkpoints. Unmatched is not automatically a physical negative.
+
+The lead assesses whether positive net treatment-minus-control recovery at adjacent checkpoints justifies one refreshed second round without major preservation or validity deterioration; isolated favorable points are exploratory. The16-step result can be mixed or negative without rejecting every noisy-positive method. Training loss or a stable candidate pool is not convergence evidence. No100percent requirement. Candidate generation for round2 refreshes evidence from its explicitly selected new teacher; no historical repeats as new votes. Round2 requires the next finite lead packet, not renewed user permission or an automatic unbounded sweep.
+
+Stop this worker package at a stable full first-round candidate or concrete GPU/integration failure. Lead independently accepts and chooses next round or stage closure. Preserve logs, ownership and source identities; no publication, public annotation edit, production intervention or gold-label claim.

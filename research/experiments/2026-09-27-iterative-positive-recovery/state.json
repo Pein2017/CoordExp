@@ -1,0 +1,32 @@
+{
+  "unit_id": "2026-09-27-iterative-positive-recovery",
+  "lifecycle": "ready",
+  "evidence": "partial",
+  "status": "lead-released-first-learning-round",
+  "protocol": "research/experiments/2026-09-27-iterative-positive-recovery/unit.md",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
+  "worker_model": "gpt-6-astra",
+  "worker_effort": "low",
+  "pending": [
+    "partial-positive consumer and diverse selection",
+    "matched one-update save/reload slice",
+    "16-step matched learning and18-image natural evaluations"
+  ],
+  "job_state": "CPU preparation returned; no learning GPU job yet",
+  "candidate_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01",
+  "user_gpu_ruling": "Launch normally alongside production; no GPU idle/free-memory checks; report actual OOM",
+  "production_owner": "01a0b28f-ddec-74f0-89bd-7d3f094059bd",
+  "production_intervention_authorized": false,
+  "gold_admission": false,
+  "boundary": "One same-teacher matched16-step control/treatment round after minimal real-entry qualification; updated proposals need next finite lead package",
+  "not_authorized": [
+    "interference with production owner",
+    "hidden truth in training or candidate selection",
+    "promotion of candidates to gold",
+    "public dataset changes",
+    "unbounded repeated training or queries",
+    "publication"
+  ],
+  "state_source": "research/experiments/2026-09-27-iterative-positive-recovery/unit.md"
+}

@@ -19,6 +19,7 @@ full/region sampling supports 150 hidden annotation IDs, with 32 region-only IDs
 Their visual audit shows mixed entity/extent/assignment effects; trusted supervision remains unresolved.
 The189-target automatic-verification stage is accepted and closed: enlarged localization helps ranking/repair; joint-view support loses coverage at matched counts. Local output adds31 hidden IDs to historical support unions; no positive admission or next job.
 The old checkpoint remains the development teacher; future geometry supervision replaces the expectation hinge.
+The user has reopened learning through [iterative noisy-positive recovery](experiments/2026-09-27-iterative-positive-recovery/unit.md): a16-step preserved-supervision control versus low-weight partial positives, with normal shared-GPU launch and natural full-image evaluation.
 Prior intake canonical Git: `108dede0154abfd90a54d18234d9e0bac780a3ba`.
 
 ## Authoritative questions
