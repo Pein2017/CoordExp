@@ -1,0 +1,29 @@
+{
+  "unit_id": "2026-09-27-rollout-row-credit",
+  "lifecycle": "ready",
+  "evidence": "none",
+  "status": "lead-released-10percent-CPU-row-credit-package",
+  "protocol": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
+  "state_source": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
+  "worker_model": "gpt-6-astra",
+  "worker_effort": "low",
+  "goal_requested": false,
+  "boundary": "CPU actual-prefix matched/FN/rule-negative consumer and10%mask preparation; no0%-fit; lead releases real-entry10%slice after review",
+  "not_authorized": [
+    "0%-hide memorization experiment",
+    "hidden truth in learning or selection",
+    "automatic20%or oracle training",
+    "production intervention",
+    "model or label promotion",
+    "publication"
+  ],
+  "pending": [
+    "10%split and executable row-credit consumer",
+    "focused actual-consumer checks and real18CPU plan",
+    "lead real-entry slice release"
+  ],
+  "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01",
+  "job_state": "worker CPU package pending dispatch"
+}
