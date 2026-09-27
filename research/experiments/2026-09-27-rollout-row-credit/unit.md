@@ -1,6 +1,6 @@
 # Rollout row credit under controlled missing annotations
 
-Status: active; first10%-hide CPU implementation package released. Lead owns scientific decisions;926-worker implements. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
+Status: active; corrected10%-hide CPU package lead-accepted, one-update C/save/reload qualification released. Lead owns scientific decisions;926-worker implements. No goal requested or created. This is a new objective family, not a continuation of the closed pseudo-positive endpoint.
 
 ## Authority and predecessor
 
@@ -50,3 +50,11 @@ Report actual counts of available M/F/D/G, unsupported states, token/visual boun
 ## Evidence and next decisions
 
 Natural evaluation uses original image/empty history/greedy and unchanged token cap. Report retained-label FN acquisition, newly hidden FN acquisition distinct from already-covered hidden preservation, all prior-ID losses, total coverage, category agreement, exact/near repeat and geometry/malformed/stop burdens, with all18denominators. Offline truth may classify outcomes only after bank/output freeze. Conditional loss decrease or fewer literal repeats alone is not success. A later20%contrast must restart from the same zero anchor; warming through10%would have already exposed part of the20%hidden set.
+
+## Accepted CPU evidence and first runtime release
+
+Lead replay accepts source835794b3b3006f8228ad1111ea41c0a9fa104bf9 and cpu-04 (three byte-identical cpu-03 input files plus corrected source qualification). Fresh split/plan replay gives57hidden/513retained and M184/F16/D26/G5. All18 image hashes and frozen raw outputs pass. The retained-only matcher and full-reference evaluator remain distinct populations. Lead replayed9focused tests,35original and12correction artifacts, and145qualification hashes; evidence is outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-acceptance-02.json under /data/CoordExp. Original CPU candidates remain immutable.
+
+The submitted UL implementation had a reproduced finite-logit saturation bug: a nine-token duplicate at target40 returned infinite loss/gradients. The corrected equivalent full-row objective uses stable target/rest token terms and disjoint first-failure probabilities near unit row probability. Target40/1000 and uniform-vocabulary controls now pass; all non-UL module AST is unchanged. Diagnostic products can still round to1, so they are not sufficient to reconstruct the stable loss at saturation. Low-probability underflow remains an explicitly measured possibility, not proof of an effective duplicate penalty.
+
+Next release is exactly one C update on [1584,2299,2685,4134,7511,14038,351017,477415], one image per rank, followed by one independent torchrun8 reload. Use cpu-04, same zero, seed92711, fresh AdamW language1e-5/deltas5e-6, betas(.9,.999),eps1e-8,decay0,clip1 and unchanged M+F+.1D+.01G. Bounds:16training forwards,31824input/15644visual tokens, then16post-save and16fresh-reload forwards. Empty F keeps its existing zero-loss history forward. Observe actual row probabilities, finite synchronized gradients and parameter updates, exact checkpoint0 identity and fresh checkpoint1 forward parity. Combined parameter gradients do not identify each branch's parameter contribution. No natural-generation benefit claim follows from this slice. No A/B multi-step,20%,new acquisition or production operation is released; failure returns to lead without model retry. Runtime details/identity are bound separately in lead-release-02.json at the same output root.

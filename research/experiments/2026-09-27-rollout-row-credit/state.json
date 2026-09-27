@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-09-27-rollout-row-credit",
   "lifecycle": "ready",
-  "evidence": "none",
-  "status": "lead-released-10percent-CPU-row-credit-package",
+  "evidence": "partial",
+  "status": "lead-accepted-CPU-released-single-C-slice",
   "protocol": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-rollout-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -10,7 +10,7 @@
   "worker_model": "gpt-6-astra",
   "worker_effort": "low",
   "goal_requested": false,
-  "boundary": "CPU actual-prefix matched/FN/rule-negative consumer and10%mask preparation; no0%-fit; lead releases real-entry10%slice after review",
+  "boundary": "One C update and independent fresh reload on fixed eight images from 10% hidden lab; full A/B/C training not yet released",
   "not_authorized": [
     "0%-hide memorization experiment",
     "hidden truth in learning or selection",
@@ -20,10 +20,13 @@
     "publication"
   ],
   "pending": [
-    "10%split and executable row-credit consumer",
-    "focused actual-consumer checks and real18CPU plan",
-    "lead real-entry slice release"
+    "single C real-entry update/save/reload",
+    "lead runtime acceptance and finite A/B/C schedule"
   ],
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01",
-  "job_state": "worker CPU package pending dispatch"
+  "job_state": "worker slice package pending dispatch",
+  "accepted_cpu_source": "835794b3b3006f8228ad1111ea41c0a9fa104bf9",
+  "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/cpu-04",
+  "lead_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-acceptance-02.json",
+  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/rollout-row-credit-01/lead-release-02.json"
 }
