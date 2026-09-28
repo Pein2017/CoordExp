@@ -268,13 +268,100 @@ def preservation_binding(root, weight, bank_sha):
     return dict(weight=weight,bank_sha256=bank_sha,bank_path=spec['path']),{x['image_id']:x for x in bank['images']}
 
 
-def jobs(image_ids, rank, plans, preservation_weight=0):
+def witness_bank(source, image_ids, tokenizer):
+    """Prediction-only earliest version/position; no annotation consumer."""
+    selected = {}
+    for version in range(17):
+        for record in frozen_records(source/f'rollout-{version}', image_ids):
+            i = record['image_id']
+            if i in selected: continue
+            rows, _ = observations(record, tokenizer)
+            errors = erroneous_slots(rows)
+            if not errors: continue
+            position, lo, hi = min(errors)
+            prefix = record['prompt_token_ids']+record['token_ids'][:position]
+            selected[i] = dict(image_id=i, source_version=version, record=record,
+                generated_position=position, legal_range=[lo,hi], input_ids=prefix,
+                input_sha256=identity(prefix), causal_position=len(prefix)-1)
+    return dict(kind='fixed_geometry_witness', source=str(source), images=[selected[i] for i in sorted(selected)])
+
+
+def witness_inputs(entry, tokenizer):
+    record=entry['record'];verify_producer([record],record['producer'],[entry['image_id']])
+    assert record['producer']['update']==entry['source_version']
+    rows,_=observations(record,tokenizer)
+    position,lo,hi=min(erroneous_slots(rows))
+    full=record['prompt_token_ids']+record['token_ids'][:position]
+    assert entry['generated_position']==position and entry['legal_range']==[lo,hi]
+    assert entry['input_ids']==full and entry['input_sha256']==identity(full)
+    assert entry['causal_position']==len(full)-1
+    return full,[len(full)-1]
+
+
+def witness_binding(root, weight, bank_sha256):
+    assert weight in (0,.1)
+    spec=p.load(root/'qualification.json').get('witness')
+    if spec is None:
+        assert weight==0 and bank_sha256 is None
+        return None,None
+    assert bank_sha256==spec['sha256']==p.digest(Path(spec['path'])), 'wrong witness bank identity'
+    bank=p.load(Path(spec['path']));assert bank['kind']=='fixed_geometry_witness'
+    entries={e['image_id']:e for e in bank['images']}
+    assert len(entries)==len(bank['images'])==4
+    assert sorted(entries)==spec['image_ids'] and bank['source']==spec['source']
+    return dict(weight=weight,bank_sha256=bank_sha256,bank_path=spec['path']),entries
+
+
+def witness_forward(q, model, batch, entry, vocab, producer, weight, diagnostic=False):
+    import torch,time
+    from contextlib import nullcontext
+    from src.qwen.native import exact_history_inputs
+    assert weight in (0,.1)
+    begin=time.monotonic()
+    full,positions=witness_inputs(entry,q.tokenizer)
+    kwargs=exact_history_inputs(q.model,batch.inputs,[full],pad_token_id=q.tokenizer.pad_token_id)
+    kwargs['logits_to_keep']=torch.tensor(positions,device='cuda')
+    with torch.no_grad() if diagnostic else nullcontext():
+        with torch.autocast('cuda',dtype=torch.bfloat16):logits=model(**kwargs).logits
+        assert logits.shape[1]==1
+        z=logits[0,0].float();lo,hi=entry['legal_range'];legal=list(vocab.coordinate[lo:hi])
+        margin=max_geometry_margin(z,legal);loss=weight*margin
+        assert torch.isfinite(z).all() and torch.isfinite(margin)
+    detail=dict(image_id=entry['image_id'],branch='witness',producer=producer,
+        source_producer=entry['record']['producer'],source_raw_identity=entry['record']['raw_identity'],
+        entry_sha256=identity(entry),input_sha256=identity(full),positions=positions,
+        tokens=len(full),visual_tokens=__import__('math').prod(entry['record']['image_grid_thw'])//4,
+        weight=weight,loss=float(loss.detach()),margin=float(margin.detach()),logits_sha256=p.tensor_hash(logits))
+    if diagnostic:
+        z=z.detach();mask=torch.ones_like(z,dtype=torch.bool);mask[legal]=False
+        ml=float(z[legal].amax());mi=float(z[mask].amax())
+        detail.update(max_legal=ml,max_illegal=mi,legal_minus_illegal=ml-mi,
+            argmax_token=int(z.argmax()),argmax_legal=int(z.argmax()) in legal,
+            argmax_ties=int((z==z.max()).sum()),diagnostic=True)
+    else:detail['logit_derivatives']=diagnostics({'witness_unweighted':margin,'witness_weighted':loss},logits)
+    detail['seconds']=time.monotonic()-begin
+    return loss,detail
+
+
+def witness_diagnostics(q, batches, entries, vocab, producer):
+    """Same prefix path, no model backward; preserve pre-existing gradients."""
+    before=parameter_identity(q.model)
+    assert identity(before)==producer['parameter_sha256'], 'stale witness diagnostic producer'
+    gradients={n:None if x.grad is None else p.tensor_hash(x.grad) for n,x in q.model.named_parameters()}
+    rows=[witness_forward(q,q.model,batches[i],entries[i],vocab,producer,0,True)[1] for i in sorted(entries) if i in batches]
+    assert parameter_identity(q.model)==before
+    assert gradients=={n:None if x.grad is None else p.tensor_hash(x.grad) for n,x in q.model.named_parameters()}
+    return dict(producer=producer,parameters_sha256=identity(before),unchanged_parameters_and_gradients=True,rows=rows)
+
+
+def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=()):
     assert len(image_ids)==len(set(image_ids))==18 and 0<=rank<8
     assert preservation_weight in (0,.25)
     result = []
     for i in sorted(image_ids)[rank::8]:
         result += [dict(image_id=i,branch=b,weight=8/18) for b in
-                   (['trace']+(['redirect'] if plans[i]['redirect'] else [])+(['P0'] if preservation_weight else [])+['R'])]
+                   (['trace']+(['redirect'] if plans[i]['redirect'] else [])+(['P0'] if preservation_weight else [])+
+                    (['witness'] if i in witness_ids else [])+['R'])]
     return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
 
 
@@ -408,7 +495,7 @@ def verify_start_export(checkpoint, exported):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -417,11 +504,14 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.artifacts.git_identity import verify_source_identity
     scheduled=export_steps(updates)
     geometry=geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
+    if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
     if binding is not None:p.write(out/'preservation.json',binding)
     if geometry is not None:p.write(out/'geometry.json',geometry)
+    if witness is not None:p.write(out/'witness.json',witness)
     images={x['image_id']:x for x in p.load(RETAINED)}
     inputs={x['image_id']:x for x in p.load(INPUTS)}
     encodings={x['image_id']:x for x in p.load(ENCODINGS)}
@@ -485,10 +575,14 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
                     old=set(prior[row['image_id']]['ids'][mode]['retained']);new=set(row['ids'][mode]['retained'])
                     row['retained_change'][mode]=dict(gained=sorted(new-old),lost=sorted(old-new),preserved=sorted(new&old))
         p.write(out/f'retained-metrics-{version}.json',metrics);previous_metrics=metrics
+        if witnesses is not None and version in (0,1,4,8,16):
+            p.write(out/f'witness-diagnostic-{version}.json',witness_diagnostics(q,batches,witnesses,vocab,producer))
         if version==updates:break
         by={x['image_id']:x for x in records};q.model.train();optimizer.zero_grad(set_to_none=True)
-        evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight),
-            lambda job:forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
+        evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight,
+            witnesses if witness_weight else ()),
+            lambda job:witness_forward(q,model,batches[job['image_id']],witnesses[job['image_id']],vocab,producer,witness_weight)
+            if job['branch']=='witness' else forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
                 plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
                 bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight))
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
@@ -528,17 +622,20 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     geometry=geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
+    if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
         if binding is not None:assert p.load(directory/'preservation.json')==binding, 'wrong preservation arm'
         if geometry is not None:assert p.load(directory/'geometry.json')==geometry,'wrong geometry arm'
+        if witness is not None:assert p.load(directory/'witness.json')==witness,'wrong witness arm'
         for name,sha in receipt['artifacts'].items():assert p.digest(directory/name)==sha
         for row in receipt['source']['files']:assert p.digest(row['path'])==row['sha256']
         for step in range(1,updates+1):
@@ -557,6 +654,19 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                         if geometry_weight:
                             assert row['geometry']==dict(weight=geometry_weight,error_slots=[list(x) for x in erroneous_slots(plans[row['image_id']]['observations'])])
                             assert row['terms']['Gmax_weighted']==float(__import__('torch').tensor(row['terms']['Gmax_unweighted'],dtype=__import__('torch').float32)*geometry_weight)
+            if witnesses is not None:
+                local=sorted(inputs)[rank::8]
+                expected=jobs(list(inputs),rank,plans,0,witnesses if witness_weight else ())
+                assert [(x['image_id'],x['branch'],x['sync']) for x in evidence['forwards']]==[(x['image_id'],x['branch'],x['sync']) for x in expected]
+                selected=[x for x in evidence['forwards'] if x['branch']=='witness']
+                assert [x['image_id'] for x in selected]==([i for i in local if i in witnesses] if witness_weight else [])
+                for row in selected:
+                    entry=witnesses[row['image_id']]
+                    assert row['entry_sha256']==identity(entry) and row['weight']==witness_weight
+                    assert row['producer']==evidence['producer']
+                    assert row['input_sha256']==entry['input_sha256'] and row['positions']==[entry['causal_position']]
+                    assert row['source_producer']==entry['record']['producer'] and row['source_raw_identity']==entry['record']['raw_identity']
+                    assert row['loss']==float(__import__('torch').tensor(row['margin'],dtype=__import__('torch').float32)*witness_weight)
             if binding is not None:
                 selected=[x for x in evidence['forwards'] if x['branch']=='P0']
                 local=sorted(inputs)[rank::8]
@@ -570,6 +680,20 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                     assert row['positions']==(expected or [len(record['prompt_token_ids'])-1])
                     assert row['row_losses']==[dict(order=x['order'],atoms=len(x['positions'])) for x in entry['rows']]
                     assert row['terms']['P0_weighted']==preservation_weight*row['terms']['P0_unweighted']
+        if witnesses is not None:
+            local=sorted(inputs)[rank::8]
+            for version in (v for v in (0,1,4,8,16) if v<=updates):
+                diagnostic=p.load(directory/f'witness-diagnostic-{version}.json')
+                bound=p.load(directory/f'producer-{version}.json')
+                assert diagnostic['producer']==bound['producer'] and diagnostic['parameters_sha256']==identity(bound['parameters'])
+                assert diagnostic['unchanged_parameters_and_gradients']
+                assert [x['image_id'] for x in diagnostic['rows']]==[i for i in local if i in witnesses]
+                for row in diagnostic['rows']:
+                    entry=witnesses[row['image_id']]
+                    assert row['diagnostic'] and row['weight']==0 and row['entry_sha256']==identity(entry)
+                    assert row['input_sha256']==entry['input_sha256'] and row['positions']==[entry['causal_position']]
+                    assert row['producer']==bound['producer'] and row['source_producer']==entry['record']['producer']
+                    assert row['source_raw_identity']==entry['record']['raw_identity']
     scheduled=export_steps(updates)
     checkpoints={output/f'checkpoint-{step}' for step in scheduled}
     assert set(output.glob('checkpoint-*'))==checkpoints, 'missing or unexpected scheduled export'
@@ -592,14 +716,18 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
 
 
 def offline(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-            geometry_weight=0, start_checkpoint=None, recipe_sha256=None):
+            geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None):
     """Only this separate process opens evaluator truth, after all raw outputs freeze."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,_=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     geometry=geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
+    if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:
         assert preservation_weight==0 and preservation_bank_sha256 is None
         for rank in range(8):assert p.load(output/f'rank-{rank}/geometry.json')==geometry
+    if witness is not None:
+        for rank in range(8):assert p.load(output/f'rank-{rank}/witness.json')==witness
     if binding is not None:
         for rank in range(8):assert p.load(output/f'rank-{rank}/preservation.json')==binding
     read=p.load(output/'readback.json')
@@ -628,7 +756,47 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
     assert p.digest(r.TRUTH)==partitions['truth_sha256']
     truth=p.load(r.TRUTH)
     scored={k:r.assess_outputs(truth,partitions['hidden10'],v) for k,v in frozen.items()}
-    p.write(output/'offline-results.json',r.family_outcomes(scored,[]))
+    outcomes=r.family_outcomes(scored,[])
+    p.write(output/'offline-results.json',outcomes)
+    if witness is not None:
+        p.write(output/'stability.json',witness_stability(outcomes,updates))
+        populations=[]
+        for version in range(updates+1):
+            for rank in range(8):
+                for plan in p.load(output/f'rank-{rank}/credit-{version}.json'):
+                    rows=plan['observations']
+                    for name,values in [('occurrence',rows),('literal_unique',list({x['key']:x for x in rows}.values()))]:
+                        for valid in (False,True):
+                            selected=[x for x in values if x['valid']==valid]
+                            widths=[x['bbox'][2]-x['bbox'][0] for x in selected]
+                            heights=[x['bbox'][3]-x['bbox'][1] for x in selected]
+                            populations.append(dict(version=version,image_id=plan['image_id'],population=name,valid=valid,
+                                widths=widths,heights=heights,widths_le1=sum(x<=1 for x in widths),heights_le1=sum(x<=1 for x in heights)))
+        p.write(output/'shape-populations.json',populations)
+
+
+def witness_stability(outcomes, updates):
+    """Post-freeze summaries only; preserve image/version units and acquired IDs."""
+    result={}
+    burdens=('geometry_invalid','literal_complete_repeats','literal_valid_repeats','malformed','near_repeat_occurrence_pairs','caps')
+    for name,versions in [('full',list(range(updates+1))),('late',list(range(9,updates+1)))]:
+        if not versions:continue
+        for mode in ('raw','category'):
+            for cohort in ('combined','human13','refined5'):
+                rows=[dict(x,version=v) for v in versions for x in outcomes['zero' if v==0 else str(v)]['images']
+                      if x['mode']==mode and (cohort=='combined' or x['cohort']==cohort)]
+                totals={k:[sum(x['burdens'][k] for x in rows if x['version']==v) for v in versions] for k in burdens}
+                acquired={}
+                for x in rows:
+                    for population in ('retained','hidden'):
+                        for ann in x['sets'][population]['gained']:
+                            acquired.setdefault(f"{population}:{x['image_id']}:{ann}",[]).append(x['version'])
+                result[f'{name}/{mode}/{cohort}']=dict(versions=versions,
+                    burdens={k:dict(sum=sum(v),mean=sum(v)/len(v),maximum=max(v)) for k,v in totals.items()},
+                    bad_image_versions=sum(any(x['burdens'][k]>0 for k in burdens) for x in rows),
+                    bad_versions=sum(any(x['version']==v and any(x['burdens'][k]>0 for k in burdens) for x in rows) for v in versions),
+                    empty_image_versions=sum(x['burdens']['valid_rows']==0 for x in rows),acquired_id_versions=acquired)
+    return result
 
 
 def geometry_diagnostic_rows(logits, positions, rows, record, coordinate_ids):
@@ -667,13 +835,14 @@ def geometry_diagnostic_rows(logits, positions, rows, record, coordinate_ids):
 
 
 def geometry_replay(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-                    geometry_weight=0, start_checkpoint=None, recipe_sha256=None):
+                    geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None):
     import time,torch
     import torch.distributed as dist
     from src.qwen.native import exact_history_inputs
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     assert preservation_weight==0 and preservation_bank_sha256 is None
+    assert witness_weight==0 and witness_bank_sha256 is None
     binding=geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256);assert binding is not None
     rank,out,sources,source=start(output,root);begin=time.monotonic()
     spec=p.load(root/'qualification.json')['geometry'];plan=p.load(spec['diagnostic_plan'])
@@ -720,8 +889,10 @@ def main():
     parser.add_argument('--geometry-weight',type=float,choices=(0,.1),default=0)
     parser.add_argument('--start-checkpoint',type=Path)
     parser.add_argument('--recipe-sha256')
+    parser.add_argument('--witness-weight',type=float,choices=(0,.1),default=0)
+    parser.add_argument('--witness-bank-sha256')
     a=parser.parse_args();{'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](
-        a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256)
+        a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256,a.witness_weight,a.witness_bank_sha256)
 
 
 if __name__=='__main__':main()

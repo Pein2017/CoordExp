@@ -466,5 +466,127 @@ class OnlineCreditTest(unittest.TestCase):
             changed=True
             with self.assertRaisesRegex(AssertionError,'zero differs'):o.verify_start_export(start,export)
 
+    def witness_fixture(self):
+        image,record,_=self.fixture([[742,30,742,86]],[])
+        with patch.object(o,'frozen_records',return_value=[record]):
+            bank=o.witness_bank(o.ROOT,[image['image_id']],self.t)
+        return image,record,bank['images'][0]
+
+    def test_witness_actual_prefix_loss_and_detached_diagnostic(self):
+        from types import SimpleNamespace
+        image,record,entry=self.witness_fixture()
+        full,pos=o.witness_inputs(entry,self.t)
+        self.assertEqual(full,record['prompt_token_ids']+record['token_ids'][:6])
+        self.assertEqual(pos,[len(full)-1])
+        for key,value in [('input_ids',full+[record['token_ids'][6]]),
+                          ('causal_position',len(full)),('legal_range',[742,1000]),
+                          ('source_version',1)]:
+            bad=copy.deepcopy(entry);bad[key]=value
+            with self.assertRaises(AssertionError):o.witness_inputs(bad,self.t)
+        z=torch.zeros(1,1,self.vocab.vocab_size,requires_grad=True)
+        tensor=torch.tensor;q=SimpleNamespace(model=object(),tokenizer=self.t)
+        def model(**kwargs):
+            self.assertEqual(kwargs['logits_to_keep'].tolist(),pos)
+            return SimpleNamespace(logits=z*1)
+        with patch('src.qwen.native.exact_history_inputs',return_value={}) as history, \
+             patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+             patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data)):
+            loss,e=o.witness_forward(q,model,SimpleNamespace(inputs={}),entry,self.vocab,{'update':9},.1)
+            before=torch.autograd.grad(loss,z,retain_graph=True)[0]
+            diagnostic,d=o.witness_forward(q,model,SimpleNamespace(inputs={}),entry,self.vocab,{'update':9},0,True)
+            after=torch.autograd.grad(loss,z)[0]
+        self.assertTrue(torch.equal(before,after));self.assertFalse(diagnostic.requires_grad)
+        self.assertEqual(history.call_args.args[2],[full]);self.assertEqual(e['producer']['update'],9)
+        self.assertEqual(e['source_producer']['update'],0);self.assertEqual(d['positions'],pos)
+        self.assertNotIn('row_losses',e)
+        self.assertGreater(float(before[0,0,self.vocab.coordinate[742]]),0)
+        self.assertTrue(torch.all(before[0,0,list(self.vocab.coordinate[743:])]<0))
+        self.assertAlmostEqual(e['loss'],.1*e['margin'],places=6)
+
+    def test_witness_four_image_mean_schedule_zero_and_gradient_state(self):
+        from types import SimpleNamespace
+        ids=list(range(18));plans={i:{'redirect':None} for i in ids};selected={1,4,9,16}
+        self.assertEqual(o.jobs(ids,0,plans),o.jobs(ids,0,plans,0,()))
+        grads=[];seen=[]
+        class Model:
+            def no_sync(self):return nullcontext()
+        for rank in range(8):
+            w=torch.tensor(2.,requires_grad=True);schedule=o.jobs(ids,rank,plans,0,selected)
+            self.assertEqual(sum(j['sync'] for j in schedule),1)
+            self.assertEqual(schedule[-1]['branch'],'R')
+            for n,j in enumerate(schedule):
+                if j['branch']=='witness':
+                    self.assertEqual(schedule[n+1]['branch'],'R');self.assertFalse(j['sync']);seen.append(j['image_id'])
+            o.r.accumulate_family_step(Model(),schedule,lambda j:(.1*w if j['branch']=='witness' else w*0,{}))
+            grads.append(float(w.grad))
+        self.assertEqual(sorted(seen),sorted(selected))
+        self.assertAlmostEqual(sum(grads)/8,.1*4/18,places=7)
+        self.assertNotAlmostEqual(sum(grads)/8,.1,places=6)
+        model=torch.nn.Linear(1,1);model.weight.grad=torch.ones_like(model.weight)*3
+        model.bias.grad=torch.ones_like(model.bias)*4;q=SimpleNamespace(model=model)
+        producer={'parameter_sha256':o.identity(o.parameter_identity(model))}
+        before=model.weight.grad.clone()
+        with patch.object(o,'witness_forward',return_value=(None,{'diagnostic':True})):
+            o.witness_diagnostics(q,{1:object()},{1:object()},None,producer)
+        self.assertTrue(torch.equal(before,model.weight.grad))
+        with self.assertRaisesRegex(AssertionError,'stale'):
+            o.witness_diagnostics(q,{}, {},None,{'parameter_sha256':'wrong'})
+        def leak(*args):model.weight.grad.add_(1);return None,{}
+        with patch.object(o,'witness_forward',side_effect=leak):
+            with self.assertRaises(AssertionError):o.witness_diagnostics(q,{1:object()},{1:object()},None,producer)
+
+    def test_witness_readback_wrong_arm_rejects_before_artifacts(self):
+        root=o.ROOT/'test-witness';output=root/'run'
+        def load(path):
+            if path==root/'qualification.json':return {'sha256':{}}
+            if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+            if path.name=='complete.json':return dict(status='complete',updates=1)
+            if path.name=='geometry.json':return {'weight':.1}
+            if path.name=='witness.json':return {'weight':0}
+            self.fail(str(path))
+        with patch.object(o.p,'load',side_effect=load),patch.object(o,'geometry_binding',return_value={'weight':.1}), \
+             patch.object(o,'witness_binding',return_value=({'weight':.1},{})):
+            with self.assertRaisesRegex(AssertionError,'wrong witness arm'):
+                o.readback(output,root,1,geometry_weight=.1,witness_weight=.1)
+
+    def test_witness_stability_counts_versions_not_repeat_votes(self):
+        burdens=dict(geometry_invalid=100,literal_complete_repeats=99,literal_valid_repeats=0,
+            malformed=0,near_repeat_occurrence_pairs=0,caps=1,valid_rows=2)
+        row=dict(mode='category',cohort='human13',image_id=1,burdens=burdens,
+            sets={'retained':{'gained':[7]},'hidden':{'gained':[]}})
+        outcomes={('zero' if v==0 else str(v)):{'images':[copy.deepcopy(row)]} for v in range(17)}
+        result=o.witness_stability(outcomes,16)['late/category/combined']
+        self.assertEqual(result['bad_image_versions'],8);self.assertEqual(result['bad_versions'],8)
+        self.assertEqual(result['burdens']['geometry_invalid'],dict(sum=800,mean=100,maximum=100))
+        self.assertEqual(result['acquired_id_versions']['retained:1:7'],list(range(9,17)))
+
+    def test_witness_real_four_hidden_denial_and_binding_rejection(self):
+        source=o.ROOT/'greedy-geometry-01/treatment-01'
+        bank=o.witness_bank(source,[i['image_id'] for i in self.images],self.t)
+        self.assertEqual([(e['image_id'],e['source_version']) for e in bank['images']],[(13348,4),(16228,11),(351017,0),(417044,8)])
+        actual_load=o.p.load
+        def allowed(path):
+            path=__import__('pathlib').Path(path)
+            if source in path.parents and any(part.startswith('rollout-') for part in path.parts):return actual_load(path)
+            raise AssertionError('hidden or nonprediction read')
+        with patch.object(o.p,'load',side_effect=allowed):
+            self.assertEqual(bank,o.witness_bank(source,[i['image_id'] for i in self.images],self.t))
+        for entry in bank['images']:
+            changed=copy.deepcopy(entry);changed['record']['evaluator_hidden']={'bbox':[0,0,999,999],'desc':'changed'}
+            self.assertEqual(o.witness_inputs(entry,self.t),o.witness_inputs(changed,self.t))
+        root=o.ROOT/'test-witness';spec=dict(path=str(root/'bank.json'),sha256='bound',
+            image_ids=[e['image_id'] for e in bank['images']],source=str(source))
+        def load(path):
+            if path==root/'qualification.json':return {'witness':spec}
+            if str(path)==spec['path']:return bank
+            self.fail(str(path))
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='bound'):
+            for weight in (0,.1):self.assertEqual(o.witness_binding(root,weight,'bound')[0]['weight'],weight)
+            with self.assertRaisesRegex(AssertionError,'bank identity'):o.witness_binding(root,.1,'wrong')
+            with patch.object(o.p,'digest',return_value='drift'):
+                with self.assertRaises(AssertionError):o.witness_binding(root,.1,'bound')
+            bank['source']='wrong'
+            with self.assertRaises(AssertionError):o.witness_binding(root,.1,'bound')
+
 
 if __name__=='__main__':unittest.main()
