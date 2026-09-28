@@ -2,7 +2,7 @@
   "unit_id": "2026-09-27-online-row-credit",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "greedy-geometry-CPU-accepted-read-only-diagnostic-next",
+  "status": "geometry-diagnostic-accepted-matched16-ready",
   "protocol": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,12 +11,12 @@
   "worker_effort": "low",
   "goal_requested": true,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01",
-  "boundary": "Exactly 18 saved-control64 history forwards; no generation, model backward or optimizer",
+  "boundary": "Two finite16 fresh-online arms from explicit accepted control64; 0 versus .1 sparse Gmax",
   "pending": [
-    "Measure actual legal mass versus greedy ranking and normalized logit derivatives",
-    "Lead interpretation before conditional matched16 training release"
+    "Matched16 actual GPU sparse-margin updates and export/input/producer validation",
+    "Endpoint16 and fixed9..16 natural validity, coverage and displacement comparison"
   ],
-  "job_state": "CPU complete; no diagnostic model invocation launched",
+  "job_state": "Diagnostic complete; all10ownedPIDsabsent; matched16 not yet launched",
   "not_authorized": [
     "decode logits processor or hard mask",
     "hidden truth in training or candidate selection",
@@ -28,10 +28,10 @@
   "accepted_cpu_source": "533feb03238cec12b2d22b9247a85591ee87b640",
   "cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/cpu",
   "lead_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/cpu/lead-acceptance-01.json",
-  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/lead-diagnostic-release-01.json",
+  "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/lead-runtime-release-01.json",
   "result": "research/experiments/2026-09-27-online-row-credit/results.md",
-  "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/preservation-01/matched-01/lead-runtime-acceptance-01.json",
-  "runtime_output": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/diagnostic-01",
+  "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/diagnostic-01/lead-acceptance-01.json",
+  "runtime_output": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01/matched-01",
   "autonomous_authority": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/lead-autonomous-continuation-01.json",
   "next_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/greedy-geometry-01"
 }
