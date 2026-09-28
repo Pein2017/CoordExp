@@ -83,7 +83,7 @@ def prepare():
     rows = [json.loads(line) for line in reservoir]
     rows.sort(key=lambda row: row['image_id'])
     for row in rows:
-        row['images'] = [str((source_data.parent / image).resolve()) for image in row['images']]
+        row['images'] = [os.path.relpath((source_data.parent / image).resolve(), ROOT / 'data') for image in row['images']]
     assert len({row['image_id'] for row in rows}) == 8192
     eval_rows = [json.loads(line) for line in VAL.read_text().splitlines()]
     assert not {row['image_id'] for row in rows} & {row['image_id'] for row in eval_rows}
@@ -98,7 +98,7 @@ def prepare():
     smoke_train = ROOT / 'data/smoke_train.jsonl'
     smoke_train.write_text(''.join(data_paths[17].read_text().splitlines(keepends=True)[:256]))
     for row in eval_rows[:8]:
-        row['images'] = [str((VAL.parent / image).resolve()) for image in row['images']]
+        row['images'] = [os.path.relpath((VAL.parent / image).resolve(), ROOT / 'data') for image in row['images']]
     (ROOT / 'data/smoke_eval.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in eval_rows[:8]))
 
     base['model']['base_model'] = str(Path(base['model']['base_model']).resolve())
