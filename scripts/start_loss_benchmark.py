@@ -186,7 +186,9 @@ def calibrate():
 
 
 def command(args, log, env):
-    remaining = datetime.fromisoformat(DEADLINE).timestamp() - time.time()
+    authorization = ROOT / 'continuation-authorization.json'
+    deadline = json.loads(authorization.read_text())['deadline_utc'] if authorization.exists() else DEADLINE
+    remaining = datetime.fromisoformat(deadline).timestamp() - time.time()
     if remaining <= 0: raise TimeoutError('Benchmark budget exhausted')
     log.parent.mkdir(parents=True, exist_ok=True)
     started = time.time()
@@ -260,16 +262,35 @@ def summarize():
     print(json.dumps(results, indent=2))
 
 
-def run_group(seed, devices):
+def run_group(seed, devices, *, continue_existing=False):
     if not (ROOT / 'calibration.json').exists(): raise RuntimeError('Weights must be calibrated first')
     env = training_env(devices)
     jobs = list(ARMS)
     if seed == 29: jobs.reverse()  # Counterbalance order without changing paired within-seed data.
-    state = {'status': 'running', 'seed': seed, 'devices': devices, 'pid': os.getpid(), 'completed': []}
     path = ROOT / f'group-{seed}.json'
+    if continue_existing:
+        state = json.loads(path.read_text())
+        if state['status'] != 'awaiting_authorization' or state['active'] is not None:
+            raise RuntimeError('Only an inactive authorization hold can continue')
+        expected = [f'{arm}-order{seed}' for arm in jobs]
+        completed = state['completed']
+        if completed != expected[:len(completed)] or state['devices'] != devices:
+            raise RuntimeError('Continuation does not match the frozen arm order or devices')
+        for name in completed:
+            run = json.loads((ROOT / 'train' / name / 'run.json').read_text())
+            if run['status'] != 'completed' or run['completed_steps'] != 256:
+                raise RuntimeError(f'Prior training is incomplete: {name}')
+            for step in (64, 256):
+                if not (ROOT / 'infer' / f'{name}-step{step}' / 'eval/metrics.json').exists():
+                    raise RuntimeError(f'Prior evaluation is incomplete: {name} step{step}')
+        jobs = jobs[len(completed):]
+        state.update(status='running', pid=os.getpid(), pending_authorization=False)
+    else:
+        if path.exists(): raise RuntimeError('Group already exists; explicit continuation required')
+        state = {'status': 'running', 'seed': seed, 'devices': devices, 'pid': os.getpid(), 'completed': []}
     write_json(path, state)
     try:
-        prepare_cache(f'{jobs[0]}-order{seed}', env)
+        if jobs: prepare_cache(f'{jobs[0]}-order{seed}', env)
         for arm in jobs:
             name = f'{arm}-order{seed}'
             state['active'] = name
@@ -301,6 +322,7 @@ def main():
     parser.add_argument('--seed', type=int, choices=ORDERS)
     parser.add_argument('--devices')
     parser.add_argument('--name', default='calibration-smoke')
+    parser.add_argument('--continue-existing', action='store_true')
     args = parser.parse_args()
     if args.action == 'prepare': prepare()
     elif args.action == 'calibrate': calibrate()
@@ -312,7 +334,7 @@ def main():
         command([sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
                  '-m', 'src.train', '--config', str(ROOT / 'configs' / f'{args.name}.yaml')], ROOT / 'logs' / f'{args.name}.log', env)
         evaluate(args.name, env)
-    else: run_group(args.seed, args.devices)
+    else: run_group(args.seed, args.devices, continue_existing=args.continue_existing)
 
 
 if __name__ == '__main__': main()
