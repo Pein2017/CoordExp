@@ -169,9 +169,9 @@ class OnlineCreditTest(unittest.TestCase):
     def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
         import tempfile
         from pathlib import Path
-        parent=o.ROOT/'preservation-01';parent.mkdir(exist_ok=True)
+        parent=o.ROOT/'greedy-geometry-01';parent.mkdir(exist_ok=True)
         original_load=o.p.load
-        for updates,schedule in ((1,(0,1)),(64,(0,1,2,4,8,16,32,64))):
+        for updates,schedule in ((1,(0,1)),(16,(0,1,2,4,8,16)),(64,(0,1,2,4,8,16,32,64))):
             with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
                 output=Path(tmp);written=[]
                 def producer(version):
@@ -362,6 +362,109 @@ class OnlineCreditTest(unittest.TestCase):
         with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='expected'):
             with self.assertRaisesRegex(AssertionError,'wrong preservation arm'):o.readback(output,root,1,0,'expected')
             with self.assertRaisesRegex(AssertionError,'wrong preservation bank identity'):o.readback(output,root,1,.25,'swapped')
+
+    def test_sparse_geometry_actual_consumer_high_mass_illegal_greedy_ties(self):
+        image,record,plan=self.fixture([[742,30,742,86]],[])
+        positions=o.trace_positions(plan,record);row=plan['observations'][0]
+        pos=row['coordinate_positions'][2];index=positions.index(len(record['prompt_token_ids'])+pos-1)
+        self.assertEqual(o.erroneous_slots(plan['observations']),((pos,743,1000),))
+        z=torch.full((1,len(positions),self.vocab.vocab_size),-100.)
+        legal=list(self.vocab.coordinate[743:]);bad=self.vocab.coordinate[742]
+        z[0,index,legal]=0;z[0,index,bad]=1;z.requires_grad_()
+        old,oldterms=o.trace_objective(z,positions,plan,record,image,self.t,self.vocab)
+        same,_=o.trace_objective(z,positions,plan,record,image,self.t,self.vocab,0)
+        self.assertTrue(torch.equal(old,same))
+        go=torch.autograd.grad(old,z,retain_graph=True)[0]
+        self.assertTrue(torch.equal(go,torch.autograd.grad(same,z,retain_graph=True)[0]))
+        new,terms=o.trace_objective(z,positions,plan,record,image,self.t,self.vocab,.1)
+        gn=torch.autograd.grad(terms['Gmax_weighted'],z,retain_graph=True)[0]
+        self.assertAlmostEqual(float(terms['Gmax_unweighted']),float(torch.nn.functional.softplus(torch.tensor(2.))),places=6)
+        self.assertGreater(float(go[0,index,bad]),0);self.assertGreater(float(gn[0,index,bad]),0)
+        self.assertTrue(torch.all(gn[0,index,legal]<0));self.assertTrue(torch.all(gn[0,index,legal]==gn[0,index,legal[0]]))
+        self.assertEqual(int(torch.count_nonzero(gn[:,[j for j in range(len(positions)) if j!=index]])),0)
+        mass=257/(257+__import__('math').exp(1));self.assertAlmostEqual(mass,.989534,places=6)
+        self.assertEqual(int(z[0,index].argmax()),bad)
+        self.assertGreater(float(gn[0,index,bad]/go[0,index,bad]),30)
+        escaped=z.detach().clone();escaped[0,index,0]=1000;escaped.requires_grad_()
+        escape=o.greedy_geometry_objective(escaped,positions,plan['observations'],len(record['prompt_token_ids']),self.vocab.coordinate)
+        escape.backward();self.assertGreater(float(escaped.grad[0,index,0]),0)
+        with self.assertRaises((AssertionError,ValueError)):o.trace_objective(z,tuple(j+1 for j in positions),plan,record,image,self.t,self.vocab,.1)
+        # Detached diagnostic uses the same margin; it cannot alter training gradients.
+        before=torch.autograd.grad(new,z,retain_graph=True)[0]
+        detail=o.geometry_diagnostic_rows(z,positions,plan['observations'],record,self.vocab.coordinate)
+        after=torch.autograd.grad(new,z)[0];self.assertTrue(torch.equal(before,after))
+        d=detail[2];self.assertTrue(d['eligible_error']);self.assertTrue(d['emitted_equals_replay_argmax'])
+        self.assertAlmostEqual(d['legal_mass'],mass,places=6);self.assertEqual(d['legal_max_ties'],257)
+        self.assertEqual(detail[0]['new_weighted_image']['l2'],0)
+        # Ties in the full illegal complement share gradient too.
+        tied=torch.tensor([1.,1.,0.,0.],requires_grad=True)
+        o.max_geometry_margin(tied,[2,3]).backward()
+        self.assertEqual(float(tied.grad[0]),float(tied.grad[1]));self.assertEqual(float(tied.grad[2]),float(tied.grad[3]))
+
+    def test_sparse_geometry_999_repeated_contexts_empty_and_means(self):
+        image,record,plan=self.fixture([[999,20,999,200],[10,20,10,200],[10,20,10,200]],[])
+        errors=o.erroneous_slots(plan['observations']);self.assertEqual(len(errors),3)
+        first=plan['observations'][0];self.assertIn(first['coordinate_positions'][0],[e[0] for e in errors])
+        self.assertNotIn(first['coordinate_positions'][2],[e[0] for e in errors])
+        positions=o.trace_positions(plan,record);z=torch.zeros(1,len(positions),self.vocab.vocab_size,requires_grad=True)
+        value=o.greedy_geometry_objective(z,positions,plan['observations'],len(record['prompt_token_ids']),self.vocab.coordinate)
+        self.assertAlmostEqual(float(value),float(torch.nn.functional.softplus(torch.tensor(1.))),places=6)
+        value.backward();self.assertTrue(torch.isfinite(z.grad).all())
+        _,legal_record,legal_plan=self.fixture([[10,20,100,200]],[])
+        lp=o.trace_positions(legal_plan,legal_record);empty=torch.zeros(1,len(lp),self.vocab.vocab_size,requires_grad=True)
+        v=o.greedy_geometry_objective(empty,lp,legal_plan['observations'],len(legal_record['prompt_token_ids']),self.vocab.coordinate)
+        v.backward();self.assertEqual(float(v),0);self.assertEqual(float(empty.grad.abs().sum()),0)
+        # Different error counts produce image means, not a pooled-position mean.
+        w=torch.tensor(1.,requires_grad=True);ids=list(range(18));plans={i:{'redirect':None} for i in ids};grads=[]
+        class Model:
+            def no_sync(self):return nullcontext()
+        for rank in range(8):
+            w=torch.tensor(1.,requires_grad=True)
+            def f(job):
+                i=job['image_id'];n=1+i%3
+                scalar=torch.nn.functional.softplus(w*(i+1)).repeat(n).mean()*.1 if job['branch']=='trace' else w*0
+                return scalar,{}
+            o.r.accumulate_family_step(Model(),o.jobs(ids,rank,plans),f);grads.append(float(w.grad))
+        w=torch.tensor(1.,requires_grad=True);expected=sum(torch.nn.functional.softplus(w*(i+1)) for i in ids)*.1/18;expected.backward()
+        self.assertAlmostEqual(sum(grads)/8,float(w.grad),places=6)
+
+    def test_geometry_explicit_start_actual_run_binding_and_exports(self):
+        from pathlib import Path
+        root=o.ROOT/'greedy-geometry-01/cpu';checkpoint=Path('/frozen/control64')
+        spec=dict(checkpoint=str(checkpoint),checkpoint_identity_sha256='bound',recipe='sparse actual illegal .1; no P0')
+        qualifier={'sha256':{},'geometry':spec};recipe=o.identity(spec)
+        original=o.p.load
+        def load(path):
+            if path==root/'qualification.json':return qualifier
+            if path==checkpoint/'identity.json':return {'adapter':'bound'}
+            return original(path)
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='bound'):
+            self.assertEqual(o.geometry_binding(root,checkpoint,.1,recipe)['checkpoint'],str(checkpoint))
+            for cp,weight,sha in [(None,.1,recipe),(Path('/wrong'),.1,recipe),(checkpoint,.25,recipe),(checkpoint,.1,'changed')]:
+                with self.assertRaises(AssertionError):o.geometry_binding(root,cp,weight,sha)
+            with patch.object(o.p,'digest',return_value='changed'):
+                with self.assertRaises(AssertionError):o.geometry_binding(root,checkpoint,.1,recipe)
+            class AtCompose(Exception):pass
+            with patch.object(o,'start',return_value=(0,root,[],{})),patch.object(o.p,'write'), \
+                 patch('torch.distributed.init_process_group'),patch.object(o.p,'compose',side_effect=AtCompose) as compose:
+                with self.assertRaises(AtCompose):o.run(root,root,16,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=recipe)
+                compose.assert_called_once_with(checkpoint,evaluation=False)
+            with patch.object(o.p,'load',return_value={'sha256':{},'geometry':spec}):
+                with self.assertRaises(AssertionError):o.readback(root,root,16,geometry_weight=.1,start_checkpoint=Path('/wrong'),recipe_sha256=recipe)
+        self.assertEqual(o.export_steps(1),(0,1));self.assertEqual(o.export_steps(16),(0,1,2,4,8,16))
+        self.assertEqual(o.export_steps(64),(0,1,2,4,8,16,32,64))
+
+    def test_geometry_start_export_tensor_rejection(self):
+        from pathlib import Path
+        start=Path('/start');export=Path('/export');changed=False
+        def payload(path):
+            is_adapter='/adapter/' in path
+            key='layer.lora_A.weight' if is_adapter else 'input_embed_delta'
+            return {key:torch.tensor([2. if changed and path.startswith('/export') else 1.])}
+        with patch('safetensors.torch.load_file',side_effect=payload):
+            o.verify_start_export(start,export)
+            changed=True
+            with self.assertRaisesRegex(AssertionError,'zero differs'):o.verify_start_export(start,export)
 
 
 if __name__=='__main__':unittest.main()
