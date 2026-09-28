@@ -16,6 +16,7 @@ from src.losses.base_ce import BaseTokenCE
 from src.losses.bindings import (
     BASE_CE_BINDING,
     CONDITIONAL_ORDER_GATE_BINDING,
+    START_COORDINATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
     COORDINATE_TOKEN_TYPES,
     PROTECTED_BASE_CE_WEIGHT,
@@ -31,6 +32,7 @@ from src.losses.normalizers import (
     segment_balanced_contribution,
 )
 from src.losses.conditional_order_gate import ConditionalOrderGateLoss
+from src.losses.start_coordinate import StartCoordinateLoss
 from src.losses.token_type_gate import TokenTypeGateLoss
 from src.losses.vocab import V1_TOKEN_TYPES
 from src.supervision import TokenSequence
@@ -181,6 +183,8 @@ class LossRunner:
     coord_gaussian_rps: CoordGaussianRPSLoss | None = None
     conditional_order_gate_weight: float = 0.0
     conditional_order_gate: ConditionalOrderGateLoss | None = None
+    start_coordinate_weight: float = 0.0
+    start_coordinate: StartCoordinateLoss | None = None
 
     def __post_init__(self) -> None:
         _validate_weight(BASE_CE_BINDING.name, self.base_ce_weight)
@@ -189,6 +193,7 @@ class LossRunner:
             COORD_GAUSSIAN_RPS_BINDING.name, self.coord_gaussian_rps_weight
         )
         _validate_weight(CONDITIONAL_ORDER_GATE_BINDING.name, self.conditional_order_gate_weight)
+        _validate_weight(START_COORDINATE_BINDING.name, self.start_coordinate_weight)
         _validate_token_type_groups(self.token_type_gate_groups)
         # Fail closed at construction: the composition path is the only place
         # zero policies are decided, so run it once here.
@@ -293,6 +298,15 @@ class LossRunner:
                 active.append(_ActiveTokenLoss(
                     binding=binding, weight=weight, term=term, token_types=None,
                 ))
+            elif binding is START_COORDINATE_BINDING:
+                weight, term = float(self.start_coordinate_weight), self.start_coordinate
+                if weight == 0.0:
+                    if term is not None:
+                        raise LossContractError("an omitted auxiliary loss must not be instantiated", code="loss.auxiliary_omitted_term_instantiated")
+                    continue
+                if term is None:
+                    raise LossContractError("start-coordinate weight requires a configured term", code="loss.start_missing_term")
+                active.append(_ActiveTokenLoss(binding=binding, weight=weight, term=term, token_types=None))
             else:  # pragma: no cover - defended closed inventory
                 raise LossContractError(
                     "token loss binding has no composition branch",
@@ -315,6 +329,7 @@ class LossRunner:
                 context={"normalizer": config.normalizer},
             )
         auxiliary = config.auxiliary
+        start_cfg = auxiliary.start_coordinate if auxiliary is not None else None
         order_cfg = auxiliary.conditional_order_gate if auxiliary is not None else None
         order_weight = 0.0 if order_cfg is None else float(order_cfg.weight)
         coord_cfg = auxiliary.coord_gaussian_rps if auxiliary is not None else None
@@ -344,6 +359,9 @@ class LossRunner:
                 ConditionalOrderGateLoss()
                 if order_cfg is not None and order_weight > 0.0 else None
             ),
+            start_coordinate_weight=0.0 if start_cfg is None else start_cfg.weight,
+            start_coordinate=(StartCoordinateLoss(**start_cfg.model_dump(exclude={"weight"}))
+                              if start_cfg is not None and start_cfg.weight > 0 else None),
         )
 
     def prepare_planned_step(

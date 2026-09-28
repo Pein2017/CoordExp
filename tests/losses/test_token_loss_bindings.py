@@ -30,6 +30,7 @@ from src.losses import LossContext, LossRunner, TokenVocabularyGroups
 from src.losses.bindings import (
     BASE_CE_BINDING,
     CONDITIONAL_ORDER_GATE_BINDING,
+    START_COORDINATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
     COORDINATE_TOKEN_TYPES,
     PROTECTED_BASE_CE_WEIGHT,
@@ -127,20 +128,22 @@ def _losses_config(
     )
 
 
-def test_binding_inventory_is_exactly_the_four_implemented_losses() -> None:
+def test_binding_inventory_is_exactly_the_five_implemented_losses() -> None:
     assert isinstance(TOKEN_LOSS_BINDINGS, tuple)
     assert [binding.name for binding in TOKEN_LOSS_BINDINGS] == [
         "base_ce",
         "token_type_gate",
         "coord_gaussian_rps",
         "conditional_order_gate",
+        "start_coordinate",
     ]
-    assert len(TOKEN_LOSS_BINDINGS) == 4
+    assert len(TOKEN_LOSS_BINDINGS) == 5
     assert TOKEN_LOSS_BINDINGS == (
         BASE_CE_BINDING,
         TOKEN_TYPE_GATE_BINDING,
         COORD_GAUSSIAN_RPS_BINDING,
         CONDITIONAL_ORDER_GATE_BINDING,
+        START_COORDINATE_BINDING,
     )
 
 

@@ -417,9 +417,18 @@ class ConditionalOrderGateLossConfig(WeightedLossConfig):
     pass
 
 
+class StartCoordinateLossConfig(WeightedLossConfig):
+    mode: Literal["ce", "local_mass", "instance_margin"]
+    margin: float = Field(default=0.2, gt=0.0, allow_inf_nan=False)
+    radius_fraction: float = Field(default=0.02, ge=0.0, le=1.0, allow_inf_nan=False)
+    radius_cap: int = Field(default=4, ge=0, le=999)
+    calibrate: bool = False
+
+
 class AuxiliaryLossesConfig(StrictConfigModel):
     conditional_order_gate: ConditionalOrderGateLossConfig | None = None
     coord_gaussian_rps: CoordGaussianRPSLossConfig | None = None
+    start_coordinate: StartCoordinateLossConfig | None = None
 
 
 class LossesConfig(StrictConfigModel):

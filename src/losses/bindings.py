@@ -5,7 +5,7 @@ This module is **metadata for the single deep loss-runner implementation**
 extension point. It is deliberately excluded from the public `src.losses`
 package surface: there is no registry, no discovery, no import-by-name, no
 callable configuration, and no pass-through factory. The repository has
-exactly four implemented losses and they are compiled with the code.
+exactly five implemented losses and they are compiled with the code.
 
 Each binding declares:
 
@@ -77,12 +77,17 @@ CONDITIONAL_ORDER_GATE_BINDING = TokenLossBinding(
     zero_policy="omit",
 )
 
+START_COORDINATE_BINDING = TokenLossBinding(
+    name="start_coordinate", role="auxiliary", normalizer="segment_balanced", zero_policy="omit",
+)
+
 #: The complete closed inventory, in canonical composition order.
 TOKEN_LOSS_BINDINGS: tuple[TokenLossBinding, ...] = (
     BASE_CE_BINDING,
     TOKEN_TYPE_GATE_BINDING,
     COORD_GAUSSIAN_RPS_BINDING,
     CONDITIONAL_ORDER_GATE_BINDING,
+    START_COORDINATE_BINDING,
 )
 
 #: The protected base-CE weight; the `forbid` zero policy admits no other.
@@ -112,6 +117,7 @@ def binding_for(name: str) -> TokenLossBinding:
 
 
 __all__ = [
+    "START_COORDINATE_BINDING",
     "CONDITIONAL_ORDER_GATE_BINDING",
     "BASE_CE_BINDING",
     "COORDINATE_TOKEN_TYPES",
