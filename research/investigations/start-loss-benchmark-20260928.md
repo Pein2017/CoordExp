@@ -1,6 +1,6 @@
 # Fourth-loss continuation benchmark
 
-Status: implementation and CPU admission; GPU qualification pending.
+Status: CPU checks passed; source decode reproduced; final nonzero-update smoke in progress.
 
 From the untied geo_sorted_xy three-loss step-2444 checkpoint, does an additional
 GT-prefix onset objective improve natural greedy COCO val200 detection after
@@ -77,3 +77,23 @@ overlapping coordinate aliases, empty support, segment normalization, gradient
 direction and analytic calibration versus autograd. Before full execution,
 qualify four-rank warm-start -> update -> untied checkpoint -> fresh HF decode
 and scoring. Fresh source evaluation provides a current-runtime anchor.
+
+## Qualification receipts
+
+- Source repeat reproduces mAP 0.4556510010795014, FN50 614, strict repeats 460,
+  invalid geometry 220 and two length caps.
+- 103 CPU loss/config tests pass. Cross-image competitor mutation is rejected.
+- Initial launch failures (required determinism environment, JSONL-relative image
+  references, explicit packing preparation) were repaired before any benchmark
+  arm. Original failed artifacts are retained under the output root. Data path
+  repair does not change image identities, contents, annotations or order.
+- Calibration uses 24 micro-forwards across four ranks before any nonzero update.
+  Frozen weights: CE 0.1, local mass 0.22967969404405367, instance margin
+  0.6663237728525236. All three base losses remain 1 / 0.1 / 0.01.
+- The calibration smoke's first scheduler LR is zero. Its saved 588 adapter
+  tensors and both delta tensors are bitwise equal to the source, which proves
+  warm-start preservation but does not prove parameter mutation. A separate
+  margin-update smoke uses zero warmup and nonzero LR solely to qualify actual
+  backward/update/persistence/cold decode; it is not an experimental anchor.
+- Parallel CPU preparation materializes the two 8192-row caches; each group's
+  arms reuse its existing cache. No GPU is needed for preparation.

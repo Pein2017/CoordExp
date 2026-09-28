@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from contextlib import redirect_stdout
 import copy
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import math
 import os
@@ -219,15 +222,54 @@ def training_env(devices):
                 CUBLAS_WORKSPACE_CONFIG=':4096:8', FLASH_ATTENTION_DETERMINISTIC='1')
 
 
+def prepare_cache(name, env):
+    command([sys.executable, '-m', 'src.prepare_train_cache', '--config',
+             str(ROOT / 'configs' / f'{name}.yaml')], ROOT / 'logs' / f'cache-{name}.log', env)
+
+
+def summarize():
+    from pycocotools.coco import COCO
+    from pycocotools.cocoeval import COCOeval
+    results = []
+    for path in sorted((ROOT / 'infer').glob('*/eval/metrics.json')):
+        metrics = json.loads(path.read_text())
+        if path.parents[1].name.endswith('-smoke'):
+            continue
+        assert metrics['row_count'] == 200 and metrics['gt_object_count'] == 1600
+        assert metrics['benchmark_eligible'] and metrics['benchmark_metric']
+        with redirect_stdout(io.StringIO()):
+            gt = COCO(str(path.parent / metrics['coco_gt_json']))
+            dt = gt.loadRes(str(path.parent / metrics['coco_predictions_json']))
+            evaluator = COCOeval(gt, dt, 'bbox')
+            evaluator.params.iouThrs = [0.5]
+            evaluator.evaluate()
+        fn = sum(int(((entry['gtMatches'][0] == 0) & ~entry['gtIgnore'].astype(bool)).sum())
+                 for entry in evaluator.evalImgs if entry is not None
+                 and entry['aRng'] == evaluator.params.areaRng[0] and entry['maxDet'] == 100)
+        rows = [json.loads(line) for line in (path.parents[1] / 'gt_vs_pred.jsonl').open()]
+        drops = Counter(drop['reason'] for row in rows for drop in row['dropped_predictions'])
+        repeats = sum(sum(n - 1 for n in Counter(
+            (pred['description'], tuple(pred['coord_bins'])) for pred in row['pred']
+        ).values()) for row in rows)
+        results.append({'run': path.parents[1].name, 'mAP': metrics['mAP'],
+                        'AP50': metrics['mAP_50'], 'AP75': metrics['mAP_75'], 'FN50': fn,
+                        'strict_repeats': repeats, 'drops': dict(drops),
+                        'length_caps': sum(row['decode_stop_reason'] == 'length' for row in rows)})
+    results.sort(key=lambda item: item['mAP'], reverse=True)
+    write_json(ROOT / 'comparison.json', {'results': results, 'FN_scope': 'class-aware IoU .5, area all, maxDets100'})
+    print(json.dumps(results, indent=2))
+
+
 def run_group(seed, devices):
     if not (ROOT / 'calibration.json').exists(): raise RuntimeError('Weights must be calibrated first')
     env = training_env(devices)
     jobs = list(ARMS)
     if seed == 29: jobs.reverse()  # Counterbalance order without changing paired within-seed data.
-    state = {'status': 'running', 'seed': seed, 'devices': devices, 'completed': []}
+    state = {'status': 'running', 'seed': seed, 'devices': devices, 'pid': os.getpid(), 'completed': []}
     path = ROOT / f'group-{seed}.json'
     write_json(path, state)
     try:
+        prepare_cache(f'{jobs[0]}-order{seed}', env)
         for arm in jobs:
             name = f'{arm}-order{seed}'
             state['active'] = name
@@ -245,7 +287,9 @@ def run_group(seed, devices):
     except BaseException as exc:
         state.update(status='failed', error=repr(exc))
         raise
-    finally: write_json(path, state)
+    finally:
+        write_json(path, state)
+        print(f"BENCHMARK_GROUP_{state['status'].upper()} seed={seed}", flush=True)
 
 
 def main():
@@ -253,18 +297,21 @@ def main():
         raise SystemExit(128 + signum)
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['prepare', 'calibrate', 'group', 'source', 'smoke'])
+    parser.add_argument('action', choices=['prepare', 'calibrate', 'group', 'source', 'smoke', 'summarize'])
     parser.add_argument('--seed', type=int, choices=ORDERS)
     parser.add_argument('--devices')
+    parser.add_argument('--name', default='calibration-smoke')
     args = parser.parse_args()
     if args.action == 'prepare': prepare()
     elif args.action == 'calibrate': calibrate()
+    elif args.action == 'summarize': summarize()
     elif args.action == 'source': evaluate('source', dict(os.environ, CUDA_VISIBLE_DEVICES=args.devices))
     elif args.action == 'smoke':
         env = training_env(args.devices)
+        prepare_cache(args.name, env)
         command([sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
-                 '-m', 'src.train', '--config', str(ROOT / 'configs/calibration-smoke.yaml')], ROOT / 'logs/calibration-smoke.log', env)
-        evaluate('calibration-smoke', env)
+                 '-m', 'src.train', '--config', str(ROOT / 'configs' / f'{args.name}.yaml')], ROOT / 'logs' / f'{args.name}.log', env)
+        evaluate(args.name, env)
     else: run_group(args.seed, args.devices)
 
 
