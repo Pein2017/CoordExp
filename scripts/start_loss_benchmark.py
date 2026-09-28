@@ -204,15 +204,24 @@ def command(args, log, env):
 
 
 def evaluate(name, env):
+    # Match the source evaluation's inference environment; strict replay is a training policy.
+    env = dict(env)
+    env.pop('CUBLAS_WORKSPACE_CONFIG', None)
+    env.pop('FLASH_ATTENTION_DETERMINISTIC', None)
     command([sys.executable, '-m', 'src.infer', '--config', str(ROOT / 'configs' / f'eval-{name}.yaml')],
             ROOT / 'logs' / f'eval-{name}.log', env)
     command([sys.executable, '-m', 'scripts.evaluate_detection', '--artifact-dir', str(ROOT / 'infer' / name),
              '--out-dir', str(ROOT / 'infer' / name / 'eval')], ROOT / 'logs' / f'score-{name}.log', env)
 
 
+def training_env(devices):
+    return dict(os.environ, CUDA_VISIBLE_DEVICES=devices, OMP_NUM_THREADS='4', MKL_NUM_THREADS='4',
+                CUBLAS_WORKSPACE_CONFIG=':4096:8', FLASH_ATTENTION_DETERMINISTIC='1')
+
+
 def run_group(seed, devices):
     if not (ROOT / 'calibration.json').exists(): raise RuntimeError('Weights must be calibrated first')
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES=devices, OMP_NUM_THREADS='4', MKL_NUM_THREADS='4')
+    env = training_env(devices)
     jobs = list(ARMS)
     if seed == 29: jobs.reverse()  # Counterbalance order without changing paired within-seed data.
     state = {'status': 'running', 'seed': seed, 'devices': devices, 'completed': []}
@@ -252,7 +261,7 @@ def main():
     elif args.action == 'calibrate': calibrate()
     elif args.action == 'source': evaluate('source', dict(os.environ, CUDA_VISIBLE_DEVICES=args.devices))
     elif args.action == 'smoke':
-        env = dict(os.environ, CUDA_VISIBLE_DEVICES=args.devices, OMP_NUM_THREADS='4', MKL_NUM_THREADS='4')
+        env = training_env(args.devices)
         command([sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
                  '-m', 'src.train', '--config', str(ROOT / 'configs/calibration-smoke.yaml')], ROOT / 'logs/calibration-smoke.log', env)
         evaluate('calibration-smoke', env)
