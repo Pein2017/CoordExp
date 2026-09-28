@@ -244,13 +244,18 @@ def main():
         raise SystemExit(128 + signum)
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['prepare', 'calibrate', 'group', 'source'])
+    parser.add_argument('action', choices=['prepare', 'calibrate', 'group', 'source', 'smoke'])
     parser.add_argument('--seed', type=int, choices=ORDERS)
     parser.add_argument('--devices')
     args = parser.parse_args()
     if args.action == 'prepare': prepare()
     elif args.action == 'calibrate': calibrate()
     elif args.action == 'source': evaluate('source', dict(os.environ, CUDA_VISIBLE_DEVICES=args.devices))
+    elif args.action == 'smoke':
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=args.devices, OMP_NUM_THREADS='4', MKL_NUM_THREADS='4')
+        command([sys.executable, '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
+                 '-m', 'src.train', '--config', str(ROOT / 'configs/calibration-smoke.yaml')], ROOT / 'logs/calibration-smoke.log', env)
+        evaluate('calibration-smoke', env)
     else: run_group(args.seed, args.devices)
 
 
