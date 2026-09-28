@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-09-27-online-row-credit",
-  "lifecycle": "ready",
-  "evidence": "partial",
-  "status": "error-replay-slice-accepted-matched16-ready",
+  "lifecycle": "paused",
+  "evidence": "accepted",
+  "status": "fixed-witness-rejected-waiting-concurrent-training-results",
   "protocol": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,12 +11,12 @@
   "worker_effort": "low",
   "goal_requested": true,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01",
-  "boundary": "Two matched16 fresh-online arms from fixed geometry treatment16; fixedwitness0/.1 and common diagnostics",
+  "boundary": "Completed fixed-witness matched16: mechanics accepted, useful natural-stability transfer rejected; no new GPU release",
   "pending": [
-    "Matched16 finite runtime/readback with common diagnostic schedule",
-    "Endpoint and fixed9..16 conditional retention versus natural stability/coverage comparison"
+    "User-referenced concurrent training results before any new GPU experiment",
+    "Known-FN B+C credit relocation remains a CPU design/census candidate; activate only through a new lead-owned frozen contrast"
   ],
-  "job_state": "Single-update slice accepted; all12ownedPIDsabsent; matched16 released, not launched yet",
+  "job_state": "All6stages exit0; all23ownedPIDsabsent; no research model job or next GPU launch",
   "not_authorized": [
     "decode logits processor or hard mask",
     "hidden truth in training or candidate selection",
@@ -30,8 +30,9 @@
   "lead_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/cpu/lead-acceptance-01.json",
   "runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/lead-runtime-release-02.json",
   "result": "research/experiments/2026-09-27-online-row-credit/results.md",
-  "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/slice-01/lead-runtime-acceptance-01.json",
+  "lead_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/matched-01/lead-runtime-acceptance-01.json",
   "runtime_output": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/matched-01",
   "autonomous_authority": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/lead-autonomous-continuation-01.json",
-  "next_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01"
+  "next_root": null,
+  "scientific_disposition": "failed_transfer_fixed_four_witness_recipe"
 }
