@@ -1,6 +1,6 @@
 # Fourth-loss continuation benchmark
 
-Status: CPU checks passed; source decode reproduced; final nonzero-update smoke in progress.
+Status: GPU smoke and downstream reload/scoring passed; paired benchmark admitted.
 
 From the untied geo_sorted_xy three-loss step-2444 checkpoint, does an additional
 GT-prefix onset objective improve natural greedy COCO val200 detection after
@@ -96,4 +96,9 @@ and scoring. Fresh source evaluation provides a current-runtime anchor.
   margin-update smoke uses zero warmup and nonzero LR solely to qualify actual
   backward/update/persistence/cold decode; it is not an experimental anchor.
 - Parallel CPU preparation materializes the two 8192-row caches; each group's
-  arms reuse its existing cache. No GPU is needed for preparation.
+  arms reuse its existing cache. No model is loaded for preparation; strict determinism still requires a valid visible-device mapping.
+
+- Nonzero margin smoke updated all 588 adapter tensors and both untied deltas;
+  all four losses were finite and a fresh HF process completed decode/scoring.
+  Paired config comparison and prompt/decode checks passed. Input hashes and
+  all runnable config hashes are frozen in `config-freeze.json`.
