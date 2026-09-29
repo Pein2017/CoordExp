@@ -588,5 +588,156 @@ class OnlineCreditTest(unittest.TestCase):
             bank['source']='wrong'
             with self.assertRaises(AssertionError):o.witness_binding(root,.1,'bound')
 
+    def test_bridge_real18_selection_prefix_and_hidden_denial(self):
+        from pathlib import Path
+        source=o.ROOT/'greedy-geometry-01/treatment-01/rollout-16'
+        records=o.frozen_records(source,[x['image_id'] for x in self.images]);by={x['image_id']:x for x in records}
+        load=o.p.load;policy=load(o.p.POLICY)
+        def allowed(path):
+            if path==o.p.POLICY:return policy
+            raise AssertionError('non-whitelisted/hidden read')
+        plans=[];unequal=0
+        with patch.object(o.p,'load',side_effect=allowed):
+            for image in self.images:
+                record=by[image['image_id']];plan=o.bridge_credit(image,record,self.t,record['producer'])
+                pair=plan['bridge'];self.assertIsNotNone(pair);plans.append(plan)
+                seq=o.bridge_sequences(image,record,plan,self.t);b,c=pair['B'],pair['C']
+                unequal+=len(seq[0].atoms)!=len(seq[1].atoms)
+                self.assertEqual(list(seq[0].input_ids),record['prompt_token_ids']+record['token_ids'][:pair['cut']]+b['token_ids']+c['token_ids'])
+                self.assertEqual([a.token_id for a in seq[1].atoms],c['token_ids'])
+                for row,sequence in zip((b,c),seq):
+                    self.assertEqual(sequence.atoms[0].field,'object_ref_start')
+                    self.assertEqual(sequence.atoms[-1].field,'box_end')
+                    self.assertFalse(any(a.token_type=='eos' for a in sequence.atoms))
+                    coords=[a.coordinate_target for a in sequence.atoms if a.coordinate_target is not None]
+                    self.assertEqual([list(x.bbox) for x in coords],[row['bbox']]*4)
+                    self.assertEqual([x.slot_index for x in coords],list(range(4)))
+                changed=dict(record,evaluator_hidden={'bbox':[999]*4,'description':'mutated'})
+                self.assertEqual(o.bridge_credit(image,changed,self.t,record['producer']),plan)
+                wrong=copy.deepcopy(plan);wrong['bridge']['C']['positions'][0]+=1
+                with self.assertRaises(AssertionError):o.bridge_sequences(image,record,wrong,self.t)
+                wrong=copy.deepcopy(plan);wrong['producer']=dict(plan['producer'],update=99)
+                with self.assertRaises(AssertionError):o.bridge_sequences(image,record,wrong,self.t)
+        self.assertEqual(len(plans),18);self.assertEqual(unequal,11)
+
+    def test_bridge_actual_loss_difference_and_c_credit(self):
+        # Unequal B/C token lengths make token pooling observably wrong.
+        a=[100,100,200,200];c=[600,600,800,800];b=[300,300,400,400]
+        image,record,_=self.fixture([a,c],[dict(coco_ann_id=0,desc='person',bbox_2d=a),
+            dict(coco_ann_id=1,desc='traffic light',bbox_2d=b),dict(coco_ann_id=2,desc='person',bbox_2d=c)])
+        plan=o.bridge_credit(image,record,self.t,self.producer);self.assertEqual(plan['bridge']['m'],2)
+        sequences=o.bridge_sequences(image,record,plan,self.t)
+        self.assertNotEqual(len(sequences[0].atoms),len(sequences[1].atoms))
+        pos=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
+        z=torch.zeros(1,len(pos),self.vocab.vocab_size,requires_grad=True)
+        # Distinct loss at relocated C, independent of original C's logits.
+        with torch.no_grad():
+            for a in sequences[1].atoms:z[0,pos.index(a.causal_logits_position),a.token_id]=2
+        original=o.trace_positions(plan,record);x=torch.zeros(1,len(original),self.vocab.vocab_size,requires_grad=True)
+        control,ct=o.trace_objective(x,original,plan,record,image,self.t,self.vocab,.1,2)
+        moved=o.bridge_trace_plan(plan,'treatment');mp=o.trace_positions(moved,record)
+        treatment,tt=o.trace_objective(x[:,[original.index(j) for j in mp]],mp,moved,record,image,self.t,self.vocab,.1,2)
+        cb,cbt=o.bridge_objective(z,pos,sequences,2,'control',self.vocab)
+        tb,tbt=o.bridge_objective(z,pos,sequences,2,'treatment',self.vocab)
+        oldc=o.p.image_loss(x,o.r.positive_sequence(image,record,plan['bridge']['C'],self.t),self.vocab,original)[0]
+        newc=o.p.image_loss(z,sequences[1],self.vocab,pos)[0]
+        torch.testing.assert_close((treatment+tb)-(control+cb),(newc-oldc)/2)
+        torch.testing.assert_close(cbt['B'],tbt['B']);self.assertEqual(set(cbt),{'B'})
+        self.assertEqual([r['order'] for r in moved['M']],[0]);self.assertEqual(tt['legal'],ct['legal'])
+        grad,=torch.autograd.grad(cb,z,retain_graph=True)
+        for a in sequences[1].atoms:self.assertEqual(float(grad[0,pos.index(a.causal_logits_position)].abs().sum()),0.)
+        for a in sequences[0].atoms:self.assertGreater(float(grad[0,pos.index(a.causal_logits_position)].abs().sum()),0.)
+        wrong,_=o.bridge_objective(z,pos,sequences,1,'treatment',self.vocab)
+        self.assertFalse(torch.isclose(wrong,tb))
+        # Keeping old C as well violates the declared loss-difference identity.
+        self.assertFalse(torch.isclose((control+tb)-(control+cb),(newc-oldc)/2))
+        with self.assertRaises(AssertionError):o.bridge_objective(z,tuple(j+1 for j in pos),sequences,2,'treatment',self.vocab)
+
+    def test_bridge_no_pair_empty_and_final_sync_mean(self):
+        ids=list(range(18));plans={i:dict(bridge=None) for i in ids}
+        plans[0]['bridge']={'pair':True}
+        gradients=[]
+        class Model:
+            def __init__(self):self.calls=0
+            def no_sync(self):self.calls+=1;return nullcontext()
+        for rank in range(8):
+            schedule=o.jobs(ids,rank,plans,bridge_arm='treatment');model=Model();x=torch.tensor(1.,requires_grad=True)
+            self.assertEqual(sum(j['sync'] for j in schedule),1);self.assertTrue(schedule[-1]['sync'])
+            self.assertTrue(all(j['branch'] in ('trace','bridge') for j in schedule))
+            o.r.accumulate_family_step(model,schedule,lambda j:(x*(j['image_id']+1 if j['branch']=='trace' else 0),{}))
+            gradients.append(x.grad);self.assertEqual(model.calls,len(schedule)-1)
+        torch.testing.assert_close(sum(gradients)/8,torch.tensor(9.5))
+        image,record,_=self.fixture([],[]);plan=o.bridge_credit(image,record,self.t,self.producer)
+        self.assertIsNone(plan['bridge']);positions=o.trace_positions(plan,record)
+        z=torch.zeros(1,len(positions),self.vocab.vocab_size,requires_grad=True)
+        loss,_=o.trace_objective(z,positions,plan,record,image,self.t,self.vocab,.1,0)
+        loss.backward();self.assertEqual(float(loss),0);self.assertEqual(float(z.grad.abs().sum()),0)
+
+
+    def test_bridge_actual_dispatch_and_readback_mutations(self):
+        from types import SimpleNamespace
+        a=[100,100,200,200];b=[300,300,400,400];c=[600,600,800,800]
+        image,record,_=self.fixture([a,c],[dict(coco_ann_id=i,desc='person',bbox_2d=box) for i,box in enumerate((a,b,c))])
+        plan=o.bridge_credit(image,record,self.t,self.producer);tensor=torch.tensor
+        q=SimpleNamespace(model=object(),tokenizer=self.t);inputs={};histories={}
+        def compact(**kw):
+            return SimpleNamespace(logits=torch.zeros(1,len(kw['logits_to_keep']),self.vocab.vocab_size,requires_grad=True))
+        for arm in ('control','treatment'):
+            for branch in ('trace','bridge'):
+                with patch('src.qwen.native.exact_history_inputs',return_value={}) as history, \
+                     patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+                     patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data)):
+                    loss,evidence=o.forward(q,compact,SimpleNamespace(inputs=inputs),image,record,plan,None,self.vocab,branch,geometry_weight=.1,bridge_arm=arm)
+                histories[arm,branch]=history.call_args.args[2]
+                o.verify_bridge_forward(evidence,image,record,plan,self.t,arm)
+                for key in ('positions','input_sha256','bridge'):
+                    bad=copy.deepcopy(evidence)
+                    if key=='positions':bad[key][0]+=1
+                    elif key=='bridge':bad[key]['m']-=1
+                    else:bad[key]='wrong'
+                    with self.assertRaises(AssertionError):o.verify_bridge_forward(bad,image,record,plan,self.t,arm)
+                with self.assertRaises(AssertionError):o.verify_bridge_forward(evidence,image,record,plan,self.t,'treatment' if arm=='control' else 'control')
+                loss.backward();self.assertTrue(torch.isfinite(loss))
+        self.assertEqual(histories['control','bridge'],histories['treatment','bridge'])
+        self.assertEqual(histories['control','trace'],histories['treatment','trace'])
+        ids=list(range(18));plans={i:dict(bridge=None) for i in ids}
+        scheduled=o.jobs(ids,0,plans,bridge_arm='control')
+        evidence=[dict(x,image_weight=x['weight']) for x in scheduled]
+        o.verify_bridge_schedule(evidence,ids,0,plans,'control')
+        bad=copy.deepcopy(evidence);bad[-1]['sync']=False
+        with self.assertRaises(AssertionError):o.verify_bridge_schedule(bad,ids,0,plans,'control')
+        bad=copy.deepcopy(evidence);bad[0]['image_weight']=1/3
+        with self.assertRaises(AssertionError):o.verify_bridge_schedule(bad,ids,0,plans,'control')
+        bad=copy.deepcopy(evidence);bad[-1]['branch']='R'
+        with self.assertRaises(AssertionError):o.verify_bridge_schedule(bad,ids,0,plans,'control')
+
+    def test_bridge_external_anchor_actual_start_and_missing_arm(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/external')
+        spec=dict(checkpoint=str(checkpoint),manifest_sha256='manifest')
+        qualifier=dict(sha256={},bridge=spec)
+        payload=dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
+            adapter=dict(status='present',relative_root='adapter',files=[]),
+            special_token_embedding_delta=dict(status='present',relative_root='special_token_embeddings',files=[]))
+        original=o.p.load
+        def load(path):
+            if path==root/'qualification.json':return qualifier
+            if path==checkpoint/'inference_payload_manifest.json':return payload
+            if path==o.ENCODINGS:raise AssertionError('forbidden old retained encodings')
+            return original(path)
+        class AtCompose(Exception):pass
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='manifest'):
+            for arm in ('control','treatment'):
+                with patch.object(o,'start',return_value=(0,root,[],{})),patch.object(o.p,'write'), \
+                     patch('torch.distributed.init_process_group'),patch.object(o.p,'compose',side_effect=AtCompose) as compose:
+                    with self.assertRaises(AtCompose):o.run(root,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(spec),bridge_arm=arm)
+                    compose.assert_called_once_with(checkpoint,evaluation=False)
+            for arm,cp,sha in [('wrong',checkpoint,o.identity(spec)),('control',Path('/wrong'),o.identity(spec)),('control',checkpoint,'wrong')]:
+                with self.assertRaises(AssertionError):o.bridge_binding(root,cp,.1,sha,arm)
+            with self.assertRaisesRegex(AssertionError,'bridge arm required'):o.geometry_binding(root,None,0,None)
+            with patch.object(o.p,'digest',return_value='changed'):
+                with self.assertRaises(AssertionError):o.bridge_binding(root,checkpoint,.1,o.identity(spec),'control')
+
+
 
 if __name__=='__main__':unittest.main()
