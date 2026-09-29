@@ -942,4 +942,75 @@ class OnlineCreditTest(unittest.TestCase):
 
 
 
+    def test_schema_geometry_actual_trace_gradient_and_union(self):
+        image,record,plan=self.fixture([[446,0,500,61]],objects=[])
+        ordinary=self.t.encode('4',add_special_tokens=False);self.assertEqual(len(ordinary),1)
+        ids=list(record['token_ids']);slot=plan['observations'][0]['coordinate_positions'][2];ids[slot]=ordinary[0]
+        record=o.seal(dict(record,token_ids=ids,text=self.t.decode(ids,skip_special_tokens=False)),self.producer)
+        plan=o.credit(image,record,self.t,self.producer,redirect_enabled=False)
+        self.assertEqual(plan['M'],[]);self.assertEqual(plan['observations'],[])
+        old=o.trace_positions(plan,record);self.assertNotIn(len(record['prompt_token_ids'])+slot-1,old)
+        extended=dict(plan,schema_geometry=o.schema_geometry_errors(record,self.t,[]))
+        self.assertEqual(extended['schema_geometry']['new'],[[slot,447,1000]])
+        pos=o.trace_positions(extended,record);self.assertEqual(pos,(len(record['prompt_token_ids'])+slot-1,))
+        z=torch.full((1,len(pos),len(self.t)),-20.);z[0,0,ordinary[0]]=3;z[0,0,self.vocab.coordinate[447]]=1;z.requires_grad_()
+        loss,terms=o.trace_objective(z,pos,extended,record,image,self.t,self.vocab,.1)
+        self.assertEqual(float(terms['M']),0);self.assertEqual(float(terms['legal']),0)
+        loss.backward();self.assertGreater(float(z.grad[0,0,ordinary[0]]),0);self.assertLess(float(z.grad[0,0,self.vocab.coordinate[447]]),0)
+        self.assertTrue(torch.equal(loss.detach(),.1*o.max_geometry_margin(z[0,0],self.vocab.coordinate[447:1000]).detach()))
+        with self.assertRaises(AssertionError):o.trace_objective(z,[pos[0]+1],extended,record,image,self.t,self.vocab,.1)
+        wrong=copy.deepcopy(extended);wrong['schema_geometry']['union'][0][1]=0
+        with self.assertRaises(AssertionError):o.trace_objective(z,pos,wrong,record,image,self.t,self.vocab,.1)
+        # Repeated literal contexts remain distinct; full-vocabulary max includes ordinary tokens.
+        twice=ids[:-1]*2+ids[-1:];rep=o.seal(dict(record,token_ids=twice,generated_tokens=len(twice),text=self.t.decode(twice)),self.producer)
+        self.assertEqual(len(o.schema_geometry_errors(rep,self.t,[])['new']),2)
+        good_image,good_record,good=self.fixture([[10,20,100,200]],objects=[])
+        ep=dict(good,schema_geometry=o.schema_geometry_errors(good_record,self.t,good['observations']))
+        pp=o.trace_positions(good,good_record);self.assertEqual(pp,o.trace_positions(ep,good_record))
+        a=torch.randn(1,len(pp),len(self.t),requires_grad=True);b=a.detach().clone().requires_grad_()
+        la=o.trace_objective(a,pp,good,good_record,good_image,self.t,self.vocab,.1)[0]
+        lb=o.trace_objective(b,pp,ep,good_record,good_image,self.t,self.vocab,.1)[0]
+        la.backward();lb.backward();self.assertTrue(torch.equal(la,lb));self.assertTrue(torch.equal(a.grad,b.grad))
+
+    def test_schema_geometry_boundaries_and_two_schedule(self):
+        image,record,plan=self.fixture([[10,20,100,200]],objects=[])
+        original=record['token_ids'];cp=plan['observations'][0]['coordinate_positions'];ordinary=self.t.encode('4',add_special_tokens=False)[0]
+        def evidence(ids,stop='im_end'):
+            rec=o.seal(dict(record,token_ids=ids,generated_tokens=len(ids),text=self.t.decode(ids),stop_reason=stop),self.producer)
+            return o.schema_geometry_errors(rec,self.t,[])
+        ids=list(original);ids[cp[0]]=ordinary;ids[cp[3]]=ordinary
+        e=evidence(ids);self.assertEqual(e['new'],[[cp[0],0,999],[cp[3],21,1000]])
+        self.assertTrue(any(x['reason']=='unknown_start' for x in e['dispositions']))
+        ids[cp[0]]=self.vocab.coordinate[999]
+        e=evidence(ids);self.assertTrue(any(x['reason']=='empty_end' for x in e['dispositions']));self.assertIn([cp[0],0,999],e['new'])
+        self.assertEqual(evidence(ids[:-1],stop='length')['new'],e['new'])
+        self.assertEqual(evidence(ids[:cp[3]+1],stop='length')['new'],[])
+        for token in ('<|im_end|>','<|object_ref_start|>','<|vision_start|>'):
+            bad=list(ids);bad[cp[3]]=self.t.convert_tokens_to_ids(token);self.assertEqual(evidence(bad)['new'],[])
+        self.assertEqual(evidence(ids[:cp[2]]+ids[cp[2]+1:])['new'],[])
+        self.assertEqual(o.export_steps(2),(0,1,2))
+        with patch.object(o.p,'load',return_value={'schema_geometry':True}):
+            o.schema_geometry_binding(o.ROOT,True,'local')
+            with self.assertRaises(AssertionError):o.schema_geometry_binding(o.ROOT,False,'local')
+
+    def test_schema_union_mean_and_consumer_lineage(self):
+        image,rec,plan=self.fixture([[10,20,10,200],[446,0,500,61]],objects=[])
+        slot=plan['observations'][1]['coordinate_positions'][2];ids=list(rec['token_ids']);ids[slot]=self.t.encode('4',add_special_tokens=False)[0]
+        rec=o.seal(dict(rec,token_ids=ids,text=self.t.decode(ids)),self.producer)
+        plan=o.bridge_credit(image,rec,self.t,self.producer,'local',True)
+        self.assertEqual(len(plan['schema_geometry']['old']),1);self.assertEqual(len(plan['schema_geometry']['new']),1)
+        selected=o.bridge_trace_plan(plan,'local');pos=o.trace_positions(selected,rec)
+        z=torch.randn(1,len(pos),len(self.t),requires_grad=True)
+        loss,terms=o.trace_objective(z,pos,selected,rec,image,self.t,self.vocab,.1,plan['n'])
+        margins=[o.max_geometry_margin(z[0,pos.index(len(rec['prompt_token_ids'])+j-1)],self.vocab.coordinate[lo:hi]) for j,lo,hi in plan['schema_geometry']['union']]
+        self.assertTrue(torch.equal(terms['Gmax_unweighted'],torch.stack(margins).mean()))
+        self.assertFalse(torch.equal(terms['Gmax_unweighted'],margins[0]))
+        self.assertFalse(torch.equal(terms['Gmax_unweighted'],margins[1]))
+        original=o.bridge_credit(image,rec,self.t,self.producer,'local')
+        self.assertEqual(o.jobs([x['image_id'] for x in self.images],0,{i['image_id']:dict(plan) for i in self.images},insertion_policy='local'),o.jobs([x['image_id'] for x in self.images],0,{i['image_id']:dict(original) for i in self.images},insertion_policy='local'))
+        evidence=dict(branch='trace',terms={k:float(v.detach()) for k,v in terms.items()},bridge=o.bridge_metadata(plan,'local','trace'),row_losses=[],input_sha256=o.identity(rec['prompt_token_ids']+rec['token_ids']),positions=list(pos),tokens=len(rec['prompt_token_ids'])+len(rec['token_ids']),producer=rec['producer'],raw_identity=rec['raw_identity'],schema_geometry=plan['schema_geometry'])
+        o.verify_bridge_forward(evidence,image,rec,plan,self.t,'local')
+        bad=copy.deepcopy(evidence);bad['schema_geometry']['new']=[]
+        with self.assertRaises(AssertionError):o.verify_bridge_forward(bad,image,rec,plan,self.t,'local')
+
 if __name__=='__main__':unittest.main()

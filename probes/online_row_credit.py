@@ -127,10 +127,11 @@ def credit(image, record, tokenizer, producer, redirect_enabled=True):
         complete_rows=len(rows),literal_repeats=sum(not o['first'] for o in rows),invalid=sum(not o['valid'] for o in rows))
 
 
-def bridge_credit(image, record, tokenizer, producer, policy):
+def bridge_credit(image, record, tokenizer, producer, policy, schema_geometry=False):
     assert policy in ('local','chain')
     """Freeze original matching/vetoes, then insert every admissible retained miss."""
     plan=credit(image,record,tokenizer,producer,redirect_enabled=False)
+    if schema_geometry:plan['schema_geometry']=schema_geometry_errors(record,tokenizer,plan['observations'])
     covered={x['annotation_id'] for x in plan['M']};dispositions=[];insertions=[]
     valid=[x for x in plan['observations'] if x['valid']]
     eos=tokenizer.convert_tokens_to_ids('<|im_end|>');tokens=record['token_ids']
@@ -191,7 +192,7 @@ def bridge_rows(record, plan, branch_index=None):
 
 
 def bridge_sequences(image, record, plan, tokenizer, branch_index=None):
-    assert bridge_credit(image,record,tokenizer,plan['producer'],plan['policy'])==plan, 'bridge plan drift'
+    assert bridge_credit(image,record,tokenizer,plan['producer'],plan['policy'],'schema_geometry' in plan)==plan, 'bridge plan drift'
     tokens,rows,_,_=bridge_rows(record,plan,branch_index)
     sequences=[r.positive_sequence(image,dict(record,token_ids=tokens),row,tokenizer) for row in rows]
     assert all(list(seq.input_ids)==record['prompt_token_ids']+tokens for seq in sequences)
@@ -237,7 +238,7 @@ def bridge_row_evidence(record,plan,sequences,branch_index):
 
 
 def verify_bridge_forward(evidence, image, record, plan, tokenizer, arm):
-    assert bridge_credit(image,record,tokenizer,record['producer'],arm)==plan
+    assert bridge_credit(image,record,tokenizer,record['producer'],arm,'schema_geometry' in plan)==plan
     branch=evidence['branch'];assert branch in ('trace','bridge');index=evidence['bridge']['branch_index']
     selected=bridge_trace_plan(plan,arm) if branch=='trace' else plan
     if branch=='trace':
@@ -248,6 +249,8 @@ def verify_bridge_forward(evidence, image, record, plan, tokenizer, arm):
         sequences=bridge_sequences(image,record,plan,tokenizer,index);full=list(sequences[0].input_ids)
         positions=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
         rows=bridge_row_evidence(record,plan,sequences,index)
+    if branch=='trace':
+        assert evidence.get('schema_geometry')==plan.get('schema_geometry')
     assert evidence['row_losses']==rows
     assert evidence['input_sha256']==identity(list(full)) and evidence['positions']==list(positions)
     assert evidence['tokens']==len(full) and evidence['producer']==record['producer'] and evidence['raw_identity']==record['raw_identity']
@@ -263,7 +266,7 @@ def verify_bridge_schedule(forwards, image_ids, rank, plans, arm):
 
 def require_bridge_supervision(plans, output, version):
     """Global plans are made from the already-saved same-version all-rank records."""
-    if not any(plan['n'] or any(legal_slots(row) for row in plan['observations']) for plan in plans.values()):
+    if not any(plan['n'] or any(legal_slots(row) for row in plan['observations']) or plan.get('schema_geometry',{}).get('union') for plan in plans.values()):
         p.write(output/f'no-supervision-{version}.json',dict(status='no_supervision',version=version,
             reason='No semantic rows or certified original coordinate contexts; optimizer not invoked',
             plans={str(i):identity(plan) for i,plan in plans.items()}))
@@ -283,10 +286,62 @@ def legal_slots(row):
             for j in range(4) if j<2 or row['bbox'][j-2]<999]
 
 
+def schema_geometry_binding(root, enabled, arm):
+    assert isinstance(enabled,bool)
+    assert p.load(root/'qualification.json').get('schema_geometry',False)==enabled, 'schema geometry recipe drift'
+    if enabled:assert arm in ('local','chain')
+
+
+def schema_geometry_errors(record, tokenizer, rows):
+    """Strict literal wrapper eligibility only; never manufacture a parsed box."""
+    ids=record['token_ids'];coord={tokenizer.convert_tokens_to_ids(f'<|coord_{i}|>'):i for i in range(1000)}
+    start,end,box,close=[tokenizer.convert_tokens_to_ids(x) for x in
+        ('<|object_ref_start|>','<|object_ref_end|>','<|box_start|>','<|box_end|>')]
+    structural=(set(tokenizer.all_special_ids)-set(coord))|{start,end,box,close}
+    structural.update(v for k,v in tokenizer.get_added_vocab().items() if k.startswith('<|') and v not in coord)
+    old=list(erroneous_slots(rows));new=[];dispositions=[];active=None;ambiguous=False
+    for j,t in enumerate(ids):
+        if t==start:
+            if active is not None:ambiguous=True
+            else:active=j;ambiguous=False
+        if t!=close or active is None:continue
+        begin=active;active=None;body=ids[begin+1:j];reason=None
+        if ambiguous:reason='nested_wrapper'
+        elif body.count(end)!=1:reason='object_ref_delimiter'
+        else:
+            split=body.index(end);description=body[:split];tail=body[split+1:]
+            if not description or any(x in structural or x in coord for x in description):reason='ambiguous_description'
+            elif len(tail)!=5 or tail[0]!=box:reason='not_four_slots'
+            elif any(x in structural for x in tail[1:]):reason='structural_slot'
+            elif all(x in coord for x in tail[1:]):reason='already_coordinate_only'
+            else:
+                slots=tail[1:];first=begin+1+split+2
+                for slot,token in enumerate(slots):
+                    pos=first+slot;lo=0;hi=999
+                    if slot>=2:
+                        own=coord.get(slots[slot-2])
+                        if own is None or own==999:
+                            dispositions.append(dict(position=pos,reason='unknown_start' if own is None else 'empty_end',wrapper=begin));continue
+                        lo=own+1;hi=1000
+                    value=coord.get(token)
+                    if value is None or not lo<=value<hi:
+                        new.append((pos,lo,hi));dispositions.append(dict(position=pos,wrapper=begin,reason='type' if value is None else 'geometry',bounds=[lo,hi],token_id=token))
+                reason='eligible_four_slots'
+        dispositions.append(dict(wrapper=begin,end=j,reason=reason))
+    if active is not None:dispositions.append(dict(wrapper=active,reason='incomplete_or_censored'))
+    union={pos:(pos,lo,hi) for pos,lo,hi in old}
+    for item in new:
+        assert item[0] not in union or union[item[0]]==item
+        union[item[0]]=item
+    return dict(old=[list(x) for x in old],new=[list(x) for x in new],union=[list(union[k]) for k in sorted(union)],dispositions=dispositions,
+                source_raw_identity=record['raw_identity'],producer=record['producer'])
+
+
 def trace_positions(plan, record):
     n = len(record['prompt_token_ids'])
     targets = {n+j for row in plan['M'] for j in row['positions']}
     targets.update(n+j for row in plan['observations'] for j,_,_ in legal_slots(row))
+    targets.update(n+j for j,_,_ in plan.get('schema_geometry',{}).get('union',[]))
     return tuple(sorted(t-1 for t in targets)) or (n-1,)
 
 
@@ -325,16 +380,18 @@ def max_geometry_margin(z, legal_ids):
     return F.softplus(1+torch.amax(z[mask])-torch.amax(z[list(legal_ids)]))
 
 
-def greedy_geometry_objective(logits, positions, rows, prompt_length, coordinate_ids):
+def greedy_geometry_objective(logits, positions, rows, prompt_length, coordinate_ids, errors=None):
     import torch
     assert len(set(positions))==len(positions)
     values=[max_geometry_margin(logits[0,positions.index(prompt_length+pos-1)],coordinate_ids[lo:hi])
-            for pos,lo,hi in erroneous_slots(rows)]
+            for pos,lo,hi in (erroneous_slots(rows) if errors is None else errors)]
     return torch.stack(values).mean() if values else logits.sum()*0
 
 
 def trace_objective(logits, positions, plan, record, image, tokenizer, vocab, geometry_weight=0, matched_denominator=None):
     import torch
+    if 'schema_geometry' in plan:
+        assert plan['schema_geometry']==schema_geometry_errors(record,tokenizer,plan['observations']), 'schema causal bounds drift'
     assert tuple(positions)==trace_positions(plan,record), 'wrong causal positions'
     assert plan['raw_identity']==record['raw_identity'] and plan['producer']==record['producer']
     values = [p.image_loss(logits,r.positive_sequence(image,record,row,tokenizer),vocab,positions)[0] for row in plan['M']]
@@ -342,7 +399,7 @@ def trace_objective(logits, positions, plan, record, image, tokenizer, vocab, ge
     legal = legal_objective(logits,positions,plan['observations'],len(record['prompt_token_ids']),vocab.coordinate)
     assert geometry_weight in (0,.1)
     if geometry_weight:
-        g=greedy_geometry_objective(logits,positions,plan['observations'],len(record['prompt_token_ids']),vocab.coordinate)
+        g=greedy_geometry_objective(logits,positions,plan['observations'],len(record['prompt_token_ids']),vocab.coordinate,plan.get('schema_geometry',{}).get('union'))
         return m+legal+geometry_weight*g,dict(M=m,legal=legal,Gmax_unweighted=g,Gmax_weighted=geometry_weight*g)
     return m+legal, dict(M=m,legal=legal)
 
@@ -694,7 +751,8 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         evidence['bridge']=bridge_metadata(original_plan,insertion_policy,branch,branch_index)
     if lineage is not None:evidence['preservation']=lineage
     if branch=='trace' and geometry_weight:
-        evidence['geometry']=dict(weight=geometry_weight,error_slots=list(erroneous_slots(plan['observations'])))
+        evidence['geometry']=dict(weight=geometry_weight,error_slots=list(plan.get('schema_geometry',{}).get('union',erroneous_slots(plan['observations']))))
+        if 'schema_geometry' in plan:evidence['schema_geometry']=plan['schema_geometry']
     return loss,evidence
 
 
@@ -717,7 +775,7 @@ def start(output, root):
 
 
 def export_steps(updates):
-    assert updates in (1,16,64)
+    assert updates in (1,2,16,64)
     return tuple(x for x in (0,1,2,4,8,16,32,64) if x<=updates)
 
 
@@ -767,7 +825,7 @@ def verify_start_export(checkpoint, exported):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -775,15 +833,17 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     scheduled=export_steps(updates)
+    schema_geometry_binding(root,schema_geometry,insertion_policy)
     execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
     geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
-    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
     if execution is not None:p.write(out/'execution.json',execution)
+    if schema_geometry:p.write(out/'schema-geometry.json',dict(enabled=True))
     if binding is not None:p.write(out/'preservation.json',binding)
     if geometry is not None:p.write(out/'geometry.json',geometry)
     if witness is not None:p.write(out/'witness.json',witness)
@@ -840,7 +900,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         assert parameter_identity(q.model)==fingerprint
         assert flags=={n:x.requires_grad for n,x in q.model.named_parameters()}
         if insertion_policy is not None:
-            all_plans={x['image_id']:bridge_credit(images[x['image_id']],x,q.tokenizer,producer,insertion_policy) for x in all_records}
+            all_plans={x['image_id']:bridge_credit(images[x['image_id']],x,q.tokenizer,producer,insertion_policy,schema_geometry) for x in all_records}
             plans={x['image_id']:all_plans[x['image_id']] for x in records}
         else:plans={x['image_id']:credit(images[x['image_id']],x,q.tokenizer,producer) for x in records}
         p.write(out/f'credit-{version}.json',list(plans.values()))
@@ -905,8 +965,9 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
+    schema_geometry_binding(root,schema_geometry,insertion_policy)
     execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
@@ -914,13 +975,15 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
-    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
     if insertion_policy is not None:
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
         if execution is not None:assert p.load(directory/'execution.json')==execution
+        assert (directory/'schema-geometry.json').exists()==schema_geometry
+        if schema_geometry:assert p.load(directory/'schema-geometry.json')==dict(enabled=True)
         if binding is not None:assert p.load(directory/'preservation.json')==binding, 'wrong preservation arm'
         if geometry is not None:assert p.load(directory/'geometry.json')==geometry,'wrong geometry arm'
         if witness is not None:assert p.load(directory/'witness.json')==witness,'wrong witness arm'
@@ -940,10 +1003,11 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                     if row['branch']=='trace':
                         assert ('geometry' in row)==bool(geometry_weight)
                         if geometry_weight:
-                            assert row['geometry']==dict(weight=geometry_weight,error_slots=[list(x) for x in erroneous_slots(plans[row['image_id']]['observations'])])
+                            assert row['geometry']==dict(weight=geometry_weight,error_slots=[list(x) for x in plans[row['image_id']].get('schema_geometry',{}).get('union',erroneous_slots(plans[row['image_id']]['observations']))])
                             assert row['terms']['Gmax_weighted']==float(__import__('torch').tensor(row['terms']['Gmax_unweighted'],dtype=__import__('torch').float32)*geometry_weight)
             if insertion_policy is not None:
                 records={i:p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json') for i in plans}
+                assert all(('schema_geometry' in plan)==schema_geometry for plan in plans.values())
                 verify_physical_forwards(evidence['forwards'],list(inputs),rank,plans,records,images,tokenizer,insertion_policy,microbatch)
             if witnesses is not None:
                 local=sorted(inputs)[rank::8]
@@ -1021,7 +1085,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
         for rank in range(8):assert p.load(output/f'rank-{rank}/witness.json')==witness
     if binding is not None:
         for rank in range(8):assert p.load(output/f'rank-{rank}/preservation.json')==binding
-    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     read=p.load(output/'readback.json')
     assert [x['update'] for x in read]==list(range(updates+1))
     images=p.load(RETAINED);frozen={}
@@ -1305,7 +1369,7 @@ def replay_benchmark_readback(output, root):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('command',choices=('run','readback','offline','geometry-replay','replay-benchmark','replay-benchmark-readback'))
     parser.add_argument('--root',type=Path,default=ROOT);parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--updates',type=int,choices=(1,16,64),default=1)
+    parser.add_argument('--updates',type=int,choices=(1,2,16,64),default=1)
     parser.add_argument('--preservation-weight',type=float,choices=(0,.25),default=0)
     parser.add_argument('--preservation-bank-sha256')
     parser.add_argument('--geometry-weight',type=float,choices=(0,.1),default=0)
@@ -1314,16 +1378,17 @@ def main():
     parser.add_argument('--witness-weight',type=float,choices=(0,.1),default=0)
     parser.add_argument('--witness-bank-sha256')
     parser.add_argument('--insertion-policy',choices=('local','chain'))
+    parser.add_argument('--schema-geometry',action='store_true')
     parser.add_argument('--microbatch',type=int,choices=(1,4),default=1)
     parser.add_argument('--activation-checkpointing',choices=('on','off'),default='on')
     a=parser.parse_args()
     if a.command in ('replay-benchmark','replay-benchmark-readback'):
-        assert a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
+        assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
         assert a.updates==1 and a.preservation_weight==a.geometry_weight==a.witness_weight==0 and a.preservation_bank_sha256 is None and a.witness_bank_sha256 is None
         return {'replay-benchmark':replay_benchmark,'replay-benchmark-readback':replay_benchmark_readback}[a.command](a.output,a.root)
     extra={'insertion_policy':a.insertion_policy} if a.command!='geometry-replay' else {}
-    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on')
-    else:assert a.microbatch==1 and a.activation_checkpointing=='on'
+    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry)
+    else:assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on'
     assert a.command!='geometry-replay' or a.insertion_policy is None
     {'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](
         a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256,a.witness_weight,a.witness_bank_sha256,**extra)
