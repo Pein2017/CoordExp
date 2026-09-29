@@ -515,6 +515,94 @@ def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), insertio
     return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
 
 
+def physical_jobs(logical, microbatch=1):
+    assert microbatch in (1,4)
+    if microbatch==1:return logical
+    result=[]
+    for job in logical:
+        if job['branch']=='bridge' and job.get('branch_index') is not None:
+            if result and result[-1]['branch']=='bridge_group' and result[-1]['image_id']==job['image_id'] and len(result[-1]['members'])<microbatch:
+                assert result[-1]['members'][-1]+1==job['branch_index']
+                result[-1]['members'].append(job['branch_index'])
+            else:result.append(dict(image_id=job['image_id'],branch='bridge_group',members=[job['branch_index']],weight=job['weight']))
+        else:result.append(dict(job))
+    return [dict(j,sync=i==len(result)-1) for i,j in enumerate(result)]
+
+
+def execution_binding(root, arm, microbatch, checkpointing):
+    assert microbatch in (1,4) and isinstance(checkpointing,bool)
+    assert microbatch==1 or arm=='local'
+    setting=dict(arm=arm,microbatch=microbatch,activation_checkpointing=checkpointing)
+    spec=p.load(root/'qualification.json').get('execution')
+    if spec is None:
+        assert microbatch==1 and checkpointing
+        return None
+    assert setting in spec['profiles'], 'execution profile drift'
+    return setting
+
+
+def set_checkpointing(model, enabled, enable_inputs=True):
+    if enabled:model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False})
+    else:model.gradient_checkpointing_disable()
+    if enable_inputs:model.enable_input_require_grads()
+    assert bool(model.is_gradient_checkpointing)==enabled
+
+
+def logical_forwards(physical):
+    return [row for group in physical for row in (group['logical'] if group['branch']=='bridge_group' else [group])]
+
+
+def verify_physical_forwards(physical, image_ids, rank, plans, records, images, tokenizer, arm, microbatch):
+    schedule=physical_jobs(jobs(image_ids,rank,plans,insertion_policy=arm),microbatch)
+    assert len(physical)==len(schedule)
+    for f,job in zip(physical,schedule):
+        assert (f['image_id'],f['branch'],f['sync'],f['image_weight'])==(job['image_id'],job['branch'],job['sync'],job['weight'])
+        i=f['image_id']
+        if f['branch']=='bridge_group':
+            assert f['members']==job['members'] and [x['bridge']['branch_index'] for x in f['logical']]==job['members']
+            assert all(x['image_id']==i for x in f['logical'])
+            lengths=[x['tokens'] for x in f['logical']];counts=[len(x['positions']) for x in f['logical']]
+            from src.qwen.native import padded_histories
+            full=[records[i]['prompt_token_ids']+bridge_rows(records[i],plans[i],j)[0] for j in job['members']]
+            ids,mask=padded_histories(full,pad_token_id=tokenizer.pad_token_id)
+            assert f['native_sha256']['input_ids']==p.tensor_hash(ids) and f['native_sha256']['attention_mask']==p.tensor_hash(mask)
+            assert f['logits_shape']==[len(lengths),max(counts)+1,len(tokenizer)]
+            assert f['shape']==dict(batch=len(lengths),lengths=lengths,left_padding=[max(lengths)-n for n in lengths],padded_tokens=len(lengths)*max(lengths),unpadded_tokens=sum(lengths),compact_rows=len(lengths)*(max(counts)+1),selected_rows=sum(counts))
+            assert abs(f['loss']-sum(x['loss'] for x in f['logical']))<=1e-5*max(1,abs(f['loss']))
+        else:
+            assert f['bridge']['branch_index']==job['branch_index']
+        for row in f['logical'] if f['branch']=='bridge_group' else [f]:
+            verify_bridge_forward(row,images[i],records[i],plans[i],tokenizer,arm)
+
+
+def group_forward(q, model, batch, image, record, plan, vocab, members, diagnostic=True):
+    import torch
+    from src.qwen.native import combine_singleton_native_inputs,exact_history_inputs,select_compact_replay_logits
+    assert plan['policy']=='local' and 1<=len(members)<=4
+    assert members==list(range(members[0],members[0]+len(members)))
+    sequences=[bridge_sequences(image,record,plan,q.tokenizer,j) for j in members]
+    full=[list(seqs[0].input_ids) for seqs in sequences]
+    positions=[tuple(sorted({a.causal_logits_position for seq in seqs for a in seq.atoms})) for seqs in sequences]
+    counts=[len(pos) for pos in positions]
+    for ids,pos,n in zip(full,positions,counts):
+        assert len(ids)<=p.MAX_LENGTH and pos==tuple(range(len(ids)-n-1,len(ids)-1)), 'repair must be exact trailing continuation'
+    native=combine_singleton_native_inputs([batch.inputs]*len(members),prompt_token_ids=[record['prompt_token_ids']]*len(members),pad_token_id=q.tokenizer.pad_token_id)
+    kwargs=exact_history_inputs(q.model,native,full,pad_token_id=q.tokenizer.pad_token_id,logits_to_keep=max(counts)+1)
+    with torch.autocast('cuda',dtype=torch.bfloat16):raw=model(**kwargs).logits
+    selected=select_compact_replay_logits(raw,counts);losses=[];logical=[]
+    for j,seqs,ids,pos,z in zip(members,sequences,full,positions,selected):
+        z=z.unsqueeze(0)
+        loss,terms=bridge_objective(z,pos,seqs,plan,'local',vocab,j);losses.append(loss)
+        logical.append(dict(image_id=image['image_id'],branch='bridge',producer=plan['producer'],raw_identity=record['raw_identity'],tokens=len(ids),visual_tokens=int(__import__('math').prod(record['image_grid_thw'])//4),input_sha256=identity(ids),positions=list(pos),loss=float(loss.detach()),terms={k:float(v.detach()) for k,v in terms.items()},logit_derivatives=diagnostics(terms,z) if diagnostic else {},row_losses=bridge_row_evidence(record,plan,seqs,j),cached_replay=[],logits_sha256=p.tensor_hash(z),bridge=bridge_metadata(plan,'local','bridge',j)))
+    loss=torch.stack(losses).sum();lengths=list(map(len,full))
+    return loss,dict(image_id=image['image_id'],branch='bridge_group',members=members,logical=logical,loss=float(loss.detach()),logits_shape=list(raw.shape),raw_dtype=str(raw.dtype),selected_dtype=str(selected[0].dtype),shape=dict(batch=len(members),lengths=lengths,left_padding=[max(lengths)-n for n in lengths],padded_tokens=len(members)*max(lengths),unpadded_tokens=sum(lengths),compact_rows=len(members)*(max(counts)+1),selected_rows=sum(counts)),native_sha256={k:p.tensor_hash(kwargs[k]) for k in ('input_ids','attention_mask','position_ids','image_grid_thw')})
+
+
+def replay_job(q, model, batch, image, record, plan, vocab, job, arm):
+    if job['branch']=='bridge_group':return group_forward(q,model,batch,image,record,plan,vocab,job['members'])
+    return forward(q,model,batch,image,record,plan,None,vocab,job['branch'],geometry_weight=.1,insertion_policy=arm,branch_index=job.get('branch_index'))
+
+
 def retained_credit(logits, sequence, row_ids, vocab, positions):
     value, rows = r.retained_objective(logits,sequence,row_ids,vocab,positions)
     return .25*value, {'R_unweighted':value,'R_weighted':.25*value}, rows
@@ -679,7 +767,7 @@ def verify_start_export(checkpoint, exported):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -687,6 +775,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     scheduled=export_steps(updates)
+    execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
     geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
@@ -694,6 +783,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
+    if execution is not None:p.write(out/'execution.json',execution)
     if binding is not None:p.write(out/'preservation.json',binding)
     if geometry is not None:p.write(out/'geometry.json',geometry)
     if witness is not None:p.write(out/'witness.json',witness)
@@ -718,7 +808,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     delta_ids={id(x) for x in delta.delta_tensors().values()}
     optimizer=torch.optim.AdamW([dict(params=[x for x in params if id(x) not in delta_ids],lr=1e-5),
         dict(params=list(delta.delta_tensors().values()),lr=5e-6)],betas=(.9,.999),eps=1e-8,weight_decay=0)
-    q.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant':False});q.model.enable_input_require_grads()
+    set_checkpointing(q.model,activation_checkpointing)
     model=DistributedDataParallel(q.model,device_ids=[int(os.environ['LOCAL_RANK'])],broadcast_buffers=False)
     batches={i:native_batch(q,inputs[i]) for i in local}
     if rank==0:p.save_checkpoint(q,delta,output/'checkpoint-0')
@@ -768,12 +858,16 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if version==updates:break
         if insertion_policy is not None:require_bridge_supervision(all_plans,out,version)
         by={x['image_id']:x for x in records};q.model.train();optimizer.zero_grad(set_to_none=True)
-        evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight,
-            witnesses if witness_weight else (),insertion_policy),
-            lambda job:witness_forward(q,model,batches[job['image_id']],witnesses[job['image_id']],vocab,producer,witness_weight)
-            if job['branch']=='witness' else forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
-                plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
-                bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,insertion_policy,job.get('branch_index')))
+        if insertion_policy is not None:
+            evidence=r.accumulate_family_step(model,physical_jobs(jobs(list(images),rank,plans,insertion_policy=insertion_policy),microbatch),
+                lambda job:replay_job(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],plans[job['image_id']],vocab,job,insertion_policy))
+        else:
+            evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight,
+                witnesses if witness_weight else (),insertion_policy),
+                lambda job:witness_forward(q,model,batches[job['image_id']],witnesses[job['image_id']],vocab,producer,witness_weight)
+                if job['branch']=='witness' else forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
+                    plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
+                    bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,insertion_policy,job.get('branch_index')))
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
         assert all(v is not None and math.isfinite(v) for v in norms.values())
         assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
@@ -811,8 +905,9 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
+    execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
@@ -825,6 +920,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
+        if execution is not None:assert p.load(directory/'execution.json')==execution
         if binding is not None:assert p.load(directory/'preservation.json')==binding, 'wrong preservation arm'
         if geometry is not None:assert p.load(directory/'geometry.json')==geometry,'wrong geometry arm'
         if witness is not None:assert p.load(directory/'witness.json')==witness,'wrong witness arm'
@@ -847,10 +943,8 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                             assert row['geometry']==dict(weight=geometry_weight,error_slots=[list(x) for x in erroneous_slots(plans[row['image_id']]['observations'])])
                             assert row['terms']['Gmax_weighted']==float(__import__('torch').tensor(row['terms']['Gmax_unweighted'],dtype=__import__('torch').float32)*geometry_weight)
             if insertion_policy is not None:
-                verify_bridge_schedule(evidence['forwards'],list(inputs),rank,plans,insertion_policy)
-                for row in evidence['forwards']:
-                    i=row['image_id'];record=p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json')
-                    verify_bridge_forward(row,images[i],record,plans[i],tokenizer,insertion_policy)
+                records={i:p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json') for i in plans}
+                verify_physical_forwards(evidence['forwards'],list(inputs),rank,plans,records,images,tokenizer,insertion_policy,microbatch)
             if witnesses is not None:
                 local=sorted(inputs)[rank::8]
                 expected=jobs(list(inputs),rank,plans,0,witnesses if witness_weight else ())
@@ -1113,8 +1207,103 @@ def geometry_replay(output, root, updates=1, preservation_weight=0, preservation
     dist.destroy_process_group()
 
 
+def gradient_comparison(current, reference):
+    import torch,math
+    assert current.keys()==reference.keys()
+    rows={};ss=rr=dot=dd=0.;worst=0.
+    for name,value in current.items():
+        a=value.detach().cpu().double();b=reference[name].double();d=a-b
+        av=float((a*a).sum());bv=float((b*b).sum());dv=float((d*d).sum());ab=float((a*b).sum());mx=float(d.abs().max())
+        rows[name]=dict(norm=math.sqrt(av),reference_norm=math.sqrt(bv),difference_l2=math.sqrt(dv),relative_l2=math.sqrt(dv/bv) if bv else None,cosine=ab/math.sqrt(av*bv) if av and bv else None,max_abs_difference=mx)
+        ss+=av;rr+=bv;dd+=dv;dot+=ab;worst=max(worst,mx)
+    return dict(parameters=rows,relative_l2=math.sqrt(dd/rr) if rr else None,cosine=dot/math.sqrt(ss*rr) if ss and rr else None,max_abs_difference=worst)
+
+
+def replay_benchmark(output, root):
+    """Fixed weights, real backward; never generation, optimizer, clipping or save."""
+    import time,os,torch
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel
+    from src.losses.vocab import build_token_vocabulary_groups
+    from src.artifacts.git_identity import verify_source_identity
+    begin=time.monotonic();rank,out,sources,source=start(output,root)
+    qual=p.load(root/'qualification.json');spec=qual['benchmark'];profiles=qual['execution']['profiles']
+    assert profiles==[dict(arm=a,microbatch=m,activation_checkpointing=c) for a,m,c in [('local',1,True),('local',1,False),('local',4,True),('local',4,False),('chain',1,True),('chain',1,False)]]
+    anchor=Path(qual['bridge']['checkpoint']);bridge_binding(root,anchor,.1,identity(qual['bridge']),'local')
+    images={x['image_id']:x for x in p.load(RETAINED)};inputs={x['image_id']:x for x in p.load(INPUTS)}
+    records={x['image_id']:x for x in frozen_records(Path(spec['trajectories']),list(images),freeze=False)}
+    incoming=p.load(spec['producer']);verify_producer(list(records.values()),incoming['producer'],list(images))
+    local=sorted(images)[rank::8];dist.init_process_group('nccl')
+    q,delta,composition=p.compose(anchor,evaluation=False);p.write(out/'composition.json',composition)
+    assert q.model.config.text_config.attention_dropout==0
+    assert all(getattr(module,'p',0)==0 for name,module in q.model.named_modules() if 'lora_dropout' in name)
+    initial=parameter_identity(q.model);flags={n:x.requires_grad for n,x in q.model.named_parameters()}
+    assert initial==incoming['parameters'] and len(initial)==590
+    current=dict(kind='fixed_weight_replay_benchmark',source=source['commit'],parameter_sha256=identity(initial))
+    p.write(out/'producers.json',dict(source_producer=incoming['producer'],current_producer=current,parameters=initial,flags=flags))
+    vocab=build_token_vocabulary_groups(q.token_identity,tokenizer=q.tokenizer)
+    batches={i:native_batch(q,inputs[i]) for i in local}
+    plans={arm:{i:bridge_credit(images[i],records[i],q.tokenizer,incoming['producer'],arm) for i in local} for arm in ('local','chain')}
+    p.write(out/'plans.json',plans)
+    set_checkpointing(q.model,True);q.model.train()
+    model=DistributedDataParallel(q.model,device_ids=[int(os.environ['LOCAL_RANK'])],broadcast_buffers=False)
+    baseline={};receipts=[];setup=time.monotonic()-begin
+    for profile_index,profile in enumerate(profiles):
+        arm=profile['arm'];microbatch=profile['microbatch'];checkpointing=profile['activation_checkpointing']
+        assert execution_binding(root,arm,microbatch,checkpointing)==profile
+        set_checkpointing(q.model,checkpointing,enable_inputs=False)
+        schedule=physical_jobs(jobs(list(images),rank,plans[arm],insertion_policy=arm),microbatch)
+        for pass_index in range(3):
+            q.model.zero_grad(set_to_none=True)
+            torch.cuda.synchronize();dist.barrier();torch.cuda.reset_peak_memory_stats()
+            start_memory=dict(allocated=torch.cuda.memory_allocated(),reserved=torch.cuda.memory_reserved());start_time=time.monotonic()
+            evidence=r.accumulate_family_step(model,schedule,lambda job:replay_job(q,model,batches[job['image_id']],images[job['image_id']],records[job['image_id']],plans[arm][job['image_id']],vocab,job,arm))
+            torch.cuda.synchronize();elapsed=time.monotonic()-start_time
+            peak=dict(allocated=torch.cuda.max_memory_allocated(),reserved=torch.cuda.max_memory_reserved());times=[None]*8;dist.all_gather_object(times,elapsed)
+            gradients={n:x.grad.detach().cpu().clone() for n,x in q.model.named_parameters() if x.requires_grad}
+            assert len(gradients)==590 and all(torch.isfinite(x).all() for x in gradients.values())
+            hashes={n:p.tensor_hash(x) for n,x in gradients.items()};synced=[None]*8;dist.all_gather_object(synced,identity(hashes));assert len(set(synced))==1
+            assert parameter_identity(q.model)==initial and {n:x.requires_grad for n,x in q.model.named_parameters()}==flags
+            logical=logical_forwards(evidence);losses={p.canonical([x['image_id'],x['branch'],x['bridge']['branch_index']]):x['loss'] for x in logical}
+            key=(arm,checkpointing);reference=baseline.get(key,baseline.get((arm,True)))
+            comparison=None if reference is None else gradient_comparison(gradients,reference['gradients'])
+            loss_differences=None if reference is None else {k:dict(loss=v,reference=reference['losses'][k],difference=v-reference['losses'][k]) for k,v in losses.items()}
+            receipt=dict(profile=profile,profile_index=profile_index,pass_index=pass_index,measured=pass_index>0,current_producer=current,source_producer=incoming['producer'],forwards=evidence,wall_seconds=elapsed,rank_wall_seconds=times,slowest_rank_seconds=max(times),start_memory=start_memory,peak_memory=peak,gradient_sha256=hashes,synchronized_gradient_hashes=synced,gradient_norms={n:float(x.float().norm()) for n,x in gradients.items()},reference=None if reference is None else reference['identity'],gradient_comparison=comparison,logical_loss_comparison=loss_differences,parameters_and_flags_unchanged=True)
+            name=f'profile-{profile_index}-pass-{pass_index}.json';p.write(out/name,receipt);receipts.append(name)
+            if microbatch==1 and pass_index==1:baseline[key]=dict(gradients=gradients,losses=losses,identity=dict(profile_index=profile_index,pass_index=pass_index))
+    verify_source_identity(source,required_paths=sources)
+    p.write(out/'benchmark-complete.json',dict(status='complete',source=source,setup_seconds=setup,wall_seconds=time.monotonic()-begin,profiles=profiles,passes=receipts,reserved_memory_carries_between_profiles=True,optimizer_steps=0,generation_calls=0,artifacts={x.name:p.digest(x) for x in out.glob('*.json')}))
+    dist.destroy_process_group()
+
+
+def replay_benchmark_readback(output, root):
+    import math
+    qual=p.load(root/'qualification.json');spec=qual['benchmark']
+    for path,sha in qual['sha256'].items():assert p.digest(path)==sha,path
+    images={x['image_id']:x for x in p.load(RETAINED)};records={x['image_id']:x for x in frozen_records(Path(spec['trajectories']),list(images),freeze=False)}
+    incoming=p.load(spec['producer']);tokenizer=r.frontend().tokenizer;summary=[]
+    for rank in range(8):
+        directory=output/f'rank-{rank}';complete=p.load(directory/'benchmark-complete.json')
+        assert complete['status']=='complete' and complete['profiles']==qual['execution']['profiles'] and complete['optimizer_steps']==complete['generation_calls']==0
+        assert complete['passes']==[f'profile-{i}-pass-{j}.json' for i in range(6) for j in range(3)]
+        for name,sha in complete['artifacts'].items():assert p.digest(directory/name)==sha
+        for row in complete['source']['files']:assert p.digest(row['path'])==row['sha256']
+        producer=p.load(directory/'producers.json');assert producer['parameters']==incoming['parameters'] and producer['source_producer']==incoming['producer']
+        plans={arm:{i:bridge_credit(images[i],records[i],tokenizer,incoming['producer'],arm) for i in sorted(images)[rank::8]} for arm in ('local','chain')}
+        assert p.load(directory/'plans.json')==__import__('json').loads(__import__('json').dumps(plans))
+        for name in complete['passes']:
+            item=p.load(directory/name);profile=item['profile'];assert profile==complete['profiles'][item['profile_index']]
+            assert item['parameters_and_flags_unchanged'] and item['current_producer']==producer['current_producer'] and item['source_producer']==incoming['producer']
+            verify_physical_forwards(item['forwards'],list(images),rank,plans[profile['arm']],records,images,tokenizer,profile['arm'],profile['microbatch'])
+            assert len(item['gradient_sha256'])==len(item['gradient_norms'])==590 and all(math.isfinite(v) for v in item['gradient_norms'].values())
+            assert len(set(item['synchronized_gradient_hashes']))==1 and item['synchronized_gradient_hashes'][0]==identity(item['gradient_sha256'])
+            logical=logical_forwards(item['forwards']);physical=item['forwards']
+            summary.append(dict(rank=rank,profile=profile,pass_index=item['pass_index'],measured=item['measured'],logical_forwards=len(logical),physical_forwards=len(physical),backwards=len(physical),visual_tokens=sum(x['visual_tokens'] for x in logical),unpadded_tokens=sum(x['tokens'] for x in logical),padded_tokens=sum(x['shape']['padded_tokens'] if x['branch']=='bridge_group' else x['tokens'] for x in physical),compact_rows=sum(x['shape']['compact_rows'] if x['branch']=='bridge_group' else len(x['positions']) for x in physical),wall_seconds=item['wall_seconds'],slowest_rank_seconds=item['slowest_rank_seconds'],start_memory=item['start_memory'],peak_memory=item['peak_memory'],gradient_comparison=item['gradient_comparison'],logical_loss_comparison=item['logical_loss_comparison']))
+    p.write(output/'benchmark-readback.json',summary)
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=('run','readback','offline','geometry-replay'))
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=('run','readback','offline','geometry-replay','replay-benchmark','replay-benchmark-readback'))
     parser.add_argument('--root',type=Path,default=ROOT);parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--updates',type=int,choices=(1,16,64),default=1)
     parser.add_argument('--preservation-weight',type=float,choices=(0,.25),default=0)
@@ -1125,8 +1314,16 @@ def main():
     parser.add_argument('--witness-weight',type=float,choices=(0,.1),default=0)
     parser.add_argument('--witness-bank-sha256')
     parser.add_argument('--insertion-policy',choices=('local','chain'))
+    parser.add_argument('--microbatch',type=int,choices=(1,4),default=1)
+    parser.add_argument('--activation-checkpointing',choices=('on','off'),default='on')
     a=parser.parse_args()
+    if a.command in ('replay-benchmark','replay-benchmark-readback'):
+        assert a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
+        assert a.updates==1 and a.preservation_weight==a.geometry_weight==a.witness_weight==0 and a.preservation_bank_sha256 is None and a.witness_bank_sha256 is None
+        return {'replay-benchmark':replay_benchmark,'replay-benchmark-readback':replay_benchmark_readback}[a.command](a.output,a.root)
     extra={'insertion_policy':a.insertion_policy} if a.command!='geometry-replay' else {}
+    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on')
+    else:assert a.microbatch==1 and a.activation_checkpointing=='on'
     assert a.command!='geometry-replay' or a.insertion_policy is None
     {'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](
         a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256,a.witness_weight,a.witness_bank_sha256,**extra)

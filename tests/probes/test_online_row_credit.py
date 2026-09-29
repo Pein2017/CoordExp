@@ -817,6 +817,129 @@ class OnlineCreditTest(unittest.TestCase):
             with patch.object(o.p,'digest',return_value='changed'):
                 with self.assertRaises(AssertionError):o.bridge_binding(root,checkpoint,.1,o.identity(spec),'local')
 
+    def test_microbatch_native_causal_sum_gradients_and_diagnostics(self):
+        from types import SimpleNamespace
+        image,record,_=self.multi_fixture();image['objects'][2]['desc']='traffic light'
+        plan=o.bridge_credit(image,record,self.t,self.producer,'local')
+        class Toy(torch.nn.Module):
+            def __init__(self,vocab):
+                super().__init__();self.w=torch.nn.Parameter(torch.linspace(-.03,.03,vocab));self.seen=[]
+            def get_rope_index(self,ids,grid,video,*,attention_mask):
+                assert grid.tolist()==[[1,2,2]]*ids.shape[0]
+                return (attention_mask.cumsum(-1)-1).clamp_min(0).unsqueeze(0).expand(3,-1,-1),None
+            def forward(self,input_ids,attention_mask,position_ids,pixel_values,image_grid_thw,logits_to_keep,**kw):
+                assert pixel_values.tolist()==[[2.,3.]]*input_ids.shape[0]
+                assert torch.equal(position_ids[0],(attention_mask.cumsum(-1)-1).clamp_min(0))
+                self.seen.append((input_ids.detach().clone(),attention_mask.detach().clone()))
+                h=((input_ids%19).float()*attention_mask).cumsum(-1)/1000+position_ids[0]/10000
+                h=h.index_select(1,logits_to_keep) if isinstance(logits_to_keep,torch.Tensor) else h[:,-logits_to_keep:]
+                return SimpleNamespace(logits=h[:,:,None]*self.w)
+        batch=SimpleNamespace(inputs=dict(input_ids=torch.tensor([record['prompt_token_ids']]),attention_mask=torch.ones(1,len(record['prompt_token_ids'])),image_grid_thw=torch.tensor([[1,2,2]]),pixel_values=torch.tensor([[2.,3.]])))
+        tensor=torch.tensor;results=[];model=Toy(self.vocab.vocab_size);q=SimpleNamespace(model=model,tokenizer=self.t)
+        with patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()),patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data,**{k:v for k,v in kw.items() if k!='device'})):
+            for mode in ('singleton','group','no_diagnostics'):
+                model.zero_grad(set_to_none=True)
+                if mode=='singleton':
+                    ls=[o.forward(q,model,batch,image,record,plan,None,self.vocab,'bridge',geometry_weight=.1,insertion_policy='local',branch_index=j)[0] for j in range(4)]
+                    value=sum(ls)
+                else:
+                    value,evidence=o.group_forward(q,model,batch,image,record,plan,self.vocab,[0,1,2,3],diagnostic=mode=='group')
+                    for row in evidence['logical']:o.verify_bridge_forward(row,image,record,plan,self.t,'local')
+                    physical=[dict(evidence,sync=True,image_weight=8/18)]
+                    logical=[dict(image_id=image['image_id'],branch='bridge',branch_index=j,weight=8/18,sync=j==3) for j in range(4)]
+                    with patch.object(o,'jobs',return_value=logical):
+                        o.verify_physical_forwards(physical,[image['image_id']],0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,'local',4)
+                        for field in ('members','shape','sync'):
+                            bad=copy.deepcopy(physical)
+                            if field=='members':bad[0][field]=[0,1,3,2]
+                            elif field=='shape':bad[0][field]['padded_tokens']+=1
+                            else:bad[0][field]=False
+                            with self.assertRaises(AssertionError):o.verify_physical_forwards(bad,[image['image_id']],0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,'local',4)
+                    self.assertEqual(evidence['shape']['batch'],4)
+                    self.assertGreater(max(evidence['shape']['left_padding']),0)
+                    self.assertEqual(evidence['shape']['unpadded_tokens'],sum(x['tokens'] for x in evidence['logical']))
+                    self.assertAlmostEqual(float(value.detach()),sum(x['loss'] for x in evidence['logical']),places=5)
+                value.backward();results.append((value.detach(),model.w.grad.detach().clone()))
+            for value,grad in results[1:]:
+                torch.testing.assert_close(value,results[0][0]);torch.testing.assert_close(grad,results[0][1],atol=1e-7,rtol=1e-5)
+            self.assertFalse(torch.allclose(results[1][1]/4,results[0][1]))
+            with self.assertRaises(AssertionError):o.group_forward(q,model,batch,image,record,plan,self.vocab,[0,2])
+            # A changed row stays in that independent batch row; no cross-row conditioning.
+            from src.qwen.native import select_compact_replay_logits
+            raw=torch.randn(2,5,7,requires_grad=True);selected=select_compact_replay_logits(raw,[2,4])
+            selected[0].sum().backward();self.assertEqual(float(raw.grad[1].abs().sum()),0)
+            self.assertEqual(float(raw.grad[0,-1].abs().sum()),0)
+            self.assertEqual(float(raw.grad[0,:2].abs().sum()),0)
+        self.assertTrue(torch.isfinite(results[0][1]).all());self.assertGreater(float(results[0][1].abs().sum()),0)
+
+    def test_microbatch_schedule_settings_and_no_intermediate_update(self):
+        ids=list(range(18));plans={i:dict(k=i%6) for i in ids}
+        class Model:
+            def __init__(self):self.n=0
+            def no_sync(self):self.n+=1;return nullcontext()
+        for rank in range(8):
+            logical=o.jobs(ids,rank,plans,insertion_policy='local')
+            self.assertIs(o.physical_jobs(logical,1),logical)
+            grouped=o.physical_jobs(logical,4);actual=[]
+            for job in grouped:
+                if job['branch']=='bridge_group':actual.extend((job['image_id'],'bridge',j) for j in job['members'])
+                else:actual.append((job['image_id'],job['branch'],job['branch_index']))
+            self.assertEqual(actual,[(j['image_id'],j['branch'],j['branch_index']) for j in logical])
+            self.assertEqual(sum(j['sync'] for j in grouped),1);self.assertTrue(grouped[-1]['sync'])
+            model=Model();x=torch.tensor(1.,requires_grad=True);optimizer=unittest.mock.Mock()
+            def consume(job):
+                optimizer.step.assert_not_called();optimizer.zero_grad.assert_not_called()
+                return x*(len(job.get('members',[])) or 1),dict(job)
+            o.r.accumulate_family_step(model,grouped,consume)
+            torch.testing.assert_close(x.grad,torch.tensor(len(logical)*8/18))
+            self.assertEqual(model.n,len(grouped)-1);optimizer.step.assert_not_called()
+        from pathlib import Path
+        profiles=[dict(arm='local',microbatch=4,activation_checkpointing=False)]
+        with patch.object(o.p,'load',return_value={'execution':{'profiles':profiles}}):
+            self.assertEqual(o.execution_binding(Path('/cpu'),'local',4,False),profiles[0])
+            for a,m,c in [('chain',4,False),('local',1,False),('local',4,True)]:
+                with self.assertRaises(AssertionError):o.execution_binding(Path('/cpu'),a,m,c)
+        with patch.object(o.p,'load',return_value={}):
+            self.assertIsNone(o.execution_binding(Path('/cpu'),'local',1,True))
+            with self.assertRaises(AssertionError):o.execution_binding(Path('/cpu'),'local',4,True)
+        model=unittest.mock.Mock(is_gradient_checkpointing=False);o.set_checkpointing(model,False)
+        model.gradient_checkpointing_disable.assert_called_once();model.enable_input_require_grads.assert_called_once()
+        model.enable_input_require_grads.reset_mock();o.set_checkpointing(model,False,enable_inputs=False)
+        model.enable_input_require_grads.assert_not_called()
+
+    def test_microbatch_actual_readback_rejects_execution_drift(self):
+        from pathlib import Path
+        root=Path('/cpu');output=Path('/run');expected=dict(arm='local',microbatch=4,activation_checkpointing=False)
+        def load(path):
+            if path==root/'qualification.json':return {'sha256':{}}
+            if path==o.INPUTS:return [{'image_id':x['image_id']} for x in self.images]
+            if path==o.RETAINED:return self.images
+            if path==output/'rank-0/complete.json':return dict(status='complete',updates=1)
+            if path==output/'rank-0/execution.json':return dict(expected,microbatch=1)
+            raise AssertionError('unexpected read')
+        with patch.object(o.p,'load',side_effect=load),patch.object(o,'execution_binding',return_value=expected),patch.object(o,'preservation_binding',return_value=(None,None)),patch.object(o,'witness_binding',return_value=(None,None)),patch.object(o,'bridge_binding',return_value={}),patch.object(o.r,'frontend',return_value=self.q):
+            with self.assertRaises(AssertionError):o.readback(output,root,1,geometry_weight=.1,insertion_policy='local',microbatch=4,activation_checkpointing=False)
+
+    def test_microbatch_readback_group_membership_mutation(self):
+        image,record,plan=self.multi_fixture();plan=o.bridge_credit(image,record,self.t,self.producer,'local')
+        # Actual verifier is also exercised with the real grouped forward in the native test;
+        # here wrong membership/sync must fail before an input can be silently reassigned.
+        ids=[image['image_id']]+[100000+i for i in range(17)];plans={i:dict(k=0) for i in ids};plans[image['image_id']]=plan
+        expected=o.physical_jobs(o.jobs(ids,0,plans,insertion_policy='local'),4)
+        wrong=[dict(image_id=j['image_id'],branch=j['branch'],sync=False,image_weight=j['weight']) for j in expected]
+        with self.assertRaises((AssertionError,KeyError)):o.verify_physical_forwards(wrong,ids,0,plans,{image['image_id']:record},{image['image_id']:image},self.t,'local',4)
+        a={'a':torch.tensor([1.,2.]),'b':torch.tensor([0.])};b={'a':torch.tensor([1.,1.]),'b':torch.tensor([0.])}
+        measured=o.gradient_comparison(a,b)
+        self.assertAlmostEqual(measured['relative_l2'],2**-.5);self.assertEqual(measured['max_abs_difference'],1)
+        self.assertEqual(measured['parameters']['b']['difference_l2'],0)
+        import ast,inspect
+        tree=ast.parse(inspect.getsource(o.replay_benchmark));calls=[ast.unparse(x.func) for x in ast.walk(tree) if isinstance(x,ast.Call)]
+        self.assertFalse(any('optimizer' in x or 'generate_continuations' in x or 'clip_grad' in x or 'save_checkpoint' in x for x in calls))
+        self.assertEqual(calls.count('r.accumulate_family_step'),1)
+        with patch('sys.argv',['online_row_credit','replay-benchmark','--output','/run','--start-checkpoint','/wrong']),patch.object(o,'replay_benchmark') as call:
+            with self.assertRaises(AssertionError):o.main()
+            call.assert_not_called()
+
 
 
 if __name__=='__main__':unittest.main()
