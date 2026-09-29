@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "cpu-implementation-released",
+  "status": "multi-point-cpu-revision-released",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,7 +11,7 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "CPU implementation only; lead owns new-anchor one-update and paired16 runtime releases",
+  "boundary": "All admissible retained-FN insertions with coherent M-prefix relocation; CPU-only, no GPU release",
   "job_state": "No model invocation launched for this unit",
   "not_authorized": [
     "decode logits processor",
@@ -20,5 +20,8 @@
     "production action",
     "publication or promotion"
   ],
-  "predecessor": "research/experiments/2026-09-27-online-row-credit/unit.md"
+  "predecessor": "research/experiments/2026-09-27-online-row-credit/unit.md",
+  "single_point_source": "c870484965ce51358b1f22f8cdcd7f0b626a67c9",
+  "single_point_disposition": "superseded-before-runtime-by-user",
+  "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/multi-02"
 }
