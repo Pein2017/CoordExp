@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "efficiency-cpu-accepted-fixed-weight-benchmark-release",
+  "status": "benchmark-accepted-singleton-off-update-qualification",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "Six fixed-weight replay profiles,18full18-image passes; no optimizer/generation/truth; no profile adoption or64 release",
-  "job_state": "CPU accepted; bounded replay benchmark release being dispatched",
+  "boundary": "Common execution choice for paired one-update/save verification only, not equality/effectiveness or64 acceptance",
+  "job_state": "Benchmark complete,2exits0; singletonOFF paired one-update release being prepared;64 unreleased",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -31,5 +31,19 @@
   "scientific_status": "Mixed single-update coverage/error changes, no sustained efficacy or convergence",
   "efficiency_cpu_commit": "81c15617c5cc598fecf46619fe407ac0404e8a17",
   "efficiency_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/lead-cpu-acceptance-01.json",
-  "efficiency_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/replay-benchmark-01"
+  "efficiency_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/replay-benchmark-01",
+  "efficiency_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/lead-benchmark-acceptance-01.json",
+  "selected_execution": [
+    {
+      "arm": "local",
+      "microbatch": 1,
+      "activation_checkpointing": false
+    },
+    {
+      "arm": "chain",
+      "microbatch": 1,
+      "activation_checkpointing": false
+    }
+  ],
+  "optimized_slice_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01"
 }

@@ -37,3 +37,20 @@ Lead accepts scoped implementation `81c15617c5cc598fecf46619fe407ac0404e8a17` fo
 On the fixed incoming222M/287B trajectories, LOCAL4 groups305 logical forwards into99 physical forwards, with452625 unpadded/456843 padded input tokens. LOCAL1 uses305 calls and CHAIN1 uses36. These are call counts, not a measured speedup. Six profiles each use one warmup and two measured passes:2640 physical forwards/backwards,5803086 padded input tokens and3805080 visual tokens total. No optimizer, clipping, generation, checkpoint save or evaluator truth stage is released.
 
 Release the exact `replay-benchmark` plus CPU `replay-benchmark-readback` commands in `efficiency-01/cpu/commands.json`. Parameters remain at the explicit margin step256 anchor. Compare measured per-rank/slowest-rank replay time, memory and named gradients against singleton references and repeat variation; no automatic profile choice or post-hoc tolerance. Fixed profile order and carried allocator reservations limit isolated performance interpretation. Setup/generation/update/save costs are outside replay timing. Stop on concrete failure without retry. Adoption and an optimized update/export slice remain subsequent lead decisions;64 is unreleased. Evidence: `efficiency-01/lead-cpu-acceptance-01.json`, `lead-focused-review-01.json`, `lead-tests-01.log`, and the immutable CPU packet.
+
+## Fixed-weight benchmark accepted; singleton checkpointingOFF selected for integration
+
+Both stages exited0,617.912s chain; one fixed-weight model invocation, no generation/optimizer/clip/save/truth. Lead hashed207 artifacts and replayed maintained readback EXACT with writes intercepted.144 rank/profile/pass receipts agree on590 synchronized finite named gradients and unchanged trainable/flag assertions. Costs match2640 physical forward/backward passes,5803086 padded input tokens and3805080 visual tokens including warmups.
+
+| Profile | Measured slowest-rank seconds | Peak allocated GiB | Gradient relativeL2 reference difference |
+|---|---|---|---|
+| LOCAL1 checkpointON |40.516,40.729|5.20|repeat0.932%|
+| LOCAL1 checkpointOFF |28.110,28.428|14.17|ON reference1.022%,OFF repeat0.801%|
+| LOCAL4 checkpointON |28.893,28.790|7.07|6.98%,7.01%|
+| LOCAL4 checkpointOFF |22.409,22.322|41.37|6.88%,6.86%|
+| CHAIN1 checkpointON |5.943,5.778|6.27|repeat0.954%|
+| CHAIN1 checkpointOFF |4.103,4.101|16.47|ON reference0.911%,OFF repeat0.851%|
+
+OFF singleton keeps all recorded logical losses exactly equal. Microbatch4 changes278/305 LOCAL losses, maximum0.00413498; it is deferred rather than treated as an equivalent execution optimization. A focused reviewer found no OFF-specific numerical blocker for an actual one-update/save qualification; named tensor outliers and finite repeat variation remain in the acceptance packet. This is a common execution-policy decision for both scientific arms, not gradient-parity acceptance or training efficacy. Replay-only speedups are1.437x LOCAL/1.429x CHAIN; fixed profile order, carried allocator reservations and shared host load limit timing attribution.
+
+Full gradient vectors were not saved; lead verified aggregate comparison arithmetic and all-rank hashes, not reconstructed vectors. A preliminary lead check incorrectly imposed1e-5 agreement between separately computed FP32 torch.norm and FP64 comparison norms; it failed and is preserved. Corrected reporting records the distinct reductions and maximum0.03833% field discrepancy without increasing a tolerance or modifying any runtime artifact. The prescribed singletonOFF paired update/export slice follows under a separate release;64 remains unreleased. Evidence: `efficiency-01/lead-benchmark-acceptance-01.json`, `lead-benchmark-fields-02.json`, `lead-benchmark-review-01.json`, `lead-benchmark-replay-01.log`.
