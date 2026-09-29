@@ -1,10 +1,14 @@
 """CPU falsification of the one-adapter vLLM DoRA arithmetic and refresh."""
 
+import json
+from pathlib import Path
+
 import pytest
 import torch
 import torch.nn.functional as F
 from peft import LoraConfig
 from peft.tuners.lora.layer import Linear as PeftLinear
+from safetensors.torch import load_file
 from torch import nn
 
 from src.qwen.vllm_dora_model import (
@@ -111,6 +115,41 @@ def test_peft_suffix_targets_cover_actual_module_paths():
     _validate_declared_targets({"q_proj", "k_proj", "v_proj", "o_proj"}, targets)
     with pytest.raises(ValueError, match="config targets"):
         _validate_declared_targets({"q_proj", "k_proj", "o_proj"}, targets)
+
+
+def test_saved_and_live_magnitude_key_forms_reject_duplicates():
+    prefix = "base_model.model.model.language_model.layers.0.mlp.down_proj"
+    payload = {
+        prefix + ".lora_A.weight": torch.zeros(2, 3),
+        prefix + ".lora_B.weight": torch.zeros(4, 2),
+        prefix + ".lora_magnitude_vector": torch.ones(4),
+    }
+    assert set(_target_tensors(payload)) == {"model.language_model.layers.0.mlp.down_proj"}
+    payload[prefix + ".lora_magnitude_vector.default.weight"] = torch.ones(4)
+    with pytest.raises(ValueError, match="duplicate DoRA tensor"):
+        _target_tensors(payload)
+
+
+_ANCHOR = Path(
+    "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/"
+    "instance_margin-order17/checkpoints/step-256/adapter"
+)
+
+
+@pytest.mark.skipif(not _ANCHOR.is_dir(), reason="local DoRA anchor unavailable")
+def test_real_588_key_anchor_parses_completely():
+    tensors = load_file(str(_ANCHOR / "adapter_model.safetensors"), device="cpu")
+    config = json.loads((_ANCHOR / "adapter_config.json").read_text())
+    assert len(tensors) == 588
+    targets = _target_tensors(tensors)
+    assert len(targets) == 196
+    _validate_declared_targets(set(config["target_modules"]), set(targets))
+    for parts in targets.values():
+        a, b, m = (parts[key] for key in ("lora_A", "lora_B", "lora_magnitude_vector"))
+        assert a.ndim == b.ndim == 2 and m.ndim == 1
+        assert a.shape[0] == b.shape[1] == config["r"]
+        assert b.shape[0] == m.shape[0]
+        assert a.dtype == b.dtype == m.dtype == torch.float32
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")

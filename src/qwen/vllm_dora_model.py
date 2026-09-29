@@ -7,7 +7,6 @@ through vLLM's ``model_class_overrides``. The PEFT payload remains unmerged.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -17,29 +16,35 @@ from safetensors.torch import load_file
 from torch import nn
 from vllm.model_executor.models.qwen3_vl import Qwen3VLForConditionalGeneration
 
-from src.adapters.dora import inspect_dora_adapter_payload
+from src.adapters.dora import inspect_dora_adapter_payload, normalize_dora_state_key
 from src.qwen.untied_embeddings import inspect_special_token_embedding_delta_payload
 
 
-_KEY = re.compile(r"^(.*)\.(lora_A|lora_B|lora_magnitude_vector)(?:\.default)?\.weight$")
 _KINDS = frozenset({"lora_A", "lora_B", "lora_magnitude_vector"})
+_SUFFIXES = (
+    (".lora_A.weight", "lora_A"),
+    (".lora_B.weight", "lora_B"),
+    (".lora_magnitude_vector.weight", "lora_magnitude_vector"),
+    (".lora_magnitude_vector", "lora_magnitude_vector"),
+)
 
 
 def _target_tensors(tensors: Mapping[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
     targets: dict[str, dict[str, torch.Tensor]] = {}
     for key, tensor in tensors.items():
-        match = _KEY.fullmatch(key)
+        normalized = normalize_dora_state_key(key, adapter_name="default")
+        match = next(((normalized[: -len(suffix)], kind) for suffix, kind in _SUFFIXES if normalized.endswith(suffix)), None)
         if match is None or not isinstance(tensor, torch.Tensor):
             raise ValueError(f"unsupported DoRA tensor: {key}")
-        target = match[1].removeprefix("base_model.model.")
+        target, kind = match
         if target.startswith("language_model."):
             target = "model." + target
         if not target.startswith("model.language_model."):
             raise ValueError(f"DoRA target is outside language tower: {target}")
         parts = targets.setdefault(target, {})
-        if match[2] in parts:
+        if kind in parts:
             raise ValueError(f"duplicate DoRA tensor: {key}")
-        parts[match[2]] = tensor
+        parts[kind] = tensor
     if not targets or any(set(parts) != _KINDS for parts in targets.values()):
         raise ValueError("DoRA targets must each contain A, B, and magnitude")
     return targets
@@ -199,7 +204,14 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         if semantic["tie_word_embeddings"] is not False:
             raise ValueError("CoordExp DoRA requires independent input/output deltas")
         adapter_config = json.loads((Path(adapter["root"]) / "adapter_config.json").read_text())
-        if adapter_config.get("bias") != "none" or adapter_config.get("modules_to_save") or adapter_config.get("lora_dropout") != 0 or adapter_config.get("use_rslora"):
+        unsupported = (
+            "modules_to_save", "use_rslora", "use_qalora", "lora_bias",
+            "fan_in_fan_out", "rank_pattern", "alpha_pattern", "target_parameters",
+            "layers_to_transform", "layers_pattern", "layer_replication",
+            "exclude_modules", "trainable_token_indices", "loftq_config",
+            "corda_config", "eva_config", "megatron_config",
+        )
+        if adapter_config.get("bias") != "none" or adapter_config.get("lora_dropout") != 0 or any(adapter_config.get(key) for key in unsupported):
             raise ValueError("unsupported DoRA adapter options")
         rank = adapter["semantic_identity"]["r"]
         scaling = adapter["semantic_identity"]["lora_alpha"] / rank
