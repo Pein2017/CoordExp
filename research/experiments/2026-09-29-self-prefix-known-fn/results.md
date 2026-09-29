@@ -13,3 +13,19 @@ Evidence root: `/data/CoordExp/outputs/research/hidden-human-annotation-recovery
 ## Next real-entry boundary
 
 Release only LOCAL1/run+readback, CHAIN1/run+readback, then both separate offline stages. Each arm starts the explicit margin step256 anchor with fresh AdamW and generates18 incoming plus18 after-update trajectories. This tests the external live loader/export0, native prefix gradients, uneven LOCAL DDP accumulation, CHAIN compact-logit memory and one-update export/readback. Stop on first nonzero with no automatic retry.64-round efficacy commands remain proposals. No model execution or scientific result is claimed by this CPU acceptance.
+
+## Paired one-update runtime accepted; effectiveness still unproven
+
+All six stages exited0 in475.306s. The lead independently hashed382 packet artifacts and178 runtime/input bindings, replayed both maintained readbacks with writes intercepted, checked all590 finite synchronized gradient norms in each arm, and verified all2360 exported FP32 tensors across four exports against all-rank producer fingerprints. Both exportedzero payloads exactly match the explicit margin anchor; incoming raw identities agree. All23 owned PIDs are absent. This is technical acceptance, not fresh model reload parity or a live full-base snapshot.
+
+| Category count | Incoming | LOCAL1 | CHAIN1 |
+|---|---:|---:|---:|
+| Retained /513 |222|225|232|
+| Hidden /57 |24|27|27|
+| Invalid occurrences |5|6|10|
+| Complete literal repeats |5|11|10|
+| Caps |0|0|0|
+
+Known-target acquisition improves alongside increased invalidity/repeats. One update cannot rank sustained policies or establish convergence. All18 remain exposed adaptation data; hidden denotes withheld from this stage. Actual supply is222M+287B, including9terminalB. LOCAL305 forwards versus CHAIN36; whole-rank peak allocated5.20GiB versus6.27GiB. Existing update timing includes acquisition/host work and must not be represented as pure replay speed.
+
+Evidence: `local-vs-chain-04/paired-slice-01/candidate-receipt.json`, `validation.json`, `coefficient-ledgers.json`, `natural-outcomes.json`, and parent `lead-runtime-acceptance-01.json`/`lead-runtime-replay-01.log`. The user requests memory-for-throughput optimization before64; the protocol's execution-efficiency section now owns the next CPU package. All prior artifacts remain immutable.

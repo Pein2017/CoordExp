@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "cpu-accepted-paired-one-update-release",
+  "status": "paired-one-update-accepted-throughput-cpu-preparation",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "LOCAL1 and CHAIN1, each fresh margin anchor; both readbacks before either offline;64 not released",
-  "job_state": "Paired real-entry release prepared; no launch claimed",
+  "boundary": "Preserve scientific LOCAL/CHAIN contrast; CPU native LOCAL microbatch4 and checkpointing option plus fixed-weight benchmark preparation; no new model calls",
+  "job_state": "Prior paired slice complete, six exits0; throughput CPU assignment next;64 unreleased",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -26,5 +26,7 @@
   "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04",
   "last_cpu_failure": "multi-02 exact-empty-EOS failure repaired; final31-case lead replay GREEN",
   "cpu_accepted_commit": "73ae473b395dcef2ccb7f2ea3d7494d8bc17e760",
-  "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json"
+  "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
+  "runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-runtime-acceptance-01.json",
+  "scientific_status": "Mixed single-update coverage/error changes, no sustained efficacy or convergence"
 }
