@@ -1,6 +1,6 @@
 # Fresh online row credit for repetition and invalid geometry
 
-Status: first64-round online recipe technically accepted with partial scientific benefit; fixed prediction-preservation experiment is complete and rejected; active follow-up is sparse greedy-geometry credit below. Lead01a0dd7c-0899-7b81-90a2-2f50da3476d1 owns design and acceptance; existing926-worker01a0de41-cc56-7a62-8c56-c2d9850b95b5 executes as actual gpt-6-astra/low. An active goal tracks the later autonomous-continuation request. This is the sole active protocol for the successor; the [frozen-history unit](../2026-09-27-rollout-row-credit/unit.md) is closed.
+Status: closed; final fixed-witness mechanics accepted and useful natural-stability transfer rejected. The user resumed research on 2026-09-29 through the [self-prefix known-FN successor](../2026-09-29-self-prefix-known-fn/unit.md). The protocols below remain historical execution contracts, not current launch authority. Lead01a0dd7c-0899-7b81-90a2-2f50da3476d1 owns acceptance; existing926-worker01a0de41-cc56-7a62-8c56-c2d9850b95b5 executes as actual gpt-6-astra/low.
 
 ## Question and authority
 

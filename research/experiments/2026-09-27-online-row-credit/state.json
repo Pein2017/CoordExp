@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-09-27-online-row-credit",
-  "lifecycle": "paused",
+  "lifecycle": "closed",
   "evidence": "accepted",
-  "status": "fixed-witness-rejected-waiting-concurrent-training-results",
+  "status": "fixed-witness-rejected-successor-authorized",
   "protocol": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "state_source": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -12,10 +12,7 @@
   "goal_requested": true,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01",
   "boundary": "Completed fixed-witness matched16: mechanics accepted, useful natural-stability transfer rejected; no new GPU release",
-  "pending": [
-    "User-referenced concurrent training results before any new GPU experiment",
-    "Known-FN B+C credit relocation remains a CPU design/census candidate; activate only through a new lead-owned frozen contrast"
-  ],
+  "pending": [],
   "job_state": "All6stages exit0; all23ownedPIDsabsent; no research model job or next GPU launch",
   "not_authorized": [
     "decode logits processor or hard mask",
@@ -34,5 +31,6 @@
   "runtime_output": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/error-replay-01/matched-01",
   "autonomous_authority": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/online-row-credit-01/lead-autonomous-continuation-01.json",
   "next_root": null,
-  "scientific_disposition": "failed_transfer_fixed_four_witness_recipe"
+  "scientific_disposition": "failed_transfer_fixed_four_witness_recipe",
+  "successor": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md"
 }

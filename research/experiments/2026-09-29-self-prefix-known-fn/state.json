@@ -1,0 +1,24 @@
+{
+  "unit_id": "2026-09-29-self-prefix-known-fn",
+  "lifecycle": "ready",
+  "evidence": "none",
+  "status": "cpu-implementation-released",
+  "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
+  "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0de41-cc56-7a62-8c56-c2d9850b95b5",
+  "worker_model": "gpt-6-astra",
+  "worker_effort": "low",
+  "goal_requested": false,
+  "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
+  "boundary": "CPU implementation only; lead owns new-anchor one-update and paired16 runtime releases",
+  "job_state": "No model invocation launched for this unit",
+  "not_authorized": [
+    "decode logits processor",
+    "hidden truth or evaluator-result based runtime selection",
+    "full GT sequence SFT",
+    "production action",
+    "publication or promotion"
+  ],
+  "predecessor": "research/experiments/2026-09-27-online-row-credit/unit.md"
+}
