@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "benchmark-accepted-singleton-off-update-qualification",
+  "status": "singleton-off-integration-accepted-schema-gap-cpu-repair",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "Common execution choice for paired one-update/save verification only, not equality/effectiveness or64 acceptance",
-  "job_state": "Benchmark complete,2exits0; singletonOFF paired one-update release being prepared;64 unreleased",
+  "boundary": "CPU-only opt-in strict four-slot type/geometry margin eligibility; no model/GPU or64 launch",
+  "job_state": "PairedOFF slice complete6exits0; next CPU repair assigned after scoped contract",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -45,5 +45,8 @@
       "activation_checkpointing": false
     }
   ],
-  "optimized_slice_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01"
+  "optimized_slice_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01",
+  "optimized_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01/lead-runtime-acceptance-01.json",
+  "schema_gap_evidence": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01/lead-malformed-mask-01.json",
+  "active_cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/cpu"
 }
