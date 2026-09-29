@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "one-versus-all-cpu-revision-released",
+  "status": "local-versus-chain-cpu-revision-released",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,7 +11,7 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "ONE vs ALL, both coherent repaired-prefix supervision; efficacy-first paired64 proposal, CPU-only currently",
+  "boundary": "All targets in both arms: independent original-prefix branches versus cumulative chain; gradient accumulation then one global update; CPU-only",
   "job_state": "No model invocation launched for this unit",
   "not_authorized": [
     "decode logits processor",
@@ -23,5 +23,6 @@
   "predecessor": "research/experiments/2026-09-27-online-row-credit/unit.md",
   "single_point_source": "c870484965ce51358b1f22f8cdcd7f0b626a67c9",
   "single_point_disposition": "superseded-before-runtime-by-user",
-  "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/insertion-ablation-03"
+  "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04",
+  "last_cpu_failure": "multi-02 empty genuine EOS rejected; bounded exact-EOS repair authorized"
 }
