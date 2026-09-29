@@ -117,7 +117,9 @@ def _worker(connection, device, base_model, checkpoint, identity, options, log_p
                     break
                 started = time.monotonic()
                 if command == "refresh":
-                    adapter, embeddings, next_identity = payload
+                    from safetensors.torch import load
+                    adapter_bytes, embedding_bytes, next_identity = payload
+                    adapter, embeddings = load(adapter_bytes), load(embedding_bytes)
                     installed = engine.apply_model(partial(_refresh_model, adapter=adapter,
                                                            embeddings=embeddings, identity=next_identity))
                     if installed != [next_identity]:
@@ -211,13 +213,15 @@ class VllmDoraRollout:
 
     def refresh(self, model, embedding_deltas, *, identity):
         from peft import get_peft_model_state_dict
+        from safetensors.torch import save
         if not isinstance(identity, str) or not identity:
             raise ValueError("a nonempty snapshot identity is required")
         adapter = {k: v.detach().to(device="cpu", copy=True) for k, v in
                    get_peft_model_state_dict(model, adapter_name="default").items()}
         embeddings = {k: v.detach().to(device="cpu", copy=True) for k, v in
                       embedding_deltas.delta_tensors().items()}
-        self._call("refresh", (adapter, embeddings, identity))
+        # One byte message avoids a shared-memory file descriptor per tensor.
+        self._call("refresh", (save(adapter), save(embeddings), identity))
         self.identity = identity
 
     def generate(self, requests: list[NativeRequest], *, budgets, eos_token_id,

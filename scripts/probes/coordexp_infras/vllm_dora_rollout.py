@@ -40,11 +40,19 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
 
     import torch
+    from importlib.metadata import version
     from probes import iterative_positive as p
     from probes import online_row_credit as o
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import NativeRequest, prepare_replay
     from src.qwen.vllm_rollout import VllmDoraRollout
+    from src.artifacts.git_identity import capture_source_identity, verify_source_identity
+
+    sources = [str(path.relative_to(REPO)) for path in (REPO/'src').rglob('*.py')]
+    sources += ['probes/online_row_credit.py', 'probes/rollout_row_credit.py',
+                'probes/iterative_positive.py', 'probes/hidden_human_recovery.py',
+                'scripts/probes/coordexp_infras/vllm_dora_rollout.py']
+    source_identity = capture_source_identity(sources, root=REPO)
 
     source = {row['image_id']: row for row in p.load(o.INPUTS)}
     if not set(args.image_ids) <= source.keys():
@@ -69,6 +77,8 @@ def main():
                               image_sha256=row['image_sha256']) for row in items]
     initial, count = snapshot(q.model)
     receipt = dict(checkpoint=str(args.checkpoint.resolve()), input_path=str(o.INPUTS),
+                   source=source_identity,
+                   versions={name: version(name) for name in ('torch','transformers','peft','vllm','flash-attn')},
                    image_ids=args.image_ids, max_new_tokens=args.max_new_tokens,
                    composition=composition, initial_snapshot=initial,
                    trainable_tensors=count, hf_startup_seconds=hf_startup,
@@ -193,6 +203,7 @@ def main():
                     token_ids=[list(x.token_ids) for x in after],
                     stop_reasons=[x.stop_reason for x in after])
             receipt['rpc_receipts'] = engine.receipts
+        verify_source_identity(source_identity, required_paths=sources, root=REPO)
         receipt['status'] = 'complete'
     except BaseException as exc:
         receipt['status'] = 'failed'
