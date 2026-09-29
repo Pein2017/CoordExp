@@ -127,82 +127,147 @@ def credit(image, record, tokenizer, producer, redirect_enabled=True):
         complete_rows=len(rows),literal_repeats=sum(not o['first'] for o in rows),invalid=sum(not o['valid'] for o in rows))
 
 
-def bridge_credit(image, record, tokenizer, producer):
-    """Fresh retained-only pair; preserve the original matching denominator."""
+def bridge_credit(image, record, tokenizer, producer, policy):
+    assert policy in ('local','chain')
+    """Freeze original matching/vetoes, then insert every admissible retained miss."""
     plan=credit(image,record,tokenizer,producer,redirect_enabled=False)
-    covered={x['annotation_id'] for x in plan['M']};dispositions=[];pair=None
+    covered={x['annotation_id'] for x in plan['M']};dispositions=[];insertions=[]
     valid=[x for x in plan['observations'] if x['valid']]
+    eos=tokenizer.convert_tokens_to_ids('<|im_end|>');tokens=record['token_ids']
+    ends=[j for j,t in enumerate(tokens) if t==eos]
+    # Same certified terminal predicate as maintained rollout-row-credit selection;
+    # complete invalid rows are observations, not malformed/censored spans.
+    terminal=(record['stop_reason'] in ('im_end','eos') and ends==[len(tokens)-1]
+        and (tokens==[eos] or not plan['malformed']) and (len(tokens)==1 or tokens[-2]==tokenizer.convert_tokens_to_ids('<|box_end|>')))
     for obj in sorted(image['objects'],key=lambda x:(*x['bbox_2d'][:2],int(x['coco_ann_id']))):
         ann=obj['coco_ann_id'];reason='matched' if ann in covered else None
-        if reason is None and any(x['description']==obj['desc'] and iou_xyxy(x['bbox'],obj['bbox_2d'])>=.5 for x in valid):
-            reason='same_category_supported'
+        if reason is None and any(x['description']==obj['desc'] and iou_xyxy(x['bbox'],obj['bbox_2d'])>=.5 for x in valid):reason='same_category_supported'
         successor=next((x for x in plan['M'] if tuple(x['bbox'][:2])>tuple(obj['bbox_2d'][:2])),None)
-        if reason is None:reason='no_successor' if successor is None else 'eligible'
-        if reason=='eligible' and pair is None:
-            ids=tokenizer.encode(r.render_row(image,obj).assistant_content_text,add_special_tokens=False)
-            cut=successor['positions'][0]
-            b=dict(annotation_id=ann,description=obj['desc'],bbox=obj['bbox_2d'],token_ids=ids,
-                   positions=list(range(cut,cut+len(ids))))
-            c=dict(successor,token_ids=[record['token_ids'][j] for j in successor['positions']])
-            pair=dict(B=b,C=c,cut=cut,m=len(plan['M']))
-            reason='selected'
+        if reason is None:
+            if successor is None and not terminal:reason='unsupported_boundary'
+            else:
+                cut=successor['positions'][0] if successor is not None else len(tokens)-1
+                ids=tokenizer.encode(r.render_row(image,obj).assistant_content_text,add_special_tokens=False)
+                insertions.append(dict(annotation_id=ann,description=obj['desc'],bbox=obj['bbox_2d'],token_ids=ids,cut=cut,
+                    boundary='successor' if successor is not None else 'terminal',successor_order=None if successor is None else successor['order']))
+                reason='inserted'
         dispositions.append(dict(annotation_id=ann,reason=reason))
-    return dict(plan,redirect=None,redirect_events=[],bridge=pair,bridge_dispositions=dispositions)
+    eligible=insertions
+    m=len(plan['M']);k=len(insertions);repair=None
+    if k:
+        assert len({x['annotation_id'] for x in insertions})==k
+        repaired=[];mapping=[];added=[]
+        for j,token in enumerate(tokens):
+            for row in (x for x in insertions if x['cut']==j):
+                start=len(repaired);repaired.extend(row['token_ids'])
+                added.append(dict(row,positions=list(range(start,len(repaired)))))
+            mapping.append(len(repaired));repaired.append(token)
+        assert [repaired[j] for j in mapping]==tokens
+        shifted=[dict(row,positions=[mapping[j] for j in row['positions']],
+            coordinate_positions=[mapping[j] for j in row['coordinate_positions']]) for row in plan['M']]
+        repair=dict(B=added,M=shifted,original_to_repaired=mapping,token_ids=repaired)
+    return dict(plan,bridge=repair,bridge_dispositions=dispositions,m=m,k=k,n=m+k,eligible=eligible,policy=policy,terminal_certified=terminal)
 
 
-def bridge_sequences(image, record, plan, tokenizer):
-    assert bridge_credit(image,record,tokenizer,plan['producer'])==plan, 'bridge plan drift'
-    pair=plan['bridge'];assert pair is not None and pair['m']==len(plan['M'])>0
-    b,c=pair['B'],pair['C'];cut=pair['cut']
-    assert c['token_ids']==[record['token_ids'][j] for j in c['positions']]
-    history=record['token_ids'][:cut]+b['token_ids']+c['token_ids']
-    shifted=dict(c,positions=[j+len(b['token_ids']) for j in c['positions']])
-    new=dict(record,token_ids=history)
-    sequences=[r.positive_sequence(image,new,row,tokenizer) for row in (b,shifted)]
-    assert sequences[0].input_ids==sequences[1].input_ids
-    assert list(sequences[0].input_ids)==record['prompt_token_ids']+history
+def bridge_rows(record, plan, branch_index=None):
+    """Rows and exact token history for one real repaired forward."""
+    assert plan['k']>0
+    if plan['policy']=='chain':
+        assert branch_index is None
+        repair=plan['bridge']
+        return repair['token_ids'],repair['B']+repair['M'],[1/plan['n']]*plan['n'],plan['k']
+    assert plan['policy']=='local' and isinstance(branch_index,int) and 0<=branch_index<plan['k']
+    b=plan['eligible'][branch_index];cut=b['cut'];tokens=record['token_ids'][:cut]+b['token_ids']
+    rows=[dict(b,positions=list(range(cut,len(tokens))))];weights=[1/plan['n']]
+    if b['successor_order'] is not None:
+        c=next(x for x in plan['M'] if x['order']==b['successor_order'])
+        assert c['positions'][0]==cut
+        start=len(tokens);tokens.extend(record['token_ids'][j] for j in c['positions'])
+        shift=start-cut
+        rows.append(dict(c,positions=[j+shift for j in c['positions']],coordinate_positions=[j+shift for j in c['coordinate_positions']]))
+        q=sum(x['successor_order']==c['order'] for x in plan['eligible'])
+        weights.append(1/(plan['n']*q))
+    return tokens,rows,weights,1
+
+
+def bridge_sequences(image, record, plan, tokenizer, branch_index=None):
+    assert bridge_credit(image,record,tokenizer,plan['producer'],plan['policy'])==plan, 'bridge plan drift'
+    tokens,rows,_,_=bridge_rows(record,plan,branch_index)
+    sequences=[r.positive_sequence(image,dict(record,token_ids=tokens),row,tokenizer) for row in rows]
+    assert all(list(seq.input_ids)==record['prompt_token_ids']+tokens for seq in sequences)
     return sequences
 
 
 def bridge_trace_plan(plan, arm):
-    assert arm in ('control','treatment')
-    pair=plan['bridge']
-    rows=plan['M'] if arm=='control' or pair is None else [x for x in plan['M'] if x['order']!=pair['C']['order']]
-    assert len(rows)==len(plan['M'])-(arm=='treatment' and pair is not None)
-    return dict(plan,M=rows)
+    assert arm in ('local','chain') and plan['policy']==arm
+    successors={x['successor_order'] for x in plan['eligible']}
+    return dict(plan,M=[x for x in plan['M'] if not plan['k'] or (arm=='local' and x['order'] not in successors)])
 
 
-def bridge_objective(logits, positions, sequences, m, arm, vocab):
-    assert arm in ('control','treatment') and m>0
+def bridge_objective(logits, positions, sequences, plan, arm, vocab, branch_index=None):
+    import torch
+    assert arm in ('local','chain') and plan['policy']==arm and plan['n']>0 and plan['k']>0
+    if arm=='chain':
+        assert branch_index is None
+        weights=[1/plan['n']]*plan['n'];nb=plan['k']
+    else:
+        assert isinstance(branch_index,int) and 0<=branch_index<plan['k']
+        b=plan['eligible'][branch_index];weights=[1/plan['n']];nb=1
+        if b['successor_order'] is not None:
+            weights.append(1/(plan['n']*sum(x['successor_order']==b['successor_order'] for x in plan['eligible'])))
+    assert len(sequences)==len(weights)
     expected=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
     assert tuple(positions)==expected
-    values=[p.image_loss(logits,seq,vocab,positions)[0] for seq in sequences[:1 if arm=='control' else 2]]
-    terms={name:value/m for name,value in zip(('B','C_relocated'),values)}
+    values=[p.image_loss(logits,seq,vocab,positions)[0]*weight for seq,weight in zip(sequences,weights)]
+    terms={'B':torch.stack(values[:nb]).sum(),'M_relocated':torch.stack(values[nb:]).sum() if len(values)>nb else logits.sum()*0}
     return sum(terms.values()),terms
 
 
+def bridge_metadata(plan, arm, branch, branch_index=None):
+    return dict(policy=arm,plan_sha256=identity(plan),branch_index=branch_index,m=plan['m'],k=plan['k'],n=plan['n'],eligible=len(plan['eligible']),
+        successor_multiplicity={str(c):sum(x['successor_order']==c for x in plan['eligible']) for c in sorted({x['successor_order'] for x in plan['eligible'] if x['successor_order'] is not None})},
+        matched_share=plan['m']/plan['n'] if plan['n'] else 0,insertion_share=plan['k']/plan['n'] if plan['n'] else 0,
+        selected_M_orders=[x['order'] for x in bridge_trace_plan(plan,arm)['M']] if branch=='trace' else [])
+
+
+def bridge_row_evidence(record,plan,sequences,branch_index):
+    _,rows,weights,nb=bridge_rows(record,plan,branch_index)
+    return [dict(kind='B' if j<nb else 'M',annotation_id=row['annotation_id'],weight=weight,atoms=[a.to_artifact_dict() for a in seq.atoms])
+        for j,(row,seq,weight) in enumerate(zip(rows,sequences,weights))]
+
+
 def verify_bridge_forward(evidence, image, record, plan, tokenizer, arm):
-    assert bridge_credit(image,record,tokenizer,record['producer'])==plan
-    branch=evidence['branch'];assert branch in ('trace','bridge')
+    assert bridge_credit(image,record,tokenizer,record['producer'],arm)==plan
+    branch=evidence['branch'];assert branch in ('trace','bridge');index=evidence['bridge']['branch_index']
     selected=bridge_trace_plan(plan,arm) if branch=='trace' else plan
     if branch=='trace':
+        assert index is None
         full=record['prompt_token_ids']+record['token_ids'];positions=trace_positions(selected,record)
-        assert evidence['row_losses']==[dict(order=row['order'],atoms=[a.to_artifact_dict() for a in r.positive_sequence(image,record,row,tokenizer).atoms]) for row in selected['M']]
+        rows=[dict(order=row['order'],atoms=[a.to_artifact_dict() for a in r.positive_sequence(image,record,row,tokenizer).atoms]) for row in selected['M']]
     else:
-        sequences=bridge_sequences(image,record,plan,tokenizer);full=list(sequences[0].input_ids)
+        sequences=bridge_sequences(image,record,plan,tokenizer,index);full=list(sequences[0].input_ids)
         positions=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
-        assert evidence['row_losses']==[dict(name=name,atoms=[a.to_artifact_dict() for a in seq.atoms]) for name,seq in zip(('B','C'),sequences)]
+        rows=bridge_row_evidence(record,plan,sequences,index)
+    assert evidence['row_losses']==rows
     assert evidence['input_sha256']==identity(list(full)) and evidence['positions']==list(positions)
     assert evidence['tokens']==len(full) and evidence['producer']==record['producer'] and evidence['raw_identity']==record['raw_identity']
-    assert evidence['bridge']==dict(arm=arm,plan_sha256=identity(plan),m=len(plan['M']),
-        selected_M_orders=[x['order'] for x in selected['M']] if branch=='trace' else [],pair=plan['bridge'])
-    expected={'M','legal','Gmax_unweighted','Gmax_weighted'} if branch=='trace' else ({'B'} if arm=='control' else {'B','C_relocated'})
+    assert evidence['bridge']==bridge_metadata(plan,arm,branch,index)
+    expected={'M','legal','Gmax_unweighted','Gmax_weighted'} if branch=='trace' else {'B','M_relocated'}
     assert set(evidence['terms'])==expected
 
 
 def verify_bridge_schedule(forwards, image_ids, rank, plans, arm):
-    expected=jobs(image_ids,rank,plans,bridge_arm=arm)
-    assert [(x['image_id'],x['branch'],x['sync'],x['image_weight']) for x in forwards]==[(x['image_id'],x['branch'],x['sync'],x['weight']) for x in expected]
+    expected=jobs(image_ids,rank,plans,insertion_policy=arm)
+    assert [(x['image_id'],x['branch'],x['bridge']['branch_index'],x['sync'],x['image_weight']) for x in forwards]==[(x['image_id'],x['branch'],x['branch_index'],x['sync'],x['weight']) for x in expected]
+
+
+def require_bridge_supervision(plans, output, version):
+    """Global plans are made from the already-saved same-version all-rank records."""
+    if not any(plan['n'] or any(legal_slots(row) for row in plan['observations']) for plan in plans.values()):
+        p.write(output/f'no-supervision-{version}.json',dict(status='no_supervision',version=version,
+            reason='No semantic rows or certified original coordinate contexts; optimizer not invoked',
+            plans={str(i):identity(plan) for i,plan in plans.items()}))
+        raise RuntimeError('no-supervision: stopped before optimizer action')
 
 
 def redirect_sequence(image, record, target, tokenizer):
@@ -432,14 +497,16 @@ def witness_diagnostics(q, batches, entries, vocab, producer):
     return dict(producer=producer,parameters_sha256=identity(before),unchanged_parameters_and_gradients=True,rows=rows)
 
 
-def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), bridge_arm=None):
+def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), insertion_policy=None):
     assert len(image_ids)==len(set(image_ids))==18 and 0<=rank<8
     assert preservation_weight in (0,.25)
     result = []
-    if bridge_arm is not None:
-        assert bridge_arm in ('control','treatment') and preservation_weight==0 and not witness_ids
+    if insertion_policy is not None:
+        assert insertion_policy in ('local','chain') and preservation_weight==0 and not witness_ids
         for i in sorted(image_ids)[rank::8]:
-            result += [dict(image_id=i,branch=b,weight=8/18) for b in ['trace']+(['bridge'] if plans[i]['bridge'] else [])]
+            result.append(dict(image_id=i,branch='trace',branch_index=None,weight=8/18))
+            if plans[i]['k']:
+                result += [dict(image_id=i,branch='bridge',branch_index=j,weight=8/18) for j in (range(plans[i]['k']) if insertion_policy=='local' else [None])]
         return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
     for i in sorted(image_ids)[rank::8]:
         result += [dict(image_id=i,branch=b,weight=8/18) for b in
@@ -472,16 +539,16 @@ def native_batch(q, item):
     return batch
 
 
-def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, bridge_arm=None):
+def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, insertion_policy=None, branch_index=None):
     import torch
     from src.qwen.native import exact_history_inputs
     lineage=None
     original_plan=plan
-    if bridge_arm is not None:
+    if insertion_policy is not None:
         assert branch in ('trace','bridge') and geometry_weight==.1 and preservation_weight==0
-        if branch=='trace':plan=bridge_trace_plan(plan,bridge_arm)
+        if branch=='trace':plan=bridge_trace_plan(plan,insertion_policy)
     if branch=='bridge':
-        sequences=bridge_sequences(image,record,plan,q.tokenizer)
+        sequences=bridge_sequences(image,record,plan,q.tokenizer,branch_index)
         full=sequences[0].input_ids
         positions=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
     elif branch=='P0':
@@ -505,8 +572,8 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
     kwargs['logits_to_keep'] = torch.tensor(positions,device='cuda')
     with torch.autocast('cuda',dtype=torch.bfloat16): logits = model(**kwargs).logits
     if branch=='bridge':
-        loss,terms=bridge_objective(logits,positions,sequences,plan['bridge']['m'],bridge_arm,vocab)
-        rows=[dict(name=name,atoms=[a.to_artifact_dict() for a in seq.atoms]) for name,seq in zip(('B','C'),sequences)]
+        loss,terms=bridge_objective(logits,positions,sequences,plan,insertion_policy,vocab,branch_index)
+        rows=bridge_row_evidence(record,plan,sequences,branch_index)
     elif branch=='P0':
         loss,terms=preservation_objective(logits,positions,sequences,vocab,preservation_weight)
         rows=[dict(order=row['order'],atoms=len(seq.atoms)) for row,seq in zip(preservation['rows'],sequences)]
@@ -516,7 +583,7 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         loss,terms = redirect_objective(logits,positions,sequence,plan['redirect'],len(record['prompt_token_ids']),vocab)
         rows = []
     else:
-        loss,terms = trace_objective(logits,positions,plan,record,image,q.tokenizer,vocab,geometry_weight,len(original_plan['M']) if bridge_arm is not None else None); rows = []
+        loss,terms = trace_objective(logits,positions,plan,record,image,q.tokenizer,vocab,geometry_weight,original_plan['n'] if insertion_policy is not None else None); rows = []
     comparison = []
     if branch=='trace' and record.get('raw_logprobs'):
         n = len(record['prompt_token_ids'])
@@ -533,12 +600,10 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         input_sha256=identity(list(full)),positions=list(positions),loss=float(loss.detach()),
         terms={k:float(v.detach()) for k,v in terms.items()},logit_derivatives=diagnostics(terms,logits),
         row_losses=rows,cached_replay=comparison,logits_sha256=p.tensor_hash(logits))
-    if bridge_arm is not None:
+    if insertion_policy is not None:
         if branch=='trace':
             evidence['row_losses']=[dict(order=row['order'],atoms=[a.to_artifact_dict() for a in r.positive_sequence(image,record,row,q.tokenizer).atoms]) for row in plan['M']]
-        evidence['bridge']=dict(arm=bridge_arm,plan_sha256=identity(original_plan),m=len(original_plan['M']),
-            selected_M_orders=[x['order'] for x in plan['M']] if branch=='trace' else [],
-            pair=original_plan['bridge'])
+        evidence['bridge']=bridge_metadata(original_plan,insertion_policy,branch,branch_index)
     if lineage is not None:evidence['preservation']=lineage
     if branch=='trace' and geometry_weight:
         evidence['geometry']=dict(weight=geometry_weight,error_slots=list(erroneous_slots(plan['observations'])))
@@ -569,7 +634,7 @@ def export_steps(updates):
 
 
 def bridge_binding(root, checkpoint, weight, recipe_sha256, arm):
-    assert arm in ('control','treatment') and weight==.1
+    assert arm in ('local','chain') and weight==.1
     spec=p.load(root/'qualification.json')['bridge']
     assert checkpoint is not None and str(checkpoint)==spec['checkpoint']
     assert recipe_sha256==identity(spec), 'wrong bridge recipe'
@@ -582,7 +647,7 @@ def bridge_binding(root, checkpoint, weight, recipe_sha256, arm):
         for item in block['files']:
             path=checkpoint/block['relative_root']/item['relative_path']
             assert path.stat().st_size==item['size_bytes'] and p.digest(path)==item['sha256']
-    return dict(recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),manifest_sha256=spec['manifest_sha256'],weight=weight,bridge_arm=arm)
+    return dict(recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),manifest_sha256=spec['manifest_sha256'],weight=weight,insertion_policy=arm)
 
 
 def geometry_binding(root, checkpoint, weight, recipe_sha256):
@@ -614,7 +679,7 @@ def verify_start_export(checkpoint, exported):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, bridge_arm=None):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -622,11 +687,11 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     scheduled=export_steps(updates)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,bridge_arm) if bridge_arm is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
-    if bridge_arm is not None:assert updates in (1,16) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
     if binding is not None:p.write(out/'preservation.json',binding)
@@ -634,7 +699,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     if witness is not None:p.write(out/'witness.json',witness)
     images={x['image_id']:x for x in p.load(RETAINED)}
     inputs={x['image_id']:x for x in p.load(INPUTS)}
-    encodings={i:None for i in images} if bridge_arm is not None else {x['image_id']:x for x in p.load(ENCODINGS)}
+    encodings={i:None for i in images} if insertion_policy is not None else {x['image_id']:x for x in p.load(ENCODINGS)}
     assert set(images)==set(inputs)==set(encodings) and len(images)==18
     if bank is not None:assert set(bank)==set(images)
     local=sorted(images)[rank::8];previous_metrics=None
@@ -684,7 +749,10 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         all_records=[x for part in gathered for x in part];verify_producer(all_records,producer,sorted(images))
         assert parameter_identity(q.model)==fingerprint
         assert flags=={n:x.requires_grad for n,x in q.model.named_parameters()}
-        plans={x['image_id']:(bridge_credit if bridge_arm is not None else credit)(images[x['image_id']],x,q.tokenizer,producer) for x in records}
+        if insertion_policy is not None:
+            all_plans={x['image_id']:bridge_credit(images[x['image_id']],x,q.tokenizer,producer,insertion_policy) for x in all_records}
+            plans={x['image_id']:all_plans[x['image_id']] for x in records}
+        else:plans={x['image_id']:credit(images[x['image_id']],x,q.tokenizer,producer) for x in records}
         p.write(out/f'credit-{version}.json',list(plans.values()))
         metrics=r.assess_outputs([images[i] for i in local],[],records)
         if previous_metrics is not None:
@@ -698,13 +766,14 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if witnesses is not None and version in (0,1,4,8,16):
             p.write(out/f'witness-diagnostic-{version}.json',witness_diagnostics(q,batches,witnesses,vocab,producer))
         if version==updates:break
+        if insertion_policy is not None:require_bridge_supervision(all_plans,out,version)
         by={x['image_id']:x for x in records};q.model.train();optimizer.zero_grad(set_to_none=True)
         evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight,
-            witnesses if witness_weight else (),bridge_arm),
+            witnesses if witness_weight else (),insertion_policy),
             lambda job:witness_forward(q,model,batches[job['image_id']],witnesses[job['image_id']],vocab,producer,witness_weight)
             if job['branch']=='witness' else forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
                 plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
-                bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,bridge_arm))
+                bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,insertion_policy,job.get('branch_index')))
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
         assert all(v is not None and math.isfinite(v) for v in norms.values())
         assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
@@ -742,17 +811,17 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, bridge_arm=None):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,bridge_arm) if bridge_arm is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
-    if bridge_arm is not None:assert updates in (1,16) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
-    if bridge_arm is not None:
+    if insertion_policy is not None:
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
@@ -777,11 +846,11 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                         if geometry_weight:
                             assert row['geometry']==dict(weight=geometry_weight,error_slots=[list(x) for x in erroneous_slots(plans[row['image_id']]['observations'])])
                             assert row['terms']['Gmax_weighted']==float(__import__('torch').tensor(row['terms']['Gmax_unweighted'],dtype=__import__('torch').float32)*geometry_weight)
-            if bridge_arm is not None:
-                verify_bridge_schedule(evidence['forwards'],list(inputs),rank,plans,bridge_arm)
+            if insertion_policy is not None:
+                verify_bridge_schedule(evidence['forwards'],list(inputs),rank,plans,insertion_policy)
                 for row in evidence['forwards']:
                     i=row['image_id'];record=p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json')
-                    verify_bridge_forward(row,images[i],record,plans[i],tokenizer,bridge_arm)
+                    verify_bridge_forward(row,images[i],record,plans[i],tokenizer,insertion_policy)
             if witnesses is not None:
                 local=sorted(inputs)[rank::8]
                 expected=jobs(list(inputs),rank,plans,0,witnesses if witness_weight else ())
@@ -844,11 +913,11 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
 
 
 def offline(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-            geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, bridge_arm=None):
+            geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
     """Only this separate process opens evaluator truth, after all raw outputs freeze."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,_=preservation_binding(root,preservation_weight,preservation_bank_sha256)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,bridge_arm) if bridge_arm is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:
@@ -858,7 +927,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
         for rank in range(8):assert p.load(output/f'rank-{rank}/witness.json')==witness
     if binding is not None:
         for rank in range(8):assert p.load(output/f'rank-{rank}/preservation.json')==binding
-    if bridge_arm is not None:assert updates in (1,16) and witness_weight==0 and witness_bank_sha256 is None
+    if insertion_policy is not None:assert updates in (1,64) and witness_weight==0 and witness_bank_sha256 is None
     read=p.load(output/'readback.json')
     assert [x['update'] for x in read]==list(range(updates+1))
     images=p.load(RETAINED);frozen={}
@@ -880,6 +949,23 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                         widths_le1=sum(x<=1 for x in widths),heights_le1=sum(x<=1 for x in heights)))
             shapes[k]=values
         p.write(output/'predicted-shapes.json',dict(scope='All certified complete occurrences including invalid; norm1000 bins, not physical negatives',versions=shapes))
+    if insertion_policy is not None:
+        supply=[];events=0;distinct=set();supervised=set()
+        for version in range(updates+1):
+            rows=[]
+            for rank in range(8):
+                for plan in p.load(output/f'rank-{rank}/credit-{version}.json'):
+                    selected=plan['bridge']['B'] if plan['bridge'] else []
+                    if version<updates:
+                        events+=len(selected);distinct.update((plan['image_id'],x['annotation_id']) for x in selected)
+                        supervised.update((plan['image_id'],x['annotation_id']) for x in selected+plan['M'])
+                    rows.append(dict(image_id=plan['image_id'],m=plan['m'],k=plan['k'],n=plan['n'],eligible=len(plan['eligible']),
+                        terminal_insertions=sum(x['boundary']=='terminal' for x in selected),m0=plan['m']==0,
+                        successor_multiplicity=bridge_metadata(plan,insertion_policy,'bridge')['successor_multiplicity'],semantic_uncredited_observations=len(plan['observations'])-plan['m'],
+                        matched_share=plan['m']/plan['n'] if plan['n'] else 0,insertion_share=plan['k']/plan['n'] if plan['n'] else 0))
+            supply.append(dict(version=version,update_follows=version<updates,images=rows,cumulative_insertion_events=events,
+                distinct_inserted_ids=sorted(distinct),distinct_supervised_ids=sorted(supervised)))
+        p.write(output/'insertion-supply.json',supply)
     for path,sha in p.load(root/'qualification.json')['evaluator_sha256'].items():assert p.digest(path)==sha,path
     partitions=p.load(r.ROOT/'cpu-03/evaluator-partitions.json')
     assert p.digest(r.TRUTH)==partitions['truth_sha256']
@@ -887,23 +973,24 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
     scored={k:r.assess_outputs(truth,partitions['hidden10'],v) for k,v in frozen.items()}
     outcomes=r.family_outcomes(scored,[])
     p.write(output/'offline-results.json',outcomes)
-    if bridge_arm is not None:
+    if insertion_policy is not None:
         continuity=[];incoming={}
         for version in range(updates+1):
             for rank in range(8):
                 for plan in p.load(output/f'rank-{rank}/credit-{version}.json'):
-                    i=plan['image_id'];pair=plan['bridge']
-                    if version==0:incoming[i]=pair
-                    for scope,selected in [('current',pair),('incoming',incoming[i])]:
-                        if selected is None or version==updates:continue
-                        after=scored[str(version+1)]
-                        row=next(x for x in after if x['image_id']==i)
-                        continuity.append(dict(scope=scope,selected_version=version if scope=='current' else 0,next_version=version+1,image_id=i,
-                            B=selected['B']['annotation_id'],C=selected['C']['annotation_id'],
-                            next_coverage={mode:{name:str(selected[name]['annotation_id']) in {str(v) for v in row['ids'][mode]['retained']}
-                                for name in ('B','C')} for mode in ('raw','category')}))
+                    i=plan['image_id']
+                    if version==0:incoming[i]=plan
+                    for scope,selected in [('current',plan),('incoming',incoming[i])]:
+                        if version==updates:continue
+                        row=next(x for x in scored[str(version+1)] if x['image_id']==i)
+                        targets=[dict(x,kind='M',boundary='original') for x in selected['M']]
+                        if selected['bridge']:targets += [dict(x,kind='B') for x in selected['bridge']['B']]
+                        for target in targets:
+                            continuity.append(dict(scope=scope,selected_version=version if scope=='current' else 0,next_version=version+1,image_id=i,
+                                annotation_id=target['annotation_id'],kind=target['kind'],boundary=target['boundary'],m0=selected['m']==0,
+                                next_coverage={mode:str(target['annotation_id']) in {str(v) for v in row['ids'][mode]['retained']} for mode in ('raw','category')}))
         p.write(output/'bridge-continuity.json',continuity)
-        p.write(output/'stability.json',witness_stability(outcomes,updates))
+        p.write(output/'stability.json',witness_stability(outcomes,updates,late_start=49))
     if witness is not None:
         p.write(output/'stability.json',witness_stability(outcomes,updates))
         populations=[]
@@ -921,11 +1008,11 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
         p.write(output/'shape-populations.json',populations)
 
 
-def witness_stability(outcomes, updates):
+def witness_stability(outcomes, updates, late_start=9):
     """Post-freeze summaries only; preserve image/version units and acquired IDs."""
     result={}
     burdens=('geometry_invalid','literal_complete_repeats','literal_valid_repeats','malformed','near_repeat_occurrence_pairs','caps')
-    for name,versions in [('full',list(range(updates+1))),('late',list(range(9,updates+1)))]:
+    for name,versions in [('full',list(range(updates+1))),('late',list(range(late_start,updates+1)))]:
         if not versions:continue
         for mode in ('raw','category'):
             for cohort in ('combined','human13','refined5'):
@@ -1037,10 +1124,10 @@ def main():
     parser.add_argument('--recipe-sha256')
     parser.add_argument('--witness-weight',type=float,choices=(0,.1),default=0)
     parser.add_argument('--witness-bank-sha256')
-    parser.add_argument('--bridge-arm',choices=('control','treatment'))
+    parser.add_argument('--insertion-policy',choices=('local','chain'))
     a=parser.parse_args()
-    extra={'bridge_arm':a.bridge_arm} if a.command!='geometry-replay' else {}
-    assert a.command!='geometry-replay' or a.bridge_arm is None
+    extra={'insertion_policy':a.insertion_policy} if a.command!='geometry-replay' else {}
+    assert a.command!='geometry-replay' or a.insertion_policy is None
     {'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](
         a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256,a.witness_weight,a.witness_bank_sha256,**extra)
 
