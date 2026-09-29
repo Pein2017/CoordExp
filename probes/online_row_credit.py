@@ -1438,6 +1438,7 @@ def main():
     parser.add_argument('--rollout-backend',choices=('hf','vllm'),default='hf')
     a=parser.parse_args()
     if a.command in ('replay-benchmark','replay-benchmark-readback'):
+        assert a.rollout_backend=='hf'
         assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
         assert a.updates==1 and a.preservation_weight==a.geometry_weight==a.witness_weight==0 and a.preservation_bank_sha256 is None and a.witness_bank_sha256 is None
         return {'replay-benchmark':replay_benchmark,'replay-benchmark-readback':replay_benchmark_readback}[a.command](a.output,a.root)

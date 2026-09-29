@@ -1,7 +1,7 @@
 """One-adapter, TP=1 Qwen3-VL DoRA execution for vLLM 0.29.
 
 Register ``src.qwen.vllm_dora_model.CoordExpDoRAQwen3VLForConditionalGeneration``
-through vLLM's ``model_class_overrides``. The PEFT payload remains unmerged.
+through vLLM's ``ModelRegistry``. The PEFT payload remains unmerged.
 """
 
 from __future__ import annotations

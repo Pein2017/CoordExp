@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -28,7 +29,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--image-ids', type=int, nargs='+', default=[1584, 2299])
     parser.add_argument('--max-new-tokens', type=int, default=128)
-    parser.add_argument('--eager', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--eager', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--learning-step', action='store_true')
     args = parser.parse_args()
     if not 1 <= len(args.image_ids) <= 2 or len(set(args.image_ids)) != len(args.image_ids):
@@ -37,6 +38,14 @@ def main():
         parser.error('max-new-tokens must be in 1..128 for this smoke')
     if not args.checkpoint.is_dir():
         parser.error('checkpoint directory does not exist')
+    world = int(os.environ.get('WORLD_SIZE', 1))
+    rank = int(os.environ.get('RANK', 0))
+    local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    if world not in (1, 2) or (world == 2 and (len(args.image_ids) != 2 or not args.learning_step)):
+        parser.error('distributed smoke requires two ranks, two images and --learning-step')
+    if world == 2:
+        args.output = args.output / f'rank-{rank}'
+        args.image_ids = args.image_ids[rank::world]
     args.output.mkdir(parents=True, exist_ok=False)
 
     import torch
@@ -61,9 +70,15 @@ def main():
     if any(row['crop'] != [0, 0, row['width'], row['height']] for row in items):
         raise ValueError('this smoke only supports whole-image inputs')
     policy = p.load(p.POLICY)
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(local_rank)
+    if world > 1:
+        import torch.distributed as dist
+        from torch.nn.parallel import DistributedDataParallel
+        dist.init_process_group('nccl')
     started = time.monotonic()
     q, delta, composition = p.compose(args.checkpoint, evaluation=False)
+    train_model = (DistributedDataParallel(q.model, device_ids=[local_rank], broadcast_buffers=False)
+                   if world > 1 else q.model)
     hf_startup = time.monotonic() - started
     batches = [o.native_batch(q, row) for row in items]
     messages = [{'role': 'system', 'content': policy['prompt']['system']},
@@ -77,6 +92,7 @@ def main():
                               image_sha256=row['image_sha256']) for row in items]
     initial, count = snapshot(q.model)
     receipt = dict(checkpoint=str(args.checkpoint.resolve()), input_path=str(o.INPUTS),
+                   world_size=world, rank=rank, local_rank=local_rank,
                    source=source_identity,
                    versions={name: version(name) for name in ('torch','transformers','peft','vllm','flash-attn')},
                    image_ids=args.image_ids, max_new_tokens=args.max_new_tokens,
@@ -132,6 +148,7 @@ def main():
                                            rpc=engine.receipts[-1],
                                            token_counts=[len(x.token_ids) for x in generated],
                                            token_ids=[list(x.token_ids) for x in generated],
+                                           raw_logprobs=[list(x.raw_logprobs) for x in generated],
                                            stop_reasons=[x.stop_reason for x in generated])
             receipt['prefix_agreement'] = [dict(image_id=row['image_id'],
                 shared_tokens=next((j for j, (a, b) in enumerate(zip(h.token_ids, v.token_ids))
@@ -162,6 +179,7 @@ def main():
             if args.learning_step:
                 q.model.train()
                 params = [value for value in q.model.parameters() if value.requires_grad]
+                original_params = [value.detach().cpu().clone() for value in params]
                 delta_ids = {id(value) for value in delta.delta_tensors().values()}
                 optimizer = torch.optim.AdamW([
                     dict(params=[value for value in params if id(value) not in delta_ids], lr=1e-5),
@@ -177,7 +195,7 @@ def main():
                     prepared = prepare_replay(q.model, batch.inputs,
                         prompt_token_ids=row['prompt_token_ids'], continuation_token_ids=chosen)
                     with torch.autocast('cuda', dtype=torch.bfloat16):
-                        logits = prepared.aligned_logits(q.model(**prepared.inputs).logits)
+                        logits = prepared.aligned_logits(train_model(**prepared.inputs).logits)
                         loss = torch.nn.functional.cross_entropy(logits.float(), prepared.target_ids)
                     (loss/len(items)).backward()
                     losses.append(float(loss.detach()))
@@ -192,16 +210,58 @@ def main():
                 updated, _ = snapshot(q.model)
                 if updated == initial:
                     raise RuntimeError('AdamW did not change the trainable snapshot')
+                updated_params = [value.detach().cpu().clone() for value in params]
+                if world > 1:
+                    snapshots = [None] * world
+                    dist.all_gather_object(snapshots, updated)
+                    if len(set(snapshots)) != 1:
+                        raise RuntimeError('DDP ranks diverged after the learning step')
+                    receipt['synchronized_snapshots'] = snapshots
                 receipt['learning_step'] = dict(seconds=time.monotonic()-began,
                     forwards=len(losses), losses=losses, gradient_nonzero=sum(x > 0 for x in norms),
                     gradient_count=len(norms), total_norm=total_norm, updated_snapshot=updated)
-                engine.refresh(q.model, delta, identity=updated)
                 began = time.monotonic()
-                after = engine.generate(requests, **dict(call, identity=updated))
+                engine.refresh(q.model, delta, identity=updated)
+                receipt['updated_refresh'] = dict(parent_seconds=time.monotonic()-began,
+                                                  rpc=engine.receipts[-1])
+                began = time.monotonic()
+                after = engine.generate(requests, trace=True, **dict(call, identity=updated))
                 receipt['post_refresh'] = dict(parent_seconds=time.monotonic()-began,
                     rpc=engine.receipts[-1], token_counts=[len(x.token_ids) for x in after],
                     token_ids=[list(x.token_ids) for x in after],
-                    stop_reasons=[x.stop_reason for x in after])
+                    stop_reasons=[x.stop_reason for x in after],
+                    raw_logprobs=[list(x.raw_logprobs) for x in after])
+                changed = [a.token_ids != b.token_ids or a.raw_logprobs != b.raw_logprobs
+                           for a, b in zip(generated, after, strict=True)]
+                receipt['post_refresh']['changed_from_initial'] = changed
+
+                try:
+                    with torch.no_grad():
+                        for value, original in zip(params, original_params, strict=True):
+                            value.copy_(original)
+                    if snapshot(q.model)[0] != initial:
+                        raise RuntimeError('original HF snapshot was not restored for vLLM check')
+                    began = time.monotonic()
+                    engine.refresh(q.model, delta, identity=initial)
+                    receipt['original_refresh'] = dict(parent_seconds=time.monotonic()-began,
+                                                       rpc=engine.receipts[-1])
+                    restored = engine.generate(requests, trace=True, **call)
+                    exact = [a.token_ids == b.token_ids and a.raw_logprobs == b.raw_logprobs
+                             for a, b in zip(generated, restored, strict=True)]
+                    receipt['restore_check'] = dict(exact=exact,
+                        token_ids=[list(x.token_ids) for x in restored],
+                        raw_logprobs=[list(x.raw_logprobs) for x in restored],
+                        rpc=engine.receipts[-1])
+                    if not all(exact):
+                        raise RuntimeError('restored vLLM generation differs from initial tokens or raw logprobs')
+                finally:
+                    with torch.no_grad():
+                        for value, trained in zip(params, updated_params, strict=True):
+                            value.copy_(trained)
+                    if snapshot(q.model)[0] != updated:
+                        raise RuntimeError('trained HF snapshot was not preserved after restore check')
+                if not any(changed):
+                    raise RuntimeError('updated vLLM weights did not change emitted tokens or raw logprobs')
             receipt['rpc_receipts'] = engine.receipts
         verify_source_identity(source_identity, required_paths=sources, root=REPO)
         receipt['status'] = 'complete'
@@ -212,6 +272,8 @@ def main():
     finally:
         (args.output/'receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True,
             default=str)+'\n')
+        if world > 1:
+            dist.destroy_process_group()
 
 
 if __name__ == '__main__':
