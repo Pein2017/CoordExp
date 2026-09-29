@@ -824,8 +824,8 @@ class OnlineCreditTest(unittest.TestCase):
         class Toy(torch.nn.Module):
             def __init__(self,vocab):
                 super().__init__();self.w=torch.nn.Parameter(torch.linspace(-.03,.03,vocab));self.seen=[]
-            def get_rope_index(self,ids,grid,video,*,attention_mask):
-                assert grid.tolist()==[[1,2,2]]*ids.shape[0]
+            def get_rope_index(self,ids,mm_token_type_ids,*,image_grid_thw,video_grid_thw,attention_mask):
+                assert image_grid_thw.tolist()==[[1,2,2]]*ids.shape[0]
                 return (attention_mask.cumsum(-1)-1).clamp_min(0).unsqueeze(0).expand(3,-1,-1),None
             def forward(self,input_ids,attention_mask,position_ids,pixel_values,image_grid_thw,logits_to_keep,**kw):
                 assert pixel_values.tolist()==[[2.,3.]]*input_ids.shape[0]

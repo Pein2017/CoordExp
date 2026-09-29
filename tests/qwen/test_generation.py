@@ -137,7 +137,7 @@ def test_seeded_policy_uses_fresh_config_and_exact_fixed_batch_replay():
     b = generate_continuations(model, batch([[1, 2]]), **args)
     assert a == b
     assert calls[0]["generation_config"].top_k == 0
-    assert calls[0]["use_model_defaults"] is False
+    assert "use_model_defaults" not in calls[0]
     assert a[0].policy_logprobs == pytest.approx(a[0].raw_logprobs)
     with pytest.raises(ValueError, match="seed"):
         generate_continuations(model, batch([[1]]), **(args | {"seed": None}))

@@ -9,7 +9,7 @@ def test_position_ids_are_safe_in_differentiable_forward():
     from src.qwen.native import derive_position_ids
 
     class Rope:
-        def get_rope_index(self, ids, grid, video, *, attention_mask):
+        def get_rope_index(self, ids, mm_token_type_ids, *, image_grid_thw, video_grid_thw, attention_mask):
             return torch.arange(ids.shape[1]).view(1, 1, -1).expand(3, 1, -1), None
 
     ids = torch.tensor([[1, 2, 3]])
@@ -32,7 +32,7 @@ class TinyReplay(torch.nn.Module):
             torch.arange(72, dtype=torch.float32).reshape(9, 8) / 71
         )
 
-    def get_rope_index(self, ids, grid, video, *, attention_mask):
+    def get_rope_index(self, ids, mm_token_type_ids, *, image_grid_thw, video_grid_thw, attention_mask):
         return torch.arange(ids.shape[1]).view(1, 1, -1).expand(
             3, ids.shape[0], -1
         ), None

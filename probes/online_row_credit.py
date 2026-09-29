@@ -824,14 +824,39 @@ def verify_start_export(checkpoint, exported):
         assert all(a[k].dtype==b[k].dtype and torch.equal(a[k],b[k]) for k in a), 'zero differs from explicit start'
 
 
+def rollout_binding(root, backend):
+    if backend not in ('hf','vllm'):
+        raise ValueError('unsupported rollout backend')
+    if p.load(Path(root)/'qualification.json').get('rollout_backend','hf')!=backend:
+        raise ValueError('rollout backend requires a matching fresh qualification')
+
+
+def vllm_requests(q, inputs, local):
+    from src.qwen.native import NativeRequest
+    policy=p.load(p.POLICY)
+    messages=[{'role':'system','content':policy['prompt']['system']},
+              {'role':'user','content':[{'type':'image'},{'type':'text','text':policy['prompt']['user']}]}]
+    chat=q.processor.apply_chat_template(messages,tokenize=False,add_generation_prompt=True)
+    requests=[]
+    for i in local:
+        item=inputs[i]
+        if item['crop']!=[0,0,item['width'],item['height']]:
+            raise ValueError('online vLLM rollout requires the qualified full-image view')
+        requests.append(NativeRequest(item['request_id'],chat,item['image_path'],
+            expected_token_ids=tuple(item['prompt_token_ids']),expected_image_grid=tuple(item['image_grid_thw']),
+            expected_image_size=(item['width'],item['height']),image_sha256=item['image_sha256']))
+    return requests
+
+
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
     from src.qwen.generation import generate_continuations,NativeGenerationPolicy
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
+    rollout_binding(root,rollout_backend)
     scheduled=export_steps(updates)
     schema_geometry_binding(root,schema_geometry,insertion_policy)
     execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
@@ -861,7 +886,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     assert all(value==0 for value in dropouts.values())
     p.write(out/'online-policy.json',dict(attention_dropout=q.model.config.text_config.attention_dropout,lora_dropout=dropouts,
         base='BF16',trainable='FP32',attention='flash_attention_2',autocast='BF16 generation and replay',temperature=0,top_p=1,top_k=0,
-        repetition_penalty=1,max_new_tokens=3084,use_model_defaults=False,seed=92711))
+        repetition_penalty=1,max_new_tokens=3084,use_model_defaults=False,seed=92711,rollout_backend=rollout_backend))
     vocab=build_token_vocabulary_groups(q.token_identity,tokenizer=q.tokenizer)
     assert tuple(vocab.coordinate)==tuple(q.tokenizer.convert_tokens_to_ids(f'<|coord_{j}|>') for j in range(1000))
     params=[x for x in q.model.parameters() if x.requires_grad]; flags={n:x.requires_grad for n,x in q.model.named_parameters()}
@@ -873,22 +898,42 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     batches={i:native_batch(q,inputs[i]) for i in local}
     if rank==0:p.save_checkpoint(q,delta,output/'checkpoint-0')
     dist.barrier()
+    rollout=None
+    if rollout_backend=='vllm':
+        from src.qwen.vllm_rollout import VllmDoraRollout
+        rollout=VllmDoraRollout(base_model=q.base_model_path,checkpoint=output/'checkpoint-0',
+            identity=identity(parameter_identity(q.model)),log_path=out/'vllm.log')
+        requests=vllm_requests(q,inputs,local)
+        p.write(out/'vllm-startup.json',rollout.startup)
     for version in range(updates+1):
         fingerprint=parameter_identity(q.model); hashes=[None]*8
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
         producer=dict(kind='live_online',update=version,parameter_sha256=hashes[0],source=source['commit'] if 'commit' in source else identity(source))
+        if rollout is not None:producer['rollout_backend']='vllm-local-dora-0.29.0'
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
         q.model.eval();records=[];before=time.monotonic()
-        for i in local:
+        if rollout is not None:
+            if version:rollout.refresh(q.model,delta,identity=hashes[0])
+            generation_start=time.monotonic()
+            generated=rollout.generate(requests,budgets=[3084]*len(local),
+                eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,
+                identity=hashes[0],trace=version==0 and min(images) in local)
+            batch_seconds=time.monotonic()-generation_start
+        for index,i in enumerate(local):
             generation_start=time.monotonic()
             item=dict(inputs[i],arm='greedy',seed=92711,temperature=0)
-            with torch.inference_mode(),torch.autocast('cuda',dtype=torch.bfloat16):
-                result=generate_continuations(q.model,batches[i],extensions=[()],budgets=[3084],
-                    eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,
-                    policy=NativeGenerationPolicy(temperature=0,top_p=1,top_k=0,repetition_penalty=1,use_model_defaults=False),
-                    trace='raw_and_policy' if version==0 and i==min(images) else 'none',seed=None)[0]
+            if rollout is None:
+                with torch.inference_mode(),torch.autocast('cuda',dtype=torch.bfloat16):
+                    result=generate_continuations(q.model,batches[i],extensions=[()],budgets=[3084],
+                        eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,
+                        policy=NativeGenerationPolicy(temperature=0,top_p=1,top_k=0,repetition_penalty=1,use_model_defaults=False),
+                        trace='raw_and_policy' if version==0 and i==min(images) else 'none',seed=None)[0]
+                seconds=time.monotonic()-generation_start
+            else:
+                result=generated[index];seconds=batch_seconds/len(local)
+                item.update(generation_timing='batch_wall_divided_by_requests',generation_batch_seconds=batch_seconds,generation_batch_size=len(local))
             record=seal(dict(item,token_ids=list(result.token_ids),text=q.tokenizer.decode(result.token_ids,skip_special_tokens=False),
-                generated_tokens=len(result.token_ids),stop_reason=result.stop_reason,generation_seconds=time.monotonic()-generation_start,raw_logprobs=result.raw_logprobs),producer)
+                generated_tokens=len(result.token_ids),stop_reason=result.stop_reason,generation_seconds=seconds,raw_logprobs=result.raw_logprobs if version==0 and i==min(images) else None),producer)
             records.append(record)
         # No rank updates until every same-version trajectory is saved and validated.
         directory=output/f'rollout-{version}'/f'rank-{rank}';directory.mkdir(parents=True,exist_ok=False)
@@ -940,6 +985,9 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if version+1 in scheduled:
             if rank==0:p.save_checkpoint(q,delta,output/f'checkpoint-{version+1}')
             dist.barrier()
+    if rollout is not None:
+        rollout.close()
+        p.write(out/'vllm-operations.json',rollout.receipts)
     verify_source_identity(source,required_paths=sources)
     p.write(out/'complete.json',dict(status='complete',source=source,updates=updates,wall_seconds=time.monotonic()-begin,
         peak_allocated=torch.cuda.max_memory_allocated(),peak_reserved=torch.cuda.max_memory_reserved(),
@@ -965,8 +1013,9 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
+    rollout_binding(root,rollout_backend)
     schema_geometry_binding(root,schema_geometry,insertion_policy)
     execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
@@ -981,6 +1030,11 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
+        if rollout_backend=='vllm':
+            assert p.load(directory/'online-policy.json')['rollout_backend']=='vllm'
+            operations=p.load(directory/'vllm-operations.json')
+            assert sum(x['operation']=='generate' for x in operations)==updates+1
+            assert sum(x['operation']=='refresh' for x in operations)==updates
         if execution is not None:assert p.load(directory/'execution.json')==execution
         assert (directory/'schema-geometry.json').exists()==schema_geometry
         if schema_geometry:assert p.load(directory/'schema-geometry.json')==dict(enabled=True)
@@ -1381,14 +1435,15 @@ def main():
     parser.add_argument('--schema-geometry',action='store_true')
     parser.add_argument('--microbatch',type=int,choices=(1,4),default=1)
     parser.add_argument('--activation-checkpointing',choices=('on','off'),default='on')
+    parser.add_argument('--rollout-backend',choices=('hf','vllm'),default='hf')
     a=parser.parse_args()
     if a.command in ('replay-benchmark','replay-benchmark-readback'):
         assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
         assert a.updates==1 and a.preservation_weight==a.geometry_weight==a.witness_weight==0 and a.preservation_bank_sha256 is None and a.witness_bank_sha256 is None
         return {'replay-benchmark':replay_benchmark,'replay-benchmark-readback':replay_benchmark_readback}[a.command](a.output,a.root)
     extra={'insertion_policy':a.insertion_policy} if a.command!='geometry-replay' else {}
-    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry)
-    else:assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on'
+    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry,rollout_backend=a.rollout_backend)
+    else:assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.rollout_backend=='hf'
     assert a.command!='geometry-replay' or a.insertion_policy is None
     {'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](
         a.output,a.root,a.updates,a.preservation_weight,a.preservation_bank_sha256,a.geometry_weight,a.start_checkpoint,a.recipe_sha256,a.witness_weight,a.witness_bank_sha256,**extra)

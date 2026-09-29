@@ -27,6 +27,7 @@ _STALE_HISTORY_FIELDS = frozenset(
         "attention_mask",
         "position_ids",
         "token_type_ids",
+        "mm_token_type_ids",
         "cache_position",
         "rope_deltas",
         "past_key_values",
@@ -442,6 +443,15 @@ def resolve_rope_index(model: Any) -> Callable[..., tuple[Any, Any]]:
     )
 
 
+def modality_token_type_ids(config: Any, input_ids: torch.Tensor) -> torch.Tensor:
+    types = torch.zeros_like(input_ids)
+    for name, value in (("image_token_id", 1), ("video_token_id", 2)):
+        token_id = getattr(config, name, None)
+        if token_id is not None:
+            types[input_ids == token_id] = value
+    return types
+
+
 def derive_position_ids(
     *,
     model: Any,
@@ -451,12 +461,15 @@ def derive_position_ids(
     video_grid_thw: torch.Tensor | None,
 ) -> torch.Tensor:
     get_rope_index = resolve_rope_index(model)
+    config = getattr(getattr(get_rope_index, "__self__", None), "config", None)
+    mm_token_type_ids = modality_token_type_ids(config, input_ids)
     try:
         with torch.no_grad():
             position_ids, _rope_deltas = get_rope_index(
                 input_ids,
-                image_grid_thw,
-                video_grid_thw,
+                mm_token_type_ids,
+                image_grid_thw=image_grid_thw,
+                video_grid_thw=video_grid_thw,
                 attention_mask=attention_mask,
             )
     except (RuntimeError, TypeError, ValueError) as exc:

@@ -21,6 +21,7 @@ from src.qwen.native import (
     _checked_token_ids,
     _require_rank_two_tensor,
     model_device,
+    modality_token_type_ids,
     move_to_device,
     padded_histories,
 )
@@ -262,6 +263,11 @@ def generate_continuations(
             device=model_device(model),
         )
         inputs.update(input_ids=ids, attention_mask=mask)
+        config = getattr(model, "config", None)
+        image_token_id = getattr(config, "image_token_id", None)
+        video_token_id = getattr(config, "video_token_id", None)
+        if image_token_id is not None or video_token_id is not None:
+            inputs["mm_token_type_ids"] = modality_token_type_ids(config, ids)
         group_budgets = tuple(budgets[i] for i in indices)
         kwargs: dict[str, Any] = dict(
             **inputs,
@@ -286,7 +292,6 @@ def generate_continuations(
             kwargs["generation_config"] = GenerationConfig(
                 **{k: v for k, v in kwargs.items() if k not in inputs}
             )
-            kwargs["use_model_defaults"] = False
         if len(set(group_budgets)) > 1:
             from transformers import StoppingCriteria, StoppingCriteriaList
 
