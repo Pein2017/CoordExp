@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "singleton-off-integration-accepted-schema-gap-cpu-repair",
+  "status": "schema-geometry-cpu-accepted-paired2-released",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "CPU-only opt-in strict four-slot type/geometry margin eligibility; no model/GPU or64 launch",
-  "job_state": "PairedOFF slice complete6exits0; next CPU repair assigned after scoped contract",
+  "boundary": "Exactly paired LOCAL2/CHAIN2 run/readback then both offline; no64, retry or automatic continuation",
+  "job_state": "CPU accepted; paired2 released for owned worker launch; no launch claimed by this record",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -48,5 +48,9 @@
   "optimized_slice_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01",
   "optimized_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01/lead-runtime-acceptance-01.json",
   "schema_gap_evidence": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/optimized-update-01/lead-malformed-mask-01.json",
-  "active_cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/cpu"
+  "active_cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/cpu",
+  "schema_cpu_commit": "ce08adaaab1272165074a24bf193ec366299493c",
+  "schema_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/lead-cpu-acceptance-01.json",
+  "schema_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/lead-runtime-release-01.json",
+  "schema_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/schema-geometry-01/paired-slice-01"
 }
