@@ -159,7 +159,8 @@ class VllmDoraRollout:
 
     def __init__(self, *, base_model, checkpoint, identity, log_path,
                  device=None, max_model_len=16000, max_num_seqs=3,
-                 kv_cache_memory_bytes=2 * 1024**3, enforce_eager=False, timeout=1800):
+                 kv_cache_memory_bytes=2 * 1024**3, gpu_memory_utilization=0.2,
+                 enforce_eager=False, timeout=1800):
         import torch
         from importlib.metadata import version
         if version("vllm").split("+")[0] != "0.29.0":
@@ -177,7 +178,8 @@ class VllmDoraRollout:
         self.identity = identity
         self.receipts = []
         options = dict(max_model_len=max_model_len, max_num_seqs=max_num_seqs,
-                       kv_cache_memory_bytes=kv_cache_memory_bytes, enforce_eager=enforce_eager)
+                       kv_cache_memory_bytes=kv_cache_memory_bytes,
+                       gpu_memory_utilization=gpu_memory_utilization, enforce_eager=enforce_eager)
         if not enforce_eager:
             # Native decode graphs keep refreshable buffers; no compiler needed.
             options['compilation_config'] = dict(mode=0, cudagraph_mode='FULL_DECODE_ONLY',
