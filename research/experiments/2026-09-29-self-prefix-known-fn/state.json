@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "none",
-  "status": "local-versus-chain-cpu-revision-released",
+  "status": "cpu-accepted-paired-one-update-release",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "low",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "All targets in both arms: independent original-prefix branches versus cumulative chain; gradient accumulation then one global update; CPU-only",
-  "job_state": "No model invocation launched for this unit",
+  "boundary": "LOCAL1 and CHAIN1, each fresh margin anchor; both readbacks before either offline;64 not released",
+  "job_state": "Paired real-entry release prepared; no launch claimed",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -24,5 +24,7 @@
   "single_point_source": "c870484965ce51358b1f22f8cdcd7f0b626a67c9",
   "single_point_disposition": "superseded-before-runtime-by-user",
   "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04",
-  "last_cpu_failure": "multi-02 empty genuine EOS rejected; bounded exact-EOS repair authorized"
+  "last_cpu_failure": "multi-02 exact-empty-EOS failure repaired; final31-case lead replay GREEN",
+  "cpu_accepted_commit": "73ae473b395dcef2ccb7f2ea3d7494d8bc17e760",
+  "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json"
 }
