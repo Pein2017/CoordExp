@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "owner-cpu-accepted-paired1-reserved-not-released",
+  "status": "paired1-03-terminal-containment-rejection-retained-diagnosis-active",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "xhigh",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "Maintained owner CPU accepted; paired1 remains reserved only pending fresh exact141 clean-current source qualification, separate owner binding and exact lead release; paired8 unreleased",
-  "job_state": "Maintained owner CPU accepted (fresh10 tests/17 scenario receipts); anchor recovery accepted; paired1-03 planned only; GPU hours used 0",
+  "boundary": "P03 was released/executed once and terminally rejected on retained-category containment; operational handling/accounting/cleanup accepted only. CPU retained-data diagnosis active; no retry/new GPU/paired8 release.",
+  "job_state": "P03 exits control run0/control readback0/treatment run1; treatment readback and both offline stages skipped; terminal rejection accepted; no live owner",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -28,7 +28,7 @@
   "cpu_accepted_commit": "73ae473b395dcef2ccb7f2ea3d7494d8bc17e760",
   "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
   "runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-runtime-acceptance-01.json",
-  "scientific_status": "One-update matched contrast: treatment full raw241 versus control249; no efficacy acceptance, no general ineffectiveness or physical-precision claim",
+  "scientific_status": "Frozen candidate treatment violates retained-category floor 207<211 from baseline222; cause unidentified. This is a candidate-specific constraint failure, not model-runtime fault or a general scientific null; no complete-pair efficacy.",
   "efficiency_cpu_commit": "81c15617c5cc598fecf46619fe407ac0404e8a17",
   "efficiency_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/lead-cpu-acceptance-01.json",
   "efficiency_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/replay-benchmark-01",
@@ -71,7 +71,7 @@
   "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json",
   "correction_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json",
   "owner_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-owner-cpu-acceptance-01.json",
-  "next_decision": "Commit reconciled records; qualify exact141 current source and bind owner separately; then review and issue the exact paired1-03 lead release",
+  "next_decision": "Continue only saved-data CPU retained diagnosis at P/retained-diagnosis-01; analyze loss overlap, actual M/B contexts and coefficients, and first token/prefix divergence. No new GPU release or retry.",
   "recall_floor_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01",
   "recall_floor_cpu_release": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-cpu-release-01.json",
   "recall_floor_worker_dispatch": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/worker-dispatch-01.json",
@@ -91,8 +91,53 @@
     "mode": "lead-coordinates-workers-execute",
     "gpu_hours_limit": 64,
     "max_gpu_slots": 8,
-    "gpu_hours_used": 0,
-    "jobs": [],
+    "gpu_hours_used": 0.5822,
+    "jobs": [
+      {
+        "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
+        "status": "terminal-contained-rejection",
+        "source_commit": "89e39a0ae6c2f05a0ca735a5267feaaaef6b7b54",
+        "release_sha256": "30788f9e0e6316afe50d18fe6ab834a088d10411a6e56c411efb91363c38b49e",
+        "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-terminal-acceptance-01.json",
+        "actual_charge_gpu_hours": 0.5822,
+        "external_wall_seconds": 261.99,
+        "final_internal_wall_seconds": 261.88233990222216,
+        "reservation_gpu_hours": 6,
+        "unused_reservation_returned_gpu_hours": 5.4178,
+        "stage_exits": [
+          [
+            "control",
+            "run",
+            0
+          ],
+          [
+            "control",
+            "readback",
+            0
+          ],
+          [
+            "treatment",
+            "run",
+            1
+          ]
+        ],
+        "skipped": [
+          [
+            "treatment",
+            "readback"
+          ],
+          [
+            "control",
+            "offline"
+          ],
+          [
+            "treatment",
+            "offline"
+          ]
+        ],
+        "cleanup": "accepted; no live owner"
+      }
+    ],
     "accounting": "reserved GPU slots times wall seconds including load and owned-child cleanup; failed attempts count; ceiling28800 seconds at8 slots",
     "automatic_next_rounds": true,
     "lead_native_release_required": true,
@@ -100,21 +145,20 @@
     "at_budget": "CPU analysis and preparation only",
     "containment_thresholds": "unchanged",
     "scientific_objective": "reduce physical false negatives while measured raw errors stay contained",
-    "reserved_gpu_hours": 6,
-    "unreserved_gpu_hours": 58,
-    "active_round_reservation": {
-      "name": "maintained-owner paired1-03",
-      "status": "reserved-not-launched",
+    "reserved_gpu_hours": 0,
+    "unreserved_gpu_hours": 63.4178,
+    "last_round_accounting": {
       "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
-      "gpu_slots": 8,
-      "execution_seconds": 2670,
-      "cleanup_reserve_seconds": 30,
-      "total_owner_wall_acceptance_seconds": 2700,
-      "maximum_charge_gpu_hours": 6,
-      "failed_attempts_count": true,
-      "charge_rule": "8*max(full external owner invocation wall, final internal owner_terminal wall)/3600; include bootstrap/load, cleanup and receipt finalization; keep uncapped actual on failure/overrun.",
-      "retry_allowed": false,
-      "max_concurrent_native_pairs": 1
+      "status": "terminal-charged",
+      "reserved_before_gpu_hours": 6,
+      "actual_charge_gpu_hours": 0.5822,
+      "unused_reservation_returned_gpu_hours": 5.4178,
+      "reserved_after_gpu_hours": 0,
+      "external_wall_seconds": 261.99,
+      "final_internal_wall_seconds": 261.88233990222216,
+      "source_commit": "89e39a0ae6c2f05a0ca735a5267feaaaef6b7b54",
+      "release_sha256": "30788f9e0e6316afe50d18fe6ab834a088d10411a6e56c411efb91363c38b49e",
+      "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-terminal-acceptance-01.json"
     }
   },
   "identity_cpu_01_hold_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-identity-cpu-hold-01.json",
@@ -134,7 +178,7 @@
   "identity_cpu_02_fresh_focused_tests": 65,
   "identity_cpu_02_f1_f2_closed": true,
   "identity_cpu_02_scientific_recipe_unchanged": true,
-  "native_released": false,
+  "native_released": true,
   "paired8_released": false,
   "paired1_cost_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02/lead-paired1-cost-ruling-01.json",
   "paired1_cost_ruling_sha256": "c955af09bf61b17e611493321d6ecfdf577ceba7c6bc9dd6d1d20d1b885611aa",
@@ -144,9 +188,6 @@
   "paired1_primary_evidence": "Complete original18 raw acquisitions and retained-only metrics/identity gains-losses at versions0/1; executed target/prefix/weight and producer/readback receipts",
   "paired1_stop_rule": "Existing D/I/malformed/cap/category95percent/nonempty predicates unchanged; source/producer failure or any command failure stops pair; total owner deadline2700 seconds; no retry; no D0=10 admission rule",
   "paired1_hidden_boundary": "Only after both raw acquisitions and readbacks freeze; never controls stopping, admission, selection or the next release",
-  "paired1_planned_source_identity_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/source-identity.json",
-  "paired1_planned_runtime_evidence_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
-  "paired1_planned_separate_release_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-release.json",
   "maintained_owner_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-owner-review-02/lead-acceptance.json",
   "maintained_owner_acceptance_sha256": "12c9cfbf6ec1f265719ac818d1a8dc5a24f0690c73fce2009fdc653ff096c38b",
   "maintained_owner_accepted_source_commit": "da95d056597703b4cc4fca094c79d122251ac7ad",
@@ -157,7 +198,7 @@
   "paired1_previous_preparation_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-02",
   "paired1_previous_preparation_status": "immutable historical source/anchor HOLD; sealed evidence is not current qualification",
   "paired1_new_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
-  "paired1_new_root_created": false,
+  "paired1_new_root_created": true,
   "paired1_owner_runtime_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-owner-review-02/runtime-ruling.json",
   "paired1_owner_entry": [
     "python",
@@ -171,5 +212,67 @@
   "paired1_owner_release_file": "lead-release.json",
   "paired1_scientific_qualifier_rule": "Bind existing exact141 scientific source_paths in qualification.source; separately bind maintained owner in mandatory release.bindings. 142/144 audit envelopes are not the consumer qualifier.",
   "paired1_owner_finalization_acceptance": "All six command exits, complete readback/offline, final owner_terminal stdout, successful owner exit, confirmed exact-owned cleanup, external full invocation wall within2700 seconds; terminal.json alone is insufficient.",
-  "paired1_runtime_charge": "8*max(full external owner invocation wall, final internal owner_terminal wall)/3600; include bootstrap/load, cleanup and receipt finalization; keep uncapped actual on failure/overrun."
+  "paired1_runtime_charge": "8*max(full external owner invocation wall, final internal owner_terminal wall)/3600; include bootstrap/load, cleanup and receipt finalization; keep uncapped actual on failure/overrun.",
+  "paired1_invocation_status": "released-and-executed-once; terminal containment rejection; no retry authorized",
+  "paired1_release_sha256": "30788f9e0e6316afe50d18fe6ab834a088d10411a6e56c411efb91363c38b49e",
+  "paired1_executed_source_commit": "89e39a0ae6c2f05a0ca735a5267feaaaef6b7b54",
+  "paired1_terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-terminal-acceptance-01.json",
+  "paired1_terminal_acceptance_sha256": "32da6c72966c5789a56b9b79869e3cd428008e72bd0e347466b8a279146db801",
+  "paired1_source_identity_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/source-identity.json",
+  "paired1_actual_runtime_evidence_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
+  "paired1_consumed_release_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-release.json",
+  "paired1_full_pair_completion_accepted": false,
+  "paired1_physical_fn_efficacy_accepted": false,
+  "paired1_hidden_evaluation_performed": false,
+  "paired1_stage_exits": [
+    [
+      "control",
+      "run",
+      0
+    ],
+    [
+      "control",
+      "readback",
+      0
+    ],
+    [
+      "treatment",
+      "run",
+      1
+    ]
+  ],
+  "paired1_never_invoked": [
+    [
+      "treatment",
+      "readback"
+    ],
+    [
+      "control",
+      "offline"
+    ],
+    [
+      "treatment",
+      "offline"
+    ]
+  ],
+  "paired1_terminal_retained_counts": {
+    "baseline_category_R": 222,
+    "required_category_R": 211,
+    "control": {
+      "R": 215,
+      "D": 4,
+      "I": 2
+    },
+    "rejected_treatment": {
+      "R": 207,
+      "D": 5,
+      "I": 2
+    }
+  },
+  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/retained-diagnosis-01",
+  "next_cpu_assignment_scope": "Saved-data CPU diagnosis only: loss overlap, actual M/B context/coefficient changes, first token/prefix divergence; compare changed M contexts/normalization with shared-parameter/greedy alternatives; no new model/GPU query.",
+  "next_gpu_release": false,
+  "native_authorized": false,
+  "next_cpu_assignment_status": "active-CPU-only",
+  "next_cpu_assignment_worker_thread": "01a0f0cc-423f-7773-a1ee-0a2d6c848424"
 }
