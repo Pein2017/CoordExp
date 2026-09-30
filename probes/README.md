@@ -9,6 +9,7 @@ registry or compatibility alias for a retired experiment.
 | Output-QP | `python -m probes.output_qp --capture <six-array.npz> --output <fresh.json>`; selected-output-row minimum-Frobenius solve with exhaustive supplied-state FP32 certificate |
 | Readout norm | `python -m probes.readout_norm --input <explicit-arrays.json> --output <fresh.json>`; effective OUTPUT-row lower-median norm scaling, selected logits only |
 | Saved row evaluator | `src.eval.saved_rows`; explicit raw/case/reference-bank inputs, class-agnostic matching, validity and recurrence separately |
+| Online row-credit owner | `python -m probes.online_row_credit_owner --root <released-pair-root> --release-sha256 <exact-digest>`; one source-bound six-stage sequential invocation, separately released by the lead |
 
 QP NPZ fields are hidden_states, target_ids, route_token_ids, base_route_logits,
 top_ids and top_logits. No pickle, model loading or image/panel selection occurs.
@@ -22,6 +23,17 @@ required source files and input bytes before work and again before publication.
 `--source-receipt` accepts only the exact current qualification identity and same
 input; legacy receipts fail closed. A new qualification is not a recovered
 historical run or an execution grant. External artifacts are not rewritten.
+
+The online owner preserves issued/exited/skipped receipts and cleans only its
+confirmed descendants. Execution cuts off at 2670 seconds, reserving 30 seconds
+for cleanup within the 2700-second acceptance ceiling. Explicit waits use the
+remaining budget; OS scheduling and I/O cannot provide an absolute wall guarantee.
+`terminal.json` records cleanup and publication measurements; the durable final
+`owner_terminal` stdout event and external exit receipt determine any late
+finalization failure. Native acceptance requires confirmed cleanup, a finished
+watcher, exit zero, and full observed owner wall at most 2700 seconds. Charge
+eight slots times the larger actual internal/external owner wall, including all
+cleanup and receipt finalization, uncapped. A packet or CPU test is no launch grant.
 
 The former finite-panel producers, model-specific convenience loaders, stage
 controllers and repair/closeout chains are no longer maintained. Their useful
