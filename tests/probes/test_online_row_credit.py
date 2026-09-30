@@ -1155,24 +1155,26 @@ class OnlineCreditTest(unittest.TestCase):
             with self.assertRaises(AssertionError):o.main()
             caller.assert_not_called()
 
-    def correction_fixture_tree(self, root, arm, updates=1):
+    def correction_fixture_tree(self, root, arm, updates=1, completion=False):
         """Prediction-only persisted fixtures for the actual readback/offline consumers."""
         from pathlib import Path
         checkpoint=root/'anchor';checkpoint.mkdir(exist_ok=True)
         if not (checkpoint/'inference_payload_manifest.json').exists():
             o.p.write(checkpoint/'inference_payload_manifest.json',dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
                 adapter=dict(status='present',files=[]),special_token_embedding_delta=dict(status='present',files=[])))
-        qual=self.correction_qualifier(root,checkpoint)
+        qual=self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)
         qual['correction']['manifest_sha256']=o.p.digest(checkpoint/'inference_payload_manifest.json')
         qual['sha256']={str(x):o.p.digest(x) for x in (o.INPUTS,o.RETAINED,o.p.POLICY)}
         if not (root/'qualification.json').exists():o.p.write(root/'qualification.json',qual)
         else:self.assertEqual(o.p.load(root/'qualification.json'),qual)
         output=Path(qual['pairs'][str(updates)][arm]);output.mkdir(parents=True)
-        weight=int(arm=='treatment');recipe=o.identity(qual['correction'])
+        weight=1 if completion else int(arm=='treatment');recipe=o.identity(qual['correction'])
         binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe,checkpoint=str(checkpoint),manifest_sha256=qual['correction']['manifest_sha256'],
             weight=.1,schema_geometry=True,rollout_backend='vllm')
+        if completion:binding['completion_arm']=arm
         execution=dict(arm=arm,microbatch=1,activation_checkpointing=False)
         image,record,_=self.fixture([[10,20,100,200],[10,20,100,200],[300,400,500,600]])
+        if completion:image['objects'].append(dict(coco_ann_id=99,desc='person',bbox_2d=[700,10,800,100]))
         images={i:dict(image,image_id=i) for i in range(18)}
         inputs=[{k:v for k,v in dict(record,image_id=i).items() if k in o.p.load(o.INPUTS)[0]} for i in range(18)]
         for step in o.export_steps(updates):
@@ -1187,6 +1189,7 @@ class OnlineCreditTest(unittest.TestCase):
                 params={str(j):str(version) for j in range(590)};snapshot=o.identity(params)
                 producer=dict(kind='live_online',update=version,parameter_sha256=snapshot,source='source',rollout_backend='vllm-local-dora-0.29.0',
                     correction_arm=arm,duplicate_weight=weight,recipe_sha256=recipe)
+                if completion:producer['completion_arm']=arm
                 o.p.write(directory/f'producer-{version}.json',dict(producer=producer,parameters=params))
                 if version:operations.append(dict(operation='refresh',identity=snapshot))
                 else:
@@ -1199,9 +1202,8 @@ class OnlineCreditTest(unittest.TestCase):
                 operations.append(dict(operation='generate',identity=snapshot))
                 rawdir=output/f'rollout-{version}'/f'rank-{rank}';rawdir.mkdir(parents=True)
                 records={i:o.seal(dict(record,image_id=i),producer) for i in range(rank,18,8)}
-                plans={i:o.credit(images[i],rec,self.t,producer,redirect_enabled=bool(weight)) for i,rec in records.items()}
+                plans={i:o.correction_plan(images[i],rec,self.t,binding) for i,rec in records.items()}
                 for i,rec in records.items():
-                    plans[i]['schema_geometry']=o.schema_geometry_errors(rec,self.t,plans[i]['observations'])
                     o.p.write(rawdir/f'{i}.json',rec)
                 o.p.write(rawdir/'complete.json',dict(status='complete',source=qual['source'],producer=producer,
                     artifacts={x.name:o.p.digest(x) for x in rawdir.glob('*.json')}))
@@ -1211,10 +1213,15 @@ class OnlineCreditTest(unittest.TestCase):
                 for job in o.jobs(list(images),rank,plans,correction_arm=arm,duplicate_weight=weight):
                     i=job['image_id'];rec=records[i];plan=plans[i]
                     if job['branch']=='trace':
-                        full=rec['prompt_token_ids']+rec['token_ids'];positions=o.trace_positions(plan,rec)
-                        seqs=[o.r.positive_sequence(images[i],rec,x,self.t) for x in plan['M']]
-                        terms=dict(M=1.,legal=1.,Gmax_unweighted=0.,Gmax_weighted=0.)
+                        selected=o.bridge_trace_plan(plan,'chain') if completion and arm=='treatment' else plan
+                        full=rec['prompt_token_ids']+rec['token_ids'];positions=o.trace_positions(selected,rec)
+                        seqs=[o.r.positive_sequence(images[i],rec,x,self.t) for x in selected['M']]
+                        terms=dict(M=float(bool(selected['M'])),legal=1.,Gmax_unweighted=0.,Gmax_weighted=0.)
                         extra=dict(geometry=dict(weight=.1,error_slots=plan['schema_geometry']['union']),schema_geometry=plan['schema_geometry'])
+                    elif job['branch']=='bridge':
+                        seqs=o.bridge_sequences(images[i],rec,plan,self.t);full=seqs[0].input_ids
+                        positions=sorted({a.causal_logits_position for s in seqs for a in s.atoms})
+                        terms=dict(B=1.,M_relocated=1.);extra={}
                     else:
                         seq=o.redirect_sequence(images[i],rec,plan['redirect'],self.t);seqs=[seq];full=seq.input_ids
                         positions=[a.causal_logits_position for a in seq.atoms];terms=dict(redirect_positive=1.,redirect_margin=1001.)
@@ -1225,6 +1232,8 @@ class OnlineCreditTest(unittest.TestCase):
                         visual_tokens=__import__('math').prod(rec['image_grid_thw'])//4,row_losses=[dict(atoms=[a.to_artifact_dict() for a in s.atoms]) for s in seqs],
                         logits_shape=[1,len(positions),len(self.t)],raw_dtype='torch.bfloat16',
                         loss=sum(terms.values()),terms=terms,logit_derivatives={k:dict(loss=v,l2=1.,linf=1.,support_rows=1) for k,v in terms.items()},**extra))
+                    if job['branch']=='bridge':forwards[-1]['row_losses']=o.bridge_row_evidence(rec,plan,seqs,None)
+                    if completion:forwards[-1]['completion_arm']=arm
                 o.p.write(directory/f'update-{version+1}.json',dict(producer=producer,optimizer_steps=[version+1],optimizer_state_count=590,lrs=[1e-5,5e-6],
                     synchronized_norms=['same']*8,forwards=forwards))
             o.p.write(directory/'vllm-operations.json',operations)
@@ -1363,15 +1372,19 @@ class OnlineCreditTest(unittest.TestCase):
                 self.receipts.append(dict(operation='generate',identity=identity))
                 return [SimpleNamespace(token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
             def close(self):pass
-        for arm,device_failure in [('control',None),('treatment',None),('control','duplicate'),('control','association')]:
+        cases=[('control',None,False),('treatment',None,False),('control','duplicate',False),('control','association',False),
+               ('control',None,True),('treatment',None,True)]
+        for arm,device_failure,completion in cases:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
-                root=Path(tmp);checkpoint=root/'anchor';qual=self.correction_qualifier(root,checkpoint)
+                root=Path(tmp);checkpoint=root/'anchor';qual=self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)
                 output=Path(qual['pairs']['1'][arm]);directory=output/'rank-0';directory.mkdir(parents=True)
                 q=SimpleNamespace(model=Tiny(),base_model_path='/base',processor=self.q.processor,tokenizer=self.t,token_identity=self.q.token_identity)
                 delta=SimpleNamespace(delta_tensors=lambda:dict(input=q.model.embed_tokens.shared_embed_delta,output=q.model.lm_head.shared_embed_delta))
                 seen=[];optimizers=[]
-                plans={x['image_id']:o.credit(image,x,self.t,self.producer,redirect_enabled=arm=='treatment') for image,x in zip(self.images,self.records)}
-                expected=o.jobs([x['image_id'] for x in self.images],0,plans,correction_arm=arm,duplicate_weight=int(arm=='treatment'))
+                weight=1 if completion else int(arm=='treatment')
+                plans={x['image_id']:(o.completion_credit(image,x,self.t,self.producer,arm) if completion else
+                                    o.credit(image,x,self.t,self.producer,redirect_enabled=bool(weight))) for image,x in zip(self.images,self.records)}
+                expected=o.jobs([x['image_id'] for x in self.images],0,plans,correction_arm=arm,duplicate_weight=weight)
                 class Optimizer(optimizer_type):
                     def __init__(self,*a,**k):super().__init__(*a,**k);self.steps=0;optimizers.append(self)
                     def step(self,*a,**k):
@@ -1396,7 +1409,7 @@ class OnlineCreditTest(unittest.TestCase):
                     else:
                         for rank in range(8):target[rank]=value
                 def consume(q_,model,batch,image,record,plan,encoding,vocab,branch,*args):
-                    self.assertIsNone(encoding);self.assertIn(branch,('trace','redirect'));self.assertEqual(optimizers[0].steps,0)
+                    self.assertIsNone(encoding);self.assertIn(branch,('trace','bridge','redirect') if completion else ('trace','redirect'));self.assertEqual(optimizers[0].steps,0)
                     seen.append(dict(image_id=image['image_id'],branch=branch))
                     return sum(q.model.parameters())*(1 if branch=='trace' else 2),dict(seen[-1])
                 write=unittest.mock.Mock()
@@ -1412,7 +1425,7 @@ class OnlineCreditTest(unittest.TestCase):
                 with ExitStack() as stack:
                     for context in contexts:stack.enter_context(context)
                     call=lambda:o.run(output,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
-                        duplicate_weight=int(arm=='treatment'),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                        duplicate_weight=weight,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
                     if device_failure:
                         with self.assertRaises(ValueError):call()
                     else:call()
@@ -1449,5 +1462,235 @@ class OnlineCreditTest(unittest.TestCase):
             loss.backward();self.assertTrue(torch.isfinite(z.grad).all());self.assertGreater(float(z.grad[0,-1].abs().sum()),0)
             sites.append(seq.atoms[d].token_type)
         self.assertEqual(sites.count('desc_text'),4);self.assertEqual(sites.count('coordinate'),11)
+
+    def recall_qualifier(self, root, checkpoint):
+        qual=self.correction_qualifier(root,checkpoint)
+        qual['correction'].update(mode='recall-error-floor-v1',arms={'control':1,'treatment':1},
+            completion={'control':'original_M_rowmean','treatment':'CHAIN_ALL_M_relocated_plus_B_mean_1_over_m_plus_k'})
+        return qual
+
+    def test_recall_actual_binding_common_correction_and_old_mode_rejection(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/marginstep256');qual=self.recall_qualifier(root,checkpoint)
+        with patch.object(o.p,'load',return_value=qual),patch.object(o.p,'digest',return_value='manifest'), \
+             patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_anchor_payload'):
+            for arm in ('control','treatment'):
+                binding=o.correction_binding(root,arm,1,checkpoint,.1,o.identity(qual['correction']))
+                self.assertEqual(binding['completion_arm'],arm)
+                with self.assertRaises(AssertionError):o.correction_binding(root,arm,0,checkpoint,.1,o.identity(qual['correction']))
+
+    def test_recall_all_admitted_budget_original_context_and_native_forward(self):
+        from types import SimpleNamespace
+        image,record,_=self.multi_fixture()
+        class Toy(torch.nn.Module):
+            def __init__(self):super().__init__();self.w=torch.nn.Parameter(torch.linspace(-.03,.03,len(self.t)))
+            def get_rope_index(self,ids,mm_token_type_ids,*,image_grid_thw,video_grid_thw,attention_mask):
+                return (attention_mask.cumsum(-1)-1).unsqueeze(0).expand(3,-1,-1),None
+            def forward(self,input_ids,logits_to_keep,**kw):
+                h=(input_ids%19).float().cumsum(-1).index_select(1,logits_to_keep)/1000
+                return SimpleNamespace(logits=h[:,:,None]*self.w)
+        Toy.t=self.t;model=Toy();q=SimpleNamespace(model=model,tokenizer=self.t)
+        batch=SimpleNamespace(inputs=dict(input_ids=torch.tensor([record['prompt_token_ids']]),attention_mask=torch.ones(1,len(record['prompt_token_ids'])),
+            image_grid_thw=torch.tensor([record['image_grid_thw']]),pixel_values=torch.tensor([[2.,3.]])))
+        ids=[image['image_id']]+list(range(100000,100017));tensor=torch.tensor;geometry=[]
+        with patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+             patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data,**{k:v for k,v in kw.items() if k!='device'})):
+            for arm in ('control','treatment'):
+                plan=o.completion_credit(image,record,self.t,self.producer,arm)
+                self.assertEqual((plan['m'],plan['k'],plan['n']),(2,4,6))
+                schedule=o.jobs(ids,0,{i:plan for i in ids},correction_arm=arm,duplicate_weight=1)
+                schedule=[dict(job,sync=False) for job in schedule if job['image_id']==image['image_id']];schedule[-1]['sync']=True
+                rows=[]
+                for job in schedule:
+                    loss,row=o.forward(q,model,batch,image,record,plan,None,self.vocab,job['branch'],geometry_weight=.1,correction_arm=arm,duplicate_weight=1)
+                    row.update(sync=job['sync'],image_weight=job['weight']);rows.append(row)
+                    model.zero_grad();loss.backward();self.assertTrue(torch.isfinite(model.w.grad).all());self.assertGreater(float(model.w.grad.abs().sum()),0)
+                    if job['branch']=='trace':
+                        geometry.append((row['geometry'],row['schema_geometry']))
+                        self.assertEqual(len(row['row_losses']),2 if arm=='control' else 0)
+                        if arm=='treatment':self.assertEqual(row['terms']['M'],0)
+                    if job['branch']=='bridge':
+                        self.assertEqual([x['kind'] for x in row['row_losses']],['B']*4+['M']*2)
+                        self.assertEqual([x['weight'] for x in row['row_losses']],[1/6]*6)
+                        repair=plan['bridge'];self.assertEqual([repair['token_ids'][j] for j in repair['original_to_repaired']],record['token_ids'])
+                        self.assertEqual(repair['B'][0]['cut'],repair['B'][1]['cut'])
+                        self.assertEqual(repair['B'][1]['positions'][0],repair['B'][0]['positions'][-1]+1)
+                        chosen={a['target_position']-len(record['prompt_token_ids']) for x in row['row_losses'] for a in x['atoms']}
+                        for observed in plan['observations']:
+                            if observed['order'] not in {x['order'] for x in plan['M']}:
+                                self.assertFalse({repair['original_to_repaired'][j] for j in observed['positions']} & chosen)
+                        self.assertNotIn(len(repair['token_ids'])-1,chosen)
+                        self.assertFalse(any(a['token_type']=='eos' for x in row['row_losses'] for a in x['atoms']))
+                # The full distributed schedule is checked separately; consume this image's actual forwards.
+                with patch.object(o,'jobs',return_value=schedule):
+                    o.verify_correction_forwards(rows,ids,0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,arm,1)
+                    bad=copy.deepcopy(rows);bad[0]['row_losses'].append({'atoms':[]})
+                    with self.assertRaises(AssertionError):o.verify_correction_forwards(bad,ids,0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,arm,1)
+                    if arm=='treatment':
+                        for mutation in ('M','weight','position','arm','missing_B'):
+                            bad=copy.deepcopy(rows)
+                            if mutation=='M':bad[0]['terms']['M']=1
+                            elif mutation=='weight':bad[1]['row_losses'][0]['weight']=1/4
+                            elif mutation=='position':bad[1]['row_losses'][0]['atoms'][0]['target_position']+=1
+                            elif mutation=='arm':bad[1]['completion_arm']='control'
+                            else:bad[1]['row_losses'].pop(0)
+                            with self.assertRaises(AssertionError):o.verify_correction_forwards(bad,ids,0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,arm,1)
+        self.assertTrue(all(x==geometry[0] for x in geometry))
+
+    def test_recall_k0_equivalence_unsupported_trailing_repeat_and_prefix_conflict(self):
+        from dataclasses import replace
+        a=[10,20,100,200];b=[300,400,500,600]
+        image,record,_=self.fixture([a,a,b,b]);plans=[o.completion_credit(image,record,self.t,self.producer,arm) for arm in ('control','treatment')]
+        for plan in plans:
+            self.assertEqual(plan['k'],0);self.assertEqual(plan['literal_repeats'],2)
+            self.assertEqual([(x['order'],x['eligible']) for x in plan['redirect_events']],[(1,True),(3,False)])
+            self.assertEqual(plan['redirect']['duplicate_order'],1)
+            self.assertEqual(o.bridge_trace_plan(plan,'chain')['M'],plan['M'])
+        positions=o.trace_positions(plans[0],record);z=torch.randn(1,len(positions),len(self.t),requires_grad=True)
+        values=[o.trace_objective(z,positions,p,record,image,self.t,self.vocab,.1)[0] for p in plans]
+        self.assertTrue(torch.equal(*values));self.assertTrue(torch.equal(torch.autograd.grad(values[0],z,retain_graph=True)[0],torch.autograd.grad(values[1],z)[0]))
+        self.assertEqual(plans[0]['redirect'],plans[1]['redirect'])
+        seq=o.redirect_sequence(image,record,plans[0]['redirect'],self.t);atom=seq.atoms[1]
+        history=list(seq.input_ids);history[atom.target_position]+=1
+        bad=replace(seq,input_ids=tuple(history),atoms=(replace(atom,token_id=history[atom.target_position]),))
+        self.assertGreater(o.compatible_prefix_targets([seq,seq])['sites'],0)
+        with self.assertRaisesRegex(AssertionError,'incompatible complete-prefix'):o.compatible_prefix_targets([seq,bad])
+
+    def test_recall_fixed18_unequal_rank_final_sync(self):
+        ids=list(range(18))
+        class Model:
+            def __init__(self):self.unsynced=0
+            def no_sync(self):self.unsynced+=1;return nullcontext()
+        for arm in ('control','treatment'):
+            plans={i:dict(completion_arm=arm,k=i%2,redirect={} if i%3==0 else {'eligible':True}) for i in ids}
+            for rank in range(8):
+                schedule=o.jobs(ids,rank,plans,correction_arm=arm,duplicate_weight=1)
+                self.assertEqual(sum(x['branch']=='trace' for x in schedule),3 if rank<2 else 2)
+                self.assertEqual(sum(x['branch']=='bridge' for x in schedule),sum(plans[i]['k'] for i in ids[rank::8]) if arm=='treatment' else 0)
+                self.assertEqual(sum(x['sync'] for x in schedule),1);self.assertTrue(schedule[-1]['sync'])
+                model=Model();x=torch.tensor(1.,requires_grad=True);optimizer=unittest.mock.Mock()
+                def consume(job):
+                    optimizer.step.assert_not_called();return x,dict(job)
+                o.r.accumulate_family_step(model,schedule,consume)
+                torch.testing.assert_close(x.grad,torch.tensor(len(schedule)*8/18))
+                self.assertEqual(model.unsynced,len(schedule)-1);optimizer.step.assert_not_called()
+                optimizer.step();optimizer.step.assert_called_once()
+
+    def test_recall_real18_native_prediction_only_supply(self):
+        from pathlib import Path
+        native=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03')
+        records=o.frozen_records(native/'control/rollout-0',[x['image_id'] for x in self.images]);by={x['image_id']:x for x in records}
+        plans=[o.completion_credit(image,by[image['image_id']],self.t,by[image['image_id']]['producer'],'treatment') for image in self.images]
+        self.assertEqual(sum(p['m'] for p in plans),222);self.assertEqual(sum(p['k'] for p in plans),288)
+        self.assertEqual(sum(p['literal_repeats'] for p in plans),10);self.assertEqual(sum(p['invalid'] for p in plans),5)
+        self.assertEqual(sum(bool(p['redirect']) for p in plans),2)
+        self.assertEqual(sum(e['eligible'] for p in plans for e in p['redirect_events']),10)
+        self.assertEqual(sum(not e['eligible'] for p in plans for e in p['redirect_events']),0)
+        self.assertEqual(sum(d['reason']=='same_category_supported' for p in plans for d in p['bridge_dispositions']),3)
+        for image,plan in zip(self.images,plans):
+            seqs=o.bridge_sequences(image,by[image['image_id']],plan,self.t)
+            rows=o.bridge_row_evidence(by[image['image_id']],plan,seqs,None)
+            self.assertEqual({x['annotation_id'] for x in rows},{x['annotation_id'] for x in plan['M']}|{x['annotation_id'] for x in plan['eligible']})
+            self.assertEqual(len(rows),plan['n']);self.assertTrue(all(x['weight']==1/plan['n'] for x in rows))
+
+    def test_recall_actual_entries_and_six_cli_dispatches(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/marginstep256');qual=self.recall_qualifier(root,checkpoint);original=o.p.load
+        def load(path):
+            if path==root/'qualification.json':return qual
+            if path==o.ENCODINGS or 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden runtime input')
+            return original(path)
+        class AtCompose(Exception):pass
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='manifest'), \
+             patch('src.artifacts.git_identity.verify_source_identity') as verify,patch.object(o,'verify_anchor_payload'), \
+             patch.object(o,'start',return_value=(0,root,[],qual['source'])),patch.object(o.p,'write'), \
+             patch('torch.distributed.init_process_group'),patch.object(o.p,'compose',side_effect=AtCompose) as compose:
+            for arm in ('control','treatment'):
+                kwargs=dict(geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
+                    duplicate_weight=1,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                with self.assertRaises(AtCompose):o.run(Path(qual['pairs']['1'][arm]),root,1,**kwargs)
+                for key,value in [('duplicate_weight',0),('recipe_sha256','stale'),('rollout_backend','hf'),('insertion_policy','chain'),('microbatch',4),('schema_geometry',False)]:
+                    compose.reset_mock()
+                    with self.assertRaises((AssertionError,ValueError)):o.run(Path(qual['pairs']['1'][arm]),root,1,**dict(kwargs,**{key:value}))
+                    compose.assert_not_called()
+                verify.side_effect=ValueError('source drift')
+                with self.assertRaisesRegex(ValueError,'source drift'):o.run(Path(qual['pairs']['1'][arm]),root,1,**kwargs)
+                verify.side_effect=None
+                for command in ('run','readback','offline'):
+                    argv=['online_row_credit',command,'--root','/cpu','--output',qual['pairs']['1'][arm],'--updates','1','--geometry-weight','.1',
+                        '--start-checkpoint',str(checkpoint),'--recipe-sha256',o.identity(qual['correction']),'--correction-arm',arm,'--duplicate-weight','1',
+                        '--rollout-backend','vllm','--schema-geometry','--microbatch','1','--activation-checkpointing','off']
+                    with patch('sys.argv',argv),patch.object(o,command) as call:
+                        o.main();self.assertEqual(call.call_args.kwargs['duplicate_weight'],1);self.assertEqual(call.call_args.kwargs['correction_arm'],arm)
+
+    def test_recall_persisted_readback_and_offline_pair_gating(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/cpu');base.mkdir(parents=True,exist_ok=True)
+        original=o.p.load
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);outputs={};events=[]
+            for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm,completion=True)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if path==o.ENCODINGS:raise AssertionError('old R encoding')
+                if path==root/'evaluator-binding.json':
+                    self.assertTrue(all((x/'readback.json').exists() for x in outputs.values()))
+                    self.assertTrue((outputs['control']/'offline-pair-inputs-frozen.json').exists());events.append('evaluator');return {'sha256':{}}
+                if path==o.r.ROOT/'cpu-03/evaluator-partitions.json':return dict(truth_sha256='offline',hidden10=[])
+                if path==o.r.TRUTH:events.append('truth');return []
+                return original(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),duplicate_weight=1,
+                rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                o.readback(outputs['control'],root,1,correction_arm='control',**kwargs)
+                with self.assertRaises(FileNotFoundError):o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,[])
+                o.readback(outputs['treatment'],root,1,correction_arm='treatment',**kwargs)
+                directory=outputs['treatment']/'rank-0';name='update-1.json';before=(directory/name).read_bytes();receipt=(directory/'complete.json').read_bytes()
+                for mutation in ('original_M','B_weight','prefix','mixed_arm'):
+                    data=original(directory/name)
+                    if mutation=='original_M':data['forwards'][0]['terms']['M']=1
+                    elif mutation=='B_weight':data['forwards'][1]['row_losses'][0]['weight']=1
+                    elif mutation=='prefix':data['forwards'][1]['input_sha256']='wrong'
+                    else:data['forwards'][1]['completion_arm']='control'
+                    (directory/name).write_text(o.p.canonical(data));complete=original(directory/'complete.json');complete['artifacts'][name]=o.p.digest(directory/name)
+                    (directory/'complete.json').write_text(o.p.canonical(complete))
+                    with self.assertRaises(AssertionError):o.readback(outputs['treatment'],root,1,correction_arm='treatment',**kwargs)
+                    (directory/name).write_bytes(before);(directory/'complete.json').write_bytes(receipt)
+                digest=o.p.digest
+                with patch.object(o.p,'digest',side_effect=lambda path:'offline' if path==o.r.TRUTH else digest(path)), \
+                     patch.object(o.r,'assess_outputs',return_value=[]),patch.object(o.r,'family_outcomes',return_value={}):
+                    o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,['evaluator','truth'])
+                supply=original(outputs['control']/'correction-supply.json')[0]['images']
+                self.assertTrue(all(x['k']==1 and x['selected_duplicates']==1 and x['completion_consumed']==[] for x in supply))
+                events.clear();raw=outputs['treatment']/'rollout-1/rank-0/0.json';raw.write_text('{}')
+                with self.assertRaises(AssertionError):o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,[])
+
+    def test_recall_eight_update_persisted_exports_and_versions(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/cpu');base.mkdir(parents=True,exist_ok=True)
+        original=o.p.load
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'treatment',8,completion=True)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if path==o.ENCODINGS or 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden input')
+                return original(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),correction_arm='treatment',duplicate_weight=1,
+                rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                o.readback(output,root,8,**kwargs)
+                self.assertEqual([x['update'] for x in original(output/'readback.json')],list(range(9)))
+                self.assertEqual(sorted(int(x.name.split('-')[1]) for x in output.glob('checkpoint-*')),[0,1,2,4,8])
+                (output/'checkpoint-4/identity.json').unlink()
+                with self.assertRaises(AssertionError):o.readback(output,root,8,**kwargs)
 
 if __name__=='__main__':unittest.main()
