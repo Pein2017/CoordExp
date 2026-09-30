@@ -122,3 +122,20 @@ GPU0's eight other roughly8GiB error consumers align with our eight vLLM childre
 ## Device-route repair: CPU accepted, native validation pending
 
 Lead independently replayed9 routing and46 online tests at27317e4bd88a5794b82aa15a29f408802b662d87; all passed, together with compile/knowledge/diff checks,33 artifact seals,141/145 source closures and six real CLI dispatches under CPU mocks. Actual spawn import inheritance has retained RED/GREEN evidence;69 original online definitions and the frozen scientific recipe are unchanged. A focused independent review found no material blocker. These checks establish CPU contract behavior, not actual eight-GPU placement or historical OOM causation. Evidence: /data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json. A fresh one-update paired1 technical release uses native-paired1-02 with the unchanged45-minute/no-retry/workload ceiling; no native or efficacy result is yet accepted, and paired8 remains unreleased.
+
+
+## Native paired1-03: technical acceptance, unfavorable one-update coverage
+
+Technical receipt: /data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json. Lead verified all six exits, actual8-device placement perarm,590 finite/nonzero parameter-gradient norms perrank, one optimizer action, exports and ordered refresh/acquisition. Both live redirects delivered positive and margin gradients at their exact causal sites. Fresh maintained readback/offline replay reproduced12 outputs. Actual work was72 requests/14293 generated tokens/38 HF forwards; owner wall285.510s. Realized longest completion617 does not qualify worst-case3084 memory. No efficacy or historical OOM causal acceptance.
+
+The fixed18-image denominator is retained513 plus hidden57 (full570). Raw/category refer to the maintained evaluator; these counts do not establish physical precision or exhaustive physical coverage.
+
+| Snapshot | Retained raw/category | Hidden raw/category | Full raw/category | Literal repeats | Invalid | Tokens |
+|---|---:|---:|---:|---:|---:|---:|
+| Matched version0 | 226/222 | 25/25 | 251/247 | 10 | 5 | 3724 |
+| Control version1 | 221/218 | 28/28 | 249/246 | 4 | 1 | 3462 |
+| Treatment version1 | 217/215 | 24/24 | 241/239 | 3 | 2 | 3383 |
+
+Treatment has9 fewer valid rows than control: the net accounting difference is8 fewer matched full annotations and1 fewer unmatched row; this is not a correspondence claiming which physical rows were removed. Seven of the8 net full-raw difference lie on the other16 images, a posthoc subgroup rather than a new estimand. Both redirect targets were already covered and remain covered. For images14038/351017, treatment's incoming-prefix LCP is19/6 tokens, before trained cuts113/258; control's is26/27. Neither updated natural trajectory revisits either exact training prefix. See /data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native03-review-01/outcome-decomposition.json for all per-image and identity details.
+
+Scientific disposition: no accepted benefit; do not scale merely because repeats decreased. This one-update slice does not establish long-run ineffectiveness. Paired8 remains unreleased. The cheapest proposed next discriminator is fixed-prefix margin readback at the two sites across initial/control1/treatment1 checkpoints, with no extra natural acquisition; this remains unexecuted and requires a separately frozen scope.

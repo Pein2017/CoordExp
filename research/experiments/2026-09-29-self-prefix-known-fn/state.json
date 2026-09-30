@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
-  "evidence": "none",
-  "status": "device-route-cpu-accepted-native-paired1-released",
+  "evidence": "partial",
+  "status": "native-paired1-accepted-coverage-unfavorable-continuation-unreleased",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "xhigh",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "One fresh native paired1 technical packet only; paired8 and efficacy remain unreleased",
-  "job_state": "930 assigned new native-paired1-02; actual launch and terminal evidence pending",
+  "boundary": "Paired1 native technical acceptance only; no new GPU work or paired8 release",
+  "job_state": "native-paired1-03 complete; six exits0 and63 recorded owned processes absent",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -28,7 +28,7 @@
   "cpu_accepted_commit": "73ae473b395dcef2ccb7f2ea3d7494d8bc17e760",
   "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
   "runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-runtime-acceptance-01.json",
-  "scientific_status": "CPU routing accepted; actual CUDA placement and full native path unproven; historical OOM cause unestablished",
+  "scientific_status": "One-update matched contrast: treatment full raw241 versus control249; no efficacy acceptance, no general ineffectiveness or physical-precision claim",
   "efficiency_cpu_commit": "81c15617c5cc598fecf46619fe407ac0404e8a17",
   "efficiency_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/lead-cpu-acceptance-01.json",
   "efficiency_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/efficiency-01/replay-benchmark-01",
@@ -63,10 +63,13 @@
   "correction_output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01",
   "correction_cpu_accepted_commit": "479c88ae5f22abc0c40910a284c216af60f80452",
   "correction_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-cpu-acceptance-01.json",
-  "correction_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-02/lead-release.json",
-  "correction_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-02",
+  "correction_runtime_release": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03/lead-release.json",
+  "correction_runtime_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03",
   "correction_native_failure": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-failure-disposition-01.json",
   "device_route_cpu_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/device-routing-fix-01",
   "device_route_cpu_accepted_commit": "27317e4bd88a5794b82aa15a29f408802b662d87",
-  "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json"
+  "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json",
+  "correction_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json",
+  "owner_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-owner-cpu-acceptance-01.json",
+  "next_decision": "Freeze a discriminating next question and live deterioration thresholds; proposed2-sites x3-checkpoint fixed-prefix readback is not released"
 }
