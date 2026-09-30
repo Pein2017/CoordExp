@@ -9,6 +9,16 @@ from probes import online_row_credit as o
 from src.losses.vocab import build_token_vocabulary_groups
 
 
+def routing_row(rank):
+    from uuid import UUID
+    physical=dict(uuid='GPU-'+str(UUID(int=rank+1)),pci_domain_id=0,pci_bus_id=103+rank,pci_device_id=0)
+    parent=dict(pid=10000+rank,ppid=9999,nspid=f'NSpid:\t{10000+rank}',visibility=None,physical=physical)
+    request=dict(schema='coordexp-vllm-device-1',rank=rank,device=rank,physical_token=str(rank),parent=parent)
+    child=dict(pid=20000+rank,ppid=parent['pid'],nspid=f'NSpid:\t{20000+rank}')
+    device=dict(requested=request,child=child,inherited_visibility=str(rank),effective_visibility=str(rank),logical_device=0,physical=dict(physical))
+    return dict(rank=rank,request=request,startup=dict(identity='snapshot',device=device))
+
+
 class OnlineCreditTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1170,7 +1180,7 @@ class OnlineCreditTest(unittest.TestCase):
             o.p.write(directory/'identity.json',{'payload':o.p.digest(directory/'payload')})
         for rank in range(8):
             directory=output/f'rank-{rank}';directory.mkdir()
-            for name,data in [('entry.json',{'source':qual['source']}),('execution.json',execution),('correction.json',binding),('geometry.json',binding),
+            for name,data in [('entry.json',{'source':qual['source'],'rank':rank,'pid':10000+rank}),('execution.json',execution),('correction.json',binding),('geometry.json',binding),
                               ('schema-geometry.json',{'enabled':True}),('online-policy.json',{'rollout_backend':'vllm'})]:o.p.write(directory/name,data)
             operations=[]
             for version in range(updates+1):
@@ -1179,7 +1189,13 @@ class OnlineCreditTest(unittest.TestCase):
                     correction_arm=arm,duplicate_weight=weight,recipe_sha256=recipe)
                 o.p.write(directory/f'producer-{version}.json',dict(producer=producer,parameters=params))
                 if version:operations.append(dict(operation='refresh',identity=snapshot))
-                else:o.p.write(directory/'vllm-startup.json',dict(identity=snapshot))
+                else:
+                    device=routing_row(rank);device['startup']['identity']=snapshot
+                    o.p.write(directory/'vllm-device-request.json',device['request'])
+                    o.p.write(directory/'vllm-startup.json',device['startup'])
+                    devices=[routing_row(i) for i in range(8)]
+                    for row in devices:row['startup']['identity']=snapshot
+                    o.p.write(directory/'vllm-devices.json',devices)
                 operations.append(dict(operation='generate',identity=snapshot))
                 rawdir=output/f'rollout-{version}'/f'rank-{rank}';rawdir.mkdir(parents=True)
                 records={i:o.seal(dict(record,image_id=i),producer) for i in range(rank,18,8)}
@@ -1245,6 +1261,35 @@ class OnlineCreditTest(unittest.TestCase):
                         (output/'readback.json').unlink(missing_ok=True);mutate(name,change)
                         with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
                         self.assertFalse((output/'readback.json').exists());(directory/name).write_bytes(before);(directory/'complete.json').write_bytes(receipt)
+                    for name,change,error in [
+                        ('vllm-startup.json',lambda x:x.pop('device'),ValueError),
+                        ('vllm-startup.json',lambda x:x['device'].update(logical_device=1),ValueError),
+                        ('vllm-device-request.json',lambda x:x.update(rank=1),ValueError),
+                        ('vllm-devices.json',lambda x:x.reverse(),AssertionError),
+                        ('entry.json',lambda x:x.update(pid=999),AssertionError)]:
+                        before=(directory/name).read_bytes();receipt=(directory/'complete.json').read_bytes()
+                        (output/'readback.json').unlink(missing_ok=True);mutate(name,change)
+                        with self.assertRaises(error):o.readback(output,root,updates,**kwargs)
+                        self.assertFalse((output/'readback.json').exists())
+                        (directory/name).write_bytes(before);(directory/'complete.json').write_bytes(receipt)
+                    # Forge matching manifests and all tables: uniqueness must still reject.
+                    saved={f:f.read_bytes() for f in output.glob('rank-*/*.json')}
+                    try:
+                        first=original(output/'rank-0/vllm-device-request.json')['parent']['physical']
+                        other=output/'rank-1'
+                        request=original(other/'vllm-device-request.json');request['parent']['physical']=copy.deepcopy(first)
+                        startup=original(other/'vllm-startup.json');startup['device']['requested']=request;startup['device']['physical']=copy.deepcopy(first)
+                        (other/'vllm-device-request.json').write_text(o.p.canonical(request));(other/'vllm-startup.json').write_text(o.p.canonical(startup))
+                        devices=[dict(rank=i,request=original(output/f'rank-{i}/vllm-device-request.json'),
+                                      startup=original(output/f'rank-{i}/vllm-startup.json')) for i in range(8)]
+                        for i in range(8):
+                            shard=output/f'rank-{i}';(shard/'vllm-devices.json').write_text(o.p.canonical(devices))
+                            complete=original(shard/'complete.json')
+                            for name in ('vllm-devices.json','vllm-device-request.json','vllm-startup.json'):complete['artifacts'][name]=o.p.digest(shard/name)
+                            (shard/'complete.json').write_text(o.p.canonical(complete))
+                        with self.assertRaisesRegex(ValueError,'duplicate physical'):o.readback(output,root,updates,**kwargs)
+                    finally:
+                        for f,data in saved.items():f.write_bytes(data)
                     checkpoint=output/f'checkpoint-{updates}/identity.json';before=checkpoint.read_bytes();checkpoint.unlink()
                     with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
                     checkpoint.write_bytes(before)
@@ -1308,14 +1353,17 @@ class OnlineCreditTest(unittest.TestCase):
             def __init__(self,*a,**k):self.no_sync_calls=0
             def no_sync(self):self.no_sync_calls+=1;return nullcontext()
         class Rollout:
-            def __init__(self,**kw):self.identity=kw['identity'];self.startup={'identity':self.identity};self.receipts=[]
+            def __init__(self,**kw):
+                assert kw['device']==0 and kw['trainer_rank']==0
+                device=routing_row(0);self.device_request=device['request'];self.startup=device['startup']
+                self.identity=kw['identity'];self.startup['identity']=self.identity;self.receipts=[]
             def refresh(self,model,delta,*,identity):self.identity=identity;self.receipts.append(dict(operation='refresh',identity=identity))
             def generate(self,requests,*,budgets,identity,**kw):
                 assert identity==self.identity and budgets==[3084]*len(requests)
                 self.receipts.append(dict(operation='generate',identity=identity))
                 return [SimpleNamespace(token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
             def close(self):pass
-        for arm in ('control','treatment'):
+        for arm,device_failure in [('control',None),('treatment',None),('control','duplicate'),('control','association')]:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
                 root=Path(tmp);checkpoint=root/'anchor';qual=self.correction_qualifier(root,checkpoint)
                 output=Path(qual['pairs']['1'][arm]);directory=output/'rank-0';directory.mkdir(parents=True)
@@ -1334,7 +1382,14 @@ class OnlineCreditTest(unittest.TestCase):
                     if path==o.ENCODINGS or 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden runtime read')
                     return original(path)
                 def gather(target,value):
-                    if isinstance(value,list):
+                    if isinstance(value,dict) and 'startup' in value:
+                        for rank in range(8):target[rank]=routing_row(rank)
+                        target[0]=value
+                        if device_failure=='association':target.reverse()
+                        if device_failure=='duplicate':
+                            target[1]['request']['parent']['physical']=copy.deepcopy(target[0]['request']['parent']['physical'])
+                            target[1]['startup']['device']['physical']=copy.deepcopy(target[0]['request']['parent']['physical'])
+                    elif isinstance(value,list):
                         producer=value[0]['producer'];all_records={x['image_id']:o.seal(x,producer) for x in self.records}
                         for rank in range(8):target[rank]=[all_records[i] for i in sorted(all_records)[rank::8]]
                         target[0]=value
@@ -1356,8 +1411,15 @@ class OnlineCreditTest(unittest.TestCase):
                      patch.object(o,'forward',side_effect=consume),patch.dict('os.environ',{'LOCAL_RANK':'0'})]
                 with ExitStack() as stack:
                     for context in contexts:stack.enter_context(context)
-                    o.run(output,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
+                    call=lambda:o.run(output,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
                         duplicate_weight=int(arm=='treatment'),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                    if device_failure:
+                        with self.assertRaises(ValueError):call()
+                    else:call()
+                if device_failure:
+                    self.assertEqual(optimizers[0].steps,0);self.assertEqual(seen,[])
+                    self.assertFalse(any(x.args[0].name=='producer-0.json' for x in write.call_args_list))
+                    continue
                 self.assertEqual(optimizers[0].steps,1)
                 updates=[x.args[1] for x in write.call_args_list if x.args[0].name=='update-1.json']
                 self.assertEqual(len(updates),1);self.assertEqual(updates[0]['optimizer_steps'],[1]);self.assertEqual(updates[0]['optimizer_state_count'],590)

@@ -13,9 +13,115 @@ import os
 from pathlib import Path
 import time
 import traceback
+from uuid import UUID
 
 from src.qwen.generation import ContinuationResult, ContinuationTrace, trim_suffix
 from src.qwen.native import NativeRequest, _open_image
+
+
+def _physical_identity(device):
+    import torch
+    properties = torch.cuda.get_device_properties(device)
+    try:
+        result = dict(uuid='GPU-'+str(UUID(str(properties.uuid).removeprefix('GPU-'))),
+                      **{name: getattr(properties, name) for name in
+                         ('pci_domain_id', 'pci_bus_id', 'pci_device_id')})
+        if any(type(result[k]) is not int or result[k] < 0 for k in result if k != 'uuid'):
+            raise ValueError('invalid PCI identity')
+        return result
+    except (AttributeError, ValueError, TypeError) as exc:
+        raise RuntimeError('required CUDA UUID/PCI identity unavailable') from exc
+
+
+def _process_identity():
+    return dict(pid=os.getpid(), ppid=os.getppid(),
+                nspid=next(line for line in Path('/proc/self/status').read_text().splitlines()
+                           if line.startswith('NSpid:')))
+
+
+def _physical_token(visibility, device):
+    if type(device) is not int or device < 0:
+        raise ValueError('invalid requested CUDA ordinal')
+    if visibility is None:
+        return str(device)
+    tokens = visibility.split(',')
+    if device >= len(tokens) or any(not t or t != t.strip() for t in tokens):
+        raise ValueError('requested CUDA ordinal absent from visibility mask')
+    token = tokens[device]
+    if not (token.isdecimal() or token.startswith('GPU-')):
+        raise ValueError('unsupported CUDA visibility token')
+    return token
+
+
+def _check_physical(physical, token):
+    if not isinstance(physical, dict) or set(physical) != {'uuid', 'pci_domain_id', 'pci_bus_id', 'pci_device_id'}:
+        raise ValueError('missing physical device identity')
+    if physical['uuid'] != 'GPU-'+str(UUID(physical['uuid'].removeprefix('GPU-'))):
+        raise ValueError('invalid GPU UUID identity')
+    if any(type(physical[k]) is not int or physical[k] < 0 for k in physical if k != 'uuid'):
+        raise ValueError('invalid PCI identity')
+    if token.startswith('GPU-') and not physical['uuid'].lower().startswith(token.lower()):
+        raise ValueError('visibility UUID differs from selected parent device')
+
+
+def _check_process(process):
+    if type(process.get('pid')) is not int or type(process.get('ppid')) is not int or min(process['pid'], process['ppid']) <= 0:
+        raise ValueError('missing process identity')
+    raw = process.get('nspid')
+    if not isinstance(raw, str) or not raw.startswith('NSpid:') or int(raw.split()[-1]) != process['pid']:
+        raise ValueError('missing raw NSpid identity')
+
+
+def validate_device_receipt(receipt, request):
+    """Validate persisted admission evidence without querying a device."""
+    try:
+        if request['schema'] != 'coordexp-vllm-device-1' or type(request['rank']) is not int or request['rank'] < 0:
+            raise ValueError('invalid requested rank')
+        parent = request['parent']; token = request['physical_token']
+        _check_process(parent)
+        if token != _physical_token(parent['visibility'], request['device']):
+            raise ValueError('requested visibility association differs')
+        _check_physical(parent['physical'], token)
+        if receipt['requested'] != request:
+            raise ValueError('child request differs from parent')
+        _check_process(receipt['child'])
+        if receipt['child']['ppid'] != parent['pid']:
+            raise ValueError('child parent PID differs')
+        if receipt['inherited_visibility'] != token or receipt['effective_visibility'] != token or type(receipt['logical_device']) is not int or receipt['logical_device'] != 0:
+            raise ValueError('child visibility/logical device differs')
+        _check_physical(receipt['physical'], token)
+        if receipt['physical'] != parent['physical']:
+            raise ValueError('child physical device differs from parent')
+    except (KeyError, TypeError, AttributeError, ValueError, IndexError) as exc:
+        raise ValueError(f'invalid vLLM device receipt: {exc}') from exc
+
+
+def validate_device_assignments(rows, devices):
+    if len(rows) != len(devices):
+        raise ValueError('missing rank device evidence')
+    try:
+        for rank, (row, device) in enumerate(zip(rows, devices, strict=True)):
+            request = row['request']
+            if type(row['rank']) is not int or row['rank'] != rank or request['rank'] != rank or request['device'] != device:
+                raise ValueError('reordered or mismatched rank/device association')
+            validate_device_receipt(row['startup']['device'], request)
+    except (KeyError, TypeError) as exc:
+        raise ValueError('missing rank device evidence') from exc
+    physical = [row['request']['parent']['physical'] for row in rows]
+    if len({x['uuid'] for x in physical}) != len(rows) or len({(x['pci_domain_id'], x['pci_bus_id'], x['pci_device_id']) for x in physical}) != len(rows):
+        raise ValueError('duplicate physical vLLM device')
+
+
+def _child_device_receipt(request):
+    import torch
+    inherited = os.environ.get('CUDA_VISIBLE_DEVICES')
+    if inherited != request['physical_token'] or torch.cuda.device_count() != 1 or torch.cuda.current_device() != 0:
+        raise ValueError('child CUDA visibility/logical device admission failed')
+    receipt = dict(requested=request, child=_process_identity(), inherited_visibility=inherited,
+                   effective_visibility=os.environ.get('CUDA_VISIBLE_DEVICES'), logical_device=0,
+                   physical=_physical_identity(0))
+    validate_device_receipt(receipt, request)
+    return receipt
 
 
 def _refresh_model(model, adapter, embeddings, identity):
@@ -76,14 +182,13 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
             image.close()
 
 
-def _worker(connection, device, base_model, checkpoint, identity, options, log_path):
+def _worker(connection, request, base_model, checkpoint, identity, options, log_path):
     # A separate process avoids sharing vLLM's process group with training DDP.
     for key in list(os.environ):
         if key in {"RANK", "LOCAL_RANK", "WORLD_SIZE", "LOCAL_WORLD_SIZE",
                    "MASTER_ADDR", "MASTER_PORT", "GROUP_RANK", "ROLE_RANK",
                    "ROLE_WORLD_SIZE"} or key.startswith("TORCHELASTIC_"):
             os.environ.pop(key)
-    os.environ["CUDA_VISIBLE_DEVICES"] = device
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     engine = None
@@ -91,6 +196,7 @@ def _worker(connection, device, base_model, checkpoint, identity, options, log_p
         with open(log_path, "a", buffering=1) as log:
             os.dup2(log.fileno(), 1)
             os.dup2(log.fileno(), 2)
+            device_receipt = _child_device_receipt(request)
             from vllm import LLM, ModelRegistry
             ModelRegistry.register_model(
                 "CoordExpDoRAQwen3VLForConditionalGeneration",
@@ -109,7 +215,7 @@ def _worker(connection, device, base_model, checkpoint, identity, options, log_p
                                   "identity": identity}},
                 **options,
             )
-            connection.send({"ok": True, "value": {"identity": identity,
+            connection.send({"ok": True, "value": {"identity": identity, "device": device_receipt,
                                                      "startup_seconds": time.monotonic()-started}})
             while True:
                 command, payload = connection.recv()
@@ -158,7 +264,7 @@ class VllmDoraRollout:
     """One synchronous engine per trainer GPU; no concurrent refresh/generation."""
 
     def __init__(self, *, base_model, checkpoint, identity, log_path,
-                 device=None, max_model_len=16000, max_num_seqs=3,
+                 device=None, trainer_rank=None, max_model_len=16000, max_num_seqs=3,
                  kv_cache_memory_bytes=2 * 1024**3, gpu_memory_utilization=0.2,
                  enforce_eager=False, timeout=1800):
         import torch
@@ -169,7 +275,12 @@ class VllmDoraRollout:
             raise ValueError("a nonempty snapshot identity is required")
         device_index = torch.cuda.current_device() if device is None else device
         visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-        physical_device = visible.split(",")[device_index] if visible else str(device_index)
+        physical_device = _physical_token(visible, device_index)
+        self.device_request = dict(schema='coordexp-vllm-device-1',
+            rank=int(os.environ.get('RANK', '0')) if trainer_rank is None else trainer_rank,
+            device=device_index, physical_token=physical_device,
+            parent=dict(_process_identity(), visibility=visible, physical=_physical_identity(device_index)))
+        _check_physical(self.device_request['parent']['physical'], physical_device)
         log_path = Path(log_path).resolve()
         log_path.parent.mkdir(parents=True, exist_ok=True)
         context = mp.get_context("spawn")
@@ -185,15 +296,28 @@ class VllmDoraRollout:
             options['compilation_config'] = dict(mode=0, cudagraph_mode='FULL_DECODE_ONLY',
                                                  cudagraph_capture_sizes=list(range(1, max_num_seqs+1)))
         self._process = context.Process(target=_worker, args=(
-            child, physical_device, str(Path(base_model).resolve()),
+            child, self.device_request, str(Path(base_model).resolve()),
             str(Path(checkpoint).resolve()), identity,
             options,
             str(log_path)), name="coordexp-vllm-rollout")
-        self._process.start()
+        try:
+            os.environ['CUDA_VISIBLE_DEVICES'] = physical_device
+            self._process.start()
+        except BaseException:
+            child.close()
+            self._connection.close()
+            self._closed = True
+            raise
+        finally:
+            if visible is None:
+                os.environ.pop('CUDA_VISIBLE_DEVICES', None)
+            else:
+                os.environ['CUDA_VISIBLE_DEVICES'] = visible
         child.close()
         atexit.register(self.close)
         try:
             self.startup = self._receive()["value"]
+            validate_device_receipt(self.startup['device'], self.device_request)
         except BaseException:
             self.close()
             raise

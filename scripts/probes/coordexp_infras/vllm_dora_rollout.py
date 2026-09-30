@@ -54,7 +54,7 @@ def main():
     from probes import online_row_credit as o
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import NativeRequest, prepare_replay
-    from src.qwen.vllm_rollout import VllmDoraRollout
+    from src.qwen.vllm_rollout import VllmDoraRollout, validate_device_assignments
     from src.artifacts.git_identity import capture_source_identity, verify_source_identity
 
     sources = [str(path.relative_to(REPO)) for path in (REPO/'src').rglob('*.py')]
@@ -127,9 +127,18 @@ def main():
         began = time.monotonic()
         with VllmDoraRollout(base_model=q.base_model_path, checkpoint=args.checkpoint,
                              identity=initial, log_path=args.output/'vllm-worker.log',
+                             device=local_rank, trainer_rank=rank,
                              max_num_seqs=2, enforce_eager=args.eager) as engine:
             receipt['vllm_startup'] = dict(**engine.startup,
                                            parent_seconds=time.monotonic()-began)
+            local_device = dict(rank=rank, request=engine.device_request, startup=engine.startup)
+            devices = [None]*world
+            if world > 1:
+                dist.all_gather_object(devices, local_device)
+            else:
+                devices[0] = local_device
+            validate_device_assignments(devices, [local_rank] if world == 1 else list(range(world)))
+            receipt['vllm_devices'] = devices
             hf_warm, hf_warm_seconds = hf_generate([0])
             receipt['hf_warmup'] = dict(seconds=hf_warm_seconds,
                                         token_counts=[len(x.token_ids) for x in hf_warm])

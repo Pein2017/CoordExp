@@ -1,11 +1,177 @@
+import os
+from pathlib import Path
+import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from uuid import UUID
 
 import pytest
 
 from probes import online_row_credit as online
 from src.qwen.native import NativeRequest
 from src.qwen.vllm_rollout import VllmDoraRollout, _generate
+
+
+# Captured by the fresh spawn interpreter, before its target executes.
+IMPORT_VISIBILITY = os.environ.get('CUDA_VISIBLE_DEVICES')
+
+
+def cpu_spawn_worker(connection, request, *args):
+    startup = {'identity': args[2], 'import_visibility': IMPORT_VISIBILITY}
+    if isinstance(request, dict):
+        startup['device'] = dict(requested=request, child=dict(pid=os.getpid(),ppid=os.getppid(),
+            nspid=next(x for x in Path('/proc/self/status').read_text().splitlines() if x.startswith('NSpid:'))),
+            inherited_visibility=IMPORT_VISIBILITY,effective_visibility=os.environ.get('CUDA_VISIBLE_DEVICES'),
+            logical_device=0,physical=request['parent']['physical'])
+    connection.send({'ok': True, 'value': startup})
+    connection.recv()
+    connection.close()
+
+
+class DeviceRoutingTest(unittest.TestCase):
+    def test_fresh_spawn_import_inherits_selected_mask_and_restores_parent(self):
+        import tempfile
+        from src.qwen import vllm_rollout as v
+        props=SimpleNamespace(uuid='11111111-1111-1111-1111-111111111111',
+                              pci_domain_id=0,pci_bus_id=103,pci_device_id=0)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'CUDA_VISIBLE_DEVICES':'7,5,3','RANK':'2'}), \
+             patch('torch.cuda.get_device_properties',return_value=props),patch('torch.cuda.current_device',return_value=2), \
+             patch.object(v,'_worker',cpu_spawn_worker):
+            with VllmDoraRollout(base_model='/base',checkpoint='/anchor',identity='snapshot',
+                                 log_path=Path(tmp)/'worker.log',device=2) as engine:
+                self.assertEqual(engine.startup['import_visibility'],'3')
+                self.assertEqual(os.environ['CUDA_VISIBLE_DEVICES'],'7,5,3')
+
+    def test_start_failure_and_success_restore_absence_and_uuid_mask(self):
+        import tempfile
+        from src.qwen import vllm_rollout as v
+        props=SimpleNamespace(uuid=str(UUID(int=1)),pci_domain_id=0,pci_bus_id=103,pci_device_id=0)
+        for visibility,device in ((None,0),('7,5,3',1),('GPU-'+str(UUID(int=2))+',GPU-'+str(UUID(int=1)),1)):
+            for fail in (False,True):
+                context=Mock(); parent,child=Mock(),Mock();context.Pipe.return_value=(parent,child)
+                env=dict(os.environ);env.pop('CUDA_VISIBLE_DEVICES',None)
+                if visibility is not None:env['CUDA_VISIBLE_DEVICES']=visibility
+                responses=[]
+                def process(*,target,args,name):
+                    request=args[1];proc=Mock();proc.is_alive.return_value=False
+                    def start():
+                        self.assertEqual(request['device'],device)
+                        self.assertEqual(os.environ['CUDA_VISIBLE_DEVICES'],request['physical_token'])
+                        if fail:raise OSError('start failed')
+                        row=device_row(0);row['request']=request
+                        row['startup']['device'].update(requested=request,child=dict(pid=2,ppid=request['parent']['pid'],nspid='NSpid:\t2'),
+                            inherited_visibility=request['physical_token'],effective_visibility=request['physical_token'],physical=request['parent']['physical'])
+                        responses.append({'value':row['startup']})
+                    proc.start.side_effect=start
+                    return proc
+                context.Process.side_effect=process
+                with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,env,clear=True), \
+                     patch('torch.cuda.get_device_properties',return_value=props), \
+                     patch('torch.cuda.current_device',side_effect=AssertionError('drifted current ordinal must not be used')), \
+                     patch.object(v.mp,'get_context',return_value=context),patch.object(VllmDoraRollout,'_receive',side_effect=lambda:responses.pop()):
+                    if fail:
+                        with self.assertRaisesRegex(OSError,'start failed'):
+                            VllmDoraRollout(base_model='/base',checkpoint='/anchor',identity='snapshot',log_path=Path(tmp)/'log',device=device,trainer_rank=0)
+                        parent.close.assert_called_once();child.close.assert_called_once()
+                    else:
+                        with VllmDoraRollout(base_model='/base',checkpoint='/anchor',identity='snapshot',log_path=Path(tmp)/'log',device=device,trainer_rank=0):pass
+                    self.assertEqual(dict(os.environ),env)
+
+    def test_child_wrong_or_missing_identity_fails_before_engine_allocation(self):
+        import tempfile
+        from src.qwen import vllm_rollout as v
+        row=device_row(0);request=row['request'];props=SimpleNamespace(uuid=str(UUID(int=1)),pci_domain_id=0,pci_bus_id=103,pci_device_id=0)
+        for visibility,count,current,properties in [('0',1,1,props),('0',8,0,props),('wrong',1,0,props),
+                 ('0',1,0,SimpleNamespace()),('0',1,0,SimpleNamespace(uuid=str(UUID(int=9)),pci_domain_id=0,pci_bus_id=103,pci_device_id=0))]:
+            engine=Mock();connection=Mock()
+            with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'CUDA_VISIBLE_DEVICES':visibility}), \
+                 patch('torch.cuda.device_count',return_value=count),patch('torch.cuda.current_device',return_value=current), \
+                 patch('torch.cuda.get_device_properties',return_value=properties),patch.object(v,'_process_identity',return_value=row['startup']['device']['child']), \
+                 patch.object(v.os,'dup2'),patch.dict('sys.modules',{'vllm':SimpleNamespace(LLM=engine,ModelRegistry=Mock())}):
+                v._worker(connection,request,'/base','/anchor','snapshot',{},str(Path(tmp)/'log'))
+            engine.assert_not_called()
+            self.assertFalse(connection.send.call_args.args[0]['ok'])
+
+    def test_permuted_numeric_uuid_and_explicit_ordinal_ignore_current_drift(self):
+        from src.qwen import vllm_rollout as v
+        self.assertEqual(v._physical_token('7,5,3',1),'5')
+        self.assertEqual(v._physical_token('GPU-'+str(UUID(int=2))+',GPU-'+str(UUID(int=1)),1),'GPU-'+str(UUID(int=1)))
+        self.assertEqual(v._physical_token(None,7),'7')
+        for visibility,device in [('',0),('7,5',2),('7, 5',1),('7',True)]:
+            with self.assertRaises(ValueError):v._physical_token(visibility,device)
+        with self.assertRaisesRegex(ValueError,'selected parent'):
+            v._check_physical(device_row(0)['request']['parent']['physical'],'GPU-'+str(UUID(int=2)))
+
+    def test_all_rank_missing_duplicate_and_reordered_evidence(self):
+        import copy
+        from src.qwen.vllm_rollout import validate_device_assignments
+        rows=[device_row(i) for i in range(8)];validate_device_assignments(rows,list(range(8)))
+        for change in (lambda x:x.pop(),lambda x:x.reverse(),
+                       lambda x:x[1]['startup']['device'].update(logical_device=1),
+                       lambda x:x[1]['startup']['device'].pop('physical'),
+                       lambda x:x[1]['request']['parent'].update(physical=x[0]['request']['parent']['physical'])):
+            wrong=copy.deepcopy(rows);change(wrong)
+            with self.assertRaises(ValueError):validate_device_assignments(wrong,list(range(8)))
+
+    def test_infrastructure_entry_explicit_device_and_saved_admission(self):
+        import json,runpy,tempfile,torch
+        from contextlib import ExitStack
+        from probes import iterative_positive as p
+        module=runpy.run_path(str(Path(__file__).resolve().parents[2]/'scripts/probes/coordexp_infras/vllm_dora_rollout.py'))
+        entry=module['main'];source=p.load(online.INPUTS)
+        q=SimpleNamespace(model=torch.nn.Linear(1,1),base_model_path='/base',
+            tokenizer=SimpleNamespace(convert_tokens_to_ids=lambda x:99,pad_token_id=0),
+            processor=SimpleNamespace(apply_chat_template=lambda *a,**k:'chat'))
+        for duplicate in (False,True):
+            with tempfile.TemporaryDirectory() as tmp:
+                checkpoint=Path(tmp)/'anchor';checkpoint.mkdir();output=Path(tmp)/'run';engine=Mock()
+                row=device_row(1);engine.device_request=row['request'];engine.startup=row['startup']
+                engine.__enter__=Mock(return_value=engine);engine.__exit__=Mock(return_value=False)
+                constructor=Mock(return_value=engine)
+                def gather(rows,value):
+                    rows[:]=[device_row(0),value]
+                    if duplicate:
+                        rows[0]['request']['parent']['physical']=dict(value['request']['parent']['physical'])
+                        rows[0]['startup']['device']['physical']=dict(value['request']['parent']['physical'])
+                sync=Mock(side_effect=RuntimeError('CPU stop after device admission'))
+                contexts=[patch.dict(os.environ,{'WORLD_SIZE':'2','RANK':'1','LOCAL_RANK':'1'}),
+                    patch('sys.argv',['smoke','--checkpoint',str(checkpoint),'--output',str(output),'--learning-step']),
+                    patch.object(p,'load',side_effect=lambda path:source if path==online.INPUTS else {'prompt':{'system':'s','user':'u'}}),
+                    patch.object(p,'compose',return_value=(q,None,{})),patch.object(online,'native_batch',return_value=None),
+                    patch.dict(entry.__globals__,{'snapshot':lambda model:('snapshot',590)}),
+                    patch('src.artifacts.git_identity.capture_source_identity',return_value={}),
+                    patch('torch.cuda.set_device'),patch('torch.cuda.synchronize',sync),
+                    patch('torch.nn.parallel.DistributedDataParallel',side_effect=lambda model,**kw:model),
+                    patch('torch.distributed.init_process_group'),patch('torch.distributed.destroy_process_group'),
+                    patch('torch.distributed.all_gather_object',side_effect=gather),
+                    patch('src.qwen.vllm_rollout.VllmDoraRollout',constructor)]
+                with ExitStack() as stack:
+                    for context in contexts:stack.enter_context(context)
+                    with self.assertRaisesRegex(ValueError if duplicate else RuntimeError,'duplicate physical|CPU stop'):entry()
+                self.assertEqual(constructor.call_args.kwargs['device'],1)
+                self.assertEqual(constructor.call_args.kwargs['trainer_rank'],1)
+                engine.generate.assert_not_called()
+                receipt=json.loads((output/'rank-1/receipt.json').read_text())
+                if duplicate:sync.assert_not_called()
+                else:self.assertEqual([r['request']['device'] for r in receipt['vllm_devices']],[0,1])
+
+
+def device_row(rank):
+    physical=dict(uuid='GPU-'+str(UUID(int=rank+1)),pci_domain_id=0,pci_bus_id=103+rank,pci_device_id=0)
+    parent=dict(pid=10000+rank,ppid=9999,nspid=f'NSpid:\t{10000+rank}',visibility=None,physical=physical)
+    request=dict(schema='coordexp-vllm-device-1',rank=rank,device=rank,physical_token=str(rank),parent=parent)
+    child=dict(pid=20000+rank,ppid=parent['pid'],nspid=f'NSpid:\t{20000+rank}')
+    device=dict(requested=request,child=child,inherited_visibility=str(rank),effective_visibility=str(rank),logical_device=0,physical=dict(physical))
+    return dict(rank=rank,request=request,startup=dict(identity='snapshot',device=device))
+
+
+def load_tests(loader, tests, pattern):
+    # unittest discovery also executes the three original function tests.
+    tests.addTests(unittest.FunctionTestCase(test) for test in (
+        test_rollout_backend_requires_explicit_fresh_qualification,
+        test_rollout_never_accepts_changed_prompt_or_false_stop,
+        test_refresh_590_tensors_uses_bytes_not_per_tensor_file_descriptors))
+    return tests
 
 
 def test_rollout_backend_requires_explicit_fresh_qualification():

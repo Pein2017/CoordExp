@@ -1003,11 +1003,21 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     dist.barrier()
     rollout=None
     if rollout_backend=='vllm':
-        from src.qwen.vllm_rollout import VllmDoraRollout
+        from src.qwen.vllm_rollout import VllmDoraRollout, validate_device_assignments
         rollout=VllmDoraRollout(base_model=q.base_model_path,checkpoint=output/'checkpoint-0',
-            identity=identity(parameter_identity(q.model)),log_path=out/'vllm.log')
-        requests=vllm_requests(q,inputs,local)
+            identity=identity(parameter_identity(q.model)),log_path=out/'vllm.log',
+            device=int(os.environ['LOCAL_RANK']),trainer_rank=rank)
+        p.write(out/'vllm-device-request.json',rollout.device_request)
         p.write(out/'vllm-startup.json',rollout.startup)
+        devices=[None]*8
+        try:
+            dist.all_gather_object(devices,dict(rank=rank,request=rollout.device_request,startup=rollout.startup))
+            validate_device_assignments(devices,list(range(8)))
+        except BaseException:
+            rollout.close()
+            raise
+        p.write(out/'vllm-devices.json',devices)
+        requests=vllm_requests(q,inputs,local)
     for version in range(updates+1):
         fingerprint=parameter_identity(q.model); hashes=[None]*8
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
@@ -1140,6 +1150,15 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
+    if rollout_backend=='vllm':
+        from src.qwen.vllm_rollout import validate_device_assignments
+        devices=[dict(rank=rank,request=p.load(output/f'rank-{rank}'/'vllm-device-request.json'),
+                      startup=p.load(output/f'rank-{rank}'/'vllm-startup.json')) for rank in range(8)]
+        validate_device_assignments(devices,list(range(8)))
+        for rank,row in enumerate(devices):
+            directory=output/f'rank-{rank}';entry=p.load(directory/'entry.json')
+            assert entry['rank']==rank and entry['pid']==row['request']['parent']['pid'], 'trainer device owner drift'
+            assert p.load(directory/'vllm-devices.json')==devices, 'rank device evidence drift'
     if insertion_policy is not None or correction is not None:
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):

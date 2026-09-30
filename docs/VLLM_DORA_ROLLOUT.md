@@ -15,6 +15,12 @@ model after an update. HF continues to own forward, backward and optimizer state
 - One isolated spawned engine per trainer GPU, avoiding the trainer's DDP
   process group. Default KV allocation is 2 GiB; max context is 16,000 tokens
   and max concurrent requests is 3. The full model and activations are additional.
+- The caller selects its logical CUDA ordinal explicitly. The ordinal maps through
+  the parent's visibility mask (including permuted numeric or GPU UUID tokens).
+  The child inherits its single-device mask before Python/module imports; the
+  parent's environment is restored exactly after spawn, including start failure.
+  Before allocating the engine, the child must see one device at logical ordinal
+  zero with the parent's actual UUID and PCI identity. Missing identity fails closed.
 - Native full-decode CUDA graphs are enabled for batches 1..3, without
   TorchInductor compilation. `enforce_eager=True` disables them. The startup
   free-memory gate is 20% of device capacity (`gpu_memory_utilization=0.2`);
@@ -47,6 +53,7 @@ The generic API also supports a caller-owned loop:
 
 ```python
 with VllmDoraRollout(base_model=base, checkpoint=start, identity=version,
+                     device=local_rank, trainer_rank=rank,
                      log_path=output / "vllm.log") as rollout:
     # requests are NativeRequest objects with expected_token_ids and image identity.
     results = rollout.generate(requests, budgets=budgets, eos_token_id=eos,
@@ -54,6 +61,21 @@ with VllmDoraRollout(base_model=base, checkpoint=start, identity=version,
     # The caller runs its existing HF forward/backward/optimizer step.
     rollout.refresh(model, embedding_deltas, identity=next_version)
 ```
+
+Startup now includes the parent request and physical identity, child PID/PPID and
+raw `NSpid` line, inherited/effective visibility, logical ordinal, UUID and PCI
+fields. A single-value `NSpid` line establishes only that namespace PID; it does
+not establish a host/NVML PID. Research saves the independent parent request,
+startup receipt and ordered eight-rank admission table. Every child must match
+its requested rank/ordinal, and all physical UUIDs and PCI identities must be
+distinct before any generation. Readback checks these associations independently
+of artifact hashes and rejects absent, mismatched or reordered evidence. The
+infrastructure entry also selects its ordinal/rank explicitly and saves admission.
+
+These checks address a proven import-time masking risk. CPU mocks establish the
+contract; they cannot establish actual CUDA placement or retrospectively identify
+the cause of the stopped eight-rank OOM. Older infrastructure receipts do not
+contain this direct placement evidence and cannot qualify it retrospectively.
 
 ## Technical qualification
 
