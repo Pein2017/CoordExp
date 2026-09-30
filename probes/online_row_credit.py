@@ -17,6 +17,8 @@ RELEASE_SHA = 'b5354c24780367c65249e4a6b6df21e71054d73a593a15c33c573785406b1664'
 CONTAINMENT = dict(baseline='fresh_full18_version0',complete_literal_repeats_le_initial=True,
     geometry_invalid_le_initial=True,malformed_max=0,caps_max=0,retained_category_percent=95,
     initial_valid_image_nonempty=True)
+IDENTITY_SELECTION = 'first_eligible_literal_duplicate_per_identity_round'
+IDENTITY_NORMALIZATION = 'complete_positive_plus_margin_mean_1_over_K_per_image'
 
 
 def identity(value):
@@ -76,7 +78,7 @@ def semantic_site(positive, negative, tokenizer):
     raise ValueError('no shared-prefix semantic divergence')
 
 
-def credit(image, record, tokenizer, producer, redirect_enabled=True, all_events=False):
+def credit(image, record, tokenizer, producer, redirect_enabled=True, all_events=False, identity_events=False):
     verify_producer([record], producer, [image['image_id']])
     assert record['crop'] == [0,0,image['width'],image['height']]
     rows, malformed = observations(record, tokenizer)
@@ -92,7 +94,8 @@ def credit(image, record, tokenizer, producer, redirect_enabled=True, all_events
         else:
             disagreements.append(dict(order=row['order'], annotation_id=obj['coco_ann_id']))
     positives = [dict(o, annotation_id=matched[o['order']]['coco_ann_id']) for o in first_valid if o['order'] in matched]
-    redirect = None; events = []
+    assert not identity_events or all_events
+    redirect = None; events = []; redirects=[]; selected_keys=set()
     canonical = sorted(image['objects'], key=lambda o:(o['bbox_2d'][0],o['bbox_2d'][1],o['coco_ann_id']))
     for duplicate in ((o for o in rows if not o['first']) if redirect_enabled else ()):
         prior = [o for o in rows if o['order'] < duplicate['order']]
@@ -122,13 +125,26 @@ def credit(image, record, tokenizer, producer, redirect_enabled=True, all_events
                 token_ids=ids,negative_ids=bad,prefix_cut=cut,positions=list(range(cut,cut+len(ids))),
                 site=site,duplicate_order=duplicate['order'])
             break
-        events.append(dict(order=duplicate['order'],eligible=selected is not None,veto=veto))
+        event=dict(order=duplicate['order'],eligible=selected is not None,veto=veto)
+        if identity_events:
+            chosen=selected is not None and duplicate['key'] not in selected_keys
+            event.update(identity=duplicate['key'],selected=chosen,
+                reason='no_trusted_alternative' if selected is None else ('identity_already_selected' if not chosen else None))
+            if chosen:
+                selected_keys.add(duplicate['key'])
+                selected.update(duplicate_identity=duplicate['key'])
+                redirects.append(selected)
+        events.append(event)
         if selected is not None:
             if redirect is None:redirect = selected
             if not all_events:break
-    return dict(image_id=image['image_id'],producer=producer,raw_identity=record['raw_identity'],M=positives,
+    result=dict(image_id=image['image_id'],producer=producer,raw_identity=record['raw_identity'],M=positives,
         redirect=redirect,observations=rows,redirect_events=events,malformed=malformed,category_disagreements=disagreements,
         complete_rows=len(rows),literal_repeats=sum(not o['first'] for o in rows),invalid=sum(not o['valid'] for o in rows))
+    if identity_events:
+        for target in redirects:target['event_weight']=1/len(redirects)
+        result.update(redirect_selection=IDENTITY_SELECTION,redirects=redirects)
+    return result
 
 
 def bridge_credit(image, record, tokenizer, producer, policy, schema_geometry=False):
@@ -196,7 +212,7 @@ def bridge_rows(record, plan, branch_index=None):
 
 
 def bridge_sequences(image, record, plan, tokenizer, branch_index=None):
-    expected=(completion_credit(image,record,tokenizer,plan['producer'],plan['completion_arm']) if 'completion_arm' in plan else
+    expected=(completion_credit(image,record,tokenizer,plan['producer'],plan['completion_arm'],'redirects' in plan) if 'completion_arm' in plan else
               bridge_credit(image,record,tokenizer,plan['producer'],plan['policy'],'schema_geometry' in plan))
     assert expected==plan, 'bridge plan drift'
     tokens,rows,_,_=bridge_rows(record,plan,branch_index)
@@ -231,17 +247,19 @@ def compatible_prefix_targets(sequences):
     return dict(sites=len(seen),shared_compatible=shared)
 
 
-def completion_credit(image, record, tokenizer, producer, arm):
+def completion_credit(image, record, tokenizer, producer, arm, identity_events=False):
     assert arm in ('control','treatment')
     plan=bridge_credit(image,record,tokenizer,producer,'chain',True)
-    original=credit(image,record,tokenizer,producer,all_events=True)
+    original=credit(image,record,tokenizer,producer,all_events=True,identity_events=identity_events)
     assert original['M']==plan['M']
     plan.update(redirect=original['redirect'],redirect_events=original['redirect_events'],completion_arm=arm)
+    if identity_events:plan.update(redirect_selection=IDENTITY_SELECTION,redirects=original['redirects'])
     if arm=='treatment' and plan['k']:
         tokens,rows,_,_=bridge_rows(record,plan)
         sequences=[r.positive_sequence(image,dict(record,token_ids=tokens),row,tokenizer) for row in rows]
     else:sequences=[r.positive_sequence(image,record,row,tokenizer) for row in plan['M']]
-    if plan['redirect']:sequences.append(redirect_sequence(image,record,plan['redirect'],tokenizer))
+    for target in (plan['redirects'] if identity_events else ([plan['redirect']] if plan['redirect'] else [])):
+        sequences.append(redirect_sequence(image,record,target,tokenizer))
     assert all(len(seq.input_ids)<=p.MAX_LENGTH for seq in sequences), 'completion history exceeds native bound'
     plan['prefix_compatibility']=compatible_prefix_targets(sequences)
     return plan
@@ -249,7 +267,7 @@ def completion_credit(image, record, tokenizer, producer, arm):
 
 def correction_plan(image, record, tokenizer, correction):
     if 'completion_arm' in correction:
-        return completion_credit(image,record,tokenizer,record['producer'],correction['completion_arm'])
+        return completion_credit(image,record,tokenizer,record['producer'],correction['completion_arm'],correction.get('redirect_selection')==IDENTITY_SELECTION)
     plan=credit(image,record,tokenizer,record['producer'],redirect_enabled=bool(correction['duplicate_weight']))
     plan['schema_geometry']=schema_geometry_errors(record,tokenizer,plan['observations'])
     return plan
@@ -522,7 +540,9 @@ def redirect_objective(logits, positions, sequence, target, prompt_length, vocab
     z = logits[0,positions.index(pos)].float()
     margin = F.softplus(1+z[target['site']['bad']]-z[target['site']['good']])
     positive,_ = p.image_loss(logits,sequence,vocab,positions)
-    return positive+margin, dict(redirect_positive=positive,redirect_margin=margin)
+    weight=target.get('event_weight',1)
+    assert 0<weight<=1
+    return weight*(positive+margin), dict(redirect_positive=weight*positive,redirect_margin=weight*margin)
 
 
 def preservation_entry(image, record, tokenizer):
@@ -673,8 +693,12 @@ def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), insertio
             assert completion is None or completion==correction_arm
             assert duplicate_weight==(1 if completion else int(correction_arm=='treatment'))
             result += [dict(image_id=i,branch=b,weight=8/18) for b in
-                       ['trace']+(['bridge'] if completion=='treatment' and plans[i]['k'] else [])+
-                       (['redirect'] if duplicate_weight and plans[i]['redirect'] else [])]
+                       ['trace']+(['bridge'] if completion=='treatment' and plans[i]['k'] else [])]
+            if duplicate_weight:
+                if 'redirects' in plans[i]:
+                    assert plans[i]['redirect_selection']==IDENTITY_SELECTION
+                    result += [dict(image_id=i,branch='redirect',branch_index=j,weight=8/18) for j in range(len(plans[i]['redirects']))]
+                elif plans[i]['redirect']:result.append(dict(image_id=i,branch='redirect',weight=8/18))
         return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
     assert duplicate_weight==0
     if insertion_policy is not None:
@@ -809,6 +833,8 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
     lineage=None
     original_plan=plan
     completion=plan.get('completion_arm')
+    if record['producer'].get('redirect_selection')==IDENTITY_SELECTION or 'redirect_selection' in plan:
+        assert plan==completion_credit(image,record,q.tokenizer,record['producer'],completion,True), 'identity correction plan drift'
     if correction_arm is not None:
         assert correction_arm in ('control','treatment') and completion in (None,correction_arm)
         assert duplicate_weight==(1 if completion else int(correction_arm=='treatment'))
@@ -836,7 +862,12 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         assert [a.to_artifact_dict() for a in sequence.atoms]==encoding['atoms']
         full = sequence.input_ids; positions = tuple(a.causal_logits_position for a in sequence.atoms)
     elif branch=='redirect':
-        sequence = redirect_sequence(image,record,plan['redirect'],q.tokenizer)
+        if 'redirects' in plan:
+            assert isinstance(branch_index,int) and 0<=branch_index<len(plan['redirects'])
+            target=plan['redirects'][branch_index]
+        else:
+            assert branch_index is None;target=plan['redirect']
+        sequence = redirect_sequence(image,record,target,q.tokenizer)
         full = sequence.input_ids; positions = tuple(a.causal_logits_position for a in sequence.atoms)
     else:
         assert branch=='trace'
@@ -854,7 +885,7 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
     elif branch=='R':
         loss,terms,rows = retained_credit(logits,sequence,row_ids,vocab,positions)
     elif branch=='redirect':
-        loss,terms = redirect_objective(logits,positions,sequence,plan['redirect'],len(record['prompt_token_ids']),vocab)
+        loss,terms = redirect_objective(logits,positions,sequence,target,len(record['prompt_token_ids']),vocab)
         rows = []
     else:
         loss,terms = trace_objective(logits,positions,plan,record,image,q.tokenizer,vocab,geometry_weight,original_plan['n'] if insertion_policy is not None else None); rows = []
@@ -890,11 +921,12 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
             evidence['row_losses']=[dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences]
         if completion:evidence['completion_arm']=completion
         if branch=='redirect':
-            target=plan['redirect'];d=target['site']['offset'];site=target['site'];z=logits[0,d].float()
+            d=target['site']['offset'];site=target['site'];z=logits[0,d].float()
             g,=torch.autograd.grad(terms['redirect_margin'],logits,retain_graph=True)
             evidence['redirect']=dict(target=target,site_kind=sequence.atoms[d].token_type,
                 good_logit=float(z[site['good']].detach()),bad_logit=float(z[site['bad']].detach()),
                 good_derivative=float(g[0,d,site['good']]),bad_derivative=float(g[0,d,site['bad']]))
+            if 'redirects' in plan:evidence['redirect'].update(event_index=branch_index,event_weight=target['event_weight'])
     return loss,evidence
 
 
@@ -905,6 +937,8 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
     assert len(forwards)==len(expected)
     for row,job in zip(forwards,expected):
         i=job['image_id'];record=records[i];plan=plans[i]
+        if record['producer'].get('redirect_selection')==IDENTITY_SELECTION or 'redirect_selection' in plan:
+            assert plan==completion_credit(images[i],record,tokenizer,record['producer'],arm,True), 'identity correction plan drift'
         assert (row['image_id'],row['branch'],row['sync'],row['image_weight'])==(i,job['branch'],job['sync'],job['weight'])
         assert row['producer']==record['producer'] and row['raw_identity']==record['raw_identity']
         assert row['correction']==dict(arm=arm,duplicate_weight=weight,plan_sha256=identity(plan))
@@ -923,15 +957,20 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
             full=sequences[0].input_ids;positions=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
             assert set(row['terms'])=={'B','M_relocated'} and 'redirect' not in row
         else:
-            target=plan['redirect'];seq=redirect_sequence(images[i],record,target,tokenizer);sequences=[seq]
+            if 'redirects' in plan:
+                target=plan['redirects'][job['branch_index']]
+                assert row['redirect']['event_index']==job['branch_index'] and row['redirect']['event_weight']==target['event_weight']==1/len(plan['redirects'])
+            else:target=plan['redirect']
+            seq=redirect_sequence(images[i],record,target,tokenizer);sequences=[seq]
             full=seq.input_ids;positions=tuple(a.causal_logits_position for a in seq.atoms)
             assert set(row['terms'])=={'redirect_positive','redirect_margin'}
             detail=row['redirect'];assert detail['target']==target and detail['site_kind']==seq.atoms[target['site']['offset']].token_type
             assert all(math.isfinite(detail[k]) for k in ('good_logit','bad_logit','good_derivative','bad_derivative'))
-            assert 0<=detail['bad_derivative']<=1 and detail['good_derivative']==-detail['bad_derivative']
+            event_weight=target.get('event_weight',1)
+            assert 0<=detail['bad_derivative']<=event_weight and detail['good_derivative']==-detail['bad_derivative']
             import torch.nn.functional as F
             import torch
-            margin=float(F.softplus(torch.tensor(1+detail['bad_logit']-detail['good_logit'])))
+            margin=event_weight*float(F.softplus(torch.tensor(1+detail['bad_logit']-detail['good_logit'])))
             assert math.isclose(row['terms']['redirect_margin'],margin,rel_tol=1e-5,abs_tol=1e-6)
         assert row['tokens']==len(full) and row['input_sha256']==identity(list(full)) and row['positions']==list(positions)
         assert row['logits_shape']==[1,len(positions),len(tokenizer)]
@@ -1001,9 +1040,10 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         return None
     assert arm in ('control','treatment')
     assert not any(k in qual for k in ('bridge','geometry','preservation','witness'))
-    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1','recall-error-floor-v2')
-    completion=spec['mode'] in ('recall-error-floor-v1','recall-error-floor-v2')
-    guarded=spec['mode']=='recall-error-floor-v2'
+    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3')
+    completion=spec['mode'] in ('recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3')
+    guarded=spec['mode'] in ('recall-error-floor-v2','recall-error-floor-v3')
+    identity_events=spec['mode']=='recall-error-floor-v3'
     if guarded:assert spec['containment']==CONTAINMENT
     else:assert 'containment' not in spec
     assert spec['arms']==({'control':1,'treatment':1} if completion else {'control':0,'treatment':1}) and spec['updates']==[1,8]
@@ -1011,7 +1051,9 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
     if completion:
         assert spec['completion']=={'control':'original_M_rowmean','treatment':'CHAIN_ALL_M_relocated_plus_B_mean_1_over_m_plus_k'}
     else:assert 'completion' not in spec
-    assert spec['event']=='earliest_eligible_literal_duplicate_per_image_round'
+    assert spec['event']==(IDENTITY_SELECTION if identity_events else 'earliest_eligible_literal_duplicate_per_image_round')
+    if identity_events:assert spec['event_normalization']==IDENTITY_NORMALIZATION
+    else:assert 'event_normalization' not in spec
     assert spec['objective']=='positive_row_plus_first_semantic_divergence_softplus_1'
     assert spec['optimizer']==dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711)
     assert qual['rollout_backend']=='vllm' and qual['schema_geometry'] is True and geometry_weight==.1
@@ -1025,6 +1067,7 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
                  manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm')
     if completion:binding['completion_arm']=arm
     if guarded:binding['containment']=dict(CONTAINMENT)
+    if identity_events:binding['redirect_selection']=IDENTITY_SELECTION
     return binding
 
 
@@ -1166,6 +1209,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if rollout is not None:producer['rollout_backend']='vllm-local-dora-0.29.0'
         if correction is not None:producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
         if correction is not None and 'completion_arm' in correction:producer['completion_arm']=correction_arm
+        if correction is not None and 'redirect_selection' in correction:producer['redirect_selection']=correction['redirect_selection']
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
         q.model.eval();records=[];before=time.monotonic()
         if rollout is not None:
@@ -1418,6 +1462,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert producer['rollout_backend']=='vllm-local-dora-0.29.0' and producer['source']==receipt['source']['commit']
             assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(correction_arm,duplicate_weight,recipe_sha256)
             assert producer.get('completion_arm')==correction.get('completion_arm')
+            assert producer.get('redirect_selection')==correction.get('redirect_selection')
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']
@@ -1467,6 +1512,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                 assert producer['rollout_backend']=='vllm-local-dora-0.29.0'
                 assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(arm,expected['duplicate_weight'],recipe_sha256)
                 assert producer.get('completion_arm')==expected.get('completion_arm')
+                assert producer.get('redirect_selection')==expected.get('redirect_selection')
                 directory=path/f"rollout-{row['update']}"
                 records=frozen_records(directory,ids,freeze=True);verify_producer(records,producer,ids)
                 assert p.digest(directory/'frozen.json')==row['frozen_sha256']
