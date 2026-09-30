@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Distinguish detection metrics, assignment policies, category namespaces and annotation-relative errors.
 tags: [eval, coco, matching, metrics, diagnosis]
-updated: 2026-09-09
+updated: 2026-09-30
 ---
 
 # Detection metric interpretation
@@ -87,6 +87,6 @@ Do not rename a parser-valid unmatched row simply “invalid”: that can sugges
 the wrong loss or intervention.
 
 For a counter change, retain parser/drop and population counts and compare the
-actual owner sets before recomputing derived metrics. Follow
-[the evaluation workflow](WORKFLOW.md) for execution; no model rerun is implied
+actual owner sets before recomputing derived metrics. Use the
+`coordexp-infer-eval-workflow` Skill for execution; no model rerun is implied
 by a correction confined to a derived evaluator with complete valid raw inputs.

@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Current Swift inference and detection-evaluation artifact boundaries.
 tags: [eval, contract, jsonl]
-updated: 2026-09-09
+updated: 2026-09-30
 ---
 
 # Evaluation Artifact Reference
@@ -69,8 +69,8 @@ before reduction. Arbitrary constant confidence, a renamed raw JSONL, or an
 old confidence-postop carrier does not satisfy this contract.
 
 Use the owning spec/source for exact required fields and score-channel rules;
-[WORKFLOW.md](WORKFLOW.md) gives the current command. The interpretation page
-separately explains [what a metric means](INTERPRETATION.md).
+the `coordexp-infer-eval-workflow` Skill gives current commands. The
+interpretation page separately explains [what a metric means](INTERPRETATION.md).
 
 ## Failure Policy
 
@@ -93,11 +93,11 @@ and overlays are not outputs of this aggregate consumer.
 Current Swift review is owned by [`src/vis/`](../../src/vis) through
 [`scripts/visualize_detection.py`](../../scripts/visualize_detection.py).
 It consumes run artifacts via its own loader and matching/rendering contract;
-use the [review command](WORKFLOW.md#review-predictions). Do not require a
+use the review command in the `coordexp-infer-eval-workflow` Skill. Do not require a
 legacy `vis_resources/gt_vs_pred.jsonl` sidecar for this direct Swift route.
 
 ## Read Next
 
-Select [WORKFLOW.md](WORKFLOW.md) for operation or
+Select the `coordexp-infer-eval-workflow` Skill for operation or
 [INTERPRETATION.md](INTERPRETATION.md) for metric meaning. Use
 [ARTIFACTS.md](../ARTIFACTS.md) only for broader artifact ownership.
