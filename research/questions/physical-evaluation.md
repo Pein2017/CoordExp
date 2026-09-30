@@ -60,6 +60,66 @@ Do not move confirmation images into training, infer hallucination from FP alone
 
 Reopen a physical label only with identified new visual evidence and a versioned adjudication. Keep common ambiguity shared across compared arms. A finite audit is not a population precision/FN estimate, and candidate-only review cannot reveal objects missed by every generator.
 
+## COCO/LVIS proxy review: missing target is a different population
+
+The 2026-09-27 exploratory review was produced from main by session
+`01a0e2e2-ef29-7291-9045-f631930359c1`. This section distills those recorded
+findings; it is not a new visual review or independent precision validation.
+The retained artifact root is
+`/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/`.
+Its original input/sample hashes remain in the unchanged JSON contracts.
+
+In `audit-20260927-v1`, each relation has 32 fixed source-positive,
+COCO-target-unannotated images, stratified with up to eight COCO validation
+images. Human presence judgments were made before consulting target status.
+`sample.jsonl`, `contract.json`, source-specific `*.labels.jsonl`, and `results.json`
+separate image presence from source-box usability; the exact source box is not
+assumed to localize another entity. Recorded yes/no/uncertain counts were:
+keyboard 30/0/2 (30 usable boxes); tablecloth-to-dining-table 7/22/3 (6 usable);
+faucet-to-sink 4/28/0 (0 usable); ski-pole-to-skis 11/16/5 (0 usable);
+license-plate-to-car 0/30/2 (0 usable); soap-to-bottle 5/20/7 (4 usable).
+These are unweighted finite image-level counts from one review, not population
+precision or missing-object estimates. Uncertain/negative or embedded cases
+require notes, and nonpositive presence has no applicable target-box judgment.
+
+The strongest counterexample to co-occurrence-based admission is the selection
+shift: in `person-and-stable-mappings-20260927`, all 16 sampled dress and all 16
+sampled hat source instances in person-unannotated images failed to establish a
+real wearer, despite about 94% co-occurrence in the annotated population. Eight
+sampled person-proxy cases without COCO person context contained five rejected
+part/depiction cases and three unresolved tiny people. The old 1,766 person
+proxies were not a verified census of new physical owners. An overlap threshold
+alone cannot separate two occluding people from a part of one person.
+
+The keyboard geometry readback in `audit-20260927-v1/keyboard_coco_style.json`
+records 453/1,512 embedded keyboards and 1,567/1,795 separate keyboards matched
+to COCO keyboard boxes. This is an observed annotation-style difference, not a
+universal COCO rule. Tablecloth scene inference (14 high/7 medium/11 low) is a
+separate subjective judgment: eight high-inference cases still had no visible
+table boundary. Unknown LVIS target status is neither a negative nor a positive;
+verified-negative and non-exhaustive category flags remain distinct.
+
+### Export version boundary and reopening
+
+The first two review rounds did not export v2. The later `v2-export-20260927`
+records a separate export and its `validation_receipt.json`. Weighted v2 retains
+weak person/context candidates; hard v2 excludes them and includes selected
+car/truck subclasses at the current trainer's full object weight. The weighted
+supervision sidecar is not consumed by that trainer. Armchair was withheld after
+counterexamples; soap-to-bottle and embedded-laptop keyboard proxies were removed.
+No object-count cap was introduced. Recorded train/val hard-view counts are
+884,035/37,430 objects, including 34,088/1,095 proxies; recorded weighted counts
+are 938,123/40,500 objects. These are export counts, not calibrated physical truth
+or an observed training gain. Dataset payloads and the pre-existing v2 exporter
+were not changed by the output migration.
+
+Reopen hard-label admission only with versioned evidence on the target-absent
+population, separating independent owner, visible extent, depiction, category
+and source-box localization. Keep weak nomination apart from hard supervision.
+The original four Markdown source identities and verified migration/recovery
+paths are in the root `route-owned-outputs-and-migrate-legacy` change; current
+meaning lives here rather than in a parallel report archive.
+
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

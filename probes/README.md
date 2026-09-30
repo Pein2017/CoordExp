@@ -29,3 +29,17 @@ results and exact historical recovery points are in the existing catalog.
 Core training still retains its consumed DoRA/loss/packing mechanisms, regardless
 of scientific novelty. New implementation requires an actual current question or
 consumer, not another broad default directory.
+
+## Scope-bound HF compatibility diagnostic
+
+`python -m probes.runtime_compat --help` is import-safe and loads no model.
+Pass explicit `--checkpoint`, `--inputs`, `--retained`, `--encodings`, `--policy`
+and a fresh `--output` under this worktree's outputs. `--check-inputs` only checks
+readability, row identities and input hashes; it does not qualify a checkpoint or
+GPU execution. Actual execution requires clean source and separate GPU authority.
+The compose/native-batch dependency still consumes `probes.iterative_positive.POLICY`;
+the explicit policy must match it. This is the retained fixed-bank recipe, not a
+new generic loader, training run, vLLM benchmark or evidence of numerical parity.
+The saved 2026-09-29 result is relocated to
+`outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/`; original source and
+producer mappings live in the root OpenSpec migration receipt.

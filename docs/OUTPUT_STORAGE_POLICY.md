@@ -6,6 +6,29 @@ stops or Git publication. [Worktree rules](BRANCH_AND_WORKTREE_POLICY.md) govern
 source integration; [research conventions](../research/CONVENTIONS.md) govern
 scientific interpretation and evidence.
 
+## Resolve this branch's output owner
+
+Research Probes writes branch-owned runs, JSON transport receipts and rendered
+assets to `/data/CoordExp/.worktrees/research-probes/outputs/`. Do not derive a new
+output root from an old input path or a historical run constant. Those constants
+remain frozen consumer bindings, not defaults for a new direction.
+Human reports/protocols belong to their existing `research/` question/unit;
+maintained scripts/configs belong to their source owner. Disposable dispatch
+messages belong to task-owned `.local/scratch/`, not the run directory.
+
+The shared-root rule is owned by `/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`:
+root `outputs/` contains only selected durable cross-worktree assets, never an
+entire branch run merely because another worktree reads it. Sharing requires a
+real verified copy and original producer/run/config/data provenance, not a
+symlink or the destination checkout's HEAD. Main-owned assets use main's linked
+worktree; they do not become Research Probes assets.
+
+This explicit maintenance task can migrate verified inactive assets; ordinary
+research cleanup still does not authorize external moves. Existing root runs
+with live writers, frozen paths, unknown recovery or generated package metadata
+remain named HOLDs in `/data/CoordExp/openspec/changes/route-owned-outputs-and-migrate-legacy/`.
+Do not rewrite old receipts or recreate retired archive/code-snapshot trees.
+
 ## Keep purpose and ownership separate
 
 - Current reusable execution belongs to its existing `src/` owner; retained

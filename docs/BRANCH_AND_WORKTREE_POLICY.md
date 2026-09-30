@@ -5,6 +5,9 @@ Named cleanup target: `research-probes-web-codex` at
 `/data/CoordExp/.worktrees/research-probes-web-codex`.
 Production and infrastructure worktrees are outside research cleanup ownership.
 Resolve the registered Project and canonical path before every write phase.
+Branch-owned outputs stay under that physical owner checkout; root shared assets
+and the separate main-owned linked checkout follow `docs/OUTPUT_STORAGE_POLICY.md`.
+A storage move does not change a run's producer or authorize source integration.
 
 Preserve all existing dirty work. Do not reset, clean, auto-stash or overwrite
 unrelated changes. A local checkpoint commit preserves owned uncommitted work;
