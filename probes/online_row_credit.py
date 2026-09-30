@@ -967,9 +967,13 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
             detail=row['redirect'];assert detail['target']==target and detail['site_kind']==seq.atoms[target['site']['offset']].token_type
             assert all(math.isfinite(detail[k]) for k in ('good_logit','bad_logit','good_derivative','bad_derivative'))
             event_weight=target.get('event_weight',1)
-            assert 0<=detail['bad_derivative']<=event_weight and detail['good_derivative']==-detail['bad_derivative']
             import torch.nn.functional as F
             import torch
+            assert row['raw_dtype'] in ('torch.bfloat16','torch.float32'), 'unsupported correction logits dtype'
+            dtype=torch.bfloat16 if row['raw_dtype']=='torch.bfloat16' else torch.float32
+            # The FP32 margin gradient is cast back to the actual logits dtype.
+            ceiling=float(torch.tensor(event_weight,dtype=dtype))
+            assert 0<=detail['bad_derivative']<=ceiling and detail['good_derivative']==-detail['bad_derivative']
             margin=event_weight*float(F.softplus(torch.tensor(1+detail['bad_logit']-detail['good_logit'])))
             assert math.isclose(row['terms']['redirect_margin'],margin,rel_tol=1e-5,abs_tol=1e-6)
         assert row['tokens']==len(full) and row['input_sha256']==identity(list(full)) and row['positions']==list(positions)
@@ -1546,27 +1550,37 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
     p.write(output/'offline-inputs-frozen.json',read)
     if correction is not None:
         tokenizer=r.frontend().tokenizer;coordinate={tokenizer.convert_tokens_to_ids(f'<|coord_{j}|>') for j in range(1000)};supply=[]
+        image_by_id={x['image_id']:x for x in images}
         for version in range(updates+1):
-            rows=[]
+            rows=[];records={x['image_id']:x for x in frozen['zero' if version==0 else str(version)]}
             for rank in range(8):
                 consumed=p.load(output/f'rank-{rank}/update-{version+1}.json')['forwards'] if version<updates else []
-                for plan in p.load(output/f'rank-{rank}/credit-{version}.json'):
-                    target=plan['redirect'];site=None
+                plans=p.load(output/f'rank-{rank}/credit-{version}.json')
+                assert [x['image_id'] for x in plans]==sorted(image_by_id)[rank::8]
+                assert all(plan==correction_plan(image_by_id[plan['image_id']],records[plan['image_id']],tokenizer,correction) for plan in plans), 'offline correction plan drift'
+                if version<updates:
+                    verify_correction_forwards(consumed,list(image_by_id),rank,{x['image_id']:x for x in plans},records,image_by_id,tokenizer,correction_arm,duplicate_weight)
+                for plan in plans:
+                    target=plan['redirect'];targets=plan.get('redirects',[target] if target else []);selected=len(targets);site=None
                     if target:
                         site='coordinate' if target['site']['good'] in coordinate else 'desc_text'
                     delivered=[x for x in consumed if x['image_id']==plan['image_id'] and x['branch']=='redirect']
-                    assert len(delivered)==int(bool(target) and version<updates and duplicate_weight==1)
+                    assert len(delivered)==selected*int(version<updates and duplicate_weight==1)
                     rows.append(dict(image_id=plan['image_id'],M=len(plan['M']),literal_repeats=plan['literal_repeats'],
-                        eligible=int(bool(target)),site_kind=site,target=target,events=plan['redirect_events'],
-                        unresolved_duplicates=plan['literal_repeats']-int(bool(target)),consumed=delivered,
+                        eligible=selected,site_kind=site,target=target,events=plan['redirect_events'],
+                        unresolved_duplicates=plan['literal_repeats']-selected,consumed=delivered,
                         unknown_semantic_targets=0,eos_targets=0,uncredited_complete_occurrences=plan['complete_rows']-len(plan['M']),
                         geometry_errors=len(plan['schema_geometry']['union'])))
+                    if 'redirects' in plan:
+                        rows[-1].update(targets=targets,site_kinds=['coordinate' if x['site']['good'] in coordinate else 'desc_text' for x in targets],
+                            eligible_occurrences=sum(x['eligible'] for x in plan['redirect_events']),
+                            unique_duplicate_identities=len({x['key'] for x in plan['observations'] if not x['first']}))
                     if 'completion_arm' in correction:
                         bridges=[x for x in consumed if x['image_id']==plan['image_id'] and x['branch']=='bridge']
                         assert len(bridges)==int(correction_arm=='treatment' and plan['k']>0 and version<updates)
                         rows[-1].update(m=plan['m'],k=plan['k'],n=plan['n'],bridge_dispositions=plan['bridge_dispositions'],
                             admitted_B=plan['eligible'],completion_consumed=bridges,prefix_compatibility=plan['prefix_compatibility'],
-                            selected_duplicates=int(bool(target)),eligible_unselected=sum(x['eligible'] for x in plan['redirect_events'])-int(bool(target)),
+                            selected_duplicates=selected,eligible_unselected=sum(x['eligible'] for x in plan['redirect_events'])-selected,
                             unsupported_duplicates=sum(not x['eligible'] for x in plan['redirect_events']))
             supply.append(dict(version=version,update_follows=version<updates,images=rows))
         p.write(output/'correction-supply.json',supply)

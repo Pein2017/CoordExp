@@ -179,7 +179,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
         import tempfile
         from pathlib import Path
-        parent=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01');parent.mkdir(parents=True,exist_ok=True)
+        parent=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');parent.mkdir(parents=True,exist_ok=True)
         original_load=o.p.load
         for updates,schedule in ((1,(0,1)),(16,(0,1,2,4,8,16)),(64,(0,1,2,4,8,16,32,64))):
             with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
@@ -649,7 +649,7 @@ class OnlineCreditTest(unittest.TestCase):
             bad=o.seal(dict(er,token_ids=ids,text=self.t.decode(ids,skip_special_tokens=False),generated_tokens=len(ids),stop_reason=stop),self.producer)
             rejected=o.bridge_credit(empty,bad,self.t,self.producer,'chain')
             self.assertFalse(rejected['terminal_certified']);self.assertEqual(rejected['k'],0)
-        with TemporaryDirectory(dir='outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01') as d:
+        with TemporaryDirectory(dir='outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02') as d:
             o.require_bridge_supervision({0:ep},Path(d),0)
             cap=o.seal(dict(er,text='',token_ids=[],generated_tokens=0,stop_reason='max_new_tokens'),self.producer)
             no=o.bridge_credit(empty,cap,self.t,self.producer,'chain');self.assertEqual(no['n'],0)
@@ -1155,7 +1155,7 @@ class OnlineCreditTest(unittest.TestCase):
             with self.assertRaises(AssertionError):o.main()
             caller.assert_not_called()
 
-    def correction_fixture_tree(self, root, arm, updates=1, completion=False, guarded=False, rejected_terminal=False, identity_events=False):
+    def correction_fixture_tree(self, root, arm, updates=1, completion=False, guarded=False, rejected_terminal=False, identity_events=False, identity_count=None):
         """Prediction-only persisted fixtures for the actual readback/offline consumers."""
         from pathlib import Path
         checkpoint=root/'anchor';checkpoint.mkdir(exist_ok=True)
@@ -1178,6 +1178,10 @@ class OnlineCreditTest(unittest.TestCase):
         execution=dict(arm=arm,microbatch=1,activation_checkpointing=False)
         boxes=[[10,20,100,200],[10,20,100,200],[300,400,500,600]]
         if identity_events:boxes += [[300,400,500,600],[600,400,650,500]]
+        if identity_count is not None:
+            assert identity_events and identity_count in (3,4,5)
+            boxes=[box for j in range(identity_count) for box in [[10+150*j,20,80+150*j,90]]*2]
+            boxes.append([10+150*identity_count,20,80+150*identity_count,90])
         image,record,_=self.fixture(boxes)
         if completion:image['objects'].append(dict(coco_ann_id=99,desc='person',bbox_2d=[700,10,800,100]))
         images={i:dict(image,image_id=i) for i in range(18)}
@@ -1239,8 +1243,9 @@ class OnlineCreditTest(unittest.TestCase):
                         target=plan['redirects'][job['branch_index']] if identity_events else plan['redirect'];coefficient=target.get('event_weight',1)
                         seq=o.redirect_sequence(images[i],rec,target,self.t);seqs=[seq];full=seq.input_ids
                         positions=[a.causal_logits_position for a in seq.atoms];terms=dict(redirect_positive=coefficient,redirect_margin=1001.*coefficient)
+                        derivative=float(torch.tensor(coefficient,dtype=torch.bfloat16))
                         extra=dict(redirect=dict(target=target,site_kind=seq.atoms[target['site']['offset']].token_type,
-                            good_logit=0.,bad_logit=1000.,good_derivative=-coefficient,bad_derivative=coefficient))
+                            good_logit=0.,bad_logit=1000.,good_derivative=-derivative,bad_derivative=derivative))
                         if identity_events:extra['redirect'].update(event_index=job['branch_index'],event_weight=coefficient)
                     forwards.append(dict(image_id=i,branch=job['branch'],sync=job['sync'],image_weight=8/18,producer=producer,raw_identity=rec['raw_identity'],
                         correction=dict(arm=arm,duplicate_weight=weight,plan_sha256=o.identity(plan)),tokens=len(full),positions=list(positions),input_sha256=o.identity(list(full)),
@@ -1258,7 +1263,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_readback_freshness_exports_partial_and_recipe(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01')
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
         original=o.p.load
         for arm,updates in [('control',1),('treatment',1),('control',8),('treatment',8)]:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
@@ -1329,7 +1334,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_offline_both_freezes_before_any_evaluator_read(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01');original=o.p.load
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
             for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm)
@@ -1368,7 +1373,7 @@ class OnlineCreditTest(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01')
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
         original=o.p.load;inputs=original(o.INPUTS);optimizer_type=torch.optim.AdamW;decisions=[]
         class Tiny(torch.nn.Module):
             def __init__(self):
@@ -1678,7 +1683,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_persisted_readback_and_offline_pair_gating(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01');base.mkdir(parents=True,exist_ok=True)
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
@@ -1726,7 +1731,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_eight_update_persisted_exports_and_versions(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01');base.mkdir(parents=True,exist_ok=True)
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'treatment',8,completion=True)
@@ -1869,7 +1874,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_containment_persisted_readback_resigned_forgeries_and_offline_gate(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01')
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
@@ -2024,10 +2029,120 @@ class OnlineCreditTest(unittest.TestCase):
                 with patch.object(o.p,'load',return_value=wrong):
                     with self.assertRaises(AssertionError):o.correction_binding(Path('/cpu'),'control',1,Path('/anchor'),.1,o.identity(wrong['correction']))
 
+    def test_identity_consumer_offline_complete_indexed_supply(self):
+        import tempfile
+        from pathlib import Path
+        class EvaluatorBoundary(Exception):pass
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        original=o.p.load;digest=o.p.digest;attempts=[]
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);outputs={}
+            for arm in ('control','treatment'):
+                outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm,identity_events=True,identity_count=4)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if path==root/'evaluator-binding.json':attempts.append('boundary');raise EvaluatorBoundary()
+                if 'truth' in str(path) or 'evaluator' in str(path) or path==o.ENCODINGS:raise AssertionError('forbidden evaluator read')
+                return original(path)
+            def safe_digest(path):
+                if 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden evaluator hash')
+                return digest(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),
+                duplicate_weight=1,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            def invoke(arm):
+                for name in ('offline-pair-inputs-frozen.json','offline-inputs-frozen.json','correction-supply.json','predicted-shapes.json'):
+                    (outputs[arm]/name).unlink(missing_ok=True)
+                o.offline(outputs[arm],root,1,correction_arm=arm,**kwargs)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',side_effect=safe_digest), \
+                 patch.object(o.r,'frontend',return_value=self.q),patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                o.readback(outputs['control'],root,1,correction_arm='control',**kwargs)
+                with self.assertRaises(FileNotFoundError):invoke('control')
+                self.assertEqual(attempts,[])
+                o.readback(outputs['treatment'],root,1,correction_arm='treatment',**kwargs)
+                for arm in ('control','treatment'):
+                    with self.assertRaises(EvaluatorBoundary):invoke(arm)
+                    supply=original(outputs[arm]/'correction-supply.json')
+                    for version in supply:
+                        self.assertEqual(len(version['images']),18)
+                        for row in version['images']:
+                            self.assertEqual((row['literal_repeats'],row['eligible'],row['selected_duplicates'],row['unresolved_duplicates']),(4,4,4,0))
+                            self.assertEqual((row['eligible_occurrences'],row['eligible_unselected'],row['unsupported_duplicates'],row['unique_duplicate_identities']),(4,0,0,4))
+                            self.assertEqual([x['event_weight'] for x in row['targets']],[.25]*4)
+                            self.assertEqual([x['redirect']['event_index'] for x in row['consumed']],list(range(4)) if version['update_follows'] else [])
+                    attempts.clear();directory=outputs[arm]/'rank-2';receipt=directory/'complete.json';seal=receipt.read_bytes()
+                    def first_redirect(x):return next(f for f in x['forwards'] if f['branch']=='redirect')
+                    for name,change in [('update-1.json',lambda x:x['forwards'].remove(first_redirect(x))),
+                        ('update-1.json',lambda x:x['forwards'].append(copy.deepcopy(first_redirect(x)))),
+                        ('update-1.json',lambda x:first_redirect(x)['redirect'].update(event_index=1)),
+                        ('update-1.json',lambda x:first_redirect(x)['redirect']['target'].update(duplicate_identity='wrong')),
+                        ('update-1.json',lambda x:first_redirect(x)['redirect'].update(event_weight=.2)),
+                        ('update-1.json',lambda x:first_redirect(x)['producer'].update(recipe_sha256='wrong')),
+                        ('credit-1.json',lambda x:x[0]['redirects'].pop())]:
+                        with self.subTest(arm=arm,name=name,change=change):
+                            file=directory/name;before=file.read_bytes();data=original(file);change(data);file.write_text(o.p.canonical(data))
+                            complete=original(receipt);complete['artifacts'][name]=digest(file);receipt.write_text(o.p.canonical(complete))
+                            with self.assertRaises(AssertionError):invoke(arm)
+                            self.assertEqual(attempts,[]);self.assertFalse((outputs[arm]/'correction-supply.json').exists())
+                            file.write_bytes(before);receipt.write_bytes(seal)
+
+    def test_identity_consumer_BF16_forward_persisted_readback_rounding(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        class Toy(torch.nn.Module):
+            def __init__(self,target,dtype,bad):
+                super().__init__();self.w=torch.nn.Parameter(torch.zeros(len(self_t)));self.target=target;self.dtype=dtype;self.bad=bad
+            def get_rope_index(self,ids,mm_token_type_ids,*,image_grid_thw,video_grid_thw,attention_mask):
+                return (attention_mask.cumsum(-1)-1).unsqueeze(0).expand(3,-1,-1),None
+            def forward(self,input_ids,logits_to_keep,**kw):
+                bias=torch.zeros(1,len(logits_to_keep),len(self_t));bias[0,self.target['site']['offset'],self.target['site']['bad']]=self.bad
+                return SimpleNamespace(logits=(self.w[None,None,:]+bias).to(self.dtype))
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load;self_t=self.t
+        for k in (3,5):
+            with self.subTest(K=k),tempfile.TemporaryDirectory(dir=base) as tmp:
+                root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'control',identity_events=True,identity_count=k)
+                directory=output/'rank-0';records={i:original(output/f'rollout-0/rank-0/{i}.json') for i in range(0,18,8)}
+                plans={x['image_id']:x for x in original(directory/'credit-0.json')};plan=plans[0];target=plan['redirects'][0]
+                job=next(x for x in o.jobs(list(images),0,plans,correction_arm='control',duplicate_weight=1) if x['branch']=='redirect')
+                record=records[0];image=images[0];batch=SimpleNamespace(inputs=dict(input_ids=torch.tensor([record['prompt_token_ids']]),
+                    attention_mask=torch.ones(1,len(record['prompt_token_ids'])),image_grid_thw=torch.tensor([record['image_grid_thw']]),pixel_values=torch.tensor([[2.,3.]])))
+                tensor=torch.tensor
+                def load(path):
+                    if path==o.RETAINED:return list(images.values())
+                    if path==o.INPUTS:return inputs
+                    if 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden evaluator read')
+                    return original(path)
+                kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),correction_arm='control',duplicate_weight=1,
+                    rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                with patch.object(torch,'autocast',side_effect=lambda *a,**kw:nullcontext()), \
+                     patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data,**{key:v for key,v in kw.items() if key!='device'})), \
+                     patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                     patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                    for dtype,bad_logit in [(torch.bfloat16,8.),(torch.bfloat16,1000.),(torch.float32,1000.)]:
+                        model=Toy(target,dtype,bad_logit);q=SimpleNamespace(model=model,tokenizer=self.t)
+                        loss,row=o.forward(q,model,batch,image,record,plan,None,self.vocab,'redirect',geometry_weight=.1,branch_index=0,correction_arm='control',duplicate_weight=1)
+                        row.update(image_weight=8/18,sync=job['sync']);loss.backward();self.assertTrue(torch.isfinite(model.w.grad).all());self.assertGreater(float(model.w.grad.abs().sum()),0)
+                        cap=float(tensor(1/k,dtype=dtype));self.assertEqual(row['redirect']['bad_derivative'],cap)
+                        self.assertEqual(row['redirect']['good_derivative'],-cap)
+                        print('actual forward rounding',k,str(dtype),bad_logit,row['redirect']['bad_derivative'],flush=True)
+                        update=original(directory/'update-1.json');index=next(j for j,f in enumerate(update['forwards']) if f['branch']=='redirect');update['forwards'][index]=row
+                        (directory/'update-1.json').write_text(o.p.canonical(update));complete=original(directory/'complete.json');complete['artifacts']['update-1.json']=o.p.digest(directory/'update-1.json');(directory/'complete.json').write_text(o.p.canonical(complete))
+                        (output/'readback.json').unlink(missing_ok=True);o.readback(output,root,1,**kwargs)
+                        self.assertTrue((output/'readback.json').exists())
+                        excessive=float(torch.nextafter(tensor(cap,dtype=dtype),tensor(float('inf'),dtype=dtype)))
+                        for change in [lambda f:f['redirect'].update(bad_derivative=excessive,good_derivative=-excessive),
+                            lambda f:f['redirect'].update(good_derivative=cap),lambda f:f['redirect'].update(event_weight=.5),
+                            lambda f:f.update(raw_dtype='torch.float64')]:
+                            forged=copy.deepcopy(update);change(forged['forwards'][index]);(directory/'update-1.json').write_text(o.p.canonical(forged))
+                            complete['artifacts']['update-1.json']=o.p.digest(directory/'update-1.json');(directory/'complete.json').write_text(o.p.canonical(complete));(output/'readback.json').unlink(missing_ok=True)
+                            with self.assertRaises(AssertionError):o.readback(output,root,1,**kwargs)
+                            self.assertFalse((output/'readback.json').exists())
+
     def test_identity_persisted_readback_resigned_selection_weight_and_supply(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-01');original=o.p.load
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load
         for arm in ('control','treatment'):
             with tempfile.TemporaryDirectory(dir=base) as tmp:
                 root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,arm,identity_events=True)
