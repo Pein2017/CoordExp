@@ -14,6 +14,9 @@ RETAINED = r.ROOT / 'cpu-04/retained-10.json'
 INPUTS = r.ROOT / 'retained-sft-01/inputs.json'
 ENCODINGS = r.ROOT / 'retained-sft-01/encodings.json'
 RELEASE_SHA = 'b5354c24780367c65249e4a6b6df21e71054d73a593a15c33c573785406b1664'
+CONTAINMENT = dict(baseline='fresh_full18_version0',complete_literal_repeats_le_initial=True,
+    geometry_invalid_le_initial=True,malformed_max=0,caps_max=0,retained_category_percent=95,
+    initial_valid_image_nonempty=True)
 
 
 def identity(value):
@@ -250,6 +253,57 @@ def correction_plan(image, record, tokenizer, correction):
     plan=credit(image,record,tokenizer,record['producer'],redirect_enabled=bool(correction['duplicate_weight']))
     plan['schema_geometry']=schema_geometry_errors(record,tokenizer,plan['observations'])
     return plan
+
+
+def containment_measurement(images, records, producer):
+    images=sorted(images,key=lambda x:x['image_id']);ids=[x['image_id'] for x in images]
+    assert len(ids)==len(set(ids))==18, 'containment population drift'
+    verify_producer(records,producer,ids)
+    rows=r.assess_outputs(images,[],sorted(records,key=lambda x:x['image_id']))
+    assert [x['image_id'] for x in rows]==ids
+    counts=[]
+    for row in rows:
+        burden=row['burdens']
+        counts.append(dict(image_id=row['image_id'],D=burden['literal_complete_repeats'],I=burden['geometry_invalid'],
+            malformed=burden['malformed'],caps=burden['caps'],valid=burden['valid_rows'],
+            R=len(row['ids']['category']['retained']),raw_R=len(row['ids']['raw']['retained'])))
+    return dict(producer=producer,raw_identities={str(x['image_id']):x['raw_identity'] for x in sorted(records,key=lambda x:x['image_id'])},
+        counts={k:sum(x[k] for x in counts) for k in ('D','I','malformed','caps','valid','R','raw_R')},images=counts)
+
+
+def containment_decision(images, records, producer, correction, baseline=None):
+    assert correction['containment']==CONTAINMENT
+    assert producer['kind']=='live_online' and producer['completion_arm']==correction['completion_arm']
+    assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(correction['arm'],1,correction['recipe_sha256'])
+    current=containment_measurement(images,records,producer)
+    retained=identity(sorted(images,key=lambda x:x['image_id']))
+    if baseline is None:
+        assert producer['update']==0, 'containment initial version missing'
+        baseline=dict(correction=correction,retained_identity=retained,initial=current)
+        baseline['sha256']=identity(baseline)
+    assert baseline['sha256']==identity({k:v for k,v in baseline.items() if k!='sha256'}), 'containment baseline drift'
+    assert baseline['correction']==correction and baseline['retained_identity']==retained
+    initial=baseline['initial'];assert initial['producer']['update']==0
+    immutable=lambda x:{k:v for k,v in x.items() if k not in ('update','parameter_sha256')}
+    assert immutable(initial['producer'])==immutable(producer), 'containment producer drift'
+    if producer['update']==0:assert initial==current, 'containment baseline reacquisition'
+    before={x['image_id']:x for x in initial['images']}
+    assert [x['image_id'] for x in current['images']]==list(before), 'containment baseline population drift'
+    empty=[x['image_id'] for x in current['images'] if before[x['image_id']]['valid']>0 and x['valid']==0]
+    limits=dict(D=initial['counts']['D'],I=initial['counts']['I'],malformed=0,caps=0,R_min=(95*initial['counts']['R']+99)//100)
+    violations=[k for k in ('D','I','malformed','caps') if current['counts'][k]>limits[k]]
+    if current['counts']['R']<limits['R_min']:violations.append('retained_category_floor')
+    if empty:violations.append('initial_valid_image_empty')
+    return baseline,dict(version=producer['update'],correction=correction,baseline_sha256=baseline['sha256'],
+        measurement=current,limits=limits,empty_image_ids=empty,violations=violations,disposition='stop' if violations else 'pass')
+
+
+def verify_containment_evidence(output, baseline, decision):
+    assert decision['disposition']=='pass', 'complete run contains containment stop'
+    for rank in range(8):
+        directory=output/f'rank-{rank}'
+        assert p.load(directory/'containment-baseline.json')==baseline, 'saved containment baseline drift'
+        assert p.load(directory/f"containment-{decision['version']}.json")==decision, 'saved containment decision drift'
 
 
 def bridge_trace_plan(plan, arm):
@@ -947,8 +1001,11 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         return None
     assert arm in ('control','treatment')
     assert not any(k in qual for k in ('bridge','geometry','preservation','witness'))
-    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1')
-    completion=spec['mode']=='recall-error-floor-v1'
+    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1','recall-error-floor-v2')
+    completion=spec['mode'] in ('recall-error-floor-v1','recall-error-floor-v2')
+    guarded=spec['mode']=='recall-error-floor-v2'
+    if guarded:assert spec['containment']==CONTAINMENT
+    else:assert 'containment' not in spec
     assert spec['arms']==({'control':1,'treatment':1} if completion else {'control':0,'treatment':1}) and spec['updates']==[1,8]
     assert weight==spec['arms'][arm]
     if completion:
@@ -967,6 +1024,7 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
     binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),
                  manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm')
     if completion:binding['completion_arm']=arm
+    if guarded:binding['containment']=dict(CONTAINMENT)
     return binding
 
 
@@ -1100,6 +1158,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             raise
         p.write(out/'vllm-devices.json',devices)
         requests=vllm_requests(q,inputs,local)
+    containment_baseline=None
     for version in range(updates+1):
         fingerprint=parameter_identity(q.model); hashes=[None]*8
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
@@ -1139,6 +1198,14 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             artifacts={x.name:p.digest(x) for x in directory.glob('*.json')}))
         gathered=[None]*8;dist.all_gather_object(gathered,records)
         all_records=[x for part in gathered for x in part];verify_producer(all_records,producer,sorted(images))
+        if correction is not None and 'containment' in correction:
+            containment_baseline,decision=containment_decision(list(images.values()),all_records,producer,correction,containment_baseline)
+            if version==0:p.write(out/'containment-baseline.json',containment_baseline)
+            p.write(out/f'containment-{version}.json',decision)
+            if decision['disposition']=='stop':
+                # Publish every rank's stop evidence before torchrun tears down peers.
+                dist.barrier()
+                raise RuntimeError(f"containment-stop version{version}: {decision['violations']}")
         assert parameter_identity(q.model)==fingerprint
         assert flags=={n:x.requires_grad for n,x in q.model.named_parameters()}
         if insertion_policy is not None:
@@ -1343,6 +1410,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         assert checkpoint.is_dir() and (checkpoint/'identity.json').is_file(), checkpoint
         for name,sha in p.load(checkpoint/'identity.json').items():assert p.digest(checkpoint/name)==sha
     if geometry is not None:verify_start_export(start_checkpoint,output/'checkpoint-0')
+    containment_baseline=None
     for version in range(updates+1):
         records=frozen_records(output/f'rollout-{version}',set(inputs),freeze=True)
         producer=records[0]['producer'];verify_producer(records,producer,list(inputs));assert producer['update']==version and producer['kind']=='live_online'
@@ -1361,9 +1429,13 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         if result:assert producer['parameter_sha256']!=result[-1]['producer']['parameter_sha256']
         for record in records:
             for key in inputs[record['image_id']]:assert record[key]==inputs[record['image_id']][key],key
+        if correction is not None and 'containment' in correction:
+            containment_baseline,decision=containment_decision(list(images.values()),records,producer,correction,containment_baseline)
+            verify_containment_evidence(output,containment_baseline,decision)
         result.append(dict(update=version,producer=producer,requests=len(records),tokens=sum(x['generated_tokens'] for x in records),
             frozen_sha256=p.digest(output/f'rollout-{version}/frozen.json')))
         if correction is not None:result[-1].update(correction=correction,execution=execution)
+        if correction is not None and 'containment' in correction:result[-1]['containment']=decision
     p.write(output/'readback.json',result)
 
 
@@ -1383,6 +1455,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
         # Neither arm may expose truth until BOTH complete readbacks and all raw freezes survive fresh verification.
         for arm,path in pair.items():
             path=Path(path);read=p.load(path/'readback.json')
+            containment_baseline=None
             assert [x['update'] for x in read]==list(range(updates+1))
             expected=dict(correction,arm=arm,duplicate_weight=p.load(root/'qualification.json')['correction']['arms'][arm])
             if 'completion_arm' in correction:expected['completion_arm']=arm
@@ -1397,6 +1470,10 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                 directory=path/f"rollout-{row['update']}"
                 records=frozen_records(directory,ids,freeze=True);verify_producer(records,producer,ids)
                 assert p.digest(directory/'frozen.json')==row['frozen_sha256']
+                if 'containment' in expected:
+                    containment_baseline,decision=containment_decision(p.load(RETAINED),records,producer,expected,containment_baseline)
+                    verify_containment_evidence(path,containment_baseline,decision)
+                    assert row['containment']==decision, 'paired containment readback drift'
             pair_frozen[arm]=dict(readback_sha256=p.digest(path/'readback.json'),versions=read)
         p.write(output/'offline-pair-inputs-frozen.json',pair_frozen)
     else:assert updates!=8

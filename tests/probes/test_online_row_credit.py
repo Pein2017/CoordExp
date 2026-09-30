@@ -179,7 +179,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
         import tempfile
         from pathlib import Path
-        parent=o.ROOT/'greedy-geometry-01';parent.mkdir(exist_ok=True)
+        parent=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01');parent.mkdir(parents=True,exist_ok=True)
         original_load=o.p.load
         for updates,schedule in ((1,(0,1)),(16,(0,1,2,4,8,16)),(64,(0,1,2,4,8,16,32,64))):
             with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
@@ -649,7 +649,7 @@ class OnlineCreditTest(unittest.TestCase):
             bad=o.seal(dict(er,token_ids=ids,text=self.t.decode(ids,skip_special_tokens=False),generated_tokens=len(ids),stop_reason=stop),self.producer)
             rejected=o.bridge_credit(empty,bad,self.t,self.producer,'chain')
             self.assertFalse(rejected['terminal_certified']);self.assertEqual(rejected['k'],0)
-        with TemporaryDirectory() as d:
+        with TemporaryDirectory(dir='outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01') as d:
             o.require_bridge_supervision({0:ep},Path(d),0)
             cap=o.seal(dict(er,text='',token_ids=[],generated_tokens=0,stop_reason='max_new_tokens'),self.producer)
             no=o.bridge_credit(empty,cap,self.t,self.producer,'chain');self.assertEqual(no['n'],0)
@@ -1155,14 +1155,15 @@ class OnlineCreditTest(unittest.TestCase):
             with self.assertRaises(AssertionError):o.main()
             caller.assert_not_called()
 
-    def correction_fixture_tree(self, root, arm, updates=1, completion=False):
+    def correction_fixture_tree(self, root, arm, updates=1, completion=False, guarded=False, rejected_terminal=False):
         """Prediction-only persisted fixtures for the actual readback/offline consumers."""
         from pathlib import Path
         checkpoint=root/'anchor';checkpoint.mkdir(exist_ok=True)
         if not (checkpoint/'inference_payload_manifest.json').exists():
             o.p.write(checkpoint/'inference_payload_manifest.json',dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
                 adapter=dict(status='present',files=[]),special_token_embedding_delta=dict(status='present',files=[])))
-        qual=self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)
+        completion=completion or guarded
+        qual=self.containment_qualifier(root,checkpoint) if guarded else (self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint))
         qual['correction']['manifest_sha256']=o.p.digest(checkpoint/'inference_payload_manifest.json')
         qual['sha256']={str(x):o.p.digest(x) for x in (o.INPUTS,o.RETAINED,o.p.POLICY)}
         if not (root/'qualification.json').exists():o.p.write(root/'qualification.json',qual)
@@ -1172,6 +1173,7 @@ class OnlineCreditTest(unittest.TestCase):
         binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe,checkpoint=str(checkpoint),manifest_sha256=qual['correction']['manifest_sha256'],
             weight=.1,schema_geometry=True,rollout_backend='vllm')
         if completion:binding['completion_arm']=arm
+        if guarded:binding['containment']=dict(o.CONTAINMENT)
         execution=dict(arm=arm,microbatch=1,activation_checkpointing=False)
         image,record,_=self.fixture([[10,20,100,200],[10,20,100,200],[300,400,500,600]])
         if completion:image['objects'].append(dict(coco_ann_id=99,desc='person',bbox_2d=[700,10,800,100]))
@@ -1184,7 +1186,7 @@ class OnlineCreditTest(unittest.TestCase):
             directory=output/f'rank-{rank}';directory.mkdir()
             for name,data in [('entry.json',{'source':qual['source'],'rank':rank,'pid':10000+rank}),('execution.json',execution),('correction.json',binding),('geometry.json',binding),
                               ('schema-geometry.json',{'enabled':True}),('online-policy.json',{'rollout_backend':'vllm'})]:o.p.write(directory/name,data)
-            operations=[]
+            operations=[];baseline=None
             for version in range(updates+1):
                 params={str(j):str(version) for j in range(590)};snapshot=o.identity(params)
                 producer=dict(kind='live_online',update=version,parameter_sha256=snapshot,source='source',rollout_backend='vllm-local-dora-0.29.0',
@@ -1201,7 +1203,14 @@ class OnlineCreditTest(unittest.TestCase):
                     o.p.write(directory/'vllm-devices.json',devices)
                 operations.append(dict(operation='generate',identity=snapshot))
                 rawdir=output/f'rollout-{version}'/f'rank-{rank}';rawdir.mkdir(parents=True)
-                records={i:o.seal(dict(record,image_id=i),producer) for i in range(rank,18,8)}
+                full=[o.seal(dict(record,image_id=i),producer) for i in range(18)]
+                if rejected_terminal and version==updates:
+                    full=self.containment_counterfactual(full,producer,'D')
+                records={x['image_id']:x for x in full if x['image_id'] in range(rank,18,8)}
+                if guarded:
+                    baseline,decision=o.containment_decision(list(images.values()),full,producer,binding,baseline)
+                    if version==0:o.p.write(directory/'containment-baseline.json',baseline)
+                    o.p.write(directory/f'containment-{version}.json',decision)
                 plans={i:o.correction_plan(images[i],rec,self.t,binding) for i,rec in records.items()}
                 for i,rec in records.items():
                     o.p.write(rawdir/f'{i}.json',rec)
@@ -1243,7 +1252,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_readback_freshness_exports_partial_and_recipe(self):
         import tempfile
         from pathlib import Path
-        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu')
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01')
         original=o.p.load
         for arm,updates in [('control',1),('treatment',1),('control',8),('treatment',8)]:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
@@ -1314,7 +1323,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_offline_both_freezes_before_any_evaluator_read(self):
         import tempfile
         from pathlib import Path
-        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu');original=o.p.load
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01');original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
             for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm)
@@ -1345,11 +1354,16 @@ class OnlineCreditTest(unittest.TestCase):
                 self.assertEqual(events,[])
 
     def test_correction_resident_caller_no_old_branches_single_optimizer_action(self):
+        self.resident_cases([(arm,failure,completion,0,None,1) for arm,failure,completion in
+            [('control',None,False),('treatment',None,False),('control','duplicate',False),('control','association',False),
+             ('control',None,True),('treatment',None,True)]])
+
+    def resident_cases(self, cases):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
-        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu')
-        original=o.p.load;inputs=original(o.INPUTS);by={x['request_id']:r for x,r in zip(inputs,self.records)};optimizer_type=torch.optim.AdamW
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01')
+        original=o.p.load;inputs=original(o.INPUTS);optimizer_type=torch.optim.AdamW;decisions=[]
         class Tiny(torch.nn.Module):
             def __init__(self):
                 super().__init__();self.lora_=torch.nn.ParameterList([torch.nn.Parameter(torch.tensor([.01])) for _ in range(588)])
@@ -1363,28 +1377,33 @@ class OnlineCreditTest(unittest.TestCase):
             def no_sync(self):self.no_sync_calls+=1;return nullcontext()
         class Rollout:
             def __init__(self,**kw):
-                assert kw['device']==0 and kw['trainer_rank']==0
-                device=routing_row(0);self.device_request=device['request'];self.startup=device['startup']
+                assert kw['device']==rank and kw['trainer_rank']==rank
+                device=routing_row(rank);self.device_request=device['request'];self.startup=device['startup']
                 self.identity=kw['identity'];self.startup['identity']=self.identity;self.receipts=[]
             def refresh(self,model,delta,*,identity):self.identity=identity;self.receipts.append(dict(operation='refresh',identity=identity))
             def generate(self,requests,*,budgets,identity,**kw):
                 assert identity==self.identity and budgets==[3084]*len(requests)
                 self.receipts.append(dict(operation='generate',identity=identity))
+                version=sum(x['operation']=='generate' for x in self.receipts)-1;generations.append(version)
+                records=current(version);by={x['request_id']:x for x in records}
                 return [SimpleNamespace(token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
             def close(self):pass
-        cases=[('control',None,False),('treatment',None,False),('control','duplicate',False),('control','association',False),
-               ('control',None,True),('treatment',None,True)]
-        for arm,device_failure,completion in cases:
+        for arm,device_failure,completion,rank,guard_case,updates in cases:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
-                root=Path(tmp);checkpoint=root/'anchor';qual=self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)
-                output=Path(qual['pairs']['1'][arm]);directory=output/'rank-0';directory.mkdir(parents=True)
+                root=Path(tmp);guarded=guard_case is not None;checkpoint=Path('/cpu-anchor') if guarded else root/'anchor'
+                qual=self.containment_qualifier(root,checkpoint) if guarded else (self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint))
+                output=Path(qual['pairs'][str(updates)][arm]);directory=output/f'rank-{rank}';directory.mkdir(parents=True)
                 q=SimpleNamespace(model=Tiny(),base_model_path='/base',processor=self.q.processor,tokenizer=self.t,token_identity=self.q.token_identity)
                 delta=SimpleNamespace(delta_tensors=lambda:dict(input=q.model.embed_tokens.shared_embed_delta,output=q.model.lm_head.shared_embed_delta))
-                seen=[];optimizers=[]
+                seen=[];optimizers=[];generations=[]
+                records=self.containment_native_fixture(arm)[0] if guarded else self.records
+                def current(version):
+                    case=guard_case.removeprefix('initial-') if guarded and (version>0 or guard_case.startswith('initial-')) else 'equal'
+                    return self.containment_counterfactual(records,records[0]['producer'],case) if guarded else records
                 weight=1 if completion else int(arm=='treatment')
-                plans={x['image_id']:(o.completion_credit(image,x,self.t,self.producer,arm) if completion else
-                                    o.credit(image,x,self.t,self.producer,redirect_enabled=bool(weight))) for image,x in zip(self.images,self.records)}
-                expected=o.jobs([x['image_id'] for x in self.images],0,plans,correction_arm=arm,duplicate_weight=weight)
+                plans={x['image_id']:(o.completion_credit(image,x,self.t,x['producer'],arm) if completion else
+                                    o.credit(image,x,self.t,x['producer'],redirect_enabled=bool(weight))) for image,x in zip(self.images,records)}
+                expected=o.jobs([x['image_id'] for x in self.images],rank,plans,correction_arm=arm,duplicate_weight=weight)
                 class Optimizer(optimizer_type):
                     def __init__(self,*a,**k):super().__init__(*a,**k);self.steps=0;optimizers.append(self)
                     def step(self,*a,**k):
@@ -1396,47 +1415,68 @@ class OnlineCreditTest(unittest.TestCase):
                     return original(path)
                 def gather(target,value):
                     if isinstance(value,dict) and 'startup' in value:
-                        for rank in range(8):target[rank]=routing_row(rank)
-                        target[0]=value
+                        for j in range(8):target[j]=routing_row(j)
+                        target[rank]=value
                         if device_failure=='association':target.reverse()
                         if device_failure=='duplicate':
                             target[1]['request']['parent']['physical']=copy.deepcopy(target[0]['request']['parent']['physical'])
                             target[1]['startup']['device']['physical']=copy.deepcopy(target[0]['request']['parent']['physical'])
                     elif isinstance(value,list):
-                        producer=value[0]['producer'];all_records={x['image_id']:o.seal(x,producer) for x in self.records}
-                        for rank in range(8):target[rank]=[all_records[i] for i in sorted(all_records)[rank::8]]
-                        target[0]=value
+                        producer=value[0]['producer'];all_records={x['image_id']:o.seal(x,producer) for x in current(producer['update'])}
+                        for j in range(8):target[j]=[all_records[i] for i in sorted(all_records)[j::8]]
+                        target[rank]=value
                     else:
-                        for rank in range(8):target[rank]=value
+                        for j in range(8):target[j]=value
                 def consume(q_,model,batch,image,record,plan,encoding,vocab,branch,*args):
                     self.assertIsNone(encoding);self.assertIn(branch,('trace','bridge','redirect') if completion else ('trace','redirect'));self.assertEqual(optimizers[0].steps,0)
                     seen.append(dict(image_id=image['image_id'],branch=branch))
                     return sum(q.model.parameters())*(1 if branch=='trace' else 2),dict(seen[-1])
                 write=unittest.mock.Mock()
+                def published():
+                    if write.call_args.args[0].name.startswith('containment-'):
+                        self.assertEqual(write.call_args.args[1]['disposition'],'stop')
+                barrier=unittest.mock.Mock(side_effect=published)
                 contexts=[patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='manifest'),
                      patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_anchor_payload'),
-                     patch.object(o,'start',return_value=(0,directory,[],qual['source'])),patch.object(o.p,'compose',return_value=(q,delta,{})),
+                     patch.object(o,'start',return_value=(rank,directory,[],qual['source'])),patch.object(o.p,'compose',return_value=(q,delta,{})),
                      patch.object(o.p,'write',write),patch.object(o.p,'save_checkpoint'),patch.object(o,'native_batch',return_value=None),
                      patch('torch.nn.parallel.DistributedDataParallel',DDP),patch('torch.distributed.init_process_group'),patch('torch.distributed.destroy_process_group'),
-                     patch('torch.distributed.all_gather_object',side_effect=gather),patch('torch.distributed.barrier'),
+                     patch('torch.distributed.all_gather_object',side_effect=gather),patch('torch.distributed.barrier',barrier),
                      patch('torch.cuda.max_memory_allocated',return_value=0),patch('torch.cuda.max_memory_reserved',return_value=0),
                      patch('src.qwen.vllm_rollout.VllmDoraRollout',Rollout),patch.object(torch.optim,'AdamW',Optimizer),
-                     patch.object(o,'forward',side_effect=consume),patch.dict('os.environ',{'LOCAL_RANK':'0'})]
+                     patch.object(o,'forward',side_effect=consume),patch.dict('os.environ',{'LOCAL_RANK':str(rank)})]
                 with ExitStack() as stack:
                     for context in contexts:stack.enter_context(context)
-                    call=lambda:o.run(output,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
+                    call=lambda:o.run(output,root,updates,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
                         duplicate_weight=weight,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
                     if device_failure:
                         with self.assertRaises(ValueError):call()
+                    elif guarded and guard_case not in ('equal','R211'):
+                        with self.assertRaisesRegex(RuntimeError,'containment-stop'):call()
                     else:call()
                 if device_failure:
                     self.assertEqual(optimizers[0].steps,0);self.assertEqual(seen,[])
                     self.assertFalse(any(x.args[0].name=='producer-0.json' for x in write.call_args_list))
                     continue
+                if guarded:
+                    rows=[x.args[1] for x in write.call_args_list if x.args[0].name.startswith('containment-') and x.args[0].name!='containment-baseline.json']
+                    initial=guard_case.startswith('initial-');stopped=guard_case not in ('equal','R211')
+                    self.assertEqual(generations,[0] if initial else [0,1]);self.assertEqual(optimizers[0].steps,0 if initial else 1)
+                    self.assertEqual(len(rows),1 if initial else 2);self.assertEqual(rows[-1]['disposition'],'stop' if stopped else 'pass')
+                    self.assertEqual(barrier.call_count,1+(not initial)+stopped)
+                    self.assertEqual(rows[0]['measurement']['counts']['R'],222)
+                    if stopped:
+                        self.assertFalse(any(x.args[0]==directory/'complete.json' for x in write.call_args_list))
+                        self.assertFalse(any(x.args[0].name==f'credit-{rows[-1]["version"]}.json' for x in write.call_args_list))
+                    if initial:self.assertEqual(seen,[])
+                    decisions.append((arm,rank,guard_case,rows))
+                    if initial:continue
                 self.assertEqual(optimizers[0].steps,1)
                 updates=[x.args[1] for x in write.call_args_list if x.args[0].name=='update-1.json']
                 self.assertEqual(len(updates),1);self.assertEqual(updates[0]['optimizer_steps'],[1]);self.assertEqual(updates[0]['optimizer_state_count'],590)
                 self.assertTrue(updates[0]['forwards'][-1]['sync']);self.assertEqual(sum(x['sync'] for x in updates[0]['forwards']),1)
+                self.assertEqual(len(expected),len(seen));self.assertEqual(len({x['image_id'] for x in seen}),3 if rank<2 else 2)
+        return decisions
 
     def test_correction_real18_stopped_fixture_all_supported_semantic_sites(self):
         from pathlib import Path
@@ -1626,7 +1666,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_persisted_readback_and_offline_pair_gating(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/cpu');base.mkdir(parents=True,exist_ok=True)
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01');base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
@@ -1674,7 +1714,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_eight_update_persisted_exports_and_versions(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/cpu');base.mkdir(parents=True,exist_ok=True)
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01');base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'treatment',8,completion=True)
@@ -1692,5 +1732,178 @@ class OnlineCreditTest(unittest.TestCase):
                 self.assertEqual(sorted(int(x.name.split('-')[1]) for x in output.glob('checkpoint-*')),[0,1,2,4,8])
                 (output/'checkpoint-4/identity.json').unlink()
                 with self.assertRaises(AssertionError):o.readback(output,root,8,**kwargs)
+
+    def containment_qualifier(self, root, checkpoint):
+        qual=self.recall_qualifier(root,checkpoint)
+        qual['correction'].update(mode='recall-error-floor-v2',containment=dict(baseline='fresh_full18_version0',
+            complete_literal_repeats_le_initial=True,geometry_invalid_le_initial=True,malformed_max=0,caps_max=0,
+            retained_category_percent=95,initial_valid_image_nonempty=True))
+        return qual
+
+    def test_containment_actual_recipe_binding(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/anchor');qual=self.containment_qualifier(root,checkpoint)
+        with patch.object(o.p,'load',return_value=qual),patch.object(o.p,'digest',return_value='manifest'), \
+             patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_anchor_payload'):
+            binding=o.correction_binding(root,'control',1,checkpoint,.1,o.identity(qual['correction']))
+            self.assertEqual(binding['containment'],qual['correction']['containment'])
+            changed=copy.deepcopy(qual);changed['correction']['containment']['retained_category_percent']=94
+            with patch.object(o.p,'load',return_value=changed):
+                with self.assertRaises(AssertionError):o.correction_binding(root,'control',1,checkpoint,.1,o.identity(changed['correction']))
+
+    def containment_native_fixture(self, arm='control'):
+        from pathlib import Path
+        native=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03')
+        records=o.frozen_records(native/'control/rollout-0',[x['image_id'] for x in self.images])
+        qual=self.containment_qualifier(Path('/cpu'),Path('/anchor'));recipe=o.identity(qual['correction'])
+        binding=dict(arm=arm,duplicate_weight=1,completion_arm=arm,recipe_sha256=recipe,containment=qual['correction']['containment'])
+        producer=dict(records[0]['producer'],source='CPU-fixture',correction_arm=arm,completion_arm=arm,duplicate_weight=1,recipe_sha256=recipe)
+        return [o.seal(x,producer) for x in records],producer,binding
+
+    def containment_counterfactual(self, records, producer, case):
+        """Change raw output only; ordinary parser/matcher recomputes all guard counts."""
+        changed={x['image_id']:copy.deepcopy(x) for x in records}
+        if case in ('R211','R210'):
+            remaining=11 if case=='R211' else 12
+            for image in self.images:
+                record=changed[image['image_id']];plan=o.credit(image,record,self.t,record['producer'],redirect_enabled=False)
+                selected=plan['M'][:remaining];remaining-=len(selected);ids=record['token_ids']
+                for row in reversed(selected):
+                    a,z=row['positions'][0],row['positions'][-1]+1
+                    text=self.t.decode(ids[a:z],skip_special_tokens=False).replace(row['description'],f'guard mismatch {image["image_id"]} {row["order"]}',1)
+                    ids[a:z]=self.t.encode(text,add_special_tokens=False)
+                if remaining==0:break
+            self.assertEqual(remaining,0)
+        else:
+            record=next(iter(changed.values()))
+            if case=='D':
+                rows,_=o.observations(record,self.t);row=next(x for x in rows if x['valid'])
+                record['token_ids'][-1:-1]=[record['token_ids'][j] for j in row['positions']]
+            elif case=='I':
+                text='<|object_ref_start|>guard invalid<|object_ref_end|><|box_start|><|coord_20|><|coord_20|><|coord_20|><|coord_100|><|box_end|>'
+                record['token_ids'][-1:-1]=self.t.encode(text,add_special_tokens=False)
+            elif case=='malformed':record['token_ids'][-1:-1]=self.t.encode('<|object_ref_start|>dangling',add_special_tokens=False)
+            elif case=='caps':record['stop_reason']='max_new_tokens'
+            elif case=='empty':
+                metrics=o.r.assess_outputs(self.images,[],records)
+                row=min((x for x in metrics if x['burdens']['valid_rows']),key=lambda x:len(x['ids']['category']['retained']))
+                changed[row['image_id']]['token_ids']=[]
+        return [o.seal(dict(record,text=self.t.decode(record['token_ids'],skip_special_tokens=False),generated_tokens=len(record['token_ids'])),producer) for record in changed.values()]
+
+    def test_containment_real_raw_thresholds_zero_and_identity(self):
+        records,producer,binding=self.containment_native_fixture()
+        baseline,decision=o.containment_decision(self.images,records,producer,binding)
+        self.assertEqual(decision['disposition'],'pass');self.assertEqual(decision['violations'],[])
+        self.assertEqual({k:decision['measurement']['counts'][k] for k in ('R','raw_R','D','I','malformed','caps')},
+                         dict(R=222,raw_R=226,D=10,I=5,malformed=0,caps=0))
+        self.assertEqual(decision['limits']['R_min'],211)
+        later=dict(producer,update=1,parameter_sha256='next')
+        for case,violation in [('equal',None),('R211',None),('R210','retained_category_floor'),('D','D'),('I','I'),('malformed','malformed'),('caps','caps'),('empty','initial_valid_image_empty')]:
+            with self.subTest(case=case):
+                current=self.containment_counterfactual(records,later,case)
+                same,row=o.containment_decision(self.images,current,later,binding,baseline)
+                self.assertEqual(same,baseline)
+                if violation:self.assertIn(violation,row['violations']);self.assertEqual(row['disposition'],'stop')
+                else:self.assertEqual(row['disposition'],'pass')
+                if case in ('R211','R210'):
+                    self.assertEqual(row['measurement']['counts']['R'],int(case[1:]));self.assertEqual(row['measurement']['counts']['raw_R'],226)
+        for case in ('malformed','caps'):
+            _,row=o.containment_decision(self.images,self.containment_counterfactual(records,producer,case),producer,binding)
+            self.assertEqual(row['disposition'],'stop');self.assertIn(case,row['violations'])
+        bad=copy.deepcopy(baseline);bad['initial']['counts']['D']+=1
+        with self.assertRaisesRegex(AssertionError,'baseline drift'):o.containment_decision(self.images,records,producer,binding,bad)
+        with self.assertRaises(AssertionError):o.containment_decision(self.images,records[:-1],producer,binding)
+        mixed=list(records);mixed[-1]=o.seal(mixed[-1],later)
+        with self.assertRaisesRegex(AssertionError,'mixed producer'):o.containment_decision(self.images,mixed,producer,binding)
+        with self.assertRaises(AssertionError):o.containment_decision(self.images,records,later,binding,baseline)
+        # The maintained parser treats a bare EOS string as unmatched text. Empty output has zero burdens.
+        eos=[o.seal(dict(x,token_ids=[self.t.convert_tokens_to_ids('<|im_end|>')],text='<|im_end|>',generated_tokens=1),producer) for x in records]
+        _,row=o.containment_decision(self.images,eos,producer,binding);self.assertEqual(row['measurement']['counts']['malformed'],18)
+        zero=[o.seal(dict(x,token_ids=[],text='',generated_tokens=0),producer) for x in records]
+        zb,z=o.containment_decision(self.images,zero,producer,binding);self.assertEqual(z['limits'],dict(D=0,I=0,malformed=0,caps=0,R_min=0))
+        self.assertEqual(z['disposition'],'pass')
+        _,again=o.containment_decision(self.images,[o.seal(x,later) for x in zero],later,binding,zb);self.assertEqual(again['disposition'],'pass')
+        invalid=self.containment_counterfactual(zero,later,'I');_,row=o.containment_decision(self.images,invalid,later,binding,zb)
+        self.assertEqual(row['measurement']['counts']['I'],1);self.assertIn('I',row['violations'])
+        # An initially empty image is allowed to acquire an unknown valid row; it receives no semantic coverage.
+        image,rec,_=self.fixture([[10,20,100,200]],[]);new=copy.deepcopy(zero)
+        rec['text']=rec['text'].replace('person','guard unknown');rec['token_ids']=self.t.encode(rec['text'],add_special_tokens=False);rec['generated_tokens']=len(rec['token_ids'])
+        new[0]['token_ids']=rec['token_ids'];new[0]['text']=rec['text'];new[0]['generated_tokens']=rec['generated_tokens']
+        new=[o.seal(x,later) for x in new];_,row=o.containment_decision(self.images,new,later,binding,zb)
+        self.assertEqual(row['disposition'],'pass');self.assertEqual(row['measurement']['counts']['R'],0)
+        repeated=self.containment_counterfactual(new,later,'D');_,row=o.containment_decision(self.images,repeated,later,binding,zb)
+        self.assertEqual(row['measurement']['counts']['D'],1);self.assertIn('D',row['violations'])
+        with self.assertRaises(AssertionError):o.containment_decision(self.images[:-1],records,producer,binding)
+        drift=dict(later,source='changed');changed=[o.seal(x,drift) for x in records]
+        with self.assertRaisesRegex(AssertionError,'producer drift'):o.containment_decision(self.images,changed,drift,binding,baseline)
+        changed=self.containment_counterfactual(records,producer,'D')
+        with self.assertRaisesRegex(AssertionError,'baseline reacquisition'):o.containment_decision(self.images,changed,producer,binding,baseline)
+
+    def test_containment_resident_thresholds_before_any_dependent_work(self):
+        cases=[]
+        for arm in ('control','treatment'):
+            for rank in (0,2):
+                for case in ('equal','R211','R210','D','I','malformed','caps','empty','initial-malformed','initial-caps'):
+                    cases.append((arm,None,True,rank,case,1))
+                cases.append((arm,None,True,rank,'D',8))
+        rows=self.resident_cases(cases)
+        # All gathered inputs and decisions agree across roles owning three versus two images.
+        for arm in ('control','treatment'):
+            for case in ('equal','R211','R210','D','I','malformed','caps','empty','initial-malformed','initial-caps'):
+                a=[x[3] for x in rows if x[:3]==(arm,0,case)][0]
+                b=[x[3] for x in rows if x[:3]==(arm,2,case)][0]
+                self.assertEqual(a,b)
+
+    def test_containment_persisted_readback_resigned_forgeries_and_offline_gate(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/containment-cpu-01')
+        original=o.p.load
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);outputs={};events=[]
+            for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm,guarded=True)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if path==root/'evaluator-binding.json' or path==o.r.TRUTH or 'evaluator-partitions' in str(path):
+                    events.append(str(path));raise AssertionError('evaluator read before containment validation')
+                return original(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),duplicate_weight=1,
+                rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                for arm,output in outputs.items():
+                    o.readback(output,root,1,correction_arm=arm,**kwargs)
+                    directory=output/'rank-2';receipt=directory/'complete.json';seal=receipt.read_bytes()
+                    for name,change in [
+                        ('containment-0.json',lambda x:x['measurement']['counts'].update(R=999)),
+                        ('containment-1.json',lambda x:x['measurement']['producer'].update(update=0)),
+                        ('containment-1.json',lambda x:x.update(disposition='stop')),
+                        ('containment-1.json',lambda x:x['limits'].update(R_min=0)),
+                        ('containment-1.json',lambda x:x['correction']['containment'].update(retained_category_percent=94)),
+                        ('containment-1.json',lambda x:x.update(empty_image_ids=[0])),
+                        ('containment-baseline.json',lambda x:x['initial']['counts'].update(D=999))]:
+                        with self.subTest(arm=arm,name=name,change=change):
+                            file=directory/name;before=file.read_bytes();data=original(file);change(data)
+                            if name=='containment-baseline.json':data['sha256']=o.identity({k:v for k,v in data.items() if k!='sha256'})
+                            file.write_text(o.p.canonical(data));complete=original(receipt);complete['artifacts'][name]=o.p.digest(file);receipt.write_text(o.p.canonical(complete))
+                            (output/'readback.json').unlink()
+                            with self.assertRaisesRegex(AssertionError,'saved containment'):o.readback(output,root,1,correction_arm=arm,**kwargs)
+                            self.assertFalse((output/'readback.json').exists());file.write_bytes(before);receipt.write_bytes(seal)
+                            o.readback(output,root,1,correction_arm=arm,**kwargs)
+                    file=directory/'containment-1.json';before=file.read_bytes();file.unlink()
+                    with self.assertRaises(FileNotFoundError):o.readback(output,root,1,correction_arm=arm,**kwargs)
+                    file.write_bytes(before)
+                file=outputs['treatment']/'readback.json';data=original(file);data[1]['containment']['disposition']='stop';file.write_text(o.p.canonical(data))
+                with self.assertRaises(AssertionError):o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,[])
+            # A fully re-signed normal-completion fixture with a genuinely rejected terminal raw version fails too.
+            subroot=root/'rejected';subroot.mkdir()
+            output,qual,images,inputs=self.correction_fixture_tree(subroot,'control',guarded=True,rejected_terminal=True)
+            rejected_kwargs=dict(kwargs,start_checkpoint=subroot/'anchor',recipe_sha256=o.identity(qual['correction']))
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                with self.assertRaisesRegex(AssertionError,'complete run contains containment stop'):o.readback(output,subroot,1,correction_arm='control',**rejected_kwargs)
+                self.assertFalse((output/'readback.json').exists());self.assertEqual(events,[])
 
 if __name__=='__main__':unittest.main()
