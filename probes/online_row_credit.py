@@ -289,7 +289,7 @@ def legal_slots(row):
 def schema_geometry_binding(root, enabled, arm):
     assert isinstance(enabled,bool)
     assert p.load(root/'qualification.json').get('schema_geometry',False)==enabled, 'schema geometry recipe drift'
-    if enabled:assert arm in ('local','chain')
+    if enabled:assert arm in ('local','chain','control','treatment')
 
 
 def schema_geometry_errors(record, tokenizer, rows):
@@ -554,10 +554,18 @@ def witness_diagnostics(q, batches, entries, vocab, producer):
     return dict(producer=producer,parameters_sha256=identity(before),unchanged_parameters_and_gradients=True,rows=rows)
 
 
-def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), insertion_policy=None):
+def jobs(image_ids, rank, plans, preservation_weight=0, witness_ids=(), insertion_policy=None, correction_arm=None, duplicate_weight=0):
     assert len(image_ids)==len(set(image_ids))==18 and 0<=rank<8
     assert preservation_weight in (0,.25)
     result = []
+    if correction_arm is not None:
+        assert correction_arm in ('control','treatment') and duplicate_weight==int(correction_arm=='treatment')
+        assert preservation_weight==0 and not witness_ids and insertion_policy is None
+        for i in sorted(image_ids)[rank::8]:
+            result += [dict(image_id=i,branch=b,weight=8/18) for b in
+                       ['trace']+(['redirect'] if duplicate_weight and plans[i]['redirect'] else [])]
+        return [dict(x,sync=j==len(result)-1) for j,x in enumerate(result)]
+    assert duplicate_weight==0
     if insertion_policy is not None:
         assert insertion_policy in ('local','chain') and preservation_weight==0 and not witness_ids
         for i in sorted(image_ids)[rank::8]:
@@ -684,11 +692,16 @@ def native_batch(q, item):
     return batch
 
 
-def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, insertion_policy=None, branch_index=None):
+def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, insertion_policy=None, branch_index=None, correction_arm=None, duplicate_weight=0):
     import torch
     from src.qwen.native import exact_history_inputs
     lineage=None
     original_plan=plan
+    if correction_arm is not None:
+        assert correction_arm in ('control','treatment') and duplicate_weight==int(correction_arm=='treatment')
+        assert branch in ('trace','redirect') and (branch!='redirect' or duplicate_weight==1)
+        assert encoding is None and preservation is None and preservation_weight==0 and insertion_policy is None and geometry_weight==.1
+        assert 'schema_geometry' in plan
     if insertion_policy is not None:
         assert branch in ('trace','bridge') and geometry_weight==.1 and preservation_weight==0
         if branch=='trace':plan=bridge_trace_plan(plan,insertion_policy)
@@ -753,11 +766,64 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
     if branch=='trace' and geometry_weight:
         evidence['geometry']=dict(weight=geometry_weight,error_slots=list(plan.get('schema_geometry',{}).get('union',erroneous_slots(plan['observations']))))
         if 'schema_geometry' in plan:evidence['schema_geometry']=plan['schema_geometry']
+    if correction_arm is not None:
+        evidence['correction']=dict(arm=correction_arm,duplicate_weight=duplicate_weight,plan_sha256=identity(plan))
+        evidence['logits_shape']=list(logits.shape);evidence['raw_dtype']=str(logits.dtype)
+        sequences=[r.positive_sequence(image,record,row,q.tokenizer) for row in plan['M']] if branch=='trace' else [sequence]
+        evidence['row_losses']=[dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences]
+        if branch=='redirect':
+            target=plan['redirect'];d=target['site']['offset'];site=target['site'];z=logits[0,d].float()
+            g,=torch.autograd.grad(terms['redirect_margin'],logits,retain_graph=True)
+            evidence['redirect']=dict(target=target,site_kind=sequence.atoms[d].token_type,
+                good_logit=float(z[site['good']].detach()),bad_logit=float(z[site['bad']].detach()),
+                good_derivative=float(g[0,d,site['good']]),bad_derivative=float(g[0,d,site['bad']]))
     return loss,evidence
+
+
+def verify_correction_forwards(forwards, image_ids, rank, plans, records, images, tokenizer, arm, weight):
+    """Actual readback consumer: exact current prefix, atoms and branch exposure."""
+    import math
+    expected=jobs(image_ids,rank,plans,correction_arm=arm,duplicate_weight=weight)
+    assert len(forwards)==len(expected)
+    for row,job in zip(forwards,expected):
+        i=job['image_id'];record=records[i];plan=plans[i]
+        assert (row['image_id'],row['branch'],row['sync'],row['image_weight'])==(i,job['branch'],job['sync'],job['weight'])
+        assert row['producer']==record['producer'] and row['raw_identity']==record['raw_identity']
+        assert row['correction']==dict(arm=arm,duplicate_weight=weight,plan_sha256=identity(plan))
+        if job['branch']=='trace':
+            full=record['prompt_token_ids']+record['token_ids'];positions=trace_positions(plan,record)
+            sequences=[r.positive_sequence(images[i],record,x,tokenizer) for x in plan['M']]
+            assert set(row['terms'])=={'M','legal','Gmax_unweighted','Gmax_weighted'} and 'redirect' not in row
+            assert row['schema_geometry']==plan['schema_geometry']
+        else:
+            target=plan['redirect'];seq=redirect_sequence(images[i],record,target,tokenizer);sequences=[seq]
+            full=seq.input_ids;positions=tuple(a.causal_logits_position for a in seq.atoms)
+            assert set(row['terms'])=={'redirect_positive','redirect_margin'}
+            detail=row['redirect'];assert detail['target']==target and detail['site_kind']==seq.atoms[target['site']['offset']].token_type
+            assert all(math.isfinite(detail[k]) for k in ('good_logit','bad_logit','good_derivative','bad_derivative'))
+            assert 0<=detail['bad_derivative']<=1 and detail['good_derivative']==-detail['bad_derivative']
+            import torch.nn.functional as F
+            import torch
+            margin=float(F.softplus(torch.tensor(1+detail['bad_logit']-detail['good_logit'])))
+            assert math.isclose(row['terms']['redirect_margin'],margin,rel_tol=1e-5,abs_tol=1e-6)
+        assert row['tokens']==len(full) and row['input_sha256']==identity(list(full)) and row['positions']==list(positions)
+        assert row['logits_shape']==[1,len(positions),len(tokenizer)]
+        assert row['visual_tokens']==__import__('math').prod(record['image_grid_thw'])//4
+        assert row['row_losses']==[dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences]
+        assert math.isfinite(row['loss']) and all(math.isfinite(x) and x>=0 for x in row['terms'].values())
+        assert set(row['logit_derivatives'])==set(row['terms'])
+        for key,detail in row['logit_derivatives'].items():
+            assert detail['loss']==row['terms'][key] and 0<=detail['support_rows']<=len(positions)
+            assert all(math.isfinite(detail[k]) and detail[k]>=0 for k in ('l2','linf'))
 
 
 def parameter_identity(model):
     return {name:p.tensor_hash(value) for name,value in model.named_parameters() if value.requires_grad}
+
+
+def source_paths():
+    return ['probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
+            *sorted(str(x) for x in Path('src').rglob('*.py'))]
 
 
 def start(output, root):
@@ -766,8 +832,7 @@ def start(output, root):
     for path,sha in p.load(root/'qualification.json')['sha256'].items(): assert p.digest(path)==sha,path
     assert int(os.environ['WORLD_SIZE'])==8
     rank = int(os.environ['RANK']);torch.cuda.set_device(int(os.environ['LOCAL_RANK']));torch.manual_seed(92711)
-    sources = ['probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
-               *sorted(str(x) for x in Path('src').rglob('*.py'))]
+    sources = source_paths()
     source = capture_source_identity(sources)
     out = output/f'rank-{rank}';out.mkdir(parents=True,exist_ok=False)
     p.write(out/'entry.json',dict(pid=os.getpid(),rank=rank,start=time.time(),source=source))
@@ -775,7 +840,7 @@ def start(output, root):
 
 
 def export_steps(updates):
-    assert updates in (1,2,16,64)
+    assert updates in (1,2,8,16,64)
     return tuple(x for x in (0,1,2,4,8,16,32,64) if x<=updates)
 
 
@@ -784,8 +849,13 @@ def bridge_binding(root, checkpoint, weight, recipe_sha256, arm):
     spec=p.load(root/'qualification.json')['bridge']
     assert checkpoint is not None and str(checkpoint)==spec['checkpoint']
     assert recipe_sha256==identity(spec), 'wrong bridge recipe'
+    verify_anchor_payload(checkpoint,spec['manifest_sha256'])
+    return dict(recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),manifest_sha256=spec['manifest_sha256'],weight=weight,insertion_policy=arm)
+
+
+def verify_anchor_payload(checkpoint, manifest_sha256):
     manifest=checkpoint/'inference_payload_manifest.json'
-    assert p.digest(manifest)==spec['manifest_sha256']
+    assert p.digest(manifest)==manifest_sha256
     payload=p.load(manifest)
     assert payload['schema']=='coordexp-infras-inference-checkpoint-payload-manifest' and payload['schema_version']==1
     for section in ('adapter','special_token_embedding_delta'):
@@ -793,7 +863,29 @@ def bridge_binding(root, checkpoint, weight, recipe_sha256, arm):
         for item in block['files']:
             path=checkpoint/block['relative_root']/item['relative_path']
             assert path.stat().st_size==item['size_bytes'] and p.digest(path)==item['sha256']
-    return dict(recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),manifest_sha256=spec['manifest_sha256'],weight=weight,insertion_policy=arm)
+
+
+def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sha256):
+    qual=p.load(root/'qualification.json');spec=qual.get('correction')
+    if arm is None:
+        assert spec is None and weight==0, 'explicit correction arm required'
+        return None
+    assert arm in ('control','treatment') and weight==int(arm=='treatment')
+    assert not any(k in qual for k in ('bridge','geometry','preservation','witness'))
+    assert spec is not None and spec['mode']=='correction-only-v1'
+    assert spec['arms']=={'control':0,'treatment':1} and spec['updates']==[1,8]
+    assert spec['event']=='earliest_eligible_literal_duplicate_per_image_round'
+    assert spec['objective']=='positive_row_plus_first_semantic_divergence_softplus_1'
+    assert spec['optimizer']==dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711)
+    assert qual['rollout_backend']=='vllm' and qual['schema_geometry'] is True and geometry_weight==.1
+    assert checkpoint is not None and str(checkpoint)==spec['checkpoint'] and recipe_sha256==identity(spec)
+    assert set(qual['sha256'])=={str(x) for x in (INPUTS,RETAINED,p.POLICY)}, 'runtime input whitelist drift'
+    for path,sha in qual['sha256'].items():assert p.digest(path)==sha,path
+    from src.artifacts.git_identity import verify_source_identity
+    verify_source_identity(qual['source'],required_paths=source_paths())
+    verify_anchor_payload(checkpoint,spec['manifest_sha256'])
+    return dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),
+                manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm')
 
 
 def geometry_binding(root, checkpoint, weight, recipe_sha256):
@@ -849,7 +941,7 @@ def vllm_requests(q, inputs, local):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -857,16 +949,26 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     rollout_binding(root,rollout_backend)
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
+    if correction is not None:
+        assert p.load(root/'qualification.json')['pairs'][str(updates)][correction_arm]==str(output)
+        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert preservation_bank_sha256 is witness_bank_sha256 is None
+        assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
+    else:assert updates!=8
     scheduled=export_steps(updates)
-    schema_geometry_binding(root,schema_geometry,insertion_policy)
-    execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    schema_geometry_binding(root,schema_geometry,correction_arm or insertion_policy)
+    execution=execution_binding(root,correction_arm or insertion_policy,microbatch,activation_checkpointing)
+    geometry=correction if correction is not None else (bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256))
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
     rank,out,sources,source = start(output,root); begin=time.monotonic()
+    if correction is not None:
+        assert source==p.load(root/'qualification.json')['source']
+        p.write(out/'correction.json',correction)
     if execution is not None:p.write(out/'execution.json',execution)
     if schema_geometry:p.write(out/'schema-geometry.json',dict(enabled=True))
     if binding is not None:p.write(out/'preservation.json',binding)
@@ -874,7 +976,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     if witness is not None:p.write(out/'witness.json',witness)
     images={x['image_id']:x for x in p.load(RETAINED)}
     inputs={x['image_id']:x for x in p.load(INPUTS)}
-    encodings={i:None for i in images} if insertion_policy is not None else {x['image_id']:x for x in p.load(ENCODINGS)}
+    encodings={i:None for i in images} if insertion_policy is not None or correction is not None else {x['image_id']:x for x in p.load(ENCODINGS)}
     assert set(images)==set(inputs)==set(encodings) and len(images)==18
     if bank is not None:assert set(bank)==set(images)
     local=sorted(images)[rank::8];previous_metrics=None
@@ -890,6 +992,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     vocab=build_token_vocabulary_groups(q.token_identity,tokenizer=q.tokenizer)
     assert tuple(vocab.coordinate)==tuple(q.tokenizer.convert_tokens_to_ids(f'<|coord_{j}|>') for j in range(1000))
     params=[x for x in q.model.parameters() if x.requires_grad]; flags={n:x.requires_grad for n,x in q.model.named_parameters()}
+    if correction is not None:assert len(params)==590
     delta_ids={id(x) for x in delta.delta_tensors().values()}
     optimizer=torch.optim.AdamW([dict(params=[x for x in params if id(x) not in delta_ids],lr=1e-5),
         dict(params=list(delta.delta_tensors().values()),lr=5e-6)],betas=(.9,.999),eps=1e-8,weight_decay=0)
@@ -910,6 +1013,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
         producer=dict(kind='live_online',update=version,parameter_sha256=hashes[0],source=source['commit'] if 'commit' in source else identity(source))
         if rollout is not None:producer['rollout_backend']='vllm-local-dora-0.29.0'
+        if correction is not None:producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
         q.model.eval();records=[];before=time.monotonic()
         if rollout is not None:
@@ -947,7 +1051,10 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if insertion_policy is not None:
             all_plans={x['image_id']:bridge_credit(images[x['image_id']],x,q.tokenizer,producer,insertion_policy,schema_geometry) for x in all_records}
             plans={x['image_id']:all_plans[x['image_id']] for x in records}
-        else:plans={x['image_id']:credit(images[x['image_id']],x,q.tokenizer,producer) for x in records}
+        else:
+            plans={x['image_id']:credit(images[x['image_id']],x,q.tokenizer,producer,redirect_enabled=bool(duplicate_weight) if correction is not None else True) for x in records}
+            if correction is not None:
+                for x in records:plans[x['image_id']]['schema_geometry']=schema_geometry_errors(x,q.tokenizer,plans[x['image_id']]['observations'])
         p.write(out/f'credit-{version}.json',list(plans.values()))
         metrics=r.assess_outputs([images[i] for i in local],[],records)
         if previous_metrics is not None:
@@ -968,11 +1075,11 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
                 lambda job:replay_job(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],plans[job['image_id']],vocab,job,insertion_policy))
         else:
             evidence=r.accumulate_family_step(model,jobs(list(images),rank,plans,preservation_weight,
-                witnesses if witness_weight else (),insertion_policy),
+                witnesses if witness_weight else (),insertion_policy,correction_arm,duplicate_weight),
                 lambda job:witness_forward(q,model,batches[job['image_id']],witnesses[job['image_id']],vocab,producer,witness_weight)
                 if job['branch']=='witness' else forward(q,model,batches[job['image_id']],images[job['image_id']],by[job['image_id']],
                     plans[job['image_id']],encodings[job['image_id']],vocab,job['branch'],
-                    bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,insertion_policy,job.get('branch_index')))
+                    bank[job['image_id']] if bank is not None else None,preservation_weight,geometry_weight,insertion_policy,job.get('branch_index'),correction_arm,duplicate_weight))
         norms={n:float(x.grad.float().norm()) if x.grad is not None else None for n,x in q.model.named_parameters() if x.requires_grad}
         assert all(v is not None and math.isfinite(v) for v in norms.values())
         assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
@@ -1013,28 +1120,47 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
     rollout_binding(root,rollout_backend)
-    schema_geometry_binding(root,schema_geometry,insertion_policy)
-    execution=execution_binding(root,insertion_policy,microbatch,activation_checkpointing)
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
+    if correction is not None:
+        assert p.load(root/'qualification.json')['pairs'][str(updates)][correction_arm]==str(output)
+        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert preservation_bank_sha256 is witness_bank_sha256 is None
+        assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
+    else:assert updates!=8
+    schema_geometry_binding(root,schema_geometry,correction_arm or insertion_policy)
+    execution=execution_binding(root,correction_arm or insertion_policy,microbatch,activation_checkpointing)
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
     binding,bank=preservation_binding(root,preservation_weight,preservation_bank_sha256)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    geometry=correction if correction is not None else (bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256))
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
-    if insertion_policy is not None:
+    if insertion_policy is not None or correction is not None:
         tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
+        if correction is not None:
+            assert receipt['source']==p.load(root/'qualification.json')['source'], 'correction source drift'
+            assert p.load(directory/'entry.json')['source']==receipt['source']
+            assert p.load(directory/'correction.json')==correction, 'correction arm drift'
         if rollout_backend=='vllm':
             assert p.load(directory/'online-policy.json')['rollout_backend']=='vllm'
             operations=p.load(directory/'vllm-operations.json')
             assert sum(x['operation']=='generate' for x in operations)==updates+1
             assert sum(x['operation']=='refresh' for x in operations)==updates
+            if correction is not None:
+                initial=p.load(directory/'producer-0.json')['producer']['parameter_sha256']
+                assert p.load(directory/'vllm-startup.json')['identity']==initial
+                expected=[]
+                for v in range(updates+1):
+                    snapshot=p.load(directory/f'producer-{v}.json')['producer']['parameter_sha256']
+                    expected += ([('refresh',snapshot)] if v else [])+[('generate',snapshot)]
+                assert [(x['operation'],x['identity']) for x in operations]==expected, 'stale vLLM snapshot or operation order'
         if execution is not None:assert p.load(directory/'execution.json')==execution
         assert (directory/'schema-geometry.json').exists()==schema_geometry
         if schema_geometry:assert p.load(directory/'schema-geometry.json')==dict(enabled=True)
@@ -1063,6 +1189,13 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                 records={i:p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json') for i in plans}
                 assert all(('schema_geometry' in plan)==schema_geometry for plan in plans.values())
                 verify_physical_forwards(evidence['forwards'],list(inputs),rank,plans,records,images,tokenizer,insertion_policy,microbatch)
+            if correction is not None:
+                records={i:p.load(output/f'rollout-{step-1}'/f'rank-{rank}'/f'{i}.json') for i in sorted(inputs)[rank::8]}
+                expected_plans={i:credit(images[i],record,tokenizer,record['producer'],redirect_enabled=bool(duplicate_weight)) for i,record in records.items()}
+                for i,record in records.items():expected_plans[i]['schema_geometry']=schema_geometry_errors(record,tokenizer,expected_plans[i]['observations'])
+                assert plans==expected_plans, 'current correction plan drift'
+                assert evidence['producer']==next(iter(records.values()))['producer']
+                verify_correction_forwards(evidence['forwards'],list(inputs),rank,plans,records,images,tokenizer,correction_arm,duplicate_weight)
             if witnesses is not None:
                 local=sorted(inputs)[rank::8]
                 expected=jobs(list(inputs),rank,plans,0,witnesses if witness_weight else ())
@@ -1113,23 +1246,60 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
     for version in range(updates+1):
         records=frozen_records(output/f'rollout-{version}',set(inputs),freeze=True)
         producer=records[0]['producer'];verify_producer(records,producer,list(inputs));assert producer['update']==version and producer['kind']=='live_online'
+        if correction is not None:
+            assert producer['rollout_backend']=='vllm-local-dora-0.29.0' and producer['source']==receipt['source']['commit']
+            assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(correction_arm,duplicate_weight,recipe_sha256)
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']
+            if correction is not None:
+                assert len(bound['parameters'])==590
+                local_records={x['image_id']:x for x in records if x['image_id'] in sorted(inputs)[rank::8]}
+                expected_plans={i:credit(images[i],record,tokenizer,producer,redirect_enabled=bool(duplicate_weight)) for i,record in local_records.items()}
+                for i,record in local_records.items():expected_plans[i]['schema_geometry']=schema_geometry_errors(record,tokenizer,expected_plans[i]['observations'])
+                assert p.load(output/f'rank-{rank}'/f'credit-{version}.json')==list(expected_plans.values()), 'terminal or current plan drift'
         if result:assert producer['parameter_sha256']!=result[-1]['producer']['parameter_sha256']
         for record in records:
             for key in inputs[record['image_id']]:assert record[key]==inputs[record['image_id']][key],key
         result.append(dict(update=version,producer=producer,requests=len(records),tokens=sum(x['generated_tokens'] for x in records),
             frozen_sha256=p.digest(output/f'rollout-{version}/frozen.json')))
+        if correction is not None:result[-1].update(correction=correction,execution=execution)
     p.write(output/'readback.json',result)
 
 
 def offline(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-            geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None):
+            geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None,
+            correction_arm=None, duplicate_weight=0, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
     """Only this separate process opens evaluator truth, after all raw outputs freeze."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
+    if correction is not None:
+        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert preservation_bank_sha256 is witness_bank_sha256 is None
+        assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
+        pair=p.load(root/'qualification.json')['pairs'][str(updates)]
+        assert set(pair)=={'control','treatment'} and len(set(pair.values()))==2 and pair[correction_arm]==str(output)
+        pair_frozen={};ids=[x['image_id'] for x in p.load(INPUTS)]
+        # Neither arm may expose truth until BOTH complete readbacks and all raw freezes survive fresh verification.
+        for arm,path in pair.items():
+            path=Path(path);read=p.load(path/'readback.json')
+            assert [x['update'] for x in read]==list(range(updates+1))
+            expected=dict(correction,arm=arm,duplicate_weight=int(arm=='treatment'))
+            execution=execution_binding(root,arm,microbatch,activation_checkpointing)
+            for row in read:
+                assert row['correction']==expected and row['execution']==execution and row['requests']==18
+                producer=row['producer']
+                assert producer['kind']=='live_online' and producer['update']==row['update'] and producer['source']==p.load(root/'qualification.json')['source']['commit']
+                assert producer['rollout_backend']=='vllm-local-dora-0.29.0'
+                assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(arm,expected['duplicate_weight'],recipe_sha256)
+                directory=path/f"rollout-{row['update']}"
+                records=frozen_records(directory,ids,freeze=True);verify_producer(records,producer,ids)
+                assert p.digest(directory/'frozen.json')==row['frozen_sha256']
+            pair_frozen[arm]=dict(readback_sha256=p.digest(path/'readback.json'),versions=read)
+        p.write(output/'offline-pair-inputs-frozen.json',pair_frozen)
+    else:assert updates!=8
     binding,_=preservation_binding(root,preservation_weight,preservation_bank_sha256)
-    geometry=bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256)
+    geometry=correction if correction is not None else (bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256))
     witness, witnesses=witness_binding(root,witness_weight,witness_bank_sha256)
     if witness is not None:assert geometry is not None and geometry_weight==.1 and preservation_weight==0
     if geometry is not None:
@@ -1149,6 +1319,25 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
         assert p.digest(directory/'frozen.json')==row['frozen_sha256']
         frozen['zero' if row['update']==0 else str(row['update'])]=records
     p.write(output/'offline-inputs-frozen.json',read)
+    if correction is not None:
+        tokenizer=r.frontend().tokenizer;coordinate={tokenizer.convert_tokens_to_ids(f'<|coord_{j}|>') for j in range(1000)};supply=[]
+        for version in range(updates+1):
+            rows=[]
+            for rank in range(8):
+                consumed=p.load(output/f'rank-{rank}/update-{version+1}.json')['forwards'] if version<updates else []
+                for plan in p.load(output/f'rank-{rank}/credit-{version}.json'):
+                    target=plan['redirect'];site=None
+                    if target:
+                        site='coordinate' if target['site']['good'] in coordinate else 'desc_text'
+                    delivered=[x for x in consumed if x['image_id']==plan['image_id'] and x['branch']=='redirect']
+                    assert len(delivered)==int(bool(target) and version<updates and duplicate_weight==1)
+                    rows.append(dict(image_id=plan['image_id'],M=len(plan['M']),literal_repeats=plan['literal_repeats'],
+                        eligible=int(bool(target)),site_kind=site,target=target,events=plan['redirect_events'],
+                        unresolved_duplicates=plan['literal_repeats']-int(bool(target)),consumed=delivered,
+                        unknown_semantic_targets=0,eos_targets=0,uncredited_complete_occurrences=plan['complete_rows']-len(plan['M']),
+                        geometry_errors=len(plan['schema_geometry']['union'])))
+            supply.append(dict(version=version,update_follows=version<updates,images=rows))
+        p.write(output/'correction-supply.json',supply)
     if geometry is not None:
         shapes={}
         for k in frozen:
@@ -1178,7 +1367,8 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
             supply.append(dict(version=version,update_follows=version<updates,images=rows,cumulative_insertion_events=events,
                 distinct_inserted_ids=sorted(distinct),distinct_supervised_ids=sorted(supervised)))
         p.write(output/'insertion-supply.json',supply)
-    for path,sha in p.load(root/'qualification.json')['evaluator_sha256'].items():assert p.digest(path)==sha,path
+    evaluator=p.load(root/'evaluator-binding.json')['sha256'] if correction is not None else p.load(root/'qualification.json')['evaluator_sha256']
+    for path,sha in evaluator.items():assert p.digest(path)==sha,path
     partitions=p.load(r.ROOT/'cpu-03/evaluator-partitions.json')
     assert p.digest(r.TRUTH)==partitions['truth_sha256']
     truth=p.load(r.TRUTH)
@@ -1423,7 +1613,7 @@ def replay_benchmark_readback(output, root):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('command',choices=('run','readback','offline','geometry-replay','replay-benchmark','replay-benchmark-readback'))
     parser.add_argument('--root',type=Path,default=ROOT);parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--updates',type=int,choices=(1,2,16,64),default=1)
+    parser.add_argument('--updates',type=int,choices=(1,2,8,16,64),default=1)
     parser.add_argument('--preservation-weight',type=float,choices=(0,.25),default=0)
     parser.add_argument('--preservation-bank-sha256')
     parser.add_argument('--geometry-weight',type=float,choices=(0,.1),default=0)
@@ -1436,14 +1626,21 @@ def main():
     parser.add_argument('--microbatch',type=int,choices=(1,4),default=1)
     parser.add_argument('--activation-checkpointing',choices=('on','off'),default='on')
     parser.add_argument('--rollout-backend',choices=('hf','vllm'),default='hf')
+    parser.add_argument('--correction-arm',choices=('control','treatment'))
+    parser.add_argument('--duplicate-weight',type=float,choices=(0,1),default=0)
     a=parser.parse_args()
     if a.command in ('replay-benchmark','replay-benchmark-readback'):
+        assert a.correction_arm is None and a.duplicate_weight==0
         assert a.rollout_backend=='hf'
         assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.insertion_policy is None and a.start_checkpoint is None and a.recipe_sha256 is None
         assert a.updates==1 and a.preservation_weight==a.geometry_weight==a.witness_weight==0 and a.preservation_bank_sha256 is None and a.witness_bank_sha256 is None
         return {'replay-benchmark':replay_benchmark,'replay-benchmark-readback':replay_benchmark_readback}[a.command](a.output,a.root)
     extra={'insertion_policy':a.insertion_policy} if a.command!='geometry-replay' else {}
-    if a.command in ('run','readback'):extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry,rollout_backend=a.rollout_backend)
+    if a.correction_arm is not None:
+        assert a.command in ('run','readback','offline')
+        extra.update(correction_arm=a.correction_arm,duplicate_weight=a.duplicate_weight)
+    else:assert a.duplicate_weight==0
+    if a.command in ('run','readback') or a.correction_arm is not None:extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry,rollout_backend=a.rollout_backend)
     else:assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.rollout_backend=='hf'
     assert a.command!='geometry-replay' or a.insertion_policy is None
     {'run':run,'readback':readback,'offline':offline,'geometry-replay':geometry_replay}[a.command](

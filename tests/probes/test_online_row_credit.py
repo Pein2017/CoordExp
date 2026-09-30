@@ -1,6 +1,6 @@
 import copy
 import unittest
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from unittest.mock import patch
 
 import torch
@@ -1012,5 +1012,380 @@ class OnlineCreditTest(unittest.TestCase):
         o.verify_bridge_forward(evidence,image,rec,plan,self.t,'local')
         bad=copy.deepcopy(evidence);bad['schema_geometry']['new']=[]
         with self.assertRaises(AssertionError):o.verify_bridge_forward(bad,image,rec,plan,self.t,'local')
+
+    def test_correction_fixed18_control_absence_and_final_sync(self):
+        ids=list(range(18));plans={i:dict(redirect={'eligible':True} if i%3 else None) for i in ids}
+        class Model:
+            def __init__(self):self.unsynced=0
+            def no_sync(self):self.unsynced+=1;return nullcontext()
+        for arm,duplicate_weight in [('control',0),('treatment',1)]:
+            grads=[]
+            for rank in range(8):
+                schedule=o.jobs(ids,rank,plans,correction_arm=arm,duplicate_weight=duplicate_weight)
+                self.assertEqual(sum(x['sync'] for x in schedule),1);self.assertTrue(schedule[-1]['sync'])
+                self.assertEqual(sum(x['branch']=='trace' for x in schedule),3 if rank<2 else 2)
+                self.assertEqual(sum(x['branch']=='redirect' for x in schedule),sum(bool(plans[i]['redirect']) for i in ids[rank::8])*duplicate_weight)
+                self.assertFalse(any(x['branch'] in ('R','bridge','P0','witness') for x in schedule))
+                x=torch.tensor(1.,requires_grad=True);model=Model();optimizer=unittest.mock.Mock()
+                def consume(job):
+                    optimizer.step.assert_not_called();optimizer.zero_grad.assert_not_called()
+                    return x*((job['image_id']+1) if job['branch']=='trace' else 7),dict(branch=job['branch'])
+                o.r.accumulate_family_step(model,schedule,consume);grads.append(float(x.grad))
+                self.assertEqual(model.unsynced,len(schedule)-1);optimizer.step.assert_not_called()
+            self.assertAlmostEqual(sum(grads)/8,sum(i+1+7*duplicate_weight*bool(plans[i]['redirect']) for i in ids)/18,places=5)
+        for arm,weight in [('control',1),('treatment',0)]:
+            with self.assertRaises(AssertionError):o.jobs(ids,0,plans,correction_arm=arm,duplicate_weight=weight)
+        empty={i:dict(redirect=None) for i in ids}
+        self.assertEqual(o.jobs(ids,0,empty,correction_arm='control'),o.jobs(ids,0,empty,correction_arm='treatment',duplicate_weight=1))
+        self.assertEqual(o.export_steps(8),(0,1,2,4,8))
+
+    def correction_qualifier(self, root, checkpoint):
+        spec=dict(mode='correction-only-v1',arms={'control':0,'treatment':1},updates=[1,8],checkpoint=str(checkpoint),manifest_sha256='manifest',
+            event='earliest_eligible_literal_duplicate_per_image_round',objective='positive_row_plus_first_semantic_divergence_softplus_1',
+            optimizer=dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711))
+        return dict(correction=spec,rollout_backend='vllm',schema_geometry=True,source={'commit':'source','files':[]},
+            sha256={str(x):'manifest' for x in (o.INPUTS,o.RETAINED,o.p.POLICY)},
+            execution={'profiles':[dict(arm=a,microbatch=1,activation_checkpointing=False) for a in ('control','treatment')]},
+            pairs={str(n):{a:str(root/f'paired-{n}'/a) for a in ('control','treatment')} for n in (1,8)})
+
+    def test_correction_actual_entry_and_recipe_source_falsifiers(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/marginstep256');qual=self.correction_qualifier(root,checkpoint);reads=[]
+        original=o.p.load
+        def load(path):
+            reads.append(str(path))
+            if path==root/'qualification.json':return qual
+            if path==checkpoint/'inference_payload_manifest.json':return dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
+                adapter=dict(status='present',files=[]),special_token_embedding_delta=dict(status='present',files=[]))
+            if path==o.ENCODINGS:raise AssertionError('forbidden old R encodings')
+            return original(path)
+        class AtCompose(Exception):pass
+        with patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='manifest'), \
+             patch('src.artifacts.git_identity.verify_source_identity') as verify:
+            for arm in ('control','treatment'):
+                output=Path(qual['pairs']['1'][arm]);kwargs=dict(geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),
+                    correction_arm=arm,duplicate_weight=int(arm=='treatment'),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                with patch.object(o,'start',return_value=(0,root,[],qual['source'])),patch.object(o.p,'write'), \
+                     patch('torch.distributed.init_process_group'),patch.object(o.p,'compose',side_effect=AtCompose) as compose:
+                    with self.assertRaises(AtCompose):o.run(output,root,1,**kwargs)
+                    compose.assert_called_once_with(checkpoint,evaluation=False)
+                    for key,value in [('duplicate_weight',1-int(arm=='treatment')),('start_checkpoint',Path('/stale')),('recipe_sha256','stale'),
+                                      ('schema_geometry',False),('rollout_backend','hf'),('insertion_policy','local'),('activation_checkpointing',True),('microbatch',4)]:
+                        compose.reset_mock()
+                        with self.assertRaises((AssertionError,ValueError)):o.run(output,root,1,**dict(kwargs,**{key:value}))
+                        compose.assert_not_called()
+                    verify.side_effect=ValueError('source changed')
+                    with self.assertRaisesRegex(ValueError,'source changed'):o.run(output,root,1,**kwargs)
+                    compose.assert_not_called();verify.side_effect=None
+            self.assertNotIn(str(o.ENCODINGS),reads)
+            self.assertTrue(all('truth' not in x and 'evaluator' not in x for x in reads))
+            changed=copy.deepcopy(qual);changed['sha256']['/hidden-truth']='manifest'
+            with patch.object(o.p,'load',return_value=changed):
+                with self.assertRaisesRegex(AssertionError,'whitelist'):o.correction_binding(root,'control',0,checkpoint,.1,o.identity(qual['correction']))
+            with patch.object(o.p,'digest',return_value='stale'):
+                with self.assertRaises(AssertionError):o.correction_binding(root,'control',0,checkpoint,.1,o.identity(qual['correction']))
+
+    def test_correction_native_forward_exact_atoms_margin_and_unknown_masks(self):
+        from types import SimpleNamespace
+        image,record,plan=self.fixture([[10,20,100,200],[10,20,100,200],[300,400,500,600]])
+        plan['schema_geometry']=o.schema_geometry_errors(record,self.t,plan['observations'])
+        class Toy(torch.nn.Module):
+            def __init__(self,vocab):super().__init__();self.w=torch.nn.Parameter(torch.linspace(-.03,.03,vocab));self.histories=[]
+            def get_rope_index(self,ids,mm_token_type_ids,*,image_grid_thw,video_grid_thw,attention_mask):
+                return (attention_mask.cumsum(-1)-1).unsqueeze(0).expand(3,-1,-1),None
+            def forward(self,input_ids,logits_to_keep,**kw):
+                self.histories.append(input_ids.tolist()[0])
+                h=(input_ids%19).float().cumsum(-1).index_select(1,logits_to_keep)/1000
+                return SimpleNamespace(logits=h[:,:,None]*self.w)
+        model=Toy(len(self.t));q=SimpleNamespace(model=model,tokenizer=self.t)
+        batch=SimpleNamespace(inputs=dict(input_ids=torch.tensor([record['prompt_token_ids']]),attention_mask=torch.ones(1,len(record['prompt_token_ids'])),
+            image_grid_thw=torch.tensor([record['image_grid_thw']]),pixel_values=torch.tensor([[2.,3.]])))
+        tensor=torch.tensor;by={image['image_id']:plan};records={image['image_id']:record};images={image['image_id']:image}
+        with patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+             patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data,**{k:v for k,v in kw.items() if k!='device'})):
+            for branch in ('trace','redirect'):
+                loss,row=o.forward(q,model,batch,image,record,plan,None,self.vocab,branch,geometry_weight=.1,correction_arm='treatment',duplicate_weight=1)
+                row=dict(row,image_weight=8/18,sync=True)
+                with patch.object(o,'jobs',return_value=[dict(image_id=image['image_id'],branch=branch,weight=8/18,sync=True)]):
+                    o.verify_correction_forwards([row],list(range(18)),0,by,records,images,self.t,'treatment',1)
+                    for field in ('positions','input_sha256','row_losses','raw_identity','correction'):
+                        bad=copy.deepcopy(row)
+                        if field=='positions':bad[field]=[x+1 for x in bad[field]]
+                        elif field=='row_losses':bad[field][0]['atoms'][0]['token_id']+=1
+                        else:bad[field]='wrong'
+                        with self.assertRaises((AssertionError,TypeError)):o.verify_correction_forwards([bad],list(range(18)),0,by,records,images,self.t,'treatment',1)
+                    if branch=='redirect':
+                        bad=copy.deepcopy(row);bad['redirect']['target']['site']['good']+=1
+                        with self.assertRaises(AssertionError):o.verify_correction_forwards([bad],list(range(18)),0,by,records,images,self.t,'treatment',1)
+                        self.assertGreater(row['redirect']['bad_derivative'],0);self.assertLess(row['redirect']['good_derivative'],0)
+                        seq=o.redirect_sequence(image,record,plan['redirect'],self.t)
+                        self.assertEqual(model.histories[-1],list(seq.input_ids));self.assertFalse(any(a.token_type=='eos' for a in seq.atoms))
+                        self.assertEqual([a.token_id for a in seq.atoms],plan['redirect']['token_ids'])
+                model.zero_grad();loss.backward();self.assertTrue(torch.isfinite(model.w.grad).all());self.assertGreater(float(model.w.grad.abs().sum()),0)
+            with self.assertRaises(AssertionError):o.forward(q,model,batch,image,record,plan,None,self.vocab,'R',geometry_weight=.1,correction_arm='control')
+        # Unknown and repeated rows are context only in M; EOS and description positions receive no semantic target.
+        unknown=copy.deepcopy(image);unknown['objects']=[]
+        p=o.credit(unknown,record,self.t,self.producer,redirect_enabled=False);p['schema_geometry']=o.schema_geometry_errors(record,self.t,p['observations'])
+        positions=o.trace_positions(p,record);n=len(record['prompt_token_ids'])
+        coord_positions={n+j-1 for x in p['observations'] for j,_,_ in o.legal_slots(x)}
+        self.assertEqual(set(positions),coord_positions);self.assertNotIn(n+len(record['token_ids'])-2,positions)
+        z=torch.zeros(1,len(positions),len(self.t),requires_grad=True)
+        value,terms=o.trace_objective(z,positions,p,record,unknown,self.t,self.vocab,.1)
+        self.assertEqual(float(terms['M']),0);self.assertEqual(float(terms['Gmax_unweighted']),0);self.assertGreaterEqual(float(value),0)
+
+    def test_correction_cli_same_settings_including_offline(self):
+        argv=['--root','/cpu','--output','/run','--updates','8','--geometry-weight','.1','--start-checkpoint','/marginstep256','--recipe-sha256','recipe',
+              '--correction-arm','treatment','--duplicate-weight','1','--rollout-backend','vllm','--schema-geometry','--microbatch','1','--activation-checkpointing','off']
+        for command in ('run','readback','offline'):
+            with patch('sys.argv',['online_row_credit',command,*argv]),patch.object(o,command) as caller:
+                o.main();self.assertEqual(caller.call_args.kwargs,dict(insertion_policy=None,correction_arm='treatment',duplicate_weight=1,
+                    microbatch=1,activation_checkpointing=False,schema_geometry=True,rollout_backend='vllm'))
+                self.assertEqual(caller.call_args.args[2],8)
+        with patch('sys.argv',['online_row_credit','geometry-replay',*argv]),patch.object(o,'geometry_replay') as caller:
+            with self.assertRaises(AssertionError):o.main()
+            caller.assert_not_called()
+
+    def correction_fixture_tree(self, root, arm, updates=1):
+        """Prediction-only persisted fixtures for the actual readback/offline consumers."""
+        from pathlib import Path
+        checkpoint=root/'anchor';checkpoint.mkdir(exist_ok=True)
+        if not (checkpoint/'inference_payload_manifest.json').exists():
+            o.p.write(checkpoint/'inference_payload_manifest.json',dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
+                adapter=dict(status='present',files=[]),special_token_embedding_delta=dict(status='present',files=[])))
+        qual=self.correction_qualifier(root,checkpoint)
+        qual['correction']['manifest_sha256']=o.p.digest(checkpoint/'inference_payload_manifest.json')
+        qual['sha256']={str(x):o.p.digest(x) for x in (o.INPUTS,o.RETAINED,o.p.POLICY)}
+        if not (root/'qualification.json').exists():o.p.write(root/'qualification.json',qual)
+        else:self.assertEqual(o.p.load(root/'qualification.json'),qual)
+        output=Path(qual['pairs'][str(updates)][arm]);output.mkdir(parents=True)
+        weight=int(arm=='treatment');recipe=o.identity(qual['correction'])
+        binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe,checkpoint=str(checkpoint),manifest_sha256=qual['correction']['manifest_sha256'],
+            weight=.1,schema_geometry=True,rollout_backend='vllm')
+        execution=dict(arm=arm,microbatch=1,activation_checkpointing=False)
+        image,record,_=self.fixture([[10,20,100,200],[10,20,100,200],[300,400,500,600]])
+        images={i:dict(image,image_id=i) for i in range(18)}
+        inputs=[{k:v for k,v in dict(record,image_id=i).items() if k in o.p.load(o.INPUTS)[0]} for i in range(18)]
+        for step in o.export_steps(updates):
+            directory=output/f'checkpoint-{step}';directory.mkdir();(directory/'payload').write_text(str(step))
+            o.p.write(directory/'identity.json',{'payload':o.p.digest(directory/'payload')})
+        for rank in range(8):
+            directory=output/f'rank-{rank}';directory.mkdir()
+            for name,data in [('entry.json',{'source':qual['source']}),('execution.json',execution),('correction.json',binding),('geometry.json',binding),
+                              ('schema-geometry.json',{'enabled':True}),('online-policy.json',{'rollout_backend':'vllm'})]:o.p.write(directory/name,data)
+            operations=[]
+            for version in range(updates+1):
+                params={str(j):str(version) for j in range(590)};snapshot=o.identity(params)
+                producer=dict(kind='live_online',update=version,parameter_sha256=snapshot,source='source',rollout_backend='vllm-local-dora-0.29.0',
+                    correction_arm=arm,duplicate_weight=weight,recipe_sha256=recipe)
+                o.p.write(directory/f'producer-{version}.json',dict(producer=producer,parameters=params))
+                if version:operations.append(dict(operation='refresh',identity=snapshot))
+                else:o.p.write(directory/'vllm-startup.json',dict(identity=snapshot))
+                operations.append(dict(operation='generate',identity=snapshot))
+                rawdir=output/f'rollout-{version}'/f'rank-{rank}';rawdir.mkdir(parents=True)
+                records={i:o.seal(dict(record,image_id=i),producer) for i in range(rank,18,8)}
+                plans={i:o.credit(images[i],rec,self.t,producer,redirect_enabled=bool(weight)) for i,rec in records.items()}
+                for i,rec in records.items():
+                    plans[i]['schema_geometry']=o.schema_geometry_errors(rec,self.t,plans[i]['observations'])
+                    o.p.write(rawdir/f'{i}.json',rec)
+                o.p.write(rawdir/'complete.json',dict(status='complete',source=qual['source'],producer=producer,
+                    artifacts={x.name:o.p.digest(x) for x in rawdir.glob('*.json')}))
+                o.p.write(directory/f'credit-{version}.json',list(plans.values()))
+                if version==updates:continue
+                forwards=[]
+                for job in o.jobs(list(images),rank,plans,correction_arm=arm,duplicate_weight=weight):
+                    i=job['image_id'];rec=records[i];plan=plans[i]
+                    if job['branch']=='trace':
+                        full=rec['prompt_token_ids']+rec['token_ids'];positions=o.trace_positions(plan,rec)
+                        seqs=[o.r.positive_sequence(images[i],rec,x,self.t) for x in plan['M']]
+                        terms=dict(M=1.,legal=1.,Gmax_unweighted=0.,Gmax_weighted=0.)
+                        extra=dict(geometry=dict(weight=.1,error_slots=plan['schema_geometry']['union']),schema_geometry=plan['schema_geometry'])
+                    else:
+                        seq=o.redirect_sequence(images[i],rec,plan['redirect'],self.t);seqs=[seq];full=seq.input_ids
+                        positions=[a.causal_logits_position for a in seq.atoms];terms=dict(redirect_positive=1.,redirect_margin=1001.)
+                        extra=dict(redirect=dict(target=plan['redirect'],site_kind=seq.atoms[plan['redirect']['site']['offset']].token_type,
+                            good_logit=0.,bad_logit=1000.,good_derivative=-1.,bad_derivative=1.))
+                    forwards.append(dict(image_id=i,branch=job['branch'],sync=job['sync'],image_weight=8/18,producer=producer,raw_identity=rec['raw_identity'],
+                        correction=dict(arm=arm,duplicate_weight=weight,plan_sha256=o.identity(plan)),tokens=len(full),positions=list(positions),input_sha256=o.identity(list(full)),
+                        visual_tokens=__import__('math').prod(rec['image_grid_thw'])//4,row_losses=[dict(atoms=[a.to_artifact_dict() for a in s.atoms]) for s in seqs],
+                        logits_shape=[1,len(positions),len(self.t)],raw_dtype='torch.bfloat16',
+                        loss=sum(terms.values()),terms=terms,logit_derivatives={k:dict(loss=v,l2=1.,linf=1.,support_rows=1) for k,v in terms.items()},**extra))
+                o.p.write(directory/f'update-{version+1}.json',dict(producer=producer,optimizer_steps=[version+1],optimizer_state_count=590,lrs=[1e-5,5e-6],
+                    synchronized_norms=['same']*8,forwards=forwards))
+            o.p.write(directory/'vllm-operations.json',operations)
+            o.p.write(directory/'complete.json',dict(status='complete',updates=updates,source=qual['source'],artifacts={x.name:o.p.digest(x) for x in directory.glob('*.json')}))
+        return output,qual,images,inputs
+
+    def test_correction_actual_readback_freshness_exports_partial_and_recipe(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu')
+        original=o.p.load
+        for arm,updates in [('control',1),('treatment',1),('control',8),('treatment',8)]:
+            with tempfile.TemporaryDirectory(dir=base) as tmp:
+                root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,arm,updates)
+                kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
+                    duplicate_weight=int(arm=='treatment'),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                def load(path):
+                    if path==o.RETAINED:return list(images.values())
+                    if path==o.INPUTS:return inputs
+                    if 'truth' in str(path) or 'evaluator' in str(path) or path==o.ENCODINGS:raise AssertionError('forbidden runtime read')
+                    return original(path)
+                with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                     patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                    o.readback(output,root,updates,**kwargs);self.assertTrue((output/'readback.json').exists())
+                    directory=output/'rank-0'
+                    def mutate(name,change):
+                        data=original(directory/name);change(data);(directory/name).write_text(o.p.canonical(data))
+                        complete=original(directory/'complete.json');complete['artifacts'][name]=o.p.digest(directory/name);(directory/'complete.json').write_text(o.p.canonical(complete))
+                    for name,change in [('vllm-operations.json',lambda x:x[1].update(identity='stale')),
+                                        ('vllm-operations.json',lambda x:x.reverse()),('entry.json',lambda x:x.update(source={'commit':'old'})),
+                                        ('correction.json',lambda x:x.update(arm='wrong')),(f'credit-{updates}.json',lambda x:x[0].update(M=[])),
+                                        ('update-1.json',lambda x:x['forwards'][0]['positions'].__setitem__(0,x['forwards'][0]['positions'][0]+1))]:
+                        before=(directory/name).read_bytes();receipt=(directory/'complete.json').read_bytes()
+                        (output/'readback.json').unlink(missing_ok=True);mutate(name,change)
+                        with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
+                        self.assertFalse((output/'readback.json').exists());(directory/name).write_bytes(before);(directory/'complete.json').write_bytes(receipt)
+                    checkpoint=output/f'checkpoint-{updates}/identity.json';before=checkpoint.read_bytes();checkpoint.unlink()
+                    with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
+                    checkpoint.write_bytes(before)
+                    checkpoint=output/f'checkpoint-{updates}/payload';checkpoint.write_text('corrupt')
+                    with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
+                    checkpoint.write_text(str(updates))
+                    complete=directory/'complete.json';before=complete.read_bytes();partial=original(complete);partial['status']='partial';complete.write_text(o.p.canonical(partial))
+                    with self.assertRaises(AssertionError):o.readback(output,root,updates,**kwargs)
+                    complete.write_bytes(before);entry=directory/'entry.json';before=entry.read_bytes();entry.unlink()
+                    with self.assertRaises(FileNotFoundError):o.readback(output,root,updates,**kwargs)
+                    entry.write_bytes(before)
+
+    def test_correction_actual_offline_both_freezes_before_any_evaluator_read(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu');original=o.p.load
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);outputs={};events=[]
+            for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if path==root/'evaluator-binding.json':
+                    self.assertTrue(all((x/'readback.json').exists() for x in outputs.values()))
+                    self.assertTrue((outputs['control']/'offline-pair-inputs-frozen.json').exists())
+                    events.append('evaluator-binding');return {'sha256':{}}
+                if path==o.r.ROOT/'cpu-03/evaluator-partitions.json':return dict(truth_sha256='offline',hidden10=[])
+                if path==o.r.TRUTH:events.append('truth');return []
+                return original(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                o.readback(outputs['control'],root,1,correction_arm='control',duplicate_weight=0,**kwargs)
+                with self.assertRaises(FileNotFoundError):o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,[])
+                o.readback(outputs['treatment'],root,1,correction_arm='treatment',duplicate_weight=1,**kwargs)
+                digest=o.p.digest
+                with patch.object(o.p,'digest',side_effect=lambda path:'offline' if path==o.r.TRUTH else digest(path)), \
+                     patch.object(o.r,'assess_outputs',return_value=[]),patch.object(o.r,'family_outcomes',return_value={}):
+                    o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,['evaluator-binding','truth'])
+                events.clear();raw=outputs['treatment']/'rollout-1/rank-0/0.json';raw.write_text('{}')
+                with self.assertRaises(AssertionError):o.offline(outputs['control'],root,1,correction_arm='control',**kwargs)
+                self.assertEqual(events,[])
+
+    def test_correction_resident_caller_no_old_branches_single_optimizer_action(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        base=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu')
+        original=o.p.load;inputs=original(o.INPUTS);by={x['request_id']:r for x,r in zip(inputs,self.records)};optimizer_type=torch.optim.AdamW
+        class Tiny(torch.nn.Module):
+            def __init__(self):
+                super().__init__();self.lora_=torch.nn.ParameterList([torch.nn.Parameter(torch.tensor([.01])) for _ in range(588)])
+                self.embed_tokens=torch.nn.Module();self.embed_tokens.shared_embed_delta=torch.nn.Parameter(torch.tensor([.01]))
+                self.lm_head=torch.nn.Module();self.lm_head.shared_embed_delta=torch.nn.Parameter(torch.tensor([.01]))
+                self.config=SimpleNamespace(text_config=SimpleNamespace(attention_dropout=0));self.is_gradient_checkpointing=False
+            def gradient_checkpointing_disable(self):self.is_gradient_checkpointing=False
+            def enable_input_require_grads(self):pass
+        class DDP:
+            def __init__(self,*a,**k):self.no_sync_calls=0
+            def no_sync(self):self.no_sync_calls+=1;return nullcontext()
+        class Rollout:
+            def __init__(self,**kw):self.identity=kw['identity'];self.startup={'identity':self.identity};self.receipts=[]
+            def refresh(self,model,delta,*,identity):self.identity=identity;self.receipts.append(dict(operation='refresh',identity=identity))
+            def generate(self,requests,*,budgets,identity,**kw):
+                assert identity==self.identity and budgets==[3084]*len(requests)
+                self.receipts.append(dict(operation='generate',identity=identity))
+                return [SimpleNamespace(token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
+            def close(self):pass
+        for arm in ('control','treatment'):
+            with tempfile.TemporaryDirectory(dir=base) as tmp:
+                root=Path(tmp);checkpoint=root/'anchor';qual=self.correction_qualifier(root,checkpoint)
+                output=Path(qual['pairs']['1'][arm]);directory=output/'rank-0';directory.mkdir(parents=True)
+                q=SimpleNamespace(model=Tiny(),base_model_path='/base',processor=self.q.processor,tokenizer=self.t,token_identity=self.q.token_identity)
+                delta=SimpleNamespace(delta_tensors=lambda:dict(input=q.model.embed_tokens.shared_embed_delta,output=q.model.lm_head.shared_embed_delta))
+                seen=[];optimizers=[]
+                plans={x['image_id']:o.credit(image,x,self.t,self.producer,redirect_enabled=arm=='treatment') for image,x in zip(self.images,self.records)}
+                expected=o.jobs([x['image_id'] for x in self.images],0,plans,correction_arm=arm,duplicate_weight=int(arm=='treatment'))
+                class Optimizer(optimizer_type):
+                    def __init__(self,*a,**k):super().__init__(*a,**k);self.steps=0;optimizers.append(self)
+                    def step(self,*a,**k):
+                        self.assert_ready();self.steps+=1;return super().step(*a,**k)
+                    def assert_ready(self):assert [(x['image_id'],x['branch']) for x in seen]==[(x['image_id'],x['branch']) for x in expected]
+                def load(path):
+                    if path==root/'qualification.json':return qual
+                    if path==o.ENCODINGS or 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden runtime read')
+                    return original(path)
+                def gather(target,value):
+                    if isinstance(value,list):
+                        producer=value[0]['producer'];all_records={x['image_id']:o.seal(x,producer) for x in self.records}
+                        for rank in range(8):target[rank]=[all_records[i] for i in sorted(all_records)[rank::8]]
+                        target[0]=value
+                    else:
+                        for rank in range(8):target[rank]=value
+                def consume(q_,model,batch,image,record,plan,encoding,vocab,branch,*args):
+                    self.assertIsNone(encoding);self.assertIn(branch,('trace','redirect'));self.assertEqual(optimizers[0].steps,0)
+                    seen.append(dict(image_id=image['image_id'],branch=branch))
+                    return sum(q.model.parameters())*(1 if branch=='trace' else 2),dict(seen[-1])
+                write=unittest.mock.Mock()
+                contexts=[patch.object(o.p,'load',side_effect=load),patch.object(o.p,'digest',return_value='manifest'),
+                     patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_anchor_payload'),
+                     patch.object(o,'start',return_value=(0,directory,[],qual['source'])),patch.object(o.p,'compose',return_value=(q,delta,{})),
+                     patch.object(o.p,'write',write),patch.object(o.p,'save_checkpoint'),patch.object(o,'native_batch',return_value=None),
+                     patch('torch.nn.parallel.DistributedDataParallel',DDP),patch('torch.distributed.init_process_group'),patch('torch.distributed.destroy_process_group'),
+                     patch('torch.distributed.all_gather_object',side_effect=gather),patch('torch.distributed.barrier'),
+                     patch('torch.cuda.max_memory_allocated',return_value=0),patch('torch.cuda.max_memory_reserved',return_value=0),
+                     patch('src.qwen.vllm_rollout.VllmDoraRollout',Rollout),patch.object(torch.optim,'AdamW',Optimizer),
+                     patch.object(o,'forward',side_effect=consume),patch.dict('os.environ',{'LOCAL_RANK':'0'})]
+                with ExitStack() as stack:
+                    for context in contexts:stack.enter_context(context)
+                    o.run(output,root,1,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
+                        duplicate_weight=int(arm=='treatment'),rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+                self.assertEqual(optimizers[0].steps,1)
+                updates=[x.args[1] for x in write.call_args_list if x.args[0].name=='update-1.json']
+                self.assertEqual(len(updates),1);self.assertEqual(updates[0]['optimizer_steps'],[1]);self.assertEqual(updates[0]['optimizer_state_count'],590)
+                self.assertTrue(updates[0]['forwards'][-1]['sync']);self.assertEqual(sum(x['sync'] for x in updates[0]['forwards']),1)
+
+    def test_correction_real18_stopped_fixture_all_supported_semantic_sites(self):
+        from pathlib import Path
+        fixture=o.p.load(Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu/real18-fixture.json'))
+        images={x['image_id']:x for x in self.images};sites=[]
+        self.assertEqual(len(fixture),18);self.assertEqual(sum(x['plan']['literal_repeats'] for x in fixture),3060)
+        for item in fixture:
+            i=item['image_id'];record=item['record'];image=images[i]
+            plan=o.credit(image,record,self.t,record['producer'],redirect_enabled=True)
+            plan['schema_geometry']=o.schema_geometry_errors(record,self.t,plan['observations'])
+            self.assertEqual(plan,item['plan']);self.assertEqual(list(o.trace_positions(plan,record)),item['trace_positions'])
+            if not plan['redirect']:continue
+            target=plan['redirect'];seq=o.redirect_sequence(image,record,target,self.t);d=target['site']['offset']
+            self.assertEqual([a.to_artifact_dict() for a in seq.atoms],item['redirect_atoms']);self.assertFalse(any(a.token_type=='eos' for a in seq.atoms))
+            self.assertEqual(list(seq.input_ids[:len(record['prompt_token_ids'])+target['prefix_cut']]),record['prompt_token_ids']+record['token_ids'][:target['prefix_cut']])
+            self.assertEqual(seq.atoms[d].causal_logits_position,len(record['prompt_token_ids'])+target['prefix_cut']+d-1)
+            self.assertEqual(target['token_ids'][:d],target['negative_ids'][:d]);self.assertEqual([a.token_id for a in seq.atoms],target['token_ids'])
+            z=torch.zeros(1,len(seq.atoms),len(self.t));z[0,d,target['site']['bad']]=1000.;z.requires_grad_()
+            loss,terms=o.redirect_objective(z,tuple(a.causal_logits_position for a in seq.atoms),seq,target,len(record['prompt_token_ids']),self.vocab)
+            g,=torch.autograd.grad(terms['redirect_margin'],z,retain_graph=True)
+            self.assertEqual(float(terms['redirect_margin']),1001.);self.assertEqual(float(g[0,d,target['site']['bad']]),1.)
+            self.assertEqual(float(g[0,d,target['site']['good']]),-1.);self.assertEqual(int(torch.count_nonzero(g)),2)
+            loss.backward();self.assertTrue(torch.isfinite(z.grad).all());self.assertGreater(float(z.grad[0,-1].abs().sum()),0)
+            sites.append(seq.atoms[d].token_type)
+        self.assertEqual(sites.count('desc_text'),4);self.assertEqual(sites.count('coordinate'),11)
 
 if __name__=='__main__':unittest.main()
