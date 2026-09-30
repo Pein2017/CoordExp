@@ -82,3 +82,24 @@ The new seam was exercised: update2 consumed1 LOCAL and138 CHAIN additional site
 Category R/H: identical incoming222/24; LOCAL224/27 then243/27; CHAIN225/30 then239/30. Endpoint retained acquisition/loss is32/11 LOCAL and33/16 CHAIN; hidden5/2 and7/1. Burdens remain mixed: LOCAL invalid5->4->16, malformed0->1->0, complete repeats5->26->45, near pairs6->27->113; CHAIN invalid5->7->6, malformed0->138->131, repeats5->15->34, near pairs6->27->21. Neither has a cap. Full raw/category/cohort/ID evidence remains immutable. This establishes correct live credit delivery with preliminary coverage gains, not stable suppression, physical precision or a preferred policy.
 
 Chain wall974.821s; LOCAL609 replay forwards/913713 input/597924 visual, CHAIN72/119173/70640. Measured peak allocated bytes17168342528/27243051008; these are not64-run memory bounds. Evidence: `schema-geometry-01/lead-runtime-acceptance-01.json`, `lead-runtime-payload-01.json`, `lead-runtime-replay-01.json`, `lead-runtime-focused-review-01.json` and `lead-slice-outcomes-01.json`. The prescribed finite64 efficacy comparison is now released separately with unchanged common source/recipe; no result or convergence is preaccepted.
+
+
+## User-stopped LOCAL trajectory: missing duplicate exclusion, delivered geometry credit
+
+The finite64 comparison was interrupted during LOCAL at the user's request. All10 exact owner/launcher/rank PIDs are absent; CHAIN and downstream readback/offline never began. Acquisitions0..36 (666 image outputs) and optimizer receipts1..37 exist, with exports through32. This is neither normal completion nor an accepted LOCAL/CHAIN efficacy comparison. No hidden truth was opened for diagnosis.
+
+| Complete rollout | Invalid | Complete literal repeats | Valid literal repeats | Malformed/censored | Caps | Generated tokens |
+|---|---:|---:|---:|---:|---:|---:|
+|0|5|5|5|0|0|3582|
+|2|20|58|53|202|1|6797|
+|12|993|1600|655|6|6|22521|
+|31|1|2685|2685|10|11|37186|
+|36|18|3060|3052|11|13|42504|
+
+Lead independently checked37 finite synchronized590-parameter norm dictionaries, optimizer steps/LRs and final synchronization,1258 worker input bindings and666 actual trace receipts. All9758 supported geometric/type-error positions (9069 old,689 new) occur at exact causal positions with current raw/producer identity. All164 nonempty error groups have nonzero weighted local-logit derivative norms. This rejects a blanket missing-backward diagnosis for those sites; full parameter-branch effects and replay-generation parity were not measured.
+
+The active bridge route explicitly disables redirect selection and schedules only trace/bridge forwards. Its terms are M, legal, Gmax, B and relocated M: there is no direct duplicate-unlikelihood or redirect-margin loss. Across the consumed histories,58534 valid repeated occurrences receive no repeated-row semantic credit, but still receive legal-coordinate mass supervision. Semantic masking is not negative duplicate supervision; valid repetitions are outside Gmax's error set. In particular, rollout31 has only1 invalid row while2685 complete repeats remain. The missing exclusion term is an established objective-coverage gap, not yet an isolated causal estimate of repetition growth.
+
+A second concern is normalization: geometric margin is averaged over actual error positions per image. At update13 one image has552 errors, so each margin's coefficient is.1/552 before the fixed18-image mean. Long erroneous suffixes dilute individual decision sites; increasing the coefficient alone would not address legal repetition. Positive repair at competing original prefixes and masked termination can contribute to length growth, but their net parameter effect is not established by scalar or local-logit norms. No training-source repair or new model probe is authorized by this diagnosis.
+
+Evidence: `schema-geometry-01/finite-64-01/stop-diagnosis-01/lead-stop-diagnosis-acceptance-01.json`, `lead-consumer-validation.json`, `lead-partial-bindings.json`, `lead-retained-only-curves.json`, original stopped outputs and worker candidate. First stop orchestration lacked `os.pidfd_open` and sent no signal; subsequent immediate PID/start/cmdline revalidation plus SIGTERM succeeded. The error and separate user-stop receipts are preserved.
