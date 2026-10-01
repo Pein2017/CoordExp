@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "retained-diagnosis-accepted-next-package-viability-cpu-authorized-not-started",
+  "status": "restored-M-cpu-accepted-native-packet-preparation-authorized-not-started",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "xhigh",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "P03 remains terminally containment-rejected; saved retained diagnosis is accepted observationally, not causally. Restored-M CHAIN package-viability CPU candidate authorized, pending record commit and worker dispatch. No native preparation/reservation/launch; overall program active.",
-  "job_state": "P03 exits control run0/control readback0/treatment run1; treatment readback and both offline stages skipped; terminal rejection accepted; no live owner",
+  "boundary": "CPU restored-M package accepted for mechanics/bindings only. Fresh CPU-only paired1 packet preparation authorized; native remains unreleased. One 6 GPUh reservation is active for the proposed pair; no run or hidden access.",
+  "job_state": "No current run or packet invocation; native-paired1-01 root absent; CPU packet preparation authorized-not-started; no lead-release.json.",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -26,7 +26,6 @@
   "active_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04",
   "last_cpu_failure": "multi-02 exact-empty-EOS failure repaired; final31-case lead replay GREEN",
   "cpu_accepted_commit": "73ae473b395dcef2ccb7f2ea3d7494d8bc17e760",
-  "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
   "runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-runtime-acceptance-01.json",
   "scientific_status": "Frozen candidate treatment violates retained-category floor 207<211 from baseline222; cause unidentified. This is a candidate-specific constraint failure, not model-runtime fault or a general scientific null; no complete-pair efficacy.",
   "efficiency_cpu_commit": "81c15617c5cc598fecf46619fe407ac0404e8a17",
@@ -71,7 +70,7 @@
   "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json",
   "correction_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json",
   "owner_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-owner-cpu-acceptance-01.json",
-  "next_decision": "Implement the authorized restored-M-mass CHAIN package-viability CPU candidate at /data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01 under lead-cpu-ruling-01. No native preparation, launch or GPU reservation.",
+  "next_decision": "Prepare and qualify the fresh paired1 native packet under /data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-preparation-ruling-01.json. CPU preparation only; native launch still requires a separate exact lead-release.json.",
   "recall_floor_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01",
   "recall_floor_cpu_release": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-cpu-release-01.json",
   "recall_floor_worker_dispatch": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/worker-dispatch-01.json",
@@ -145,8 +144,8 @@
     "at_budget": "CPU analysis and preparation only",
     "containment_thresholds": "unchanged",
     "scientific_objective": "reduce physical false negatives while measured raw errors stay contained",
-    "reserved_gpu_hours": 0,
-    "unreserved_gpu_hours": 63.4178,
+    "reserved_gpu_hours": 6,
+    "unreserved_gpu_hours": 57.4178,
     "last_round_accounting": {
       "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
       "status": "terminal-charged",
@@ -159,6 +158,13 @@
       "source_commit": "89e39a0ae6c2f05a0ca735a5267feaaaef6b7b54",
       "release_sha256": "30788f9e0e6316afe50d18fe6ab834a088d10411a6e56c411efb91363c38b49e",
       "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-terminal-acceptance-01.json"
+    },
+    "current_reservation": {
+      "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+      "reserved_gpu_hours": 6,
+      "status": "reserved-not-native-released",
+      "native_authorized": false,
+      "release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-release.json"
     }
   },
   "identity_cpu_01_hold_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-identity-cpu-hold-01.json",
@@ -269,11 +275,11 @@
       "I": 2
     }
   },
-  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01",
-  "next_cpu_assignment_scope": "CPU implementation only: probes/online_row_credit.py and tests/probes/test_online_row_credit.py; optional minimal probes/README.md. Version/bind restored-M coefficient semantics across recipe, argv, producer, actual forward evidence, readback and offline; preserve v3 default; focused consumer falsification. No runtime-package mutation or native work.",
+  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+  "next_cpu_assignment_scope": "Fresh source qualification, argv, source identity, input/runtime bindings and timed owner command; exercise primary and all six correction CLI bindings unmocked before runtime entry. No model/GPU/evaluator truth or partition access, arm directories, owner invocation or lead-release.json.",
   "next_gpu_release": false,
   "native_authorized": false,
-  "next_cpu_assignment_status": "authorized-not-started-pending-record-commit-and-worker-dispatch",
+  "next_cpu_assignment_status": "authorized-not-started",
   "next_cpu_assignment_worker_thread": "01a0f0cc-423f-7773-a1ee-0a2d6c848424",
   "saved_diagnosis_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/retained-diagnosis-01/lead-acceptance-01.json",
   "saved_diagnosis_acceptance_sha256": "8d7fcb7c4656e4e164c7cd1bc5776e7c33ce84096b607cb5a6d938d8bcb082a9",
@@ -283,6 +289,18 @@
   "package_viability_question": "On the fixed18 retained-label pilot, does restored-M CHAIN improve retained-category R over a fresh original-M control without reducing gained B owners, while every existing raw containment predicate holds?",
   "prospective_native_max_gpu_hours": 6,
   "prospective_native_owner_seconds": 2700,
-  "prospective_native_reservation_or_launch_granted": false,
-  "overall_program_status": "active"
+  "overall_program_status": "active",
+  "prospective_native_reservation_granted": true,
+  "prospective_native_launch_granted": false,
+  "native_pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+  "native_pair_root_created": false,
+  "required_native_release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-release.json",
+  "preparation_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-preparation-ruling-01.json",
+  "preparation_ruling_sha256": "a3f65e1a760a5d8f4afdd320046cfd34b4f47f4b863736384a401daed85351f8",
+  "restored_m_cpu_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-cpu-review-01/lead-acceptance.json",
+  "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
+  "restored_m_cpu_acceptance_sha256": "45c32497caad8d6e1d07a1bdb99137dff739612a18385fcf7ed100b05c1d1658",
+  "restored_m_cpu_source_commit": "9e2427e0ed4740ce04b0acf264998c6d56a937c1",
+  "restored_m_recipe_sha256": "e5e52f1a1b03a72946db1d43167850d9383852f8d7a65c93090312b3b9ed4273",
+  "restored_m_cpu_acceptance_limits": "CPU objective, version binding, consumer boundary and scoped source integrity only; no native BF16/DDP/vLLM qualification, floor success, causal attribution or physical-FN efficacy."
 }
