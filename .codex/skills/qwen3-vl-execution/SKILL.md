@@ -1,6 +1,6 @@
 ---
 name: qwen3-vl-execution
-description: Explain, implement, or debug local CoordExp Qwen3-VL internals, multimodal encoding, forward/replay, generation, packing, and differentiable loss or gradient behavior. Use for model-execution work; routine inference/evaluation launches stay with coordexp-infer-eval-workflow.
+description: Explain, implement, or debug local CoordExp Qwen3-VL encoding, forward/replay, generation, packing, and loss or gradient behavior. Routine inference and evaluation launches belong to coordexp-infer-eval-workflow.
 ---
 
 # Qwen3-VL Execution

@@ -7,7 +7,7 @@ record, decision update, or mechanism promotion.
 
 | Surface | Owns | Must not own |
 |---|---|---|
-| `outputs/research/` | Executed artifacts, receipts, traces, metric primitives | Interpretation or current route choice |
+| `$OUTPUT_ROOT/research/` | Executed artifacts, receipts, traces, metric primitives | Interpretation or current route choice |
 | `research/experiments/<unit-id>/unit.md` or exact preserved protocol | Evidence-tiered outline/protocol, frozen question and contrast | Live lifecycle updates or a growing execution notebook |
 | `research/experiments/<unit-id>/state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
 | Accepted result and its immutable receipt | Observed outcomes, denominators, bounded verdict and evidence handles | Stable runtime/schema compatibility |
@@ -343,10 +343,12 @@ with the maintained source-provenance operation, and record its returned path.
 Use an explicit hash-bound archive reader for historical evidence, never as a
 fallback to satisfy a new run's current-source checks.
 
-Use:
+Resolve `OUTPUT_ROOT` to the physical outputs directory of the owning worktree
+using its `docs/OUTPUT_STORAGE_POLICY.md`; the shared `/data/CoordExp/outputs/`
+root is not the default for branch-owned runs. Use:
 
 ```text
-outputs/research/<program>/<unit-id>/<run-id>/
+$OUTPUT_ROOT/research/<program>/<unit-id>/<run-id>/
 ```
 
 Here `<program>` is the existing artifact namespace, `<unit-id>` is the immutable

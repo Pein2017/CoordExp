@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Use when the user explicitly asks to grill, stress-test, or pressure-test a plan or decision before acting through concise, round-based questioning, optionally recording the outcome.
+description: Use only when the user asks to grill or pressure-test a plan or decision through concise rounds of questions, optionally recording the outcome.
 ---
 
 # Grill Me

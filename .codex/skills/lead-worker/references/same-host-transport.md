@@ -32,7 +32,8 @@ successful `turn/start` and never authorizes another creation or send.
 
 ### Inspect or message an existing pair
 
-Inspect without starting anything:
+Sending already inspects the pair. Use standalone inspection for reconciliation
+or when no message is ready, without starting anything:
 
 ```bash
 python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py \
@@ -74,4 +75,3 @@ to create a replacement automatically. Do not run `codex exec resume` beside an
 App-owned active worker. If this local socket or its protocol is unavailable,
 return the ready message and the exact transport gap; do not invent a background
 runner or silently substitute a watcher.
-

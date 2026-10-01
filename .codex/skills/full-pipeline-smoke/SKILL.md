@@ -1,6 +1,6 @@
 ---
 name: full-pipeline-smoke
-description: Use when a CoordExp change has material risk at a real entry, distributed, scale, checkpoint, artifact, finalizer, or downstream integration seam, before broad implementation or completion.
+description: Check a CoordExp change at its real entry, distributed, scale, checkpoint, artifact, finalizer, or downstream seam when failure there could alter completion, before broad implementation or costly launch.
 ---
 
 # Full Pipeline Smoke

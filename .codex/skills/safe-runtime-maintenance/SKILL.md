@@ -1,6 +1,6 @@
 ---
 name: safe-runtime-maintenance
-description: Audit and, only with explicit authorization, safely stop confirmed orphaned runtime processes or remove exact disposable caches without disrupting active work.
+description: Audit and, only with explicit authorization, stop confirmed orphaned runtime processes or remove exact disposable caches without disrupting active work.
 ---
 
 # Safe Runtime Maintenance

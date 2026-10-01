@@ -1,6 +1,6 @@
 ---
 name: git-hygiene
-description: Choose and verify the exact CoordExp worktree, or stage, commit, split, synchronize, publish, and safely retire repository work while preserving unrelated edits and keeping credentials out of history and output.
+description: Choose and verify the CoordExp worktree, or safely stage, commit, split, synchronize, publish, or retire repository work while preserving unrelated edits and credentials.
 ---
 
 # Git Hygiene

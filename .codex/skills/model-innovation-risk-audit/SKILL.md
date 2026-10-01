@@ -1,6 +1,6 @@
 ---
 name: model-innovation-risk-audit
-description: Use when a high-risk or decision-grade CoordExp mechanism could silently fail at config, data, execution topology, scale, artifact, activation, objective, decode, or evaluation before costly implementation, launch, or interpretation.
+description: Audit whether a high-risk CoordExp mechanism could silently fail in config, data, execution, scale, artifacts, objectives, decoding, or evaluation before costly implementation, launch, or interpretation.
 ---
 
 # Model Innovation Risk Audit

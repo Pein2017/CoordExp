@@ -1,208 +1,77 @@
 ---
 name: native-agent-team-guidance
-description: Coordinate an authorized native team with a decision-owning lead and bounded execution workers; use for delegation, asking parent, peer interfaces, milestone reports, and durable runtime handoff.
+description: Coordinate authorized temporary native agent teams through bounded assignments, peer coordination, reports, and durable job handoffs.
 ---
 
 # Native Agent Team Guide
 
-Use the current role: research-lead-main, research-worker-main, or execution subagent.
-The [agent contract](../../AGENTS.md) owns authority and delegation permission.
-This skill grants neither extra agents nor research launches.
+Use only when native delegation is authorized; this skill grants no authority to
+create agents or launch research. The lead owns decomposition, user questions,
+shared decisions and acceptance. A `research-worker-main` may implement or
+delegate only within its package; it cannot schedule the research program.
+Execution agents own bounded packages. Create a root or persistent thread only
+when the user explicitly asks; use [lead-worker](../lead-worker/SKILL.md) for
+that persistent-worker path.
 
-## Priority: no polling
+## Assign and choose the team
 
-Follow [Checkpoints and waiting](../../AGENTS.md#checkpoints-and-waiting).
-Use native completion notifications for subagents and direct reports through
-[lead-worker](../lead-worker/SKILL.md) for persistent sessions. Long external
-jobs use the durable handoff below; do not default to a wake-then-read-chat chain.
-Reconcile any existing monitor when replacing its delivery route.
+Reconcile existing workers first. Give each semantic surface one owner and one
+writer; parallelize independent outcomes that can be checked through their real
+consumer. Reuse a worker while its assignment and context remain reliable;
+reconcile changed ownership, inputs, permissions and acceptance before resuming.
+Deeper nesting needs a concrete benefit and authorization.
 
-## Main lead/thread
+Choose topology and `fork_turns` from dependencies, isolation and integration
+cost. Follow global [model routing](../../AGENTS.md#model-routing) for role
+authority and defaults; resolve supported model IDs and efforts from the live
+tool schema, and set overrides only when the chosen fork supports them.
 
-### Choose and bound the work
+Brief the outcome and non-goals, cwd and owned paths, permissions, authoritative
+source and input identities, dependencies, real consumer/schema and acceptance
+evidence, output format, and stop rule. For exploration, name known entry paths
+or symbols and the uncertainty to resolve. Add budgets or other constants only
+when they affect execution.
 
-Keep small or tightly coupled work local. Use a few execution workers only when
-independent work saves more than briefing, integration and acceptance cost.
-Reconcile existing workers first; reuse a suitable worker through ordinary
-corrections. Keep one writer per surface. A research-worker-main may implement
-directly or coordinate execution children within its assigned package; it does
-not independently schedule the research program.
+## Coordinate and return
 
-The lead owns direction, agreed implementation constraints, shared interfaces,
-acceptance, runtime continuation and scientific interpretation. Workers execute
-bounded outcomes including local diagnosis, implementation and relevant checks.
-Broader design or research autonomy must be explicit in the assignment.
+Agents may coordinate directly on facts and dependencies inside their ownership.
+They cannot grant permissions or change shared contracts. Agree ownership before
+overlapping writes; return scope, meaning or architecture changes to the lead.
+For native agents, `send_message` queues information but does not start a turn;
+use `followup_task` to assign or resume an idle/interrupted worker, not for a
+status check. After interruption, reconcile the roster and any external process:
+interrupting an agent does not stop its job.
 
-Assign an independently verifiable outcome, not just a set of files. Establish
-known dependencies and owners before dispatch; leave local implementation choices
-to the worker. Resolve uncertainty that blocks dependent work first, without
-trying to predict every overlap or inventing interfaces just to divide tasks.
-Prefer packages that deliver a complete, independently verifiable behavior
-through the real consumer. Declare only actual blocking dependencies; do not
-split by layers merely to create parallel work. For a mechanical migration that
-cannot stay valid in slices, choose a coherent integration boundary and its
-verification; add transitional compatibility only when it is actually needed.
-Assignments may change as facts emerge; make the new ownership explicit.
-For delegated acceptance or review, follow
-[Acceptance and review](../../AGENTS.md#acceptance-and-review): name the decision
-that a finding could change. For authorized exploration, name the uncertainty
-and useful evidence output within the assignment's resource limits and stop
-condition; a result need not prescribe an immediate next action. Unresolved
-findings do not create new mandatory gates.
-Between peer leads, prefer one decision-specific question with source pointers.
-Return the finding, strongest limit and effect on the requester's decision; send
-later results only when they change that decision or a shared input/owner.
-Neither side needs an acknowledgment-only reply or a copied full report.
-For an already frozen CoordExp probe, bind the assignment to the
-[Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md)
-rather than sending broad research history.
+Follow [global checkpoint and waiting rules](../../AGENTS.md#checkpoints-and-waiting).
+Report decision-bearing failures promptly with evidence, impact and a next step;
+there is no default repair-count ceiling. Continue unaffected work.
 
-A brief needs only execution-changing facts:
+## Correct the brief
 
-```text
-outcome and non-goals; cwd and owned paths;
-existing entrypoint/pattern and chosen approach, or the unresolved question;
-authoritative inputs and consumer schema, including valid empty/HOLD states;
-frozen behavior, interfaces, permissions and explicit user resource limits if any;
-acceptance evidence and stop condition;
-relevant peers; runtime handoff to root when applicable.
-```
-
-Choose fork context from actual dependencies. Inherited history is a snapshot;
-send later changes explicitly. A strong lead should supply a useful implementation
-starting point without prescribing every local edit or duplicating worker work.
-Include decision-bearing counterexamples where correctness is fragile. Workers
-verify the assigned outcome at its real consumer, not only their edited files.
-
-### Route models and intervene
-
-Before selecting models, effort or fork context, read
-[Model routing](../../AGENTS.md#model-routing) and
-[Agent topology and delegation](../../AGENTS.md#agent-topology-and-delegation).
-For pairing with a persistent worker and dispatching its assignment, read
-[lead-worker](../lead-worker/SKILL.md).
-For an unresolved consequential decision that could change the next action,
-use [ask-advisor](../ask-advisor/SKILL.md) for bounded native Astra consultation.
-When briefing Luna on inherited configuration, caller-sensitive checks or
-artifact compatibility, or repairing a misunderstanding at those boundaries,
-use the worked examples in [Luna delegation](references/luna-delegation.md).
-Routine mechanical assignments do not need this additional reference.
-
-Answer worker questions with the smallest decision promptly. Check whether the
-brief caused the detour; narrow scope, choose the missing seam or take over
-uncertain design instead of repeatedly returning the same misunderstanding.
-Use `followup_task` for a new or resumed bounded assignment to a non-running
-child, not for a status check or acknowledgment. Bundle related corrections where
-possible; if the package or ownership has changed, reconsider whether that child's context
-still helps before resuming it.
 After a demonstrated semantic misunderstanding, clarify the governing invariant
-or take over the coupled part; increasing effort alone is not a correction.
-User-owned meaning still belongs with the user.
+and a counterexample, or take over the coupled work. Increasing effort alone
+does not correct the brief.
 
-Intervene when work no longer advances the assigned outcome or coordination
-cost exceeds useful independence. Adjust the split or take over rather than
-adding process. Preserve evidence identity: coordinate changes to shared inputs
-used by running work, and do not treat earlier checks as proof of a changed
-candidate. This does not require serializing independent work.
-
-### Accept and learn
-
-Apply [Acceptance and review](../../AGENTS.md#acceptance-and-review) to the stable
-candidate. Keep execution validity separate from scientific success.
-For decision-bearing semantics, include a source-grounded check that distinguishes
-the intended interpretation from the nearest plausible wrong one. A self-check
-using the implementation's own assumed constants is insufficient evidence.
-
-Record only observations that could change the next assignment in the existing
-task record: failure, brief contribution, correction/takeover, and acceptance.
-Do not create a routine interview, ledger, benchmark or extra reviewer per task.
-If a cost comparison is actually requested, the optional
-[evidence workflow](references/evidence-workflow.md) supports existing records.
-Evaluate total cost through acceptance, including lead corrections and rework;
-unknown costs remain unknown. One task does not establish
-a model's capability ceiling or specialty. Persistent memory changes still need
-user authorization.
-
-## Subagent worker
-
-### Execute with local ownership
-
-Own local investigation, implementation, tests and directed repairs within the
-assignment. On failure or a decision-bearing event, use the escalation policy in
-[Checkpoints and waiting](../../AGENTS.md#checkpoints-and-waiting) and the report
-format below. Reuse the real entrypoint and existing patterns; choose the
-smallest coherent solution. Do not ask the lead to decide facts you can cheaply discover.
-Ask when uncertainty affects shared commitments, scope, authority or the accepted
-approach, rather than guessing or pursuing a prolonged detour. Send known facts,
-the precise question and a minimal option if evident. While waiting, continue
-independent work; otherwise return a clear resumption point. Silence is not
-approval. Stop when the assigned outcome and relevant checks are complete.
-
-Load decision-bearing constants, identities and denominators from the bound
-source artifacts rather than reconstructing them from remembered prose. If the
-sources conflict on research meaning, show the conflict to the parent before
-implementing an interpretation.
-
-### Coordinate directly
-
-Contact relevant peers directly for facts, dependencies and local coordination;
-the lead need not relay every message. Share changes that affect another owner
-early, with the affected surface and what action is needed. Ordinary findings
-need no acknowledgement ceremony.
-
-When work overlaps, agree who owns the shared change and what the dependent
-worker can rely on before proceeding on that surface. Notification alone does
-not resolve conflicting writes or assumptions. Keep one writer per surface;
-handoffs identify the current candidate, remaining work and new owner. Peers may
-coordinate within their assignments, not grant permissions or silently change
-shared contracts. Send ownership changes and decision-changing agreements to the
-lead; unresolved conflicts or changes to overall scope/architecture return to
-the lead. Unaffected work can continue.
-
-### Report and coordinate
-
-Use the [checkpoint policy](../../AGENTS.md#checkpoints-and-waiting) for report
-triggers and prompt failure escalation. A completed check alone needs no message;
-bundle routine results into the next necessary report. For a report, use:
-
-```text
-finding/result -> evidence path -> impact -> action needed (or none)
-```
-
-Final return includes outcome, changed paths, checks, unresolved questions and
-any external job handoff. Native final completion already reaches the parent;
-do not duplicate it with an identical message. The parent need not acknowledge
-a finished child unless its next action changes. Keep raw logs in artifacts.
-After returning a candidate, stop writing so the lead reviews a stable target.
-If another correction is needed, notify the lead before editing, agree ownership,
-then return the updated candidate with affected checks rerun. The lead may take
-over a bounded repair; never write concurrently with its acceptance work.
-
-For native subagents, `send_message` queues information without scheduling a
-turn; use `followup_task` to resume an idle or interrupted non-root worker.
-After an interruption, reconcile the roster once before waiting and resume
-still-authorized work on the existing child. For persistent sessions, send messages
-in both directions through the route in [lead-worker](../lead-worker/SKILL.md),
-including its idle-session delivery. Roster lookup is for reconciliation, not
-polling. Interrupting an agent does not establish that its external job has
-stopped; reconcile process ownership before any replacement launch.
+Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with
+changed paths, source identities, consumer checks, unresolved questions and job
+state. The lead verifies the stable candidate and alone marks it
+`lead-accepted`; user-owned decisions require separate `user-accepted` evidence.
+Worker self-acceptance and transport completion are not acceptance.
 
 ## Durable job handoff
 
-The worker may launch only within its authorization. Verify that the producer
-survives tool/agent return, saves completed units, and exposes failure as well as
-success. Use the existing durable runtime rather than building a new scheduler.
+Keep one owner and one live invocation. Hand off the exact command/run identity,
+process/session, stable logs and results, saved completed units, terminal success
+and failure signals, completed checks, responsible job owner and direct return
+route. Before root ends its turn, verify the producer survives agent return,
+completed units are saved, both terminal outcomes are signaled, and the return
+route works. The job owner
+inspects terminal artifacts and reports directly to root; a launch or agent
+return is not completion. If no return route works, disclose the gap, retain
+explicit ownership, and do not promise an automatic notification. Reconcile
+ownership before replacement and never rerun completed units.
 
-Send root the exact command/run identity, PID and tmux/session identity, stable
-log and result locations, terminal success/failure signals, checks already done,
-and next action. Name the owner responsible for terminal inspection and the
-direct return route; job completion remains outstanding.
-
-Root verifies process survival, ownership and the return route before ending
-its turn. The job owner uses the existing wait/completion mechanism, inspects
-terminal artifacts and sends the result or failure directly to root. A launch
-message alone is not a completion handoff. If no working return route exists,
-report that gap and retain explicit ownership; do not promise a notification
-or silently substitute a watcher. Root accepts or resumes missing work from
-the direct report and its bound evidence.
-Do not rerun completed units merely because the delivering agent returned.
+For an already authorized frozen probe, bind the assignment to the
+[Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md).
+When a Luna brief crosses configuration, caller or artifact-consumer boundaries,
+use the worked [Luna delegation examples](references/luna-delegation.md).

@@ -1,6 +1,6 @@
 ---
 name: coordexp-public-data-provenance
-description: Audit, update, or hand off CoordExp processed-data provenance manifests, JSONL-only checksums, active-root cleanup guardrails, or cross-node regeneration from raw datasets.
+description: Audit or update CoordExp processed-data provenance, JSONL checksums, active-root cleanup safeguards, or cross-node regeneration from raw data.
 ---
 
 # CoordExp Public Data Provenance

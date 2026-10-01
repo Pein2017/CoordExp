@@ -1,6 +1,6 @@
 ---
 name: model-diagnosis
-description: Diagnose abnormal or uncertain CoordExp model behavior such as metric, FP/FN, validity, duplication, length, stop, repetition, or optimization shifts.
+description: Diagnose abnormal or uncertain CoordExp model behavior in metrics, false positives or negatives, validity, duplication, length, stopping, repetition, or optimization.
 ---
 
 # Model Diagnosis

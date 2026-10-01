@@ -1,6 +1,6 @@
 ---
 name: audit-review
-description: Audit read-only CoordExp runs, artifacts, research claims, launch or promotion gates, compatibility decisions, and user-owned semantic risks when current evidence must support a bounded decision. Use ordinary code review for generic diffs.
+description: Audit current CoordExp runs, artifacts, research claims, launch or promotion gates, compatibility, and user-owned semantic risks against bounded evidence. Use when a decision needs current evidence; use ordinary code review for generic diffs.
 ---
 
 # Audit Review

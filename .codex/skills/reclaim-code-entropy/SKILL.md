@@ -1,6 +1,6 @@
 ---
 name: reclaim-code-entropy
-description: Audit or apply repository code simplification, dead-code removal, or deduplication (代码化简、熵回收、清理冗余). Not for prose cleanup, ordinary feature work, or performance-only audits.
+description: Audit or apply CoordExp code simplification, dead-code removal, or deduplication; not for prose, ordinary features, or performance-only work.
 ---
 
 # Reclaim Code Entropy

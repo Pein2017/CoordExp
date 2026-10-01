@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Review and rank CoordExp architecture friction read-only, or design and compare module interfaces and seam placement when behavior needs deeper ownership, testability, or research-semantic clarity.
+description: Review CoordExp architecture friction read-only, or design and compare module interfaces when behavior needs clearer ownership, testability, or research semantics.
 ---
 
 # Codebase Design

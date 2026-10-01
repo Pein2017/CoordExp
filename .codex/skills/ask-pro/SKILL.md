@@ -1,153 +1,29 @@
 ---
 name: ask-pro
-description: "Prepare self-contained, copy-ready prompts for the user to consult web GPT-pro on consequential decisions, difficult reasoning or mathematical questions, and research or engineering bottlenecks. Use for explicit ask-pro requests or when external expert reasoning could materially change the next step; not routine status reporting or automated model calls."
+description: Prepare self-contained, copy-ready prompts for the user to consult web GPT-pro on consequential decisions or difficult research and engineering reasoning. Use when explicitly requested or external reasoning could change the next step; not for routine lookup or automated model calls.
 ---
 
 # Ask Pro
 
-Prepare an expert consultation, not an automated invocation. The user copies
-the prompt into the GPT-pro web UI and brings its answer back. Pro has its own
-memory of the user and can access the user's shared Notion, but cannot inspect
-this machine, repository, local artifacts, or Codex's private conversation.
+Prepare a consultation for the user to paste into the GPT-pro web UI; the user returns Pro’s answer for assessment. Pro may know the user’s broader context and access shared Notion, but cannot inspect this machine, repository, local artifacts, or Codex’s private conversation. Never invoke a model or submit the prompt automatically.
 
-## When to consult
+## When to use
 
-Use or proactively suggest this skill when a difficult inference, mathematical
-issue, conflicting explanation, design tradeoff, or consequential uncertainty
-would benefit from external reasoning. It is not a last-resort escalation:
-do not require exhausting local models, running more experiments, or solving
-the hard question before asking. Under the user's stated setup, consultation
-has no marginal monetary cost; do not impose low-frequency rules or ration it.
-Spend preparation effort on decision value and the user's attention instead.
+Use or suggest this skill when difficult inference, mathematics, competing explanations, design tradeoffs, or consequential uncertainty could benefit from external reasoning. Do not require more local models, experiments, or a solved question first. Treat the user’s message as both a request and candidate ideas: preserve tentative ideas as hypotheses or branches, and let Pro reframe exploratory questions.
 
-Locate discoverable facts locally; send the unresolved reasoning problem to
-Pro. Do not manufacture complexity or turn an ordinary lookup into a grand
-research question. The consultation may challenge the current framing rather
-than merely select between the options Codex already prefers.
+## Build a self-contained prompt
 
-Treat the user's message as both a request and a source of candidate ideas.
-Abstract, tentative, or highly uncertain ideas that point toward a larger
-direction should be carried into the consultation as explicitly labeled
-hypotheses, mechanisms, or decision branches. Take them seriously without
-upgrading them to facts, and adapt the framing to the state of the question:
-ask a focused decision question when the decision is mature; ask Pro to help
-restate the problem and map the key branches when it is still exploratory.
+- State the objective, decision or open question, current bottleneck, and constraints that could change the answer. Define specialized terms and notation.
+- Separate the user’s relevant original ideas (quote them faithfully and label them as the user’s) from Codex’s evidence-based synthesis. Preserve uncertainty; do not upgrade suggestions into facts.
+- Extract decision-bearing substance from authoritative local evidence: relevant computations or code, assumptions, data and metric definitions, contrasts, results, failures, counterexamples, quantities, denominators, and limits. Include negative evidence. Paths, hashes, commits, and receipt IDs are provenance, not evidence; inline what Pro needs and never ask it to inspect local files or recall the private conversation.
+- Distinguish observation, hypothesis, interpretation, and unknown. State what was tested, what was only proposed or mechanically checked, Codex’s current judgment, and the strongest alternative. Do not invent missing evidence.
+- For mechanisms, show computations, assumptions, conditional consequences, and predictions beyond those used to construct the explanation. Compare the strongest alternative and name the cheapest discriminator. A toy model establishes possibility or derivation only; transfer to the real system needs evidence. Ask which causal links are supported versus assumed, including whether a representation is merely present or probe-readable versus used and updated during generation.
+- Invite Pro to disagree, offer counterexamples or derivations, and say when evidence cannot decide. Seek a checkable conclusion or prioritized discriminator, not a generic survey or unranked experiment list. Use equations only when they clarify the reasoning.
 
-## Make the prompt independent of the local environment
+Shared Notion is optional. If the reasoning relies on it, verify access and freshness and identify the page title, URL, section/version, and reading order. Keep the core question and findings in the prompt; inline needed facts when access cannot be verified. Do not claim local material is in Notion or create/update a page unless asked. Omit credentials and unrelated private data.
 
-- State the actual objective, decision to be made, current bottleneck, and
-  constraints that could change the answer. Define notation and specialized
-  terms. Include the relevant current state even if Pro may remember the user's
-  broader interests; do not repeat a biography or assume it knows this run.
-- Extract the smallest sufficient evidence from authoritative local sources:
-  relevant code or pseudocode, equations, assumptions, data/metric definitions,
-  experimental contrasts, results, failures, and counterexamples as needed.
-  Preserve quantities such as units, denominators, dose, conditioning and
-  evaluation scope when they affect interpretation. Include important negative
-  results and limitations, not just evidence favoring the current view.
-- Keep two input streams visibly separate: the user's original ideas, intuitions,
-  and larger-direction suggestions, and Codex's evidence-backed synthesis.
-  Preserve the user's uncertainty and intent while translating abstract ideas
-  into candidate hypotheses, mechanisms, or branches that Pro can examine.
-- Separate observations, hypotheses, interpretations, and unknowns. Explain
-  what has actually been tested versus merely proposed or mechanically checked.
-  Include Codex's current judgment and its strongest alternative without asking
-  Pro to rubber-stamp either. Label material missing evidence; never invent it.
-- A local path, commit, hash or receipt ID is provenance, not accessible
-  evidence. Inline the necessary substance. Do not ask Pro to open local files,
-  run local commands, inspect an attachment that was not supplied, or recover
-  facts from "the previous Codex discussion."
-- Shared Notion can carry detailed evidence; publishing there is not mandatory.
-  When relying on it, verify the relevant page and include its title, URL,
-  section/version and reading order. Keep the objective, core question and key
-  findings in the prompt; the prompt plus explicitly identified Notion reading
-  must contain the necessary reasoning context. Do not duplicate entire evidence
-  tables merely to make the prompt standalone. If page access or freshness cannot
-  be verified, inline the needed facts or state the gap. Do not claim local
-  material is in Notion or create or update pages unless the user requested it.
-- Remove credentials and unrelated private material. Include detailed evidence
-  when it is needed for reasoning, not entire logs or a repository dump.
+## Deliver
 
-## Ask for a consequential reasoning result
+The normal handoff is response-only: provide exactly one ready-to-copy Markdown prompt in the user’s language, with no extra preface or duplicate format. This restriction applies to the final deliverable, not host-required progress updates. Do not create or save a local prompt unless the caller requests a file artifact. Organize the prompt for the question; it may include headings or tables, with no arbitrary word limit that drops necessary context. Remove local paths and unsupplied attachments before delivery and ensure the prompt plus any required, verified Notion reading is sufficient. Ask Pro to flag inaccessible evidence rather than infer it from filenames or memory.
 
-Match the user's intended research product: a focused bottleneck needs a sharp
-unresolved question; a program-level consultation needs the broader evidence
-and competing directions; open theory exploration may seek a better formulation
-or explanatory model before there is a concrete decision to make. Use related
-subquestions where they help resolve that decision. Take advantage of Pro's
-mathematical and complex-reasoning strength through the substance of the
-problem, not flattery, role assignments, or instructions such as "you are a
-world-class expert."
-
-Use an open-ended, collegial voice: invite Pro to reinterpret the framing,
-disagree with both the user and Codex, and say when the evidence cannot decide.
-For deep brainstorming or unexplained phenomena, invite Pro to develop promising
-mechanisms through a minimal model, conditional consequences, and new falsifiable
-predictions before choosing experiments. Let it replace the user's provisional
-variables and terminology, or conclude that similar observations have different
-causes. Do not prescribe a latent scalar, a theory vocabulary, or an immediate
-ablation plan. Use formalization when it exposes structure; ask for operational
-meanings and explicit assumptions rather than decorative equations or analogies.
-
-For AI/ML mechanisms, ask which links from objective and credit assignment to
-learned representation, inference computation, and observed behavior are supported
-versus assumed. Separate what the loss constrains from the algorithm we hope is
-learned. When representation evidence matters, distinguish information being
-present or probe-readable from being causally used, maintained, and correctly
-updated during generation. A toy calculation can establish possibility or test a
-derivation; transferring its explanation to the real model needs separate evidence.
-Invite lightweight calculations in Pro's available environment when useful, without
-assuming access to local models or authorizing new local experiments.
-
-Useful question shapes include:
-
-- Are the competing mechanisms identifiable from this evidence? Give a
-  counterexample or the smallest intervention that separates them.
-- Under these explicit assumptions, is the proposed objective or estimator
-  valid? Derive the relevant result or show where it fails, and explain which
-  observable consequence would distinguish those cases.
-- Which hidden assumption would reverse this decision? Compare the strongest
-  alternatives and recommend the next discriminating test, with its expected
-  outcomes and the conclusion each would support.
-- If the user's direction is still abstract, what is the most useful precise
-  formulation of it? What competing interpretations should be kept alive, and
-  what is the cheapest evidence that would distinguish them?
-- What minimal model makes the observed structure intelligible? Under which
-  assumptions does it predict something not used to construct it, and what would
-  distinguish that prediction from the strongest alternative in the real system?
-
-These are examples, not a mandatory checklist. Ask for checkable conclusions,
-derivations, explanatory models, counterexamples or a prioritized decision as appropriate, rather
-than a generic survey or a long unranked list of possible experiments. Make
-room for "the evidence cannot decide" and specify what additional information
-would then be useful. Do not force formalism where it adds no insight.
-
-## Deliver and return
-
-### Output boundary
-
-The normal ask-pro handoff is response-only. Output exactly one ready-to-copy
-Markdown chunk in the user's language, with no extra preface, commentary,
-duplicate rendering, or second format. Do not create, edit, or save a local
-prompt file, even when a repository path or temporary location is convenient.
-Only write a file when the caller explicitly requests a file artifact in
-addition to (or instead of) the Markdown chunk.
-
-Deliver the prompt as one ready-to-copy block. A useful prompt
-order is objective and decision state, the user's ideas and larger direction,
-verified facts and negative results, Codex's current synthesis and strongest
-alternative, unknowns, and the open questions for Pro; adapt this order when
-the problem calls for it. Use headings or tables if they clarify the evidence;
-impose no arbitrary word limit that would remove load-bearing context. Do not
-add a persona or redundant background. Before delivery, mentally remove every
-local path and unsupplied attachment: the prompt and any required, verified
-Notion reading must still provide enough context to address the question.
-Distinguish required reading from optional background, and ask Pro to flag
-inaccessible evidence rather than infer its contents from filenames or memory.
-
-Stop at the consultation handoff: do not call a model API, automate the web
-submission, impersonate Pro's answer, or silently start a new experiment.
-When the user returns Pro's response, assess it against the supplied evidence,
-check decision-bearing claims locally where possible, and identify what changes
-the next step. External advice is not automatic acceptance or authorization
-to execute, change research meaning, or publish conclusions.
+Stop after preparing the consultation. Do not run research, begin experiments, or treat external advice as acceptance, authorization to execute, a change in research meaning, or permission to publish. When the user returns Pro’s answer, check decision-bearing claims against supplied evidence and locally where possible, then say what changes the next step.

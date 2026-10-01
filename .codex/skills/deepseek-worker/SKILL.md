@@ -1,6 +1,6 @@
 ---
 name: deepseek-worker
-description: Create or continue a persistent DeepSeek V4.1-Flash Codex worker through CLI profiles when the user selects DeepSeek for a bounded research or engineering trial. Keep the GPT lead responsible for scope and acceptance.
+description: Create or continue a persistent DeepSeek V4.1-Flash Codex worker through CLI profiles when the user selects DeepSeek for a bounded trial. The GPT lead retains scope and acceptance.
 ---
 
 # DeepSeek Worker
