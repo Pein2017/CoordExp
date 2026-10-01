@@ -2,7 +2,7 @@ schema_version: 1
 extends: ../train/geo_sorted_xy/untied.yaml
 run:
   name: geo-sorted-xy-untied-eight-gpu-smoke
-  artifact_root: /data/CoordExp/outputs/infra_base/untie-20260918
+  artifact_root: ./outputs/infra_base/untie-20260918
   collision_policy: fail
 data:
   train:

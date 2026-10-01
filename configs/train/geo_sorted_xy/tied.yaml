@@ -3,7 +3,7 @@ schema_version: 1
 extends: ../production.yaml
 run:
   name: qwen3-vl-2b-geo-sorted-xy-tied-ebs24-4epoch
-  artifact_root: /data/CoordExp/outputs/infra_base/train
+  artifact_root: ./outputs/infra_base/train
 model:
   base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
 data:
