@@ -12,7 +12,12 @@ import torch
 import yaml
 from PIL import Image
 
-from src.common.errors import ArtifactContractError, EncodingContractError
+from src.common.errors import (
+    ArtifactContractError,
+    ConfigContractError,
+    EncodingContractError,
+)
+from src.config.inference import load_infer_config, resolve_infer_run_directory
 from src.inference.backend import DecodeResult, TokenTrace
 from src.qwen.loading import QwenProcessorIdentity
 
@@ -1099,6 +1104,8 @@ def _write_config(
     batch_size: int,
     row_count: int,
     invalid_image: bool = False,
+    artifact_root: Path | None = None,
+    output_dir: str | None = None,
 ) -> Path:
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -1132,7 +1139,7 @@ def _write_config(
         "schema_version": 1,
         "run": {
             "name": "wave6-pipeline",
-            "artifact_root": str(tmp_path / "outputs"),
+            "artifact_root": str(artifact_root or tmp_path / "outputs"),
             "collision_policy": "fail",
         },
         "model": {
@@ -1160,9 +1167,75 @@ def _write_config(
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},
         "debug": {"smoke": True, "dry_run": False},
     }
+    if output_dir is not None:
+        config["run"]["output_dir"] = output_dir
     config_path = tmp_path / "infer.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path
+
+
+@pytest.mark.parametrize(
+    ("artifact_root", "output_dir"),
+    [
+        (Path("/data/CoordExp/outputs"), "shared-run"),
+        (Path("/data/CoordExp"), "outputs/shared/run"),
+    ],
+)
+def test_infer_run_directory_rejects_shared_output_destinations(
+    tmp_path: Path,
+    artifact_root: Path,
+    output_dir: str,
+) -> None:
+    config_path = _write_config(
+        tmp_path,
+        batch_size=1,
+        row_count=0,
+        artifact_root=artifact_root,
+        output_dir=f"{output_dir}-{tmp_path.name}",
+    )
+
+    with pytest.raises(ConfigContractError, match="shared asset-retention"):
+        resolve_infer_run_directory(load_infer_config(config_path).config)
+
+
+def test_infer_run_directory_rejects_symlink_to_shared_output_root(tmp_path: Path) -> None:
+    alias = tmp_path / "shared-outputs"
+    alias.symlink_to(Path("/data/CoordExp/outputs"), target_is_directory=True)
+    config_path = _write_config(
+        tmp_path,
+        batch_size=1,
+        row_count=0,
+        artifact_root=alias,
+        output_dir=f"shared-run-{tmp_path.name}",
+    )
+
+    with pytest.raises(ConfigContractError, match="shared asset-retention"):
+        resolve_infer_run_directory(load_infer_config(config_path).config)
+
+
+@pytest.mark.parametrize(
+    "artifact_root",
+    [
+        Path("/data/CoordExp/.worktrees/coordexp-infras/outputs"),
+        Path("/data/CoordExp/.worktrees/research-probes/outputs"),
+    ],
+)
+def test_infer_run_directory_allows_physical_worktree_output_roots(
+    tmp_path: Path,
+    artifact_root: Path,
+) -> None:
+    config_path = _write_config(
+        tmp_path,
+        batch_size=1,
+        row_count=0,
+        artifact_root=artifact_root,
+        output_dir=f"test-run-{tmp_path.name}",
+    )
+
+    assert (
+        resolve_infer_run_directory(load_infer_config(config_path).config).artifact_root
+        == artifact_root.resolve()
+    )
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

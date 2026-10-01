@@ -13,7 +13,7 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_file, sha256_json
 from src.config.models import ConfigSource, PathOrigin, RunDirectory, StrictConfigModel
-from src.config.paths import get_nested, set_nested
+from src.config.paths import get_nested, set_nested, validate_run_output_destination
 
 
 INFER_CONFIG_LOADER_VERSION = "coordexp-infras-infer-config-v1"
@@ -216,6 +216,7 @@ def resolve_infer_run_directory(
     root_base = Path(config.run.artifact_root)
     root = root_base if root_base.is_absolute() else (cwd or Path.cwd()) / root_base
     root = root.resolve()
+    validate_run_output_destination(root, field="run.artifact_root")
 
     run_dir_name = config.run.output_dir or config.run.name
     run_dir_path = Path(run_dir_name)
@@ -235,6 +236,7 @@ def resolve_infer_run_directory(
             context={"artifact_root": str(root), "run_dir": str(run_dir)},
             cause=exc,
         ) from exc
+    validate_run_output_destination(run_dir, field="run.output_dir")
 
     if run_dir.exists():
         if config.run.collision_policy == "fail":

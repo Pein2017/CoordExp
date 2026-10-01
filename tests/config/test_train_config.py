@@ -555,6 +555,56 @@ def test_run_directory_collision_policy(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("artifact_root", "output_dir"),
+    [
+        (Path("/data/CoordExp/outputs"), None),
+        (Path("/data/CoordExp"), "outputs/shared/test-run"),
+    ],
+)
+def test_run_directory_rejects_shared_output_destinations(
+    tmp_path: Path,
+    artifact_root: Path,
+    output_dir: str | None,
+) -> None:
+    payload = _minimal_config()
+    payload["run"]["artifact_root"] = str(artifact_root)
+    if output_dir is not None:
+        payload["run"]["output_dir"] = output_dir
+    _write_yaml(tmp_path / "config.yaml", payload)
+
+    with pytest.raises(ConfigContractError, match="shared asset-retention"):
+        resolve_run_directory(load_train_config(tmp_path / "config.yaml").config)
+
+
+def test_run_directory_rejects_symlink_to_shared_output_root(tmp_path: Path) -> None:
+    alias = tmp_path / "shared-outputs"
+    alias.symlink_to(Path("/data/CoordExp/outputs"), target_is_directory=True)
+    payload = _minimal_config()
+    payload["run"]["artifact_root"] = str(alias)
+    _write_yaml(tmp_path / "config.yaml", payload)
+
+    with pytest.raises(ConfigContractError, match="shared asset-retention"):
+        resolve_run_directory(load_train_config(tmp_path / "config.yaml").config)
+
+
+@pytest.mark.parametrize(
+    "artifact_root",
+    [
+        Path("/data/CoordExp/.worktrees/coordexp-infras/outputs"),
+        Path("/data/CoordExp/.worktrees/research-probes/outputs"),
+    ],
+)
+def test_run_directory_allows_physical_worktree_output_roots(
+    artifact_root: Path,
+) -> None:
+    payload = _minimal_config()
+    payload["run"]["artifact_root"] = str(artifact_root)
+    config = TrainConfig.model_validate(payload)
+
+    assert resolve_run_directory(config).artifact_root == artifact_root.resolve()
+
+
 def test_trace_config_writes_resolved_artifacts(tmp_path: Path) -> None:
     run_dir = tmp_path / "trace-run"
     result = subprocess.run(
