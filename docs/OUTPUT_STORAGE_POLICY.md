@@ -20,8 +20,9 @@ The shared-root rule is owned by `/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`:
 root `outputs/` contains only selected durable cross-worktree assets, never an
 entire branch run merely because another worktree reads it. Sharing requires a
 real verified copy and original producer/run/config/data provenance, not a
-symlink or the destination checkout's HEAD. Main-owned assets use main's linked
-worktree; they do not become Research Probes assets.
+symlink or the destination checkout's HEAD. Infrastructure runs use the retained
+coordexp-infras checkout. The temporary main-runs checkout is retired; legacy
+files need a concrete use before transfer to any retained owner.
 
 This explicit maintenance task can migrate verified inactive assets; ordinary
 research cleanup still does not authorize external moves. Existing root runs

@@ -66,7 +66,7 @@ The 2026-09-27 exploratory review was produced from main by session
 `01a0e2e2-ef29-7291-9045-f631930359c1`. This section distills those recorded
 findings; it is not a new visual review or independent precision validation.
 The retained artifact root is
-`/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/`.
+`/data/CoordExp/.worktrees/research-probes/outputs/research/coco-lvis-proxy-exploration/`.
 Its original input/sample hashes remain in the unchanged JSON contracts.
 
 In `audit-20260927-v1`, each relation has 32 fixed source-positive,
@@ -119,6 +119,43 @@ and source-box localization. Keep weak nomination apart from hard supervision.
 The original four Markdown source identities and verified migration/recovery
 paths are in the root `route-owned-outputs-and-migrate-legacy` change; current
 meaning lives here rather than in a parallel report archive.
+
+## Closed fixed-dose row-feedback pilot
+
+The 2026-09-13 pilot's final scientific record is recoverable from
+`74665e6c710518cf0298850f6f967795e19da701` at
+`research/ideas/qwen3-vl-row-feedback/experiments/2026-09-13-fixed-dose-feedback/{unit,results}.md`.
+Its seven commits were integrated as historical parents without restoring the
+obsolete one-off probe framework; no current caller uses that implementation.
+This synthesis is historical evidence, not a fresh rerun or promotion.
+
+S inserted the ordinary box-end contextual slot; F added the just-completed
+row final hidden-state vector, RMS-matched at fixed scale 1. Both started from
+N16, used 64 updates, the same 16 successor packages across 11 images and
+54-record teacher protection, with a 3,084-visible-token limit. On the frozen
+32-image / 280-annotation panel, IoU .50 owner matches were S193/F197:
++4/280 (+1.43 percentage points), with 9 gains, 5 losses and 188 retained.
+At IoU .60 the counts were 177/180; at .80 they were 129/125. This single-seed,
+fixed-dose result is sensitive to localization precision.
+
+The preselected dense8 proposal review covered 306 proposals in 230 display
+groups over eight images. Clearly attributable owners were S110/F113; the
+admitted sets retained 107, gained 6 and lost 3. Extra proposals for the same
+owner were 3/3; uncertain proposals were 36/32 and remain neutral. This is
+candidate-owner review, not an exhaustive scene census, physical recall or
+population precision measurement.
+
+The cup/spoon/donut content diagnostic transplanted a future-completion vector
+captured after h+c+w to an earlier C boundary. W remained the first emitted
+row in all three correct/wrong-source pairs; spoon was unchanged, both cup
+runs capped, and changed donut regions included donut-hole groups. Sensitivity
+in two cases does not establish selective visited-owner suppression, a memory
+ledger, native-memory incapacity, storage/readout isolation or sample efficiency.
+The bounded round is closed with no checkpoint promotion or authorized next
+dose. Known GPU allocation was at least 12.858515 hours, with six early timing
+intervals missing; this is not an exact cost. The old artifact root is absent;
+Git recovery of the record does not establish payload availability or qualify
+continuation.
 
 ## Provenance
 
