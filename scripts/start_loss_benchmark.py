@@ -21,7 +21,7 @@ import time
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
-ROOT = Path('/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928')
+ROOT = REPO / 'outputs/infra_base/start-loss-benchmark-20260928'
 SOURCE_RUN = Path('/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-illegal-mass001-ebs24-4epoch')
 SOURCE = SOURCE_RUN / 'checkpoints/step-2444'
 VAL = Path('/data/CoordExp/outputs/infra_base/untied-axis-val200-20260918/val200.coord.jsonl')

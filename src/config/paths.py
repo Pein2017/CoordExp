@@ -85,6 +85,7 @@ def resolve_run_directory(
     root_base = Path(config.run.artifact_root)
     root = root_base if root_base.is_absolute() else (cwd or Path.cwd()) / root_base
     root = root.resolve()
+    validate_run_output_destination(root, field="run.artifact_root")
 
     run_dir_name = config.run.output_dir or config.run.name
     run_dir_path = Path(run_dir_name)
@@ -104,6 +105,7 @@ def resolve_run_directory(
             context={"artifact_root": str(root), "run_dir": str(run_dir)},
             cause=exc,
         ) from exc
+    validate_run_output_destination(run_dir, field="run.output_dir")
 
     if run_dir.exists():
         if config.run.collision_policy == "fail":
@@ -126,6 +128,25 @@ def resolve_run_directory(
         artifact_root=root,
         run_dir=run_dir.resolve(),
         collision_policy=config.run.collision_policy,
+    )
+
+
+def validate_run_output_destination(path: Path, *, field: str) -> None:
+    """Reject new runs under the shared output-retention tree."""
+    shared_root = Path("/data/CoordExp/outputs").resolve()
+    destination = path.resolve()
+    try:
+        destination.relative_to(shared_root)
+    except ValueError:
+        return
+    raise ConfigContractError(
+        "new run destinations must stay outside shared asset-retention outputs",
+        code="config.shared_output_destination",
+        context={
+            "field": field,
+            "path": str(destination),
+            "shared_output_root": str(shared_root),
+        },
     )
 
 
