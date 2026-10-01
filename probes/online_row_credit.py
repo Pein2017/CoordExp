@@ -19,6 +19,8 @@ CONTAINMENT = dict(baseline='fresh_full18_version0',complete_literal_repeats_le_
     initial_valid_image_nonempty=True)
 IDENTITY_SELECTION = 'first_eligible_literal_duplicate_per_identity_round'
 IDENTITY_NORMALIZATION = 'complete_positive_plus_margin_mean_1_over_K_per_image'
+RESTORED_M_WEIGHTING = 'restored_M_mass'
+RESTORED_M_COMPLETION = 'CHAIN_ALL_M_relocated_1_over_m_plus_B_1_over_m_plus_k'
 
 
 def identity(value):
@@ -190,13 +192,24 @@ def bridge_credit(image, record, tokenizer, producer, policy, schema_geometry=Fa
     return dict(plan,bridge=repair,bridge_dispositions=dispositions,m=m,k=k,n=m+k,eligible=eligible,policy=policy,terminal_certified=terminal)
 
 
+def restored_m_bridge_weights(plan):
+    assert plan['n']==plan['m']+plan['k'] and plan['k']>0
+    return [1/plan['n']]*plan['k']+([1/plan['m']]*plan['m'] if plan['m'] else [])
+
+
 def bridge_rows(record, plan, branch_index=None):
     """Rows and exact token history for one real repaired forward."""
+    weighting=plan.get('completion_weighting')
+    assert weighting in (None,RESTORED_M_WEIGHTING) and record['producer'].get('completion_weighting')==weighting, 'completion plan weighting drift'
     assert plan['k']>0
     if plan['policy']=='chain':
         assert branch_index is None
         repair=plan['bridge']
-        return repair['token_ids'],repair['B']+repair['M'],[1/plan['n']]*plan['n'],plan['k']
+        rows=repair['B']+repair['M']
+        weights=(restored_m_bridge_weights(plan) if plan.get('completion_weighting')==RESTORED_M_WEIGHTING
+                 else [1/plan['n']]*plan['n'])
+        assert len(rows)==len(weights)==plan['n']
+        return repair['token_ids'],rows,weights,plan['k']
     assert plan['policy']=='local' and isinstance(branch_index,int) and 0<=branch_index<plan['k']
     b=plan['eligible'][branch_index];cut=b['cut'];tokens=record['token_ids'][:cut]+b['token_ids']
     rows=[dict(b,positions=list(range(cut,len(tokens))))];weights=[1/plan['n']]
@@ -212,7 +225,7 @@ def bridge_rows(record, plan, branch_index=None):
 
 
 def bridge_sequences(image, record, plan, tokenizer, branch_index=None):
-    expected=(completion_credit(image,record,tokenizer,plan['producer'],plan['completion_arm'],'redirects' in plan) if 'completion_arm' in plan else
+    expected=(completion_credit(image,record,tokenizer,plan['producer'],plan['completion_arm'],'redirects' in plan,plan.get('completion_weighting')) if 'completion_arm' in plan else
               bridge_credit(image,record,tokenizer,plan['producer'],plan['policy'],'schema_geometry' in plan))
     assert expected==plan, 'bridge plan drift'
     tokens,rows,_,_=bridge_rows(record,plan,branch_index)
@@ -247,12 +260,15 @@ def compatible_prefix_targets(sequences):
     return dict(sites=len(seen),shared_compatible=shared)
 
 
-def completion_credit(image, record, tokenizer, producer, arm, identity_events=False):
+def completion_credit(image, record, tokenizer, producer, arm, identity_events=False, completion_weighting=None):
     assert arm in ('control','treatment')
+    assert completion_weighting in (None,RESTORED_M_WEIGHTING)
+    assert producer.get('completion_weighting')==completion_weighting, 'completion producer weighting drift'
     plan=bridge_credit(image,record,tokenizer,producer,'chain',True)
     original=credit(image,record,tokenizer,producer,all_events=True,identity_events=identity_events)
     assert original['M']==plan['M']
     plan.update(redirect=original['redirect'],redirect_events=original['redirect_events'],completion_arm=arm)
+    if completion_weighting is not None:plan['completion_weighting']=completion_weighting
     if identity_events:plan.update(redirect_selection=IDENTITY_SELECTION,redirects=original['redirects'])
     if arm=='treatment' and plan['k']:
         tokens,rows,_,_=bridge_rows(record,plan)
@@ -267,7 +283,11 @@ def completion_credit(image, record, tokenizer, producer, arm, identity_events=F
 
 def correction_plan(image, record, tokenizer, correction):
     if 'completion_arm' in correction:
-        return completion_credit(image,record,tokenizer,record['producer'],correction['completion_arm'],correction.get('redirect_selection')==IDENTITY_SELECTION)
+        weighting=correction.get('completion_weighting')
+        if weighting is not None:assert record['producer'].get('completion_weighting')==weighting, 'completion producer weighting drift'
+        return completion_credit(image,record,tokenizer,record['producer'],correction['completion_arm'],
+            correction.get('redirect_selection')==IDENTITY_SELECTION,weighting)
+    assert record['producer'].get('completion_weighting') is None, 'unexpected completion producer weighting'
     plan=credit(image,record,tokenizer,record['producer'],redirect_enabled=bool(correction['duplicate_weight']))
     plan['schema_geometry']=schema_geometry_errors(record,tokenizer,plan['observations'])
     return plan
@@ -332,10 +352,13 @@ def bridge_trace_plan(plan, arm):
 
 def bridge_objective(logits, positions, sequences, plan, arm, vocab, branch_index=None):
     import torch
+    weighting=plan.get('completion_weighting')
+    assert weighting in (None,RESTORED_M_WEIGHTING) and plan['producer'].get('completion_weighting')==weighting, 'completion plan weighting drift'
     assert arm in ('local','chain') and plan['policy']==arm and plan['n']>0 and plan['k']>0
     if arm=='chain':
         assert branch_index is None
-        weights=[1/plan['n']]*plan['n'];nb=plan['k']
+        weights=(restored_m_bridge_weights(plan) if plan.get('completion_weighting')==RESTORED_M_WEIGHTING
+                 else [1/plan['n']]*plan['n']);nb=plan['k']
     else:
         assert isinstance(branch_index,int) and 0<=branch_index<plan['k']
         b=plan['eligible'][branch_index];weights=[1/plan['n']];nb=1
@@ -834,8 +857,9 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
     original_plan=plan
     completion=plan.get('completion_arm')
     if record['producer'].get('redirect_selection')==IDENTITY_SELECTION or 'redirect_selection' in plan:
-        assert plan==completion_credit(image,record,q.tokenizer,record['producer'],completion,True), 'identity correction plan drift'
+        assert plan==completion_credit(image,record,q.tokenizer,record['producer'],completion,True,plan.get('completion_weighting')), 'identity correction plan drift'
     if correction_arm is not None:
+        assert record['producer'].get('completion_weighting')==plan.get('completion_weighting'), 'completion producer weighting drift'
         assert correction_arm in ('control','treatment') and completion in (None,correction_arm)
         assert duplicate_weight==(1 if completion else int(correction_arm=='treatment'))
         assert branch in (('trace','bridge','redirect') if completion else ('trace','redirect')) and (branch!='redirect' or duplicate_weight==1)
@@ -920,6 +944,7 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
             sequences=[r.positive_sequence(image,record,row,q.tokenizer) for row in plan['M']] if branch=='trace' else [sequence]
             evidence['row_losses']=[dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences]
         if completion:evidence['completion_arm']=completion
+        if 'completion_weighting' in original_plan:evidence['completion_weighting']=original_plan['completion_weighting']
         if branch=='redirect':
             d=target['site']['offset'];site=target['site'];z=logits[0,d].float()
             g,=torch.autograd.grad(terms['redirect_margin'],logits,retain_graph=True)
@@ -938,12 +963,14 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
     for row,job in zip(forwards,expected):
         i=job['image_id'];record=records[i];plan=plans[i]
         if record['producer'].get('redirect_selection')==IDENTITY_SELECTION or 'redirect_selection' in plan:
-            assert plan==completion_credit(images[i],record,tokenizer,record['producer'],arm,True), 'identity correction plan drift'
+            assert plan==completion_credit(images[i],record,tokenizer,record['producer'],arm,True,plan.get('completion_weighting')), 'identity correction plan drift'
         assert (row['image_id'],row['branch'],row['sync'],row['image_weight'])==(i,job['branch'],job['sync'],job['weight'])
         assert row['producer']==record['producer'] and row['raw_identity']==record['raw_identity']
+        assert record['producer'].get('completion_weighting')==plan.get('completion_weighting'), 'completion producer weighting drift'
         assert row['correction']==dict(arm=arm,duplicate_weight=weight,plan_sha256=identity(plan))
         completion=plan.get('completion_arm')
         assert row.get('completion_arm')==completion
+        assert row.get('completion_weighting')==plan.get('completion_weighting')
         selected=bridge_trace_plan(plan,'chain') if completion=='treatment' else plan
         if job['branch']=='trace':
             full=record['prompt_token_ids']+record['token_ids'];positions=trace_positions(selected,record)
@@ -1044,17 +1071,21 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         return None
     assert arm in ('control','treatment')
     assert not any(k in qual for k in ('bridge','geometry','preservation','witness'))
-    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3')
-    completion=spec['mode'] in ('recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3')
-    guarded=spec['mode'] in ('recall-error-floor-v2','recall-error-floor-v3')
-    identity_events=spec['mode']=='recall-error-floor-v3'
+    assert spec is not None and spec['mode'] in ('correction-only-v1','recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3','recall-error-floor-v4')
+    completion=spec['mode'] in ('recall-error-floor-v1','recall-error-floor-v2','recall-error-floor-v3','recall-error-floor-v4')
+    restored=spec['mode']=='recall-error-floor-v4'
+    guarded=spec['mode'] in ('recall-error-floor-v2','recall-error-floor-v3','recall-error-floor-v4')
+    identity_events=spec['mode'] in ('recall-error-floor-v3','recall-error-floor-v4')
     if guarded:assert spec['containment']==CONTAINMENT
     else:assert 'containment' not in spec
     assert spec['arms']==({'control':1,'treatment':1} if completion else {'control':0,'treatment':1}) and spec['updates']==[1,8]
     assert weight==spec['arms'][arm]
     if completion:
-        assert spec['completion']=={'control':'original_M_rowmean','treatment':'CHAIN_ALL_M_relocated_plus_B_mean_1_over_m_plus_k'}
+        treatment=RESTORED_M_COMPLETION if restored else 'CHAIN_ALL_M_relocated_plus_B_mean_1_over_m_plus_k'
+        assert spec['completion']=={'control':'original_M_rowmean','treatment':treatment}
     else:assert 'completion' not in spec
+    if restored:assert spec.get('completion_weighting')==RESTORED_M_WEIGHTING
+    else:assert 'completion_weighting' not in spec
     assert spec['event']==(IDENTITY_SELECTION if identity_events else 'earliest_eligible_literal_duplicate_per_image_round')
     if identity_events:assert spec['event_normalization']==IDENTITY_NORMALIZATION
     else:assert 'event_normalization' not in spec
@@ -1070,6 +1101,7 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
     binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),
                  manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm')
     if completion:binding['completion_arm']=arm
+    if restored:binding['completion_weighting']=RESTORED_M_WEIGHTING
     if guarded:binding['containment']=dict(CONTAINMENT)
     if identity_events:binding['redirect_selection']=IDENTITY_SELECTION
     return binding
@@ -1211,7 +1243,9 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
         producer=dict(kind='live_online',update=version,parameter_sha256=hashes[0],source=source['commit'] if 'commit' in source else identity(source))
         if rollout is not None:producer['rollout_backend']='vllm-local-dora-0.29.0'
-        if correction is not None:producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
+        if correction is not None:
+            producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
+            if 'completion_weighting' in correction:producer['completion_weighting']=correction['completion_weighting']
         if correction is not None and 'completion_arm' in correction:producer['completion_arm']=correction_arm
         if correction is not None and 'redirect_selection' in correction:producer['redirect_selection']=correction['redirect_selection']
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
@@ -1467,6 +1501,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(correction_arm,duplicate_weight,recipe_sha256)
             assert producer.get('completion_arm')==correction.get('completion_arm')
             assert producer.get('redirect_selection')==correction.get('redirect_selection')
+            assert producer.get('completion_weighting')==correction.get('completion_weighting')
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']
@@ -1506,7 +1541,8 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
             path=Path(path);read=p.load(path/'readback.json')
             containment_baseline=None
             assert [x['update'] for x in read]==list(range(updates+1))
-            expected=dict(correction,arm=arm,duplicate_weight=p.load(root/'qualification.json')['correction']['arms'][arm])
+            # Preserve the bound numeric type in the canonical containment identity.
+            expected=dict(correction,arm=arm,duplicate_weight=type(correction['duplicate_weight'])(p.load(root/'qualification.json')['correction']['arms'][arm]))
             if 'completion_arm' in correction:expected['completion_arm']=arm
             execution=execution_binding(root,arm,microbatch,activation_checkpointing)
             for row in read:
@@ -1517,6 +1553,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                 assert (producer['correction_arm'],producer['duplicate_weight'],producer['recipe_sha256'])==(arm,expected['duplicate_weight'],recipe_sha256)
                 assert producer.get('completion_arm')==expected.get('completion_arm')
                 assert producer.get('redirect_selection')==expected.get('redirect_selection')
+                assert producer.get('completion_weighting')==correction.get('completion_weighting')
                 directory=path/f"rollout-{row['update']}"
                 records=frozen_records(directory,ids,freeze=True);verify_producer(records,producer,ids)
                 assert p.digest(directory/'frozen.json')==row['frozen_sha256']

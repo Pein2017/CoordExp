@@ -1155,24 +1155,29 @@ class OnlineCreditTest(unittest.TestCase):
             with self.assertRaises(AssertionError):o.main()
             caller.assert_not_called()
 
-    def correction_fixture_tree(self, root, arm, updates=1, completion=False, guarded=False, rejected_terminal=False, identity_events=False, identity_count=None):
+    def correction_fixture_tree(self, root, arm, updates=1, completion=False, guarded=False, rejected_terminal=False, identity_events=False, identity_count=None, completion_weighting=None):
         """Prediction-only persisted fixtures for the actual readback/offline consumers."""
         from pathlib import Path
         checkpoint=root/'anchor';checkpoint.mkdir(exist_ok=True)
         if not (checkpoint/'inference_payload_manifest.json').exists():
             o.p.write(checkpoint/'inference_payload_manifest.json',dict(schema='coordexp-infras-inference-checkpoint-payload-manifest',schema_version=1,
                 adapter=dict(status='present',files=[]),special_token_embedding_delta=dict(status='present',files=[])))
+        identity_events=identity_events or completion_weighting is not None
         guarded=guarded or identity_events;completion=completion or guarded
-        qual=self.identity_qualifier(root,checkpoint) if identity_events else (self.containment_qualifier(root,checkpoint) if guarded else (self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)))
+        qual=(self.restored_m_qualifier(root,checkpoint) if completion_weighting is not None else
+              self.identity_qualifier(root,checkpoint) if identity_events else
+              self.containment_qualifier(root,checkpoint) if guarded else
+              self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint))
         qual['correction']['manifest_sha256']=o.p.digest(checkpoint/'inference_payload_manifest.json')
         qual['sha256']={str(x):o.p.digest(x) for x in (o.INPUTS,o.RETAINED,o.p.POLICY)}
         if not (root/'qualification.json').exists():o.p.write(root/'qualification.json',qual)
         else:self.assertEqual(o.p.load(root/'qualification.json'),qual)
         output=Path(qual['pairs'][str(updates)][arm]);output.mkdir(parents=True)
-        weight=1 if completion else int(arm=='treatment');recipe=o.identity(qual['correction'])
+        weight=1.0 if completion_weighting is not None else (1 if completion else int(arm=='treatment'));recipe=o.identity(qual['correction'])
         binding=dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe,checkpoint=str(checkpoint),manifest_sha256=qual['correction']['manifest_sha256'],
             weight=.1,schema_geometry=True,rollout_backend='vllm')
         if completion:binding['completion_arm']=arm
+        if completion_weighting is not None:binding['completion_weighting']=completion_weighting
         if guarded:binding['containment']=dict(o.CONTAINMENT)
         if identity_events:binding['redirect_selection']=o.IDENTITY_SELECTION
         execution=dict(arm=arm,microbatch=1,activation_checkpointing=False)
@@ -1199,6 +1204,7 @@ class OnlineCreditTest(unittest.TestCase):
                 producer=dict(kind='live_online',update=version,parameter_sha256=snapshot,source='source',rollout_backend='vllm-local-dora-0.29.0',
                     correction_arm=arm,duplicate_weight=weight,recipe_sha256=recipe)
                 if completion:producer['completion_arm']=arm
+                if completion_weighting is not None:producer['completion_weighting']=completion_weighting
                 if identity_events:producer['redirect_selection']=o.IDENTITY_SELECTION
                 o.p.write(directory/f'producer-{version}.json',dict(producer=producer,parameters=params))
                 if version:operations.append(dict(operation='refresh',identity=snapshot))
@@ -1254,6 +1260,7 @@ class OnlineCreditTest(unittest.TestCase):
                         loss=sum(terms.values()),terms=terms,logit_derivatives={k:dict(loss=v,l2=1.,linf=1.,support_rows=1) for k,v in terms.items()},**extra))
                     if job['branch']=='bridge':forwards[-1]['row_losses']=o.bridge_row_evidence(rec,plan,seqs,None)
                     if completion:forwards[-1]['completion_arm']=arm
+                    if completion_weighting is not None:forwards[-1]['completion_weighting']=completion_weighting
                 o.p.write(directory/f'update-{version+1}.json',dict(producer=producer,optimizer_steps=[version+1],optimizer_state_count=590,lrs=[1e-5,5e-6],
                     synchronized_norms=['same']*8,forwards=forwards))
             o.p.write(directory/'vllm-operations.json',operations)
@@ -1369,11 +1376,17 @@ class OnlineCreditTest(unittest.TestCase):
             [('control',None,False),('treatment',None,False),('control','duplicate',False),('control','association',False),
              ('control',None,True),('treatment',None,True)]])
 
-    def resident_cases(self, cases, identity_events=False):
+    def test_restored_m_resident_caller_emits_marker_on_rank0_and_rank7(self):
+        from pathlib import Path
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01')
+        cases=[('treatment',None,True,rank,'equal',1) for rank in (0,7)]
+        self.resident_cases(cases,identity_events=True,completion_weighting='restored_M_mass',base=base)
+
+    def resident_cases(self, cases, identity_events=False, completion_weighting=None, base=None):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        base=Path(base) if base is not None else Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
         original=o.p.load;inputs=original(o.INPUTS);optimizer_type=torch.optim.AdamW;decisions=[]
         class Tiny(torch.nn.Module):
             def __init__(self):
@@ -1402,17 +1415,22 @@ class OnlineCreditTest(unittest.TestCase):
         for arm,device_failure,completion,rank,guard_case,updates in cases:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
                 root=Path(tmp);guarded=guard_case is not None;checkpoint=Path('/cpu-anchor') if guarded else root/'anchor'
-                qual=self.identity_qualifier(root,checkpoint) if identity_events else (self.containment_qualifier(root,checkpoint) if guarded else (self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint)))
+                qual=(self.restored_m_qualifier(root,checkpoint) if completion_weighting is not None else
+                      self.identity_qualifier(root,checkpoint) if identity_events else
+                      self.containment_qualifier(root,checkpoint) if guarded else
+                      self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint))
                 output=Path(qual['pairs'][str(updates)][arm]);directory=output/f'rank-{rank}';directory.mkdir(parents=True)
                 q=SimpleNamespace(model=Tiny(),base_model_path='/base',processor=self.q.processor,tokenizer=self.t,token_identity=self.q.token_identity)
                 delta=SimpleNamespace(delta_tensors=lambda:dict(input=q.model.embed_tokens.shared_embed_delta,output=q.model.lm_head.shared_embed_delta))
                 seen=[];optimizers=[];generations=[]
                 records=self.containment_native_fixture(arm)[0] if guarded else self.records
+                if completion_weighting is not None:
+                    records=[o.seal(x,dict(x['producer'],completion_weighting=completion_weighting)) for x in records]
                 def current(version):
                     case=guard_case.removeprefix('initial-') if guarded and (version>0 or guard_case.startswith('initial-')) else 'equal'
                     return self.containment_counterfactual(records,records[0]['producer'],case) if guarded else records
                 weight=1 if completion else int(arm=='treatment')
-                plans={x['image_id']:(o.completion_credit(image,x,self.t,x['producer'],arm,identity_events) if completion else
+                plans={x['image_id']:(o.completion_credit(image,x,self.t,x['producer'],arm,identity_events,completion_weighting) if completion else
                                     o.credit(image,x,self.t,x['producer'],redirect_enabled=bool(weight))) for image,x in zip(self.images,records)}
                 expected=o.jobs([x['image_id'] for x in self.images],rank,plans,correction_arm=arm,duplicate_weight=weight)
                 class Optimizer(optimizer_type):
@@ -1440,6 +1458,9 @@ class OnlineCreditTest(unittest.TestCase):
                         for j in range(8):target[j]=value
                 def consume(q_,model,batch,image,record,plan,encoding,vocab,branch,*args):
                     self.assertIsNone(encoding);self.assertIn(branch,('trace','bridge','redirect') if completion else ('trace','redirect'));self.assertEqual(optimizers[0].steps,0)
+                    if completion_weighting is not None:
+                        self.assertEqual(record['producer'].get('completion_weighting'),completion_weighting)
+                        self.assertEqual(plan.get('completion_weighting'),completion_weighting)
                     seen.append(dict(image_id=image['image_id'],branch=branch))
                     coefficient=1
                     if identity_events and branch=='redirect':
@@ -1491,6 +1512,9 @@ class OnlineCreditTest(unittest.TestCase):
                 self.assertEqual(len(updates),1);self.assertEqual(updates[0]['optimizer_steps'],[1]);self.assertEqual(updates[0]['optimizer_state_count'],590)
                 self.assertTrue(updates[0]['forwards'][-1]['sync']);self.assertEqual(sum(x['sync'] for x in updates[0]['forwards']),1)
                 self.assertEqual(len(expected),len(seen));self.assertEqual(len({x['image_id'] for x in seen}),3 if rank<2 else 2)
+                if completion_weighting is not None:
+                    producer=next(x.args[1]['producer'] for x in write.call_args_list if x.args[0].name=='producer-0.json')
+                    self.assertEqual(producer.get('completion_weighting'),completion_weighting)
                 if identity_events:
                     self.assertEqual([(x['image_id'],x['branch'],x.get('branch_index')) for x in seen],[(x['image_id'],x['branch'],x.get('branch_index')) for x in expected])
         return decisions
@@ -1524,6 +1548,14 @@ class OnlineCreditTest(unittest.TestCase):
         qual=self.correction_qualifier(root,checkpoint)
         qual['correction'].update(mode='recall-error-floor-v1',arms={'control':1,'treatment':1},
             completion={'control':'original_M_rowmean','treatment':'CHAIN_ALL_M_relocated_plus_B_mean_1_over_m_plus_k'})
+        return qual
+
+    def restored_m_qualifier(self, root, checkpoint):
+        qual=self.recall_qualifier(root,checkpoint);spec=qual['correction']
+        spec.update(mode='recall-error-floor-v4',containment=dict(o.CONTAINMENT),
+            event=o.IDENTITY_SELECTION,event_normalization=o.IDENTITY_NORMALIZATION,
+            completion_weighting='restored_M_mass',
+            completion={'control':'original_M_rowmean','treatment':'CHAIN_ALL_M_relocated_1_over_m_plus_B_1_over_m_plus_k'})
         return qual
 
     def test_recall_actual_binding_common_correction_and_old_mode_rejection(self):
@@ -1593,6 +1625,217 @@ class OnlineCreditTest(unittest.TestCase):
                             else:bad[1]['row_losses'].pop(0)
                             with self.assertRaises(AssertionError):o.verify_correction_forwards(bad,ids,0,{image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,arm,1)
         self.assertTrue(all(x==geometry[0] for x in geometry))
+
+    def test_restored_m_chain_row_coefficients_and_actual_gradients(self):
+        from types import SimpleNamespace
+        marker='restored_M_mass';image,record,_=self.multi_fixture()
+        producer=dict(self.producer,completion_weighting=marker);record=o.seal(dict(record,producer=producer),producer)
+        plan=o.completion_credit(image,record,self.t,producer,'treatment',True,marker)
+        with self.assertRaisesRegex(AssertionError,'producer weighting drift'):
+            o.completion_credit(image,record,self.t,self.producer,'treatment',True,marker)
+        with self.assertRaisesRegex(AssertionError,'producer weighting drift'):
+            o.completion_credit(image,record,self.t,producer,'treatment',True)
+        wrong_producer=dict(self.producer,completion_weighting='wrong')
+        wrong_record=o.seal(dict(record,producer=wrong_producer),wrong_producer)
+        with self.assertRaisesRegex(AssertionError,'producer weighting drift'):
+            o.completion_credit(image,wrong_record,self.t,wrong_producer,'treatment',True,marker)
+        control=o.completion_credit(image,record,self.t,producer,'control',True,marker)
+        self.assertEqual((plan['m'],plan['k'],plan['n']),(2,4,6))
+        self.assertEqual(plan['completion_weighting'],control['completion_weighting'])
+        tokens,rows,weights,nb=o.bridge_rows(record,plan)
+        expected_weights=[1/6]*4+[1/2]*2
+        self.assertEqual((len(rows),nb),(6,4));self.assertEqual(weights,expected_weights)
+        for mismatched in (dict(plan,completion_weighting=None),dict(plan,completion_weighting='unexpected')):
+            with self.assertRaisesRegex(AssertionError,'weighting drift'):o.bridge_rows(record,mismatched)
+        sequences=o.bridge_sequences(image,record,plan,self.t)
+        full=record['prompt_token_ids']+tokens
+        self.assertTrue(all(list(seq.input_ids)==full for seq in sequences))
+        for row,sequence in zip(rows,sequences):
+            self.assertEqual([a.token_id for a in sequence.atoms],[tokens[j] for j in row['positions']])
+            self.assertEqual([a.token_id for a in sequence.atoms],
+                [full[a.target_position] for a in sequence.atoms])
+        self.assertGreater(o.compatible_prefix_targets(sequences)['sites'],0)
+        positions=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
+        logits=torch.randn(1,len(positions),len(self.t),requires_grad=True)
+        loss,terms=o.bridge_objective(logits,positions,sequences,plan,'chain',self.vocab)
+        row_losses=[o.p.image_loss(logits,seq,self.vocab,positions)[0] for seq in sequences]
+        expected=sum(weight*value for weight,value in zip(expected_weights,row_losses))
+        torch.testing.assert_close(loss,expected)
+        torch.testing.assert_close(terms['B'],sum(expected_weights[j]*row_losses[j] for j in range(4)))
+        torch.testing.assert_close(terms['M_relocated'],sum(expected_weights[j]*row_losses[j] for j in range(4,6)))
+        actual_grad,=torch.autograd.grad(loss,logits,retain_graph=True)
+        expected_grad=torch.zeros_like(logits)
+        for weight,value in zip(expected_weights,row_losses):
+            grad,=torch.autograd.grad(value,logits,retain_graph=True);expected_grad.add_(grad,alpha=weight)
+        torch.testing.assert_close(actual_grad,expected_grad)
+
+        legacy_producer=dict(self.producer);legacy_record=o.seal(dict(record,producer=legacy_producer),legacy_producer)
+        legacy=o.completion_credit(image,legacy_record,self.t,legacy_producer,'treatment',True)
+        legacy_tokens,legacy_rows,legacy_weights,_=o.bridge_rows(legacy_record,legacy)
+        self.assertEqual(legacy_weights,[1/6]*6);self.assertNotIn('completion_weighting',legacy)
+        self.assertEqual(plan['redirects'],legacy['redirects'])
+        self.assertEqual((tokens,rows,sequences[0].input_ids),
+            (legacy_tokens,legacy_rows,o.bridge_sequences(image,legacy_record,legacy,self.t)[0].input_ids))
+        self.assertEqual([seq.input_ids for seq in sequences],[seq.input_ids for seq in o.bridge_sequences(image,legacy_record,legacy,self.t)])
+
+        class Toy(torch.nn.Module):
+            def __init__(self,vocab):super().__init__();self.w=torch.nn.Parameter(torch.linspace(-.03,.03,vocab))
+            def get_rope_index(self,ids,mm_token_type_ids,*,image_grid_thw,video_grid_thw,attention_mask):
+                return (attention_mask.cumsum(-1)-1).unsqueeze(0).expand(3,-1,-1),None
+            def forward(self,input_ids,logits_to_keep,**kw):
+                h=(input_ids%19).float().cumsum(-1).index_select(1,logits_to_keep)/1000
+                return SimpleNamespace(logits=h[:,:,None]*self.w)
+        model=Toy(len(self.t));q=SimpleNamespace(model=model,tokenizer=self.t)
+        batch=SimpleNamespace(inputs=dict(input_ids=torch.tensor([record['prompt_token_ids']]),
+            attention_mask=torch.ones(1,len(record['prompt_token_ids'])),image_grid_thw=torch.tensor([record['image_grid_thw']]),
+            pixel_values=torch.tensor([[2.,3.]])))
+        tensor=torch.tensor;ids=[image['image_id']]+list(range(100000,100017))
+        with patch.object(torch,'autocast',side_effect=lambda *a,**k:nullcontext()), \
+             patch.object(torch,'tensor',side_effect=lambda data,**kw:tensor(data,**{k:v for k,v in kw.items() if k!='device'})):
+            bridge_loss,bridge=o.forward(q,model,batch,image,record,plan,None,self.vocab,'bridge',geometry_weight=.1,
+                correction_arm='treatment',duplicate_weight=1)
+            self.assertEqual(bridge['completion_weighting'],marker)
+            self.assertEqual([x['weight'] for x in bridge['row_losses']],expected_weights)
+            bridge_loss.backward();self.assertTrue(torch.isfinite(model.w.grad).all())
+            with patch.object(o,'jobs',return_value=[dict(image_id=image['image_id'],branch='bridge',weight=8/18,sync=True)]):
+                o.verify_correction_forwards([dict(bridge,image_weight=8/18,sync=True)],ids,0,
+                    {image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,'treatment',1)
+                bad=copy.deepcopy(bridge);bad.pop('completion_weighting')
+                with self.assertRaises(AssertionError):o.verify_correction_forwards([dict(bad,image_weight=8/18,sync=True)],ids,0,
+                    {image['image_id']:plan},{image['image_id']:record},{image['image_id']:image},self.t,'treatment',1)
+
+            trace_loss,trace=o.forward(q,model,batch,image,record,plan,None,self.vocab,'trace',geometry_weight=.1,
+                correction_arm='treatment',duplicate_weight=1)
+            self.assertEqual(trace['completion_weighting'],marker);self.assertEqual(trace['terms']['M'],0)
+            legacy_trace=o.forward(q,model,batch,image,legacy_record,legacy,None,self.vocab,'trace',geometry_weight=.1,
+                correction_arm='treatment',duplicate_weight=1)[1]
+            for key in ('legal','Gmax_unweighted','Gmax_weighted'):
+                self.assertEqual(trace['terms'][key],legacy_trace['terms'][key])
+            control_trace=o.forward(q,model,batch,image,record,control,None,self.vocab,'trace',geometry_weight=.1,
+                correction_arm='control',duplicate_weight=1)[1]
+            self.assertEqual(control_trace['completion_weighting'],marker)
+            self.assertGreater(control_trace['terms']['M'],0)
+
+    def test_restored_m_empty_and_zero_insertions_preserve_control_boundaries(self):
+        marker='restored_M_mass';producer=dict(self.producer,completion_weighting=marker)
+        a=[10,20,100,200];b=[300,400,500,600]
+        image,record,_=self.fixture([a,a,b,b]);record=o.seal(dict(record,producer=producer),producer)
+        control=o.completion_credit(image,record,self.t,producer,'control',True,marker)
+        treatment=o.completion_credit(image,record,self.t,producer,'treatment',True,marker)
+        self.assertEqual((treatment['m'],treatment['k']),(2,0))
+        positions=o.trace_positions(treatment,record);z=torch.randn(1,len(positions),len(self.t),requires_grad=True)
+        values=[o.trace_objective(z,positions,p,record,image,self.t,self.vocab)[0] for p in (control,treatment)]
+        torch.testing.assert_close(values[0],values[1])
+        torch.testing.assert_close(torch.autograd.grad(values[0],z,retain_graph=True)[0],torch.autograd.grad(values[1],z)[0])
+
+        image,record,_=self.fixture([]);image['objects']=[dict(coco_ann_id=0,desc='person',bbox_2d=a)]
+        record=o.seal(dict(record,producer=producer),producer)
+        plan=o.completion_credit(image,record,self.t,producer,'treatment',True,marker)
+        self.assertEqual((plan['m'],plan['k'],plan['n']),(0,1,1))
+        tokens,rows,weights,nb=o.bridge_rows(record,plan)
+        self.assertEqual((len(rows),nb,weights),(1,1,[1.]))
+        sequences=o.bridge_sequences(image,record,plan,self.t)
+        bridge_positions=tuple(sorted({atom.causal_logits_position for seq in sequences for atom in seq.atoms}))
+        bridge_logits=torch.randn(1,len(bridge_positions),len(self.t),requires_grad=True)
+        bridge_loss,terms=o.bridge_objective(bridge_logits,bridge_positions,sequences,plan,'chain',self.vocab)
+        self.assertGreater(float(terms['B'].detach()),0);self.assertEqual(float(terms['M_relocated'].detach()),0)
+        m_grad,=torch.autograd.grad(terms['M_relocated'],bridge_logits,retain_graph=True)
+        self.assertEqual(float(m_grad.abs().sum()),0)
+        bridge_loss.backward();self.assertTrue(torch.isfinite(bridge_logits.grad).all())
+        trace=o.bridge_trace_plan(plan,'chain');self.assertEqual(trace['M'],[])
+        trace_positions=o.trace_positions(trace,record)
+        trace_logits=torch.randn(1,len(trace_positions),len(self.t),requires_grad=True)
+        _,trace_terms=o.trace_objective(trace_logits,trace_positions,trace,record,image,self.t,self.vocab)
+        self.assertEqual(float(trace_terms['M'].detach()),0)
+        trace_grad,=torch.autograd.grad(trace_terms['M'],trace_logits)
+        self.assertEqual(float(trace_grad.abs().sum()),0)
+
+        image,record,_=self.fixture([]);record=o.seal(dict(record,producer=producer),producer)
+        empty=o.completion_credit(image,record,self.t,producer,'treatment',True,marker)
+        self.assertEqual((empty['m'],empty['k'],empty['n']),(0,0,0))
+        self.assertEqual(empty['prefix_compatibility'],dict(sites=0,shared_compatible=0))
+
+    def test_restored_m_recipe_binding_is_exact_and_v3_rejects_marker(self):
+        from pathlib import Path
+        root=Path('/cpu');checkpoint=Path('/marginstep256')
+        qual=self.restored_m_qualifier(root,checkpoint);recipe=o.identity(qual['correction'])
+        legacy_recipe=o.identity(self.identity_qualifier(root,checkpoint)['correction'])
+        with patch.object(o.p,'load',return_value=qual),patch.object(o.p,'digest',return_value='manifest'), \
+             patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_anchor_payload'):
+            for arm in ('control','treatment'):
+                binding=o.correction_binding(root,arm,1,checkpoint,.1,recipe)
+                self.assertEqual(binding['completion_weighting'],'restored_M_mass')
+            with self.assertRaises(AssertionError):o.correction_binding(root,'treatment',1,checkpoint,.1,legacy_recipe)
+        legacy=self.identity_qualifier(root,checkpoint);legacy['correction']['completion_weighting']='restored_M_mass'
+        with patch.object(o.p,'load',return_value=legacy):
+            with self.assertRaises(AssertionError):o.correction_binding(root,'treatment',1,checkpoint,.1,o.identity(legacy['correction']))
+        for marker in (None,'wrong'):
+            malformed=copy.deepcopy(qual)
+            if marker is None:malformed['correction'].pop('completion_weighting')
+            else:malformed['correction']['completion_weighting']=marker
+            with patch.object(o.p,'load',return_value=malformed):
+                with self.assertRaises(AssertionError):o.correction_binding(root,'treatment',1,checkpoint,.1,o.identity(malformed['correction']))
+
+    def test_restored_m_persisted_readback_and_offline_marker_gate(self):
+        import tempfile
+        from pathlib import Path
+        base=Path('outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01')
+        original_load=o.p.load;original_digest=o.p.digest
+        with tempfile.TemporaryDirectory(dir=base) as tmp:
+            root=Path(tmp);outputs={}
+            for arm in ('control','treatment'):
+                outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm,completion_weighting='restored_M_mass')
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),
+                rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
+            def load(path):
+                if path==o.RETAINED:return list(images.values())
+                if path==o.INPUTS:return inputs
+                if 'truth' in str(path) or 'evaluator' in str(path):raise AssertionError('forbidden read before offline gate')
+                return original_load(path)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('src.artifacts.git_identity.verify_source_identity'),patch.object(o,'verify_start_export'):
+                o.readback(outputs['control'],root,1,correction_arm='control',duplicate_weight=1.0,**kwargs)
+                cli=['online_row_credit','readback','--root',str(root),'--output',str(outputs['treatment']),'--updates','1',
+                    '--geometry-weight','.1','--start-checkpoint',str(root/'anchor'),'--recipe-sha256',kwargs['recipe_sha256'],
+                    '--correction-arm','treatment','--duplicate-weight','1','--rollout-backend','vllm','--schema-geometry',
+                    '--microbatch','1','--activation-checkpointing','off']
+                with patch('sys.argv',cli):o.main()
+                legacy_recipe=o.identity(self.identity_qualifier(root,root/'anchor')['correction'])
+                bad_cli=list(cli);bad_cli[bad_cli.index('--recipe-sha256')+1]=legacy_recipe
+                with patch('sys.argv',bad_cli):
+                    with self.assertRaises(AssertionError):o.main()
+
+                update=outputs['treatment']/'rank-0/update-1.json';receipt=outputs['treatment']/'rank-0/complete.json'
+                saved_update=update.read_bytes();saved_receipt=receipt.read_bytes()
+                evidence=original_load(update);bridge=next(x for x in evidence['forwards'] if x['branch']=='bridge')
+                bridge['row_losses'][0]['weight']=.4;update.write_text(o.p.canonical(evidence))
+                complete=original_load(receipt);complete['artifacts']['update-1.json']=original_digest(update)
+                receipt.write_text(o.p.canonical(complete));(outputs['treatment']/'readback.json').unlink()
+                with self.assertRaises(AssertionError):
+                    o.readback(outputs['treatment'],root,1,correction_arm='treatment',duplicate_weight=1.0,**kwargs)
+                self.assertFalse((outputs['treatment']/'readback.json').exists())
+                update.write_bytes(saved_update);receipt.write_bytes(saved_receipt)
+                o.readback(outputs['treatment'],root,1,correction_arm='treatment',duplicate_weight=1.0,**kwargs)
+
+                forbidden=[]
+                def offline_load(path):
+                    if path==root/'evaluator-binding.json' or path==o.r.TRUTH:
+                        forbidden.append(str(path));raise AssertionError('CPU evaluator boundary')
+                    return load(path)
+                def offline_digest(path):
+                    if path==o.r.TRUTH:
+                        forbidden.append(str(path));raise AssertionError('evaluator truth hashed before producer marker gate')
+                    return original_digest(path)
+                with patch.object(o.p,'load',side_effect=offline_load),patch.object(o.p,'digest',side_effect=offline_digest):
+                    for arm in ('control','treatment'):
+                        with self.assertRaisesRegex(AssertionError,'CPU evaluator boundary'):
+                            o.offline(outputs[arm],root,1,correction_arm=arm,duplicate_weight=1.0,**kwargs)
+                    self.assertEqual(forbidden,[str(root/'evaluator-binding.json')]*2);forbidden.clear()
+                    readback=outputs['control']/'readback.json';rows=original_load(readback)
+                    rows[-1]['producer']['completion_weighting']='wrong';readback.write_text(o.p.canonical(rows))
+                    with self.assertRaises(AssertionError):
+                        o.offline(outputs['control'],root,1,correction_arm='control',duplicate_weight=1.0,**kwargs)
+                self.assertEqual(forbidden,[])
 
     def test_recall_k0_equivalence_unsupported_trailing_repeat_and_prefix_conflict(self):
         from dataclasses import replace

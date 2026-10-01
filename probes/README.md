@@ -35,6 +35,13 @@ watcher, exit zero, and full observed owner wall at most 2700 seconds. Charge
 eight slots times the larger actual internal/external owner wall, including all
 cleanup and receipt finalization, uncapped. A packet or CPU test is no launch grant.
 
+The opt-in `recall-error-floor-v4` correction recipe keeps original-prefix M in
+control and uses coherent CHAIN targets in treatment: relocated M rows have
+coefficient `1/m`, B rows `1/(m+k)`, with zero M contribution when `m=0`.
+Common correction, geometry and containment stay fixed; v3 remains unchanged.
+All three `probes.online_row_credit` stages bind the qualified recipe through
+`--recipe-sha256`; a separate lead release is required for native execution.
+
 The former finite-panel producers, model-specific convenience loaders, stage
 controllers and repair/closeout chains are no longer maintained. Their useful
 results and exact historical recovery points are in the existing catalog.
