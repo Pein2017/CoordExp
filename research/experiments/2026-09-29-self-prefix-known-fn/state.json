@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "restored-M-cpu-accepted-native-packet-preparation-authorized-not-started",
+  "status": "paired1-01-native-completion-and-retained-gate-accepted-replication-preparation-authorized-not-started",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,8 +11,8 @@
   "worker_effort": "xhigh",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "CPU restored-M package accepted for mechanics/bindings only. Fresh CPU-only paired1 packet preparation authorized; native remains unreleased. One 6 GPUh reservation is active for the proposed pair; no run or hidden access.",
-  "job_state": "No current run or packet invocation; native-paired1-01 root absent; CPU packet preparation authorized-not-started; no lead-release.json.",
+  "boundary": "P1 native paired1 completion and the single retained-only pilot gate are lead-accepted. Next is one exact-v4 original-anchor paired1 replication, CPU preparation only; native release/launch false. No retries, paired8 or hidden-driven choice.",
+  "job_state": "P1 all six stages complete/accepted; raw/readback freeze preceded offline; all55 owned identities absent; no live owner. Replication root absent; CPU preparation authorized-not-started.",
   "not_authorized": [
     "decode logits processor",
     "hidden truth or evaluator-result based runtime selection",
@@ -70,7 +70,7 @@
   "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json",
   "correction_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json",
   "owner_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-owner-cpu-acceptance-01.json",
-  "next_decision": "Prepare and qualify the fresh paired1 native packet under /data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-preparation-ruling-01.json. CPU preparation only; native launch still requires a separate exact lead-release.json.",
+  "next_decision": "Prepare one fresh exact-v4 original-anchor paired1 replication under lead-replication-ruling-01; independently apply the unchanged advancement gate. No pooling, averaging, selecting, retry or automatic paired8; native invocation needs separate root-owned lead-release.json.",
   "recall_floor_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01",
   "recall_floor_cpu_release": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-cpu-release-01.json",
   "recall_floor_worker_dispatch": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/worker-dispatch-01.json",
@@ -90,7 +90,7 @@
     "mode": "lead-coordinates-workers-execute",
     "gpu_hours_limit": 64,
     "max_gpu_slots": 8,
-    "gpu_hours_used": 0.5822,
+    "gpu_hours_used": 1.23734,
     "jobs": [
       {
         "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
@@ -135,6 +135,23 @@
           ]
         ],
         "cleanup": "accepted; no live owner"
+      },
+      {
+        "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+        "status": "lead-accepted-native-completion-and-frozen-retained-pilot-gate-met",
+        "source_commit": "886d5c97d1fe7d14daa10da0adb0223816f53420",
+        "recipe_sha256": "e5e52f1a1b03a72946db1d43167850d9383852f8d7a65c93090312b3b9ed4273",
+        "release_sha256": "fc5a2aacc18bacde1387e768580068120de0d4a6decdaf0e74a279dc21ce71e7",
+        "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-terminal-acceptance-01.json",
+        "actual_charge_gpu_hours": 0.65514,
+        "external_wall_seconds": 294.813,
+        "final_internal_wall_seconds": 294.7233456298709,
+        "reservation_gpu_hours": 6,
+        "unused_reservation_returned_gpu_hours": 5.34486,
+        "completed_stages": 6,
+        "skipped_stages": 0,
+        "owned_identities_absent": 55,
+        "cleanup": "accepted; no live owner"
       }
     ],
     "accounting": "reserved GPU slots times wall seconds including load and owned-child cleanup; failed attempts count; ceiling28800 seconds at8 slots",
@@ -145,27 +162,28 @@
     "containment_thresholds": "unchanged",
     "scientific_objective": "reduce physical false negatives while measured raw errors stay contained",
     "reserved_gpu_hours": 6,
-    "unreserved_gpu_hours": 57.4178,
+    "unreserved_gpu_hours": 56.76266,
     "last_round_accounting": {
-      "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03",
-      "status": "terminal-charged",
+      "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+      "status": "terminal-charged-and-lead-accepted",
       "reserved_before_gpu_hours": 6,
-      "actual_charge_gpu_hours": 0.5822,
-      "unused_reservation_returned_gpu_hours": 5.4178,
+      "actual_charge_gpu_hours": 0.65514,
+      "unused_reservation_returned_gpu_hours": 5.34486,
       "reserved_after_gpu_hours": 0,
-      "external_wall_seconds": 261.99,
-      "final_internal_wall_seconds": 261.88233990222216,
-      "source_commit": "89e39a0ae6c2f05a0ca735a5267feaaaef6b7b54",
-      "release_sha256": "30788f9e0e6316afe50d18fe6ab834a088d10411a6e56c411efb91363c38b49e",
-      "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/lead-terminal-acceptance-01.json"
+      "external_wall_seconds": 294.813,
+      "final_internal_wall_seconds": 294.7233456298709,
+      "source_commit": "886d5c97d1fe7d14daa10da0adb0223816f53420",
+      "release_sha256": "fc5a2aacc18bacde1387e768580068120de0d4a6decdaf0e74a279dc21ce71e7",
+      "terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-terminal-acceptance-01.json"
     },
     "current_reservation": {
-      "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+      "pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-replication-01",
       "reserved_gpu_hours": 6,
       "status": "reserved-not-native-released",
       "native_authorized": false,
-      "release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-release.json"
-    }
+      "release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-replication-01/lead-release.json"
+    },
+    "remaining_gpu_hours": 62.76266
   },
   "identity_cpu_01_hold_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-identity-cpu-hold-01.json",
   "identity_cpu_01_held_candidate": "9364b0aec75f8442a326d878577e96f130fc0e07",
@@ -275,8 +293,8 @@
       "I": 2
     }
   },
-  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
-  "next_cpu_assignment_scope": "Fresh source qualification, argv, source identity, input/runtime bindings and timed owner command; exercise primary and all six correction CLI bindings unmocked before runtime entry. No model/GPU/evaluator truth or partition access, arm directories, owner invocation or lead-release.json.",
+  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-replication-01",
+  "next_cpu_assignment_scope": "CPU-only fresh source/recipe/input/anchor/runtime/clean-tree qualification; bind exact141 scientific paths and unchanged maintained owner separately; verify actual primary control/treatment correction bindings and six argv/timing mappings after only root substitution. Reuse accepted six-CLI proof only if non-root argv/source/runtime unchanged. No arm directories, lead-release.json, owner invocation or model/GPU/hidden access.",
   "next_gpu_release": false,
   "native_authorized": false,
   "next_cpu_assignment_status": "authorized-not-started",
@@ -292,15 +310,22 @@
   "overall_program_status": "active",
   "prospective_native_reservation_granted": true,
   "prospective_native_launch_granted": false,
-  "native_pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01",
+  "native_pair_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-replication-01",
   "native_pair_root_created": false,
-  "required_native_release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-release.json",
-  "preparation_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-preparation-ruling-01.json",
-  "preparation_ruling_sha256": "a3f65e1a760a5d8f4afdd320046cfd34b4f47f4b863736384a401daed85351f8",
+  "required_native_release_file": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-replication-01/lead-release.json",
+  "preparation_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-replication-ruling-01.json",
+  "preparation_ruling_sha256": "644c301ac426a87ca07fa98d384094d47fef528661d234f7262b3fcd3e5ea903",
   "restored_m_cpu_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-cpu-review-01/lead-acceptance.json",
   "cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01/local-vs-chain-04/lead-cpu-acceptance-01.json",
   "restored_m_cpu_acceptance_sha256": "45c32497caad8d6e1d07a1bdb99137dff739612a18385fcf7ed100b05c1d1658",
   "restored_m_cpu_source_commit": "9e2427e0ed4740ce04b0acf264998c6d56a937c1",
   "restored_m_recipe_sha256": "e5e52f1a1b03a72946db1d43167850d9383852f8d7a65c93090312b3b9ed4273",
-  "restored_m_cpu_acceptance_limits": "CPU objective, version binding, consumer boundary and scoped source integrity only; no native BF16/DDP/vLLM qualification, floor success, causal attribution or physical-FN efficacy."
+  "restored_m_cpu_acceptance_limits": "CPU objective, version binding, consumer boundary and scoped source integrity only; no native BF16/DDP/vLLM qualification, floor success, causal attribution or physical-FN efficacy.",
+  "paired1_01_terminal_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/native-paired1-01/lead-terminal-acceptance-01.json",
+  "paired1_01_terminal_acceptance_sha256": "b530dff7fd12eb29678aeb55c8b859a8b9fa275de53dd1add1d7e2c59f76ed95",
+  "control_repeatability_comparison": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-terminal-review-01/control-repeatability-comparison.json",
+  "control_repeatability_comparison_sha256": "f9c7d74b4949af1ac46747811fc8210e5e32d8d484584563775b15d8bf3125d7",
+  "replication_source_sha256": "32b62622940a7542fda95bb74996d206c679c15d6e629eb0f916bd8b2625b1c4",
+  "replication_recipe_sha256": "e5e52f1a1b03a72946db1d43167850d9383852f8d7a65c93090312b3b9ed4273",
+  "replication_owner_sha256": "64d9679352bff31964e7a0a23f6ba3df6014734f952f1f68b58a8aa84f369ed3"
 }
