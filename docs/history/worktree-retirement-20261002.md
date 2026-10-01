@@ -41,7 +41,7 @@ not authorize a GPU run.
 
 Removed root typo output/ and the obsolete output_remote variants, empty
 .webcodex-managed-worktrees, temp, tmp/.tmp, monitor_dumps, tb and disposable Python/test/
-Ruff caches. Source identities and per-file retirement receipts are in the finite
+Ruff caches, plus empty cypress/dist screenshot trees. Source identities and per-file retirement receipts are in the finite
 current maintenance packet:
 /data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/.
 That packet contains JSON evidence, not executable historical source or model
@@ -71,3 +71,16 @@ owner, committed at 5bea60f. The template check covers all 11 train/smoke/infere
 the actual loaders and run-directory resolvers, including inherited configs.
 Training resolves relative output roots from launch cwd; inference resolves
 paths from the declaring YAML. Historical frozen configs remain unchanged.
+
+The same root-write guard is committed in Research Probes at 55f74a7 and
+Research Probes Web at 87ec0fe. Each checkout passed 132 focused config/inference
+checks, including direct/symlink/parent-directory rejection and a branch-local
+positive path. Other existing research dirty changes are not staged.
+All ten previously captured dirty-file byte hashes still match their baseline;
+four of those files are the now-committed ownership guard, not unrelated work.
+
+The final root-stray review retained unresolved developer tools and historical
+notes; absence of a process holder alone was not treated as deletion proof.
+The unheld cypress/dist trees contained zero files; seven empty directories
+were removed without an unlink operation. Active Gate A serves its maintained
+src/coco_refinement/static directory, unaffected by this cleanup.
