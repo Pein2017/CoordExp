@@ -1,0 +1,19 @@
+{
+  "git_head": "4b97a5daa03aabbe434682b30cae9aeacd330a23",
+  "source_files": {
+    "src/augmentation/processor.py": "53a67ad415ab6d27bf92a19744fc4c5e8bfe6fbc46d547e3223401da8b629aa4",
+    "src/config/inference.py": "80c321f7fd57a82a62a238bbdf056db5f166785f7d59e4912cc27b69ab9963f3",
+    "src/config/models.py": "7dd96135c1789f64c1d2f9508c69b4b9e41f84470c77e0f958f26fdaf035e72a",
+    "src/qwen/special_token_embeddings.py": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08",
+    "src/templates/renderer.py": "46d958814cf41fd91fede3c0c59b190ea97dd45873373128b7d7d4fe0fc40d3a",
+    "src/training/session.py": "09cd2668d420fed1c7a8930404322e803d55ee7e4ddf7a5162280ff14f2f9f47",
+    "tests/augmentation/test_processor.py": "9db3cfa571dafe97d470ae4e8a4ee130198b885696258f01b383bc92f4b5bff3",
+    "tests/qwen/test_special_token_embeddings.py": "8256974ea9783c33d0271b76f439d42f453bdb5e5f40486df73b8922a3e90c89",
+    "tests/templates/test_renderer.py": "88fd96124adc13b26bb992ee22352e0cffb529094f789e8f432f92fb17c36168",
+    "tests/training/test_pipeline_assembly.py": "2030429700b4996c235c5171a09c31ced4059ccc1a6a627f21cb33921933610f",
+    "configs/train/geo_sorted_xy/tied.yaml": "635fd80a09ad920f230924f383028d579c0d168ca894f0f63789fb5b4e8de689",
+    "configs/train/geo_sorted_xy/untied.yaml": "802e3fc3ed7e7b748362158a407bc5b29b3e10d8a32afd27e69e95ec86dcf1e7",
+    "configs/smoke/eight_gpu_geo_sorted_xy_untied.yaml": "c8e3333755be51ec1edf02737932467607281e65ff7c0b05fa894e36ffe55a1e",
+    "research/investigations/untied-special-token-embeddings-20260918/verify_reload.py": "06a5442279a2f6e40207e8cdca9a786f639434aa552ac657043927fad10e9e0b"
+  }
+}

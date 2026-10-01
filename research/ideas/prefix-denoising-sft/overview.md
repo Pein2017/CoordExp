@@ -164,3 +164,11 @@ not promote the V1 result into current training guidance.
 - `docs/history/worktree-union/2026-06-20/snapshots/688fa6f04eb5/progress/diagnostics/2026-06-16_prefix_denoising_axis_sort_repair_negative_result.md`
 - `docs/history/worktree-union/2026-06-20/snapshots/ed610b284219/progress/diagnostics/2026-06-17_prefix_denoising_inert_objective_root_cause_analysis.md`
 - `progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md`
+
+
+Storage closeout: the old `output_remote_DEPRECATED_20260604` model/run
+paths are retired, not executable current inputs. This record's original
+baseline identity and confounded-comparison interpretation are preserved.
+Selected AP/empty-pred endpoint evidence is now at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/research/prefix-denoising-endpoint-evidence/`.
+No old full model or complete trajectory is retained, and no rerun is qualified.

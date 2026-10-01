@@ -1,0 +1,94 @@
+{
+  "technical_status": "lead-accepted: bounded training, two-tensor checkpoint, exact resume and HF reload",
+  "scientific_status": "not assessed; smoke checkpoint generation diagnostic only",
+  "production_launched": false,
+  "production_cache_prepared": false,
+  "full_production_cache_admission": {
+    "error_code": "training.pack_cache_not_prepared",
+    "error_type": "RuntimeContractError"
+  },
+  "baseline": "four-coordinate-xy/step-2444",
+  "data_identity": {
+    "train": {
+      "rows": 117266,
+      "sha256": "ecf07a40856ee96a92c9093139abe24facfa600136e04f3c1bcbd02e039aaad1"
+    },
+    "val": {
+      "rows": 4952,
+      "sha256": "70f54cdb3a64bab1bf994368529c270cc54556681dcbee5c3c9e84d6706926bc"
+    }
+  },
+  "config_differences": [
+    {
+      "field": "model.special_token_embeddings.tie_word_embeddings",
+      "tied": true,
+      "untied": false
+    },
+    {
+      "field": "run.name",
+      "tied": "qwen3-vl-2b-geo-sorted-xy-tied-ebs24-4epoch",
+      "untied": "qwen3-vl-2b-geo-sorted-xy-untied-ebs24-4epoch"
+    }
+  ],
+  "cpu_regression": "279 passed; final delta sensitivity tests 31 passed; additional config suite 7 passed (overlap, not additive)",
+  "eight_gpu": {
+    "world_size": 8,
+    "completed_steps": 2,
+    "train_rows_available": 256,
+    "eval_rows": 16,
+    "effective_batch_size": 24,
+    "accumulation_per_rank": 3,
+    "global_max_length": 12000,
+    "entry_to_terminal_seconds": 86.22805018723011,
+    "rank0_peak_gpu_allocated_bytes": 10015994368,
+    "checkpoint_events": 2
+  },
+  "exact_resume": {
+    "adapter_tensors_bitwise_equal": 588,
+    "delta_tensors_bitwise_equal": 2,
+    "rank_model_optimizer_state_bitwise_equal": 8
+  },
+  "hf_reload": {
+    "tensor_dtype": "torch.float32",
+    "shape": [
+      1004,
+      2048
+    ],
+    "exact": true,
+    "independent_storage": true,
+    "forward_sensitivity_max_abs": {
+      "input": 10.625,
+      "output": 105.0
+    },
+    "restoration_bitwise_equal": true
+  },
+  "inference_diagnostic": {
+    "terminal_status": "completed",
+    "row_count": 1,
+    "benchmark_eligible": false,
+    "parser_failure_count": 1,
+    "truncated_decode_count": 1,
+    "trace_row_count": 512,
+    "score_failure_count": 0
+  },
+  "preserved_failures": [
+    "initial missing strict CUDA environment variables",
+    "stale smoke cache after source change: rebuilt and admitted",
+    "first distributed initialization timeout before model loading; explicit loopback rerun passed",
+    "two-image HF batch rejected unexpected pad token in image 285"
+  ],
+  "unsupported": [
+    "dense folding and vLLM for untied payloads"
+  ],
+  "evidence": {
+    "config-parity.json": "1127fa7d9e46ae9303935d8a70004477aedc2aa69bbf357fa7feed6fa99a67b7",
+    "data-identity.json": "f7a587de49eb5ba6db8466daaf79cb15f9c92905853baaa02bac8d9950fb8977",
+    "resume-comparison.json": "1a195824083fc9d6546cbf3ffa443e3efead57098d9fe9b25fbfb4a37a3ca936",
+    "hf-reload-exact.json": "a18c564d342e50484ccef2ade165cbb6324b2700391bf5f86795fff8a07e1457",
+    "training-summary.json": "8ae3ba278e9984e65a118d7d3f7241a7bff9e9902c10fbbd52eae6ee5d469a67",
+    "source-identity.json": "297fd3f8c5ff26a65b433e5bac78cc4891ab5fe3dc75e0b489878309f11b9db8",
+    "focused-tests.log": "268c5817181ce8d7508e1b1cf06560e508b9502066de0bb0ebab366ef4d7286b",
+    "delta-tests-final.log": "d62685d5f632347f491af53c9d7dde05e18fafff55558802ff81dc2e80bd4e92",
+    "config-tests.log": "bae14b3aacb4fec3ea50b373c2f7718d956ae857f7a3084b01a864773904123e"
+  }
+}

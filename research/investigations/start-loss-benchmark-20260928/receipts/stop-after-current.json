@@ -1,0 +1,24 @@
+{
+  "17": {
+    "parent_pid": 307246,
+    "training_pid": 387356,
+    "active": "ce-order17",
+    "completed": [
+      "control-order17"
+    ],
+    "devices": "0,1,2,3",
+    "training_cmd": "/root/miniconda3/envs/ms/bin/python -m torch.distributed.run --standalone --nproc_per_node=4 -m src.train --config /data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/configs/ce-order17.yaml ",
+    "training_start_time": "3674161382"
+  },
+  "29": {
+    "parent_pid": 307247,
+    "training_pid": 382483,
+    "active": "local_mass-order29",
+    "completed": [
+      "instance_margin-order29"
+    ],
+    "devices": "4,5,6,7",
+    "training_cmd": "/root/miniconda3/envs/ms/bin/python -m torch.distributed.run --standalone --nproc_per_node=4 -m src.train --config /data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/configs/local_mass-order29.yaml ",
+    "training_start_time": "3674135478"
+  }
+}

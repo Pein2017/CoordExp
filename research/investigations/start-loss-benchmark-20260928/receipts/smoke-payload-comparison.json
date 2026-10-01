@@ -1,0 +1,18 @@
+{
+  "adapter": {
+    "changed_count": 0,
+    "max_abs_change": 0.0,
+    "source_max_abs": 8.445893287658691,
+    "tensor_count": 588
+  },
+  "embeddings": {
+    "changed_count": 0,
+    "max_abs_change": 0.0,
+    "per_tensor_max_abs_change": {
+      "input_embed_delta": 0.0,
+      "output_embed_delta": 0.0
+    },
+    "source_max_abs": 0.03492183983325958,
+    "tensor_count": 2
+  }
+}

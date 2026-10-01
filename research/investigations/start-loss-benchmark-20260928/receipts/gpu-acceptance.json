@@ -1,0 +1,7 @@
+{
+  "calibration_smoke": "bitwise source equality for 588 adapter + 2 delta tensors; zero-LR first step",
+  "config_freeze_sha256": "61eef410f8e5011fbe2e7d1b1e0f797b461354e57de1a18cc3073846bc5b0acb",
+  "nonzero_margin_smoke": "588 adapter + 2 delta tensors updated; finite four losses; fresh HF decode and scoring completed",
+  "source_mAP": 0.4556510010795014,
+  "status": "passed"
+}

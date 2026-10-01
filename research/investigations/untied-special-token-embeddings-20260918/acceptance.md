@@ -83,3 +83,10 @@ resume overlay when restartability is needed.
 
 The implementation remains uncommitted in the requested worktree. Source hashes
 and all failed/successful artifacts are retained under the evidence root.
+
+
+Storage closeout: compact acceptance/paired-result evidence is retained at
+`/data/CoordExp/.worktrees/coordexp-infras/manifests/runtime_acceptance/untied-special-token-20260918/`.
+Old run directories, derived execution models, dumps and complete logs are
+retired. Original provenance and scientific/technical limits remain unchanged;
+this retention is not a new execution qualification.

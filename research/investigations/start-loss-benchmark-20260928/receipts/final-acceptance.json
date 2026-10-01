@@ -1,0 +1,94 @@
+{
+  "all_updates_finite_and_applied": true,
+  "claims": "Two training orders, one fixed source and val200 cohort. No from-pretrained or statistical superiority claim.",
+  "coordinate_output_norm": "median",
+  "frozen_configs_data_source_verified": true,
+  "identical_eval_gt": true,
+  "status": "complete",
+  "steps_per_run": 256,
+  "summary": [
+    {
+      "FN_mean": 616,
+      "arm": "ce",
+      "caps_total": 2,
+      "invalid_mean": 8,
+      "mAP_by_order": {
+        "17": 46.630398044955136,
+        "29": 46.73385950881462
+      },
+      "mAP_mean": 46.68212877688488,
+      "paired_FN_delta": {
+        "17": -3,
+        "29": -1
+      },
+      "paired_mAP_delta": {
+        "17": 0.6402297286918712,
+        "29": -0.46970885634587956
+      },
+      "repeats_mean": 412
+    },
+    {
+      "FN_mean": 618,
+      "arm": "control",
+      "caps_total": 2,
+      "invalid_mean": 6.5,
+      "mAP_by_order": {
+        "17": 45.990168316263265,
+        "29": 47.2035683651605
+      },
+      "mAP_mean": 46.596868340711886,
+      "paired_FN_delta": {
+        "17": 0,
+        "29": 0
+      },
+      "paired_mAP_delta": {
+        "17": 0.0,
+        "29": 0.0
+      },
+      "repeats_mean": 381.5
+    },
+    {
+      "FN_mean": 613,
+      "arm": "local_mass",
+      "caps_total": 2,
+      "invalid_mean": 9,
+      "mAP_by_order": {
+        "17": 46.298860233755725,
+        "29": 46.6924261695605
+      },
+      "mAP_mean": 46.49564320165811,
+      "paired_FN_delta": {
+        "17": -1,
+        "29": -9
+      },
+      "paired_mAP_delta": {
+        "17": 0.30869191749246516,
+        "29": -0.5111421956000006
+      },
+      "repeats_mean": 391
+    },
+    {
+      "FN_mean": 620,
+      "arm": "instance_margin",
+      "caps_total": 0,
+      "invalid_mean": 5,
+      "mAP_by_order": {
+        "17": 46.44202776450459,
+        "29": 46.38420752954487
+      },
+      "mAP_mean": 46.41311764702473,
+      "paired_FN_delta": {
+        "17": 12,
+        "29": -8
+      },
+      "paired_mAP_delta": {
+        "17": 0.4518594482413263,
+        "29": -0.819360835615629
+      },
+      "repeats_mean": 16
+    }
+  ],
+  "train_runs": 8,
+  "val_evaluations": 16,
+  "val_rows": 200
+}

@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "checkpoint": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-eight-gpu-loopback/checkpoints/step-2",
+  "checkpoint_identity": {
+    "schema": "coordexp-infras-inference-checkpoint-payload-publication",
+    "schema_version": 2,
+    "manifest_relative_path": "inference_payload_manifest.json",
+    "manifest_file_sha256": "abe27eabd0ae13b863da4068632db52668a466eab3ba9b20a5d7dd551a05942c",
+    "aggregate_digest": "5df13d6dca5704b91e1a500d5b614925d799350a61e7c541cf680b91421d2881"
+  },
+  "both_tensors_exact_after_native_hf_reload": true,
+  "independent_storage": true,
+  "both_nonzero_and_distinct": true,
+  "delta_shape": [
+    1004,
+    2048
+  ],
+  "delta_dtype": "torch.float32",
+  "forward_sensitivity_max_abs": {
+    "input": 10.625,
+    "output": 105.0
+  },
+  "forward_restored_bitwise": true,
+  "cuda_peak_allocated_bytes": 4507665408
+}

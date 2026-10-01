@@ -1,0 +1,10 @@
+{
+  "groups": {
+    "17": "0,1,2,3",
+    "29": "4,5,6,7"
+  },
+  "monitor_policy": "First group completion or failure, with actual producer PID fallback; review both groups at wake and explicitly monitor any remaining work.",
+  "source_commit": "71062a32923cdb127ab99b7529afe7ddeee263d7",
+  "status": "launched",
+  "tmux_session": "start-loss-benchmark-20260928"
+}

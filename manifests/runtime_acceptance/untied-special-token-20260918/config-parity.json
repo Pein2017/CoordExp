@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "baseline": "four-coordinate-xy/step-2444",
+  "exact_matches": [
+    "template",
+    "data",
+    "optimizer",
+    "eval",
+    "checkpoint",
+    "historical training fields",
+    "DoRA hyperparameters",
+    "global_max_length",
+    "resolved base model"
+  ],
+  "tied_untied_differences": [
+    {
+      "field": "model.special_token_embeddings.tie_word_embeddings",
+      "tied": true,
+      "untied": false
+    },
+    {
+      "field": "run.name",
+      "tied": "qwen3-vl-2b-geo-sorted-xy-tied-ebs24-4epoch",
+      "untied": "qwen3-vl-2b-geo-sorted-xy-untied-ebs24-4epoch"
+    }
+  ],
+  "historical_runtime_caveat": "Current infras runtime uses strict CUDA replay, current packing/cache/artifact code, and initialized DoRA seed_mode; this is hyperparameter alignment, not bitwise historical training replay."
+}

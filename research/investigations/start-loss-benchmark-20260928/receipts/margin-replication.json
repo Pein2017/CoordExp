@@ -1,0 +1,15 @@
+{
+  "order17": {
+    "FN50": 626,
+    "control_FN50": 614,
+    "control_exact_repeats": 382,
+    "exact_repeats": 24
+  },
+  "order29": {
+    "FN50": 614,
+    "control_step256": "pending",
+    "exact_repeats": 8
+  },
+  "scope": "step256 greedy val200 with coord norm median",
+  "status": "both_orders_evaluated"
+}

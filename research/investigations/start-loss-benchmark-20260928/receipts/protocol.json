@@ -1,0 +1,68 @@
+{
+  "anchor": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-illegal-mass001-ebs24-4epoch/checkpoints/step-2444",
+  "anchor_config_sha256": "8b59f2ebd324260e98e9659d7bb3e9359346e669a9ae26ce7eb76014c960a5f9",
+  "anchor_payload_manifest_sha256": "2ff6d81a5957d89489a7cfaef8b80538515201a1c51f7ee1e223c37594d94eb4",
+  "anchor_step": 2444,
+  "arms": [
+    "control",
+    "ce",
+    "local_mass",
+    "instance_margin"
+  ],
+  "auxiliary_weight_rule": "0.1 * initial CE coordinate-logit gradient norm / candidate norm, calibrated on train-only smoke before model updates; fixed thereafter. This does not equalize parameter gradients.",
+  "budget": {
+    "deadline_utc": "2026-09-28T19:21:00+00:00",
+    "gpu_hours_ceiling": 128,
+    "max_concurrent_gpus": 8,
+    "wall_hours": 16
+  },
+  "claim_limit": "Fixed checkpoint and budgets; not from-pretrained SFT superiority or physical false-positive truth.",
+  "data_sha256": {
+    "17": "ca5fd4c5a778c577b51ab1d955433465b0e87581e1ae0be09492461195fc2c5a",
+    "29": "7864b9c8d7dce5f0cacd71cc214b8c043aa9e4488b95318aecd8e84979b45f2b"
+  },
+  "decode": {
+    "batch_size": 4,
+    "coordinate_output_norm": "median",
+    "greedy": true,
+    "max_new_tokens": 3084,
+    "repetition_penalty": 1.0
+  },
+  "path_repair": "Image references converted to JSONL-relative references; image IDs, bytes, annotations and order unchanged; original files retained under failed-smoke-absolute-paths.",
+  "primary_endpoint": 256,
+  "primary_metric": "COCO mAP 0.50:0.95",
+  "question": "Which fourth onset loss improves mature three-loss checkpoint greedy detection after matched short continuation?",
+  "secondary": [
+    "FN50 class-aware IoU=.5 maxDets100",
+    "AP50",
+    "AP75",
+    "invalid_geometry",
+    "strict_repeats",
+    "length_caps"
+  ],
+  "selection_rule": "Exploratory candidate only if step256 mAP improves over matched continuation control in both training orders; report FN and output pathologies alongside. No significance or globally best-loss claim.",
+  "source_train_rows": 117266,
+  "source_train_sha256": "ecf07a40856ee96a92c9093139abe24facfa600136e04f3c1bcbd02e039aaad1",
+  "status": "qualified",
+  "steps": [
+    64,
+    256
+  ],
+  "stop_rule": "Stop on deadline, non-finite update, failed load/save/evaluation identity, or incomplete arm. No automatic budget, cohort, dose or weight expansion.",
+  "train_rows": 8192,
+  "training": {
+    "concurrent_jobs": 2,
+    "embedding_lr": 1e-05,
+    "fresh_optimizer": true,
+    "global_batch": 24,
+    "language_lr": 2e-05,
+    "packing_length": 12000,
+    "ranks_per_job": 4,
+    "untied": true
+  },
+  "training_orders": [
+    17,
+    29
+  ],
+  "val_sha256": "65155d3a8f1d5251a882c058a6f4413c8bd7bdff2968359600e15981b7102fca"
+}

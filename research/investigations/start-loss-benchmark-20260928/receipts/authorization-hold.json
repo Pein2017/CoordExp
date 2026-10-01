@@ -1,0 +1,31 @@
+{
+  "blocked_arms": {
+    "17": [
+      "local_mass",
+      "instance_margin"
+    ],
+    "29": [
+      "ce",
+      "control"
+    ]
+  },
+  "instruction": "Finish current active training and its evaluations only; subsequent two arms per group require fresh explicit user authorization.",
+  "live_verification": {
+    "17": {
+      "active": "ce-order17",
+      "finisher_pid": 474097,
+      "finite_status": "finite",
+      "last_step": 254,
+      "old_scheduler_removed": true,
+      "training_status": "initialized"
+    },
+    "29": {
+      "active": "local_mass-order29",
+      "finisher_pid": 473025,
+      "finite_status": "finite",
+      "last_step": 256,
+      "old_scheduler_removed": true,
+      "training_status": "completed"
+    }
+  }
+}

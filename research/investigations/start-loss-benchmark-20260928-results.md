@@ -59,3 +59,15 @@ Extra CE exceeds local mass in final mAP in both orders, but FN is better for CE
 ## Restart authorized 2026-09-29
 
 User requested inspection and restart. Stop logs confirm original deadline-triggered SIGTERM, with finite last updates and no saved checkpoint. The two interrupted attempts were archived under `attempts/deadline-stop-20260928`; exactly those two arms restart from the original source with unchanged config hashes. New deadline is recorded in `restart-20260929.json`. All 13 completed main inference artifacts (source plus six arms at two steps) resolve coordinate_output_norm=median. No norm-off runs have been launched; a same-order control/margin norm-off comparison is a proposed follow-up.
+
+
+Storage closeout: current frozen configs/receipts are in
+[start-loss-benchmark-20260928](start-loss-benchmark-20260928/README.md).
+Raw aggregate evaluations, finite-update logs, exact input subsets and the
+control-order17 step256 package are at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/research/start-loss-benchmark-20260928/`.
+The margin-order17 endpoint and exact illegal-mass source baseline remain selected
+root shared packages. Other checkpoints, failed attempts, token traces and
+sharded duplicate outputs are retired. Historical absolute bindings remain
+provenance; future execution requires fresh source/data/template/image-path
+qualification. No new norm-off run or other GPU comparison was launched.

@@ -1,0 +1,73 @@
+{
+  "status": "passed",
+  "smoke_run": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-axis-eight-gpu-smoke",
+  "resume_run": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-axis-eight-gpu-resume",
+  "bitwise_equal_inference_tensor_count": 590,
+  "bitwise_equal_model_and_optimizer_rank_count": 8,
+  "hf_reload": {
+    "status": "passed",
+    "checkpoint": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-axis-eight-gpu-smoke/checkpoints/step-2",
+    "checkpoint_identity": {
+      "schema": "coordexp-infras-inference-checkpoint-payload-publication",
+      "schema_version": 2,
+      "manifest_relative_path": "inference_payload_manifest.json",
+      "manifest_file_sha256": "97dbcacd8b20e0df3d5c65fe094a5121d15b1e3b903060f0b14e2814046e3128",
+      "aggregate_digest": "263e9397afadf20233ca6045141fce095222f92c386767d3745b065f753ed897"
+    },
+    "both_tensors_exact_after_native_hf_reload": true,
+    "independent_storage": true,
+    "both_nonzero_and_distinct": true,
+    "delta_shape": [
+      1004,
+      2048
+    ],
+    "delta_dtype": "torch.float32",
+    "forward_sensitivity_max_abs": {
+      "input": 10.625,
+      "output": 104.0
+    },
+    "forward_restored_bitwise": true,
+    "cuda_peak_allocated_bytes": 4507665408
+  },
+  "metrics": [
+    {
+      "step": 1,
+      "split": "train",
+      "loss/base_ce/raw": 5.1097161918878555,
+      "loss/raw_axis_validity_hinge/raw": 0.00017419497419268737,
+      "loss/raw_axis_validity_hinge/weighted": 1.7419496920467736e-06,
+      "loss/total": 5.109717933837548,
+      "resource/gpu_max_memory_allocated_bytes": 10254572032.0
+    },
+    {
+      "step": 1,
+      "split": "eval",
+      "loss/base_ce/raw": 5.159399032592773,
+      "loss/raw_axis_validity_hinge/raw": 0.0004071909042977495,
+      "loss/raw_axis_validity_hinge/weighted": 4.071908747960151e-06,
+      "loss/total": 5.159403104501521,
+      "resource/gpu_max_memory_allocated_bytes": 10254572032.0
+    },
+    {
+      "step": 2,
+      "split": "train",
+      "loss/base_ce/raw": 5.115880131721497,
+      "loss/raw_axis_validity_hinge/raw": 0.00018905247259226599,
+      "loss/raw_axis_validity_hinge/weighted": 1.8905246728095904e-06,
+      "loss/total": 5.115882022246169,
+      "resource/gpu_max_memory_allocated_bytes": 10512198656.0
+    },
+    {
+      "step": 2,
+      "split": "eval",
+      "loss/base_ce/raw": 3.8257216215133667,
+      "loss/raw_axis_validity_hinge/raw": 0.0008682362677063793,
+      "loss/raw_axis_validity_hinge/weighted": 8.682362590661796e-06,
+      "loss/total": 3.8257303038759574,
+      "resource/gpu_max_memory_allocated_bytes": 10512198656.0
+    }
+  ],
+  "tests": "232 passed",
+  "mutation": "reversed axis inequality rejected",
+  "quality_claim": "not assessed"
+}

@@ -1,0 +1,24 @@
+{
+  "completed_and_evaluated": [
+    "control-order17",
+    "ce-order17",
+    "local_mass-order17",
+    "instance_margin-order29",
+    "local_mass-order29",
+    "ce-order29"
+  ],
+  "deadline_utc": "2026-09-28T19:21:00+00:00",
+  "extension_authorized": false,
+  "interrupted": {
+    "control-order29": {
+      "last_finite_step": 20,
+      "saved_checkpoint": null
+    },
+    "instance_margin-order17": {
+      "last_finite_step": 24,
+      "saved_checkpoint": null
+    }
+  },
+  "owned_training_processes_remaining": false,
+  "status": "stopped_at_authorized_deadline"
+}

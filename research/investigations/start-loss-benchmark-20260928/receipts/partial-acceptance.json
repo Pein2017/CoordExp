@@ -1,0 +1,11 @@
+{
+  "configs_match_frozen_hashes": true,
+  "eval_runs": 8,
+  "finite_updates": true,
+  "identical_coco_ground_truth": true,
+  "remaining_training_authorized": false,
+  "status": "accepted_partial_results_waiting_for_authorization",
+  "train_runs": 4,
+  "updates_per_run": 256,
+  "val_rows_per_eval": 200
+}

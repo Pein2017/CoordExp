@@ -1,0 +1,101 @@
+{
+  "status": "completed",
+  "world_size": 8,
+  "completed_steps": 2,
+  "checkpoint_event_count": 2,
+  "measurement_keys": [
+    "accepted_measured_steps",
+    "active_phase",
+    "checkpoint_publication_events",
+    "context",
+    "entry_to_terminal",
+    "expected_measured_steps",
+    "failure_phase",
+    "last_completed_phase",
+    "phase_order",
+    "phases",
+    "resource_high_water",
+    "schema_version",
+    "steady_state_eligible",
+    "terminal_phase",
+    "terminal_phase_status"
+  ],
+  "resources_rank0": {
+    "cpu": {
+      "io_read_bytes": 0,
+      "io_write_bytes": 712396800,
+      "max_rss_bytes": 9059713024,
+      "scope": "current_process"
+    },
+    "gpu": {
+      "device_index": 0,
+      "initialized": true,
+      "max_memory_allocated_bytes": 10015994368,
+      "max_memory_reserved_bytes": 14566817792,
+      "scope": "current_process_current_device"
+    },
+    "schema_version": 1
+  },
+  "rows": [
+    {
+      "split": "train",
+      "step": 1,
+      "loss/total": 5.1097161918878555,
+      "count/packs": 24.0,
+      "count/examples": 192.0,
+      "micro_step_count": 3,
+      "optimizer_update_status": "applied",
+      "finite_status": "finite",
+      "step_duration_seconds": 10.912367470562458,
+      "grad_norm/pre_clip_rank_max": 44.50854435962172
+    },
+    {
+      "split": "eval",
+      "step": 1,
+      "loss/total": 5.159399032592773,
+      "count/packs": 2.0,
+      "count/examples": 16.0,
+      "micro_step_count": null,
+      "optimizer_update_status": "applied",
+      "finite_status": "finite",
+      "step_duration_seconds": null,
+      "grad_norm/pre_clip_rank_max": null
+    },
+    {
+      "split": "train",
+      "step": 2,
+      "loss/total": 5.115880131721497,
+      "count/packs": 24.0,
+      "count/examples": 192.0,
+      "micro_step_count": 3,
+      "optimizer_update_status": "applied",
+      "finite_status": "finite",
+      "step_duration_seconds": 10.483770996332169,
+      "grad_norm/pre_clip_rank_max": 44.5742598774151
+    },
+    {
+      "split": "eval",
+      "step": 2,
+      "loss/total": 3.825443148612976,
+      "count/packs": 2.0,
+      "count/examples": 16.0,
+      "micro_step_count": null,
+      "optimizer_update_status": "applied",
+      "finite_status": "finite",
+      "step_duration_seconds": null,
+      "grad_norm/pre_clip_rank_max": null
+    }
+  ],
+  "publication": [
+    {
+      "step": 1,
+      "status": "completed",
+      "seconds": 10.897936336696148
+    },
+    {
+      "step": 2,
+      "status": "completed",
+      "seconds": 10.869035109877586
+    }
+  ]
+}

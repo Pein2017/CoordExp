@@ -102,3 +102,15 @@ and scoring. Fresh source evaluation provides a current-runtime anchor.
   all four losses were finite and a fresh HF process completed decode/scoring.
   Paired config comparison and prompt/decode checks passed. Input hashes and
   all runnable config hashes are frozen in `config-freeze.json`.
+
+
+Storage closeout: current frozen configs/receipts are in
+[start-loss-benchmark-20260928](start-loss-benchmark-20260928/README.md).
+Raw aggregate evaluations, finite-update logs, exact input subsets and the
+control-order17 step256 package are at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/research/start-loss-benchmark-20260928/`.
+The margin-order17 endpoint and exact illegal-mass source baseline remain selected
+root shared packages. Other checkpoints, failed attempts, token traces and
+sharded duplicate outputs are retired. Historical absolute bindings remain
+provenance; future execution requires fresh source/data/template/image-path
+qualification. No new norm-off run or other GPU comparison was launched.

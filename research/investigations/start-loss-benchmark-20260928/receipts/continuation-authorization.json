@@ -1,0 +1,13 @@
+{
+  "deadline_extension_authorized": true,
+  "deadline_utc": "2026-09-29T09:28:49.909241+00:00",
+  "remaining": {
+    "17": [
+      "instance_margin"
+    ],
+    "29": [
+      "control"
+    ]
+  },
+  "scope": "User explicitly requested diagnosis and restart of remaining two interrupted arms on 2026-09-29. Same frozen configs and original step2444 source; no added ablation runs."
+}

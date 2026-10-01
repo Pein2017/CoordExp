@@ -1,0 +1,222 @@
+{
+  "FN_scope": "class-aware IoU .5, area all, maxDets100",
+  "results": [
+    {
+      "AP50": 0.6411958991760645,
+      "AP75": 0.5069514285749559,
+      "FN50": 622,
+      "drops": {
+        "geometry_invalid": 5,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.472035683651605,
+      "run": "control-order29-step256",
+      "strict_repeats": 381
+    },
+    {
+      "AP50": 0.6342760793445383,
+      "AP75": 0.5027284759671617,
+      "FN50": 613,
+      "drops": {
+        "geometry_invalid": 6,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.46824007559407954,
+      "run": "local_mass-order29-step64",
+      "strict_repeats": 363
+    },
+    {
+      "AP50": 0.6345860848985075,
+      "AP75": 0.5031959120095897,
+      "FN50": 621,
+      "drops": {
+        "geometry_invalid": 11,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.4673385950881462,
+      "run": "ce-order29-step256",
+      "strict_repeats": 418
+    },
+    {
+      "AP50": 0.6381138875032165,
+      "AP75": 0.4999770275548442,
+      "FN50": 613,
+      "drops": {
+        "geometry_invalid": 6,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.46692426169560497,
+      "run": "local_mass-order29-step256",
+      "strict_repeats": 371
+    },
+    {
+      "AP50": 0.6377242998243398,
+      "AP75": 0.5128768964145908,
+      "FN50": 611,
+      "drops": {
+        "geometry_invalid": 5,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.46630398044955135,
+      "run": "ce-order17-step256",
+      "strict_repeats": 406
+    },
+    {
+      "AP50": 0.6264327528633304,
+      "AP75": 0.5011466798648287,
+      "FN50": 614,
+      "drops": {
+        "geometry_invalid": 5,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.4645050678964236,
+      "run": "ce-order29-step64",
+      "strict_repeats": 364
+    },
+    {
+      "AP50": 0.6323947701902394,
+      "AP75": 0.4977614527120639,
+      "FN50": 626,
+      "drops": {
+        "geometry_invalid": 6
+      },
+      "length_caps": 0,
+      "mAP": 0.4644202776450459,
+      "run": "instance_margin-order17-step256",
+      "strict_repeats": 24
+    },
+    {
+      "AP50": 0.6346295430920651,
+      "AP75": 0.5063848633065062,
+      "FN50": 613,
+      "drops": {
+        "geometry_invalid": 3,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.4642335695967317,
+      "run": "local_mass-order17-step64",
+      "strict_repeats": 366
+    },
+    {
+      "AP50": 0.6368736355921395,
+      "AP75": 0.4953187885038745,
+      "FN50": 614,
+      "drops": {
+        "geometry_invalid": 4
+      },
+      "length_caps": 0,
+      "mAP": 0.4638420752954487,
+      "run": "instance_margin-order29-step256",
+      "strict_repeats": 8
+    },
+    {
+      "AP50": 0.6358864569788595,
+      "AP75": 0.49545515848250404,
+      "FN50": 613,
+      "drops": {
+        "geometry_invalid": 12,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.4629886023375573,
+      "run": "local_mass-order17-step256",
+      "strict_repeats": 411
+    },
+    {
+      "AP50": 0.6202636684157362,
+      "AP75": 0.5030175445108616,
+      "FN50": 616,
+      "drops": {
+        "geometry_invalid": 9,
+        "malformed_object_span": 1
+      },
+      "length_caps": 0,
+      "mAP": 0.46264756927933587,
+      "run": "instance_margin-order29-step64",
+      "strict_repeats": 48
+    },
+    {
+      "AP50": 0.6250721885024061,
+      "AP75": 0.4960181882498632,
+      "FN50": 629,
+      "drops": {
+        "geometry_invalid": 11
+      },
+      "length_caps": 0,
+      "mAP": 0.46212802241606254,
+      "run": "instance_margin-order17-step64",
+      "strict_repeats": 31
+    },
+    {
+      "AP50": 0.6289921998858587,
+      "AP75": 0.494182632469964,
+      "FN50": 601,
+      "drops": {
+        "geometry_invalid": 5,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.46188647321318405,
+      "run": "control-order29-step64",
+      "strict_repeats": 359
+    },
+    {
+      "AP50": 0.62854790850692,
+      "AP75": 0.49910937983926124,
+      "FN50": 616,
+      "drops": {
+        "geometry_invalid": 3,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.4606623142476049,
+      "run": "control-order17-step64",
+      "strict_repeats": 370
+    },
+    {
+      "AP50": 0.6279626864541359,
+      "AP75": 0.49705492565910403,
+      "FN50": 615,
+      "drops": {
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.46040550363214805,
+      "run": "ce-order17-step64",
+      "strict_repeats": 356
+    },
+    {
+      "AP50": 0.6267700835210537,
+      "AP75": 0.48634900292016514,
+      "FN50": 614,
+      "drops": {
+        "geometry_invalid": 8,
+        "malformed_object_span": 1
+      },
+      "length_caps": 1,
+      "mAP": 0.45990168316263264,
+      "run": "control-order17-step256",
+      "strict_repeats": 382
+    },
+    {
+      "AP50": 0.6307795429021622,
+      "AP75": 0.488400487987995,
+      "FN50": 614,
+      "drops": {
+        "geometry_invalid": 220,
+        "malformed_object_span": 2
+      },
+      "length_caps": 2,
+      "mAP": 0.4556510010795014,
+      "run": "source",
+      "strict_repeats": 460
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "active": null,
+  "completed": [
+    "control-order17",
+    "ce-order17",
+    "local_mass-order17",
+    "instance_margin-order17"
+  ],
+  "devices": "0,1,2,3",
+  "pending_authorization": false,
+  "pid": 637835,
+  "seed": 17,
+  "status": "completed"
+}

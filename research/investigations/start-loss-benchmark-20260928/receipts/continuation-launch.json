@@ -1,0 +1,16 @@
+{
+  "deadline_extension_pending": true,
+  "groups": {
+    "17": [
+      "local_mass",
+      "instance_margin"
+    ],
+    "29": [
+      "ce",
+      "control"
+    ]
+  },
+  "source_commit": "01941e687d7ea197df0667701bad5e8e40235652",
+  "state": "launched",
+  "tmux_session": "start-loss-benchmark-20260928"
+}

@@ -93,3 +93,11 @@ The missing gate is a matched denoising-OFF hard-CE LoRA control with the same
 format, sorted marker prompt, train/eval data, adapter recipe, epoch/step
 budget, and decode settings. Until that control exists, keep V1 claims inside
 research.
+
+
+Storage closeout: the old `output_remote_DEPRECATED_20260604` model/run
+paths are retired, not executable current inputs. This record's original
+baseline identity and confounded-comparison interpretation are preserved.
+Selected AP/empty-pred endpoint evidence is now at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/research/prefix-denoising-endpoint-evidence/`.
+No old full model or complete trajectory is retained, and no rerun is qualified.

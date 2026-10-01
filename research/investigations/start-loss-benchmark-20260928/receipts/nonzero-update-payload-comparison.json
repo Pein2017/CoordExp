@@ -1,0 +1,24 @@
+{
+  "adapter": {
+    "changed_count": 588,
+    "max_abs_change": 2.002716064453125e-05,
+    "tensor_count": 588
+  },
+  "embeddings": {
+    "changed_count": 2,
+    "max_abs_change": 1.0000541806221008e-05,
+    "per_tensor_max_abs_change": {
+      "input_embed_delta": 1.0000541806221008e-05,
+      "output_embed_delta": 1.0000541806221008e-05
+    },
+    "tensor_count": 2
+  },
+  "finite_status": "finite",
+  "losses": {
+    "loss/base_ce/raw": 1.3870588019490242,
+    "loss/conditional_order_gate/raw": 0.003522581082506804,
+    "loss/start_coordinate/raw": 0.06596919579897076,
+    "loss/token_type_gate/raw": 0.009631790191633627
+  },
+  "update_status": "applied"
+}

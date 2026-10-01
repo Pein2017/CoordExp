@@ -1,0 +1,350 @@
+{
+  "gradient_squared_sums": {
+    "ce": 27.698939844594964,
+    "instance_margin": 0.6238677426308098,
+    "local_mass": 5.2507089429963605
+  },
+  "records": [
+    {
+      "complete_box_count": 26,
+      "grad_sq": {
+        "ce": 1.7331918174012348,
+        "instance_margin": 0.05534297052154195,
+        "local_mass": 0.37505805774907763
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 3,
+      "margin_eligible_slot_count": 10,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 52
+    },
+    {
+      "complete_box_count": 48,
+      "grad_sq": {
+        "ce": 1.030531317453763,
+        "instance_margin": 0.008264462809917356,
+        "local_mass": 0.13451304758344249
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 2,
+      "margin_eligible_slot_count": 38,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 96
+    },
+    {
+      "complete_box_count": 36,
+      "grad_sq": {
+        "ce": 1.543333195949759,
+        "instance_margin": 0.029513888888888888,
+        "local_mass": 0.261801143270378
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 3,
+      "margin_eligible_slot_count": 18,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 72
+    },
+    {
+      "complete_box_count": 69,
+      "grad_sq": {
+        "ce": 0.9083820075882969,
+        "instance_margin": 0.07094185534744975,
+        "local_mass": 0.16537817377424643
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 8,
+      "margin_eligible_slot_count": 60,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 138
+    },
+    {
+      "complete_box_count": 65,
+      "grad_sq": {
+        "ce": 0.7090355003230385,
+        "instance_margin": 0.0023148148148148147,
+        "local_mass": 0.15600912956373852
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 3,
+      "margin_eligible_slot_count": 51,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 130
+    },
+    {
+      "complete_box_count": 57,
+      "grad_sq": {
+        "ce": 1.0363754088195898,
+        "instance_margin": 0.04339677047289504,
+        "local_mass": 0.16020464336370058
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 17,
+      "margin_eligible_slot_count": 48,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 114
+    },
+    {
+      "complete_box_count": 55,
+      "grad_sq": {
+        "ce": 0.9524884160675632,
+        "instance_margin": 0.012188208616780044,
+        "local_mass": 0.17871982465391156
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 7,
+      "margin_eligible_slot_count": 38,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 110
+    },
+    {
+      "complete_box_count": 68,
+      "grad_sq": {
+        "ce": 1.4126616229769744,
+        "instance_margin": 0.04033856823979593,
+        "local_mass": 0.2122750811661456
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 20,
+      "margin_eligible_slot_count": 60,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 136
+    },
+    {
+      "complete_box_count": 52,
+      "grad_sq": {
+        "ce": 1.2717732539164501,
+        "instance_margin": 0.010720043225623584,
+        "local_mass": 0.2526116335259113
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 8,
+      "margin_eligible_slot_count": 43,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 104
+    },
+    {
+      "complete_box_count": 80,
+      "grad_sq": {
+        "ce": 0.8834086438914697,
+        "instance_margin": 0.013887683256172838,
+        "local_mass": 0.12264367870447815
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 9,
+      "margin_eligible_slot_count": 61,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 160
+    },
+    {
+      "complete_box_count": 63,
+      "grad_sq": {
+        "ce": 1.061579927617485,
+        "instance_margin": 0.03857691973848362,
+        "local_mass": 0.16165321663785207
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 10,
+      "margin_eligible_slot_count": 53,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 126
+    },
+    {
+      "complete_box_count": 65,
+      "grad_sq": {
+        "ce": 0.6011978948158327,
+        "instance_margin": 0.03678833792470156,
+        "local_mass": 0.17658710158950894
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 4,
+      "margin_eligible_slot_count": 55,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 130
+    },
+    {
+      "complete_box_count": 35,
+      "grad_sq": {
+        "ce": 1.68741039264585,
+        "instance_margin": 0.031718750000000004,
+        "local_mass": 0.2452732212634712
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 7,
+      "margin_eligible_slot_count": 21,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 70
+    },
+    {
+      "complete_box_count": 22,
+      "grad_sq": {
+        "ce": 1.3684967891313136,
+        "instance_margin": 0.0,
+        "local_mass": 0.28053401002923944
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 0,
+      "margin_eligible_slot_count": 9,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 44
+    },
+    {
+      "complete_box_count": 36,
+      "grad_sq": {
+        "ce": 1.4313500374141668,
+        "instance_margin": 0.006666666666666666,
+        "local_mass": 0.21223018516989314
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 3,
+      "margin_eligible_slot_count": 24,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 72
+    },
+    {
+      "complete_box_count": 30,
+      "grad_sq": {
+        "ce": 1.5056795807441277,
+        "instance_margin": 0.017857142857142856,
+        "local_mass": 0.2637311300497372
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 2,
+      "margin_eligible_slot_count": 17,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 60
+    },
+    {
+      "complete_box_count": 40,
+      "grad_sq": {
+        "ce": 1.2830541273321443,
+        "instance_margin": 0.037133487654320986,
+        "local_mass": 0.4765947945110127
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 6,
+      "margin_eligible_slot_count": 27,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 80
+    },
+    {
+      "complete_box_count": 61,
+      "grad_sq": {
+        "ce": 1.1327926754080528,
+        "instance_margin": 0.009602864583333332,
+        "local_mass": 0.15045716398699507
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 6,
+      "margin_eligible_slot_count": 46,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 122
+    },
+    {
+      "complete_box_count": 95,
+      "grad_sq": {
+        "ce": 0.452509304827803,
+        "instance_margin": 0.07477244031221303,
+        "local_mass": 0.12482184413357184
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 9,
+      "margin_eligible_slot_count": 93,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 190
+    },
+    {
+      "complete_box_count": 89,
+      "grad_sq": {
+        "ce": 0.6372774677921533,
+        "instance_margin": 0.026399304492738834,
+        "local_mass": 0.12118044103149068
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 15,
+      "margin_eligible_slot_count": 79,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 178
+    },
+    {
+      "complete_box_count": 34,
+      "grad_sq": {
+        "ce": 1.1250733384461558,
+        "instance_margin": 0.003472222222222222,
+        "local_mass": 0.24833695674344805
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 1,
+      "margin_eligible_slot_count": 21,
+      "mode": "ce",
+      "rank": 3,
+      "start_slot_count": 68
+    },
+    {
+      "complete_box_count": 67,
+      "grad_sq": {
+        "ce": 0.8241329658013447,
+        "instance_margin": 0.02705176005313368,
+        "local_mass": 0.16951599100375914
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 6,
+      "margin_eligible_slot_count": 57,
+      "mode": "ce",
+      "rank": 1,
+      "start_slot_count": 134
+    },
+    {
+      "complete_box_count": 48,
+      "grad_sq": {
+        "ce": 1.2533048059013379,
+        "instance_margin": 0.02431441326530612,
+        "local_mass": 0.2155334549777705
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 4,
+      "margin_eligible_slot_count": 38,
+      "mode": "ce",
+      "rank": 2,
+      "start_slot_count": 96
+    },
+    {
+      "complete_box_count": 28,
+      "grad_sq": {
+        "ce": 1.8538993523290586,
+        "instance_margin": 0.0026041666666666665,
+        "local_mass": 0.3850450185135802
+      },
+      "incomplete_box_count": 0,
+      "margin_active_slot_count": 1,
+      "margin_eligible_slot_count": 16,
+      "mode": "ce",
+      "rank": 0,
+      "start_slot_count": 56
+    }
+  ],
+  "weights": {
+    "ce": 0.1,
+    "instance_margin": 0.6663237728525236,
+    "local_mass": 0.22967969404405367
+  }
+}

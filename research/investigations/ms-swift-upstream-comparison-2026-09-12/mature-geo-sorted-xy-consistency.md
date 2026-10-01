@@ -66,3 +66,10 @@
 - [Lead独立核算的配对/坐标统计](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/lead-verification/conditional-box-agreement.json)；[错误配对的反例](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/lead-verification/pair-matcher-red.json)。
 - [修正后的完整分析](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/analysis/corrected-iou50/paired_consistency.json)；[Lead反例、阈值边界与32行配对复核](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/lead-verification/pair-matcher-green.json)。
 - [花瓶详细身份](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/visualization/coco139_vase_owner_comparison.json)；[COCO139全图对比](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/visualization/anchor139/manifest.json)；[较大变化样本](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/visualization/changed-examples/manifest.json)。
+
+
+Storage closeout: compact acceptance/paired-result evidence is retained at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/research/mature-geo-sorted-xy-consistency-evidence/`.
+Old run directories, derived execution models, dumps and complete logs are
+retired. Original provenance and scientific/technical limits remain unchanged;
+this retention is not a new execution qualification.

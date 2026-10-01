@@ -1,0 +1,12 @@
+{
+  "active": null,
+  "completed": [
+    "control-order17",
+    "ce-order17"
+  ],
+  "devices": "0,1,2,3",
+  "pending_authorization": true,
+  "pid": 474097,
+  "seed": 17,
+  "status": "awaiting_authorization"
+}

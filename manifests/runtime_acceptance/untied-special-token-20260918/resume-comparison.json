@@ -1,0 +1,102 @@
+{
+  "status": "passed",
+  "parent": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-eight-gpu-loopback",
+  "resumed": "/data/CoordExp/outputs/infra_base/untie-20260918/geo-sorted-xy-untied-eight-gpu-resume",
+  "comparisons": [
+    {
+      "file": "adapter/adapter_model.safetensors",
+      "tensor_count": 588,
+      "bitwise_equal": true,
+      "unequal_keys": []
+    },
+    {
+      "file": "special_token_embeddings/special_token_embeddings.safetensors",
+      "tensor_count": 2,
+      "bitwise_equal": true,
+      "unequal_keys": []
+    }
+  ],
+  "resumed_completed_steps": 2,
+  "per_rank_training_state": [
+    {
+      "rank": 0,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 1,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 2,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 3,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 4,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 5,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 6,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    },
+    {
+      "rank": 7,
+      "trainable_tensor_count": 590,
+      "delta_names": [
+        "base_model.model.lm_head.shared_embed_delta",
+        "base_model.model.model.language_model.embed_tokens.shared_embed_delta"
+      ],
+      "model_bitwise_equal": true,
+      "optimizer_bitwise_equal": true
+    }
+  ]
+}

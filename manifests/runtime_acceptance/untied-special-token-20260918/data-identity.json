@@ -1,0 +1,10 @@
+{
+  "train": {
+    "rows": 117266,
+    "sha256": "ecf07a40856ee96a92c9093139abe24facfa600136e04f3c1bcbd02e039aaad1"
+  },
+  "val": {
+    "rows": 4952,
+    "sha256": "70f54cdb3a64bab1bf994368529c270cc54556681dcbee5c3c9e84d6706926bc"
+  }
+}

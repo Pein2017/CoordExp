@@ -1,0 +1,10 @@
+{
+  "config_count": 27,
+  "data_ingress": "all 16648 generated rows validated after path repair",
+  "fresh_tests": "103 passed in 5.49s",
+  "mutation": "cross-image contamination rejected",
+  "protocol_sha256": "2d8c9627f194049857a49a4c0d3f093bf84b6eae970c8e7daad4742a8da7fa27",
+  "source_commit": "71062a32923cdb127ab99b7529afe7ddeee263d7",
+  "status": "passed",
+  "tests": "103 passed; focused rerun 6 passed"
+}
