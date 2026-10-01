@@ -2,7 +2,7 @@
   "unit_id": "2026-09-29-self-prefix-known-fn",
   "lifecycle": "ready",
   "evidence": "partial",
-  "status": "paired1-03-terminal-containment-rejection-retained-diagnosis-active",
+  "status": "retained-diagnosis-accepted-next-package-viability-cpu-authorized-not-started",
   "protocol": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "state_source": "research/experiments/2026-09-29-self-prefix-known-fn/unit.md",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -11,7 +11,7 @@
   "worker_effort": "xhigh",
   "goal_requested": false,
   "output_root": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-29/self-prefix-known-fn-01",
-  "boundary": "P03 was released/executed once and terminally rejected on retained-category containment; operational handling/accounting/cleanup accepted only. CPU retained-data diagnosis active; no retry/new GPU/paired8 release.",
+  "boundary": "P03 remains terminally containment-rejected; saved retained diagnosis is accepted observationally, not causally. Restored-M CHAIN package-viability CPU candidate authorized, pending record commit and worker dispatch. No native preparation/reservation/launch; overall program active.",
   "job_state": "P03 exits control run0/control readback0/treatment run1; treatment readback and both offline stages skipped; terminal rejection accepted; no live owner",
   "not_authorized": [
     "decode logits processor",
@@ -71,7 +71,7 @@
   "device_route_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-routing-cpu-acceptance-01.json",
   "correction_runtime_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-native-paired1-03-acceptance-01.json",
   "owner_cpu_acceptance": "/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/lead-owner-cpu-acceptance-01.json",
-  "next_decision": "Continue only saved-data CPU retained diagnosis at P/retained-diagnosis-01; analyze loss overlap, actual M/B contexts and coefficients, and first token/prefix divergence. No new GPU release or retry.",
+  "next_decision": "Implement the authorized restored-M-mass CHAIN package-viability CPU candidate at /data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01 under lead-cpu-ruling-01. No native preparation, launch or GPU reservation.",
   "recall_floor_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01",
   "recall_floor_cpu_release": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/lead-cpu-release-01.json",
   "recall_floor_worker_dispatch": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/worker-dispatch-01.json",
@@ -269,10 +269,20 @@
       "I": 2
     }
   },
-  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/retained-diagnosis-01",
-  "next_cpu_assignment_scope": "Saved-data CPU diagnosis only: loss overlap, actual M/B context/coefficient changes, first token/prefix divergence; compare changed M contexts/normalization with shared-parameter/greedy alternatives; no new model/GPU query.",
+  "next_cpu_assignment": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01",
+  "next_cpu_assignment_scope": "CPU implementation only: probes/online_row_credit.py and tests/probes/test_online_row_credit.py; optional minimal probes/README.md. Version/bind restored-M coefficient semantics across recipe, argv, producer, actual forward evidence, readback and offline; preserve v3 default; focused consumer falsification. No runtime-package mutation or native work.",
   "next_gpu_release": false,
   "native_authorized": false,
-  "next_cpu_assignment_status": "active-CPU-only",
-  "next_cpu_assignment_worker_thread": "01a0f0cc-423f-7773-a1ee-0a2d6c848424"
+  "next_cpu_assignment_status": "authorized-not-started-pending-record-commit-and-worker-dispatch",
+  "next_cpu_assignment_worker_thread": "01a0f0cc-423f-7773-a1ee-0a2d6c848424",
+  "saved_diagnosis_acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/native-identity-paired1-03/retained-diagnosis-01/lead-acceptance-01.json",
+  "saved_diagnosis_acceptance_sha256": "8d7fcb7c4656e4e164c7cd1bc5776e7c33ce84096b607cb5a6d938d8bcb082a9",
+  "saved_diagnosis_status": "lead-accepted-observationally-not-causally",
+  "continuation_ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/lead-cpu-ruling-01.json",
+  "continuation_ruling_sha256": "daf7d7fbd83f378e6af0f12284b7802d6706c8279a4a88989954213edbbd1ce7",
+  "package_viability_question": "On the fixed18 retained-label pilot, does restored-M CHAIN improve retained-category R over a fresh original-M control without reducing gained B owners, while every existing raw containment predicate holds?",
+  "prospective_native_max_gpu_hours": 6,
+  "prospective_native_owner_seconds": 2700,
+  "prospective_native_reservation_or_launch_granted": false,
+  "overall_program_status": "active"
 }
