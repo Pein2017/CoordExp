@@ -4,9 +4,9 @@ layer: docs
 doc_type: workflow
 status: canonical
 domain: repo
-summary: Canonical branch, archive branch, worktree, and Codex-session routing for CoordExp.
+summary: Retained branches, physical worktrees, and Codex-session routing for CoordExp.
 tags: [git, branches, worktrees, codex, coordexp-infras]
-updated: 2026-07-10
+updated: 2026-10-01
 ---
 
 # Branch And Worktree Policy
@@ -15,25 +15,32 @@ coordexp-infras is now the canonical implementation on repository `main`.
 
 ## Canonical routing
 
-- `main` is the stable coordexp-infras branch. `/data/CoordExp` is its
-  operational checkout for official training and evaluation.
-- `coordexp-infras` is the active development branch. It is checked out at
-  `/data/CoordExp/.worktrees/coordexp-infras` for feature and experiment work.
-- `ms-swift` is the preserved pre-promotion mainline, retained as a history
-  archive and compatibility/reference branch. It has no active worktree and
-  is not a target for new implementation or launches.
-- `origin/coordexp-infras` tracks the active development branch; promote
-  validated work from it into `main` through an explicit merge.
+Keep exactly these long-lived local checkouts and their matching branches:
 
-When a task asks for the current repository, current implementation, or default
-branch, resolve it against `main` at `/data/CoordExp`. For feature work, use
-the Swift development checkout. Use `ms-swift` only for historical
-reconstruction, old-run reproduction, or explicit archive maintenance.
+| Branch | Physical checkout | Role |
+|---|---|---|
+| `main` | `/data/CoordExp` | Stable source and integration owner |
+| `coordexp-infras` | `/data/CoordExp/.worktrees/coordexp-infras` | Infrastructure development and its runs |
+| `research-probes` | `/data/CoordExp/.worktrees/research-probes` | Canonical research source, records and runs |
+| `research-probes-web-codex` | `/data/CoordExp/.worktrees/research-probes-web-codex` | Research development and its runs |
 
-The normal iteration is: develop and validate in `coordexp-infras`; merge the
-accepted commits into `main`; launch official training/evaluation from the
-root `main` checkout; then update the development branch from the promoted
-`main` state before the next feature slice.
+The user retired the temporary main-runs, start-loss-benchmark and detached
+WebCodex checkouts. Do not recreate a generic runtime or archival worktree.
+Temporary task branches/worktrees require an explicit need and are retired after
+their useful changes and necessary assets reach one of the retained owners.
+
+For default source or implementation questions, inspect `main` at
+`/data/CoordExp`. For runs, enter the actual owning retained worktree;
+infrastructure examples use `coordexp-infras`. Relative artifact paths resolve
+from that physical checkout. Root `/data/CoordExp/outputs/` is shared-asset
+retention, not a run destination; see [storage policy](OUTPUT_STORAGE_POLICY.md).
+There is no fallback directory for unknown legacy payloads.
+
+Promote validated infrastructure commits into main explicitly. These branches
+may differ: running from coordexp-infras does not imply execution of main's
+exact source. Provenance records the actual producer checkout/commit and input
+qualification. Moving an old run or integrating source does not authorize a
+new model launch.
 
 ## Codex sessions and task worktrees
 

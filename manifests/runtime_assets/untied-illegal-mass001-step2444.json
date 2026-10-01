@@ -1,0 +1,93 @@
+{
+  "purpose": "Exact source model of the maintained completed start-loss comparison; inference weights and source config only, not a full-run promotion. Frozen old launcher/configs do not gain rerun authorization.",
+  "target": "/data/CoordExp/outputs/shared/checkpoints/untied-illegal-mass001-step2444/payload",
+  "source_checkpoint": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-illegal-mass001-ebs24-4epoch/checkpoints/step-2444",
+  "files": [
+    {
+      "relative_path": "adapter/adapter_model.safetensors",
+      "bytes": 72111984,
+      "sha256": "29eea8cc4775008190787109183d4a0513e8ce47e9678535a950bd09dabd5f2d",
+      "source_identity": [
+        66307,
+        140117503,
+        72111984,
+        1790512751977369220,
+        33188
+      ]
+    },
+    {
+      "relative_path": "adapter/model_card.json",
+      "bytes": 5684,
+      "sha256": "fc9e4f71f3885fd42a808c5ee953d1c2b36f3ce1f7a94a717cfaaca1a3f84b19",
+      "source_identity": [
+        66307,
+        140116410,
+        5684,
+        1790792201683393557,
+        33188
+      ]
+    },
+    {
+      "relative_path": "adapter/adapter_config.json",
+      "bytes": 1119,
+      "sha256": "09d3d070899a093e614be99defa42d65929176794f272ff1a9ce9daa07236399",
+      "source_identity": [
+        66307,
+        140117504,
+        1119,
+        1790512751977369220,
+        33188
+      ]
+    },
+    {
+      "relative_path": "special_token_embeddings/special_token_embeddings.json",
+      "bytes": 33548,
+      "sha256": "66e8cabc12bef41e0677be6d9613a6321cd8b5158c4dac55081647109c16dfa9",
+      "source_identity": [
+        66307,
+        140117507,
+        33548,
+        1790512752009371852,
+        33188
+      ]
+    },
+    {
+      "relative_path": "special_token_embeddings/special_token_embeddings.safetensors",
+      "bytes": 16449720,
+      "sha256": "7725e8fa3095ed53297fa2dae7bd68e26a7c074300768a78fa5124e8b7b20777",
+      "source_identity": [
+        66307,
+        140117506,
+        16449720,
+        1790512752001371193,
+        33188
+      ]
+    },
+    {
+      "relative_path": "inference_payload_manifest.json",
+      "bytes": 136464,
+      "sha256": "2ff6d81a5957d89489a7cfaef8b80538515201a1c51f7ee1e223c37594d94eb4",
+      "source_identity": [
+        66307,
+        140117508,
+        136464,
+        1790512752437407083,
+        33188
+      ]
+    },
+    {
+      "relative_path": "adapter/README.md",
+      "bytes": 5294,
+      "sha256": "2860abd12bc4395ca0cb2fd2af9582eb6c46a7e8e8525d0f6871b56a831af4bd",
+      "recovery": "exact local generated model_card.json content, native manifest SHA unchanged"
+    }
+  ],
+  "source_config": "/data/CoordExp/manifests/runtime_assets/untied-illegal-mass001-step2444.resolved_config.json",
+  "source_config_sha256": "8b59f2ebd324260e98e9659d7bb3e9359346e669a9ae26ce7eb76014c960a5f9",
+  "recorded_at": "2026-10-01T19:46:08.868297+00:00",
+  "original_checkpoint_absent": true,
+  "retained_payload_bytes": 88743813,
+  "retention_receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/illegal-mass-baseline-retention.json",
+  "retention_receipt_sha256": "4a20821076a840e524e7abae947449a0430bad87801fbc02940c19c6b3b6b0d9",
+  "claim_scope": "Exact source-weight preservation, no launch, model-quality claim or changed scientific contract."
+}

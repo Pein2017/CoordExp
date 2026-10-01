@@ -1,0 +1,124 @@
+{
+  "generated_at_utc": "2026-10-01T18:39:34.318041Z",
+  "payload": {
+    "path": "public_data/coco/annotation_drafts/retired-label-studio-20261002/drafts.jsonl",
+    "record_count": 2,
+    "record_order": "tasks_annotationdraft.id ascending",
+    "sha256": "dcdbdde5ca82d486147a4bff7374e96768a7275b15f8f0521afd0a55aabe8bfe",
+    "size_bytes": 80638
+  },
+  "record_type": "retired_label_studio_pending_annotation_drafts",
+  "recovery_context": {
+    "image_root": "public_data/coco/rescale_32_1024_bbox/images",
+    "local_files_url_prefix": "/data/local-files/?d=",
+    "project_context_fields_included": [
+      "id",
+      "title",
+      "label_config",
+      "parsed_label_config",
+      "expert_instruction",
+      "show_instruction",
+      "data_types",
+      "is_published",
+      "created_at",
+      "updated_at",
+      "organization_id",
+      "description",
+      "show_skip_button",
+      "show_collab_predictions",
+      "sampling",
+      "control_weights",
+      "result_count",
+      "is_draft",
+      "enable_empty_annotation",
+      "maximum_annotations",
+      "show_annotation_history",
+      "show_ground_truth_first",
+      "reveal_preannotations_interactively"
+    ],
+    "project_title": "CoordExp COCO refinement - 5-image subproject",
+    "sensitive_project_fields_excluded": [
+      "task_data_login",
+      "task_data_password",
+      "token"
+    ],
+    "user_identity_values": "not joined; original numeric user IDs retained in rows"
+  },
+  "schema_version": 1,
+  "selected_rows": {
+    "counts": {
+      "drafts": 2,
+      "linked_annotations": 2,
+      "projects": 1,
+      "tasks": 2
+    },
+    "project": [
+      3
+    ],
+    "records": [
+      {
+        "draft_row_id": 11,
+        "linked_annotation_row_id": 122219,
+        "project_row_id": 3,
+        "source_text_sha256": {
+          "project.label_config": "079bec6ceeccf5504669d14a37e3db93c9ecc3d0924d7a544479e6e7f01fff2d",
+          "project.parsed_label_config": "e70e3401b7908c1d141edb64a1ab8e8233c847649f84febbd6ce81c7618333ba",
+          "task.data": "bdabe200491cc60a0c03e3b788c3631bbd3768ab92384a352c45826e4602665a",
+          "task.meta": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "task_completion.prediction": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "task_completion.result": "94495254b4fae7294d80a43f7f070cbca4d8838103157700aa4d1161f59fc828",
+          "tasks_annotationdraft.result": "b59022d4fab62988777bf197432bc616facba3267ef73ac2353291866cb8b649"
+        },
+        "task_row_id": 122219
+      },
+      {
+        "draft_row_id": 12,
+        "linked_annotation_row_id": 122222,
+        "project_row_id": 3,
+        "source_text_sha256": {
+          "project.label_config": "079bec6ceeccf5504669d14a37e3db93c9ecc3d0924d7a544479e6e7f01fff2d",
+          "project.parsed_label_config": "e70e3401b7908c1d141edb64a1ab8e8233c847649f84febbd6ce81c7618333ba",
+          "task.data": "dbf3e94d5de349203734d0ebe556f5f737a5d3b7a3ccfa9a02e5f68d257696ea",
+          "task.meta": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "task_completion.prediction": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "task_completion.result": "c9144957f3ea16d97301ba571e518b4fdfe241aed3fb82455ecc292eaf81e40d",
+          "tasks_annotationdraft.result": "5d40ffd72b3b60d9608e249d6893fa8f8f4f0752b6a2f138b1b70c50d8589fa0"
+        },
+        "task_row_id": 122222
+      }
+    ],
+    "task": [
+      122219,
+      122222
+    ],
+    "task_completion": [
+      122219,
+      122222
+    ],
+    "tasks_annotationdraft": [
+      11,
+      12
+    ]
+  },
+  "semantic_status": "pending_not_ground_truth_or_training_not_imported_into_gate_a",
+  "source_database": {
+    "path_at_capture": "outputs/label_studio_coco_refinement/rescale_32_1024_bbox_len12000/label-studio/state/label_studio.sqlite3",
+    "sha256": "8bf372f59f4f5342d104a84d0ebdac80cbfd316d79ece42892ecc31eeda70fc2",
+    "sidecars_after_shutdown": [],
+    "size_bytes": 573517824,
+    "sqlite_integrity_check": "ok"
+  },
+  "source_service": {
+    "former_bind": "127.0.0.1:8080",
+    "shutdown_signal": "SIGTERM",
+    "status": "retired",
+    "stopped_at_utc": "2026-10-01T18:39:34.318041Z",
+    "stopped_pid": 2447154
+  },
+  "verification": {
+    "database_snapshot": "read-only transaction after clean service shutdown",
+    "payload_jsonl_roundtrip": true,
+    "record_ids_and_joined_rows_verified": true,
+    "source_hash_unchanged_during_read": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "mode": "train",
+  "model": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct",
+  "image": "/data/CoordExp/.worktrees/research-probes/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+  "versions": {
+    "torch": "2.13.0+cu129",
+    "transformers": "5.17.0",
+    "vllm": "0.29.0+cu129",
+    "peft": "0.21.1",
+    "accelerate": "1.15.0"
+  },
+  "loss": 4.445878505706787,
+  "grad_norm": 15.016088719363864,
+  "optimizer_steps": 1,
+  "attention": "flash_attention_2",
+  "adapter": "dora",
+  "status": "pass",
+  "wall_seconds": 8.73605116456747,
+  "peak_cuda_memory_bytes": 5206493184
+}

@@ -1,0 +1,69 @@
+# Unmatched Proposal Verifier Study
+
+## Setup
+- subset: `/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/subset/sampled.coord.jsonl` from `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/val.coord.jsonl`
+- sample_count: `64`
+- seed: `42`
+- root_image_dir: `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy`
+- run stages: `prepare, collect, gate, score, audit, report`
+
+## Collection
+- collection backend mode: `hf`
+- temperature: `0.3`
+- repetition_penalty: `1.05`
+- infer.generation.batch_size: `4`
+- authoritative temperatures: `0.3`
+
+## Checkpoints
+- `cxcywh_pure_ce` -> `/data/CoordExp/output/stage1_2b/coco_bbox_max60-coco80-desc_first-1024-lvis_proxy-cxcywh-pure_ce/epoch_4-cxcywh-pure_ce-coco80-desc_first-1024-lvis_proxy-from-base-2B/v0-20260415-060451/checkpoint-692` (prompt_variant=`coco_80`, object_field_order=`desc_first`, source=`study_default`)
+
+## Proxy Definitions
+- commitment: desc-only average teacher-forced log-probability on the original image
+- counterfactual: commitment(original) - commitment(masked bbox image)
+- combined_linear: commitment + counterfactual
+
+## Aggregate Tables
+- clean GT summary: `/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/gt_clean_proxy_metrics_by_temp.csv`
+- collection health: `/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/collection_health_by_temp.csv`
+- rollout summary: `/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/rollout_proxy_metrics_by_temp.csv`
+- manual audit summary: `/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/manual_audit_summary.json`
+
+## Layer A: Clean Verifier Benchmark
+### cxcywh_pure_ce @ temperature=0.3
+- `commitment` GT-vs-hard-neg: AUROC=`0.5049` AUPRC=`0.3060` counted=`1942`
+- `counterfactual` GT-vs-hard-neg: AUROC=`0.6306` AUPRC=`0.4737` counted=`1942`
+- `combined_linear` GT-vs-hard-neg: AUROC=`0.5639` AUPRC=`0.4121` counted=`1942`
+
+## Layer B1: Rollout Collection Health
+- `cxcywh_pure_ce` temp=`0.3` valid=`yes` pred_total=`604` unmatched=`322` nonempty_rate=`1.0000` invalid_reason=`NA`
+
+## Layer B2: Rollout Proposal Benchmark
+### cxcywh_pure_ce @ temperature=0.3
+- `commitment` matched-vs-unmatched: AUROC=`0.3705` AUPRC=`0.4021` counted=`604`
+- `commitment` unmatched top-k stats: `{"10": {"count": 10, "nearest_gt_iou_ge_0.3_rate": 0.0, "nearest_gt_iou_ge_0.5_rate": 0.0}, "25": {"count": 25, "nearest_gt_iou_ge_0.3_rate": 0.0, "nearest_gt_iou_ge_0.5_rate": 0.0}, "50": {"count": 50, "nearest_gt_iou_ge_0.3_rate": 0.08, "nearest_gt_iou_ge_0.5_rate": 0.04}}`
+- `counterfactual` matched-vs-unmatched: AUROC=`0.7211` AUPRC=`0.7411` counted=`604`
+- `counterfactual` unmatched top-k stats: `{"10": {"count": 10, "nearest_gt_iou_ge_0.3_rate": 0.5, "nearest_gt_iou_ge_0.5_rate": 0.0}, "25": {"count": 25, "nearest_gt_iou_ge_0.3_rate": 0.4, "nearest_gt_iou_ge_0.5_rate": 0.0}, "50": {"count": 50, "nearest_gt_iou_ge_0.3_rate": 0.26, "nearest_gt_iou_ge_0.5_rate": 0.0}}`
+- `combined_linear` matched-vs-unmatched: AUROC=`0.5594` AUPRC=`0.6560` counted=`604`
+- `combined_linear` unmatched top-k stats: `{"10": {"count": 10, "nearest_gt_iou_ge_0.3_rate": 0.6, "nearest_gt_iou_ge_0.5_rate": 0.0}, "25": {"count": 25, "nearest_gt_iou_ge_0.3_rate": 0.36, "nearest_gt_iou_ge_0.5_rate": 0.08}, "50": {"count": 50, "nearest_gt_iou_ge_0.3_rate": 0.18, "nearest_gt_iou_ge_0.5_rate": 0.04}}`
+- commitment/counterfactual correlation: `-0.2493`
+- calibration: skipped (`v1 study reports raw log-probability proxies only`)
+- audit pack: count=`24` index=`/data/CoordExp/output/analysis/coord-family-recall-pilot-cxcywh-val64/checkpoints/cxcywh-pure-ce/audit_pack/index.jsonl`
+
+## Layer C: Manual Audit
+- labels loaded: `no`
+- labeled count: `0`
+- label counts: `{}`
+- precision@k: `{"10": {"count": 0, "real_visible_object_rate": null}, "25": {"count": 0, "real_visible_object_rate": null}, "50": {"count": 0, "real_visible_object_rate": null}}`
+
+## Recommendation
+- strongest single proxy: `counterfactual`
+- does commitment + counterfactual materially outperform either single proxy? `no`
+- is the signal stable across checkpoints? `mixed`
+- is rollout evidence valid enough for interpretation? `yes`
+- is the proxy good enough for soft pseudo-label promotion? `promising but not yet promotion-ready`
+- main observed failure modes:
+  scoring drift / exclusions: `{}`
+  collection gate exclusions: `{}`
+- commitment can remain high on visually plausible wrong-location boxes; counterfactual is the intended corrective signal.
+- manual audit labels are missing, so the final recommendation is intentionally downgraded.
+- best overall proxy on the current summary tables: `counterfactual`.

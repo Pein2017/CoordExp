@@ -31,8 +31,9 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
   tree as current behavior.
 - `openspec/` - stable compatibility-sensitive contracts and active contract
   deltas.
-- `outputs/` - local experiment artifacts and Baidu Netdisk sync surface. This
-  is not source-controlled.
+- `outputs/` - ignored artifacts owned by a physical worktree. Infrastructure runs
+  use `/data/CoordExp/.worktrees/coordexp-infras/outputs`; `/data/CoordExp/outputs/`
+  is reserved for explicitly selected shared assets.
 - `ops/` - workstation and agent-runtime policy helpers that are not CoordExp
   training, inference, evaluation, or artifact entrypoints.
 - `.codex/skills/` - tracked repo-local agent skills. Other `.codex/` runtime
@@ -51,13 +52,17 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --src /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
      --dst /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
-3) **Train (canonical Swift example)**:
+3) **Train (infrastructure smoke example)**:
    ```bash
+   cd /data/CoordExp/.worktrees/coordexp-infras
    conda run -n ms python -m src.train \
-     --config configs/coordexp_infras/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml
+     --config configs/smoke/eight_gpu_geo_sorted_xy_untied.yaml
    ```
-   - Use `configs/coordexp_infras/prod/` for production-style training and
-     `configs/coordexp_infras/infer/` with `src.infer` for inference.
+   - For branch-owned runs, enter that branch's physical worktree instead;
+     relative training artifact paths resolve from the launch directory.
+   - In the infrastructure checkout, use `configs/train/` for training and
+     `configs/infer/` with `src.infer` for inference. Config families differ
+     across branches; qualify the selected checkout and inputs before launch.
    - The fixed val200 inference/eval run is the accepted V1 validation gate;
      tiny smokes are implementation evidence only.
 
@@ -112,20 +117,13 @@ documentation. They are not the current `main` workflow.
 - Saved with the adapter: token offsets live under `token_embeddings_adapter` and are included via `modules_to_save`; no sidecar files.
 - Defaults are no-op when `token_embeddings_adapter.enabled: false` and optimizer stays `multimodal`.
 
-### Merging LoRA + token-embeddings adapter offsets (export)
-Standard `swift export --merge_lora` drops the token-embeddings adapter offsets, so use the helper script that patches shards in-place:
-```bash
-ADAPTERS=outputs/debug/coord/<run>/checkpoint-* \
-OUTPUT_DIR=outputs/debug/coord_merged \
-GPU_DEVICES=3 \
-bash scripts/merge_coord.sh
-```
-What it does:
-- Runs `swift export` to merge LoRA.
-- Patches `embed_tokens.weight` and `lm_head.weight` shards with the trained token-embeddings adapter offsets (no full model load).
-- Rewrites only the affected safetensor shards; final merged model lives in `$OUTPUT_DIR`.
-Notes:
-- If `$OUTPUT_DIR` already exists, `scripts/merge_coord.sh` will refuse to overwrite it unless you set `ALLOW_OVERWRITE=1`.
+### Checkpoint inputs
+
+Use the selected checkout's inference entry and model-composition contract.
+Current infrastructure inference consumes adapter and special-token payloads;
+see [the infrastructure guide](docs/coordexp_infras.md). The older Swift export
+recipe belongs to repository history and is not an entry in the retained
+infrastructure checkout.
 
 ## Notes
 - Uses the model’s native chat templates; no custom tokenizer hacks beyond added coord tokens.

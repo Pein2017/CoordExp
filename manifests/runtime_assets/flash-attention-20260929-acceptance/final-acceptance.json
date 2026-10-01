@@ -1,0 +1,115 @@
+{
+  "status": "lead-accepted",
+  "time_utc": "2026-09-29T19:56:51.339612+00:00",
+  "environment": "/root/miniconda3/envs/ms",
+  "versions": {
+    "torch": "2.13.0+cu129",
+    "torchvision": "0.28.0+cu129",
+    "torchaudio": "2.11.0+cu129",
+    "torchcodec": "0.16.0+cpu",
+    "vllm": "0.29.0+cu129",
+    "transformers": "5.17.0",
+    "flash-attn": "2.8.4",
+    "flashinfer-python": "0.6.18",
+    "peft": "0.21.1",
+    "accelerate": "1.15.0",
+    "deepspeed": "0.19.7",
+    "openai": "3.22.0",
+    "mcp": "1.27.1"
+  },
+  "checks": {
+    "flash-smoke": {
+      "status": "pass",
+      "torch": "2.13.0+cu129",
+      "cuda": "12.9",
+      "flash_attn": "2.8.4",
+      "checks": [
+        {
+          "packed": false,
+          "max_abs_error_vs_sdpa": 0.0
+        },
+        {
+          "packed": true,
+          "max_abs_error_vs_sdpa": 0.0
+        }
+      ]
+    },
+    "native-train": {
+      "mode": "train",
+      "model": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct",
+      "image": "/data/CoordExp/.worktrees/research-probes/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "versions": {
+        "torch": "2.13.0+cu129",
+        "transformers": "5.17.0",
+        "vllm": "0.29.0+cu129",
+        "peft": "0.21.1",
+        "accelerate": "1.15.0"
+      },
+      "loss": 4.445878505706787,
+      "grad_norm": 15.016088719363864,
+      "optimizer_steps": 1,
+      "attention": "flash_attention_2",
+      "adapter": "dora",
+      "status": "pass",
+      "wall_seconds": 8.73605116456747,
+      "peak_cuda_memory_bytes": 5206493184
+    },
+    "native-hf": {
+      "mode": "hf",
+      "model": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct",
+      "image": "/data/CoordExp/.worktrees/research-probes/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "versions": {
+        "torch": "2.13.0+cu129",
+        "transformers": "5.17.0",
+        "vllm": "0.29.0+cu129",
+        "peft": "0.21.1",
+        "accelerate": "1.15.0"
+      },
+      "text": "This is a close-up photograph of a white, fluted urn-style vase filled with a colorful floral arrangement, sitting on a white railing. The arrangement features a",
+      "token_count": 32,
+      "adapter_reloaded": true,
+      "status": "pass",
+      "wall_seconds": 5.8444637432694435,
+      "peak_cuda_memory_bytes": 4374360064
+    },
+    "native-vllm": {
+      "mode": "vllm",
+      "model": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct",
+      "image": "/data/CoordExp/.worktrees/research-probes/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "versions": {
+        "torch": "2.13.0+cu129",
+        "transformers": "5.17.0",
+        "vllm": "0.29.0+cu129",
+        "peft": "0.21.1",
+        "accelerate": "1.15.0"
+      },
+      "text": "This is a close-up photograph of a white, fluted urn-style vase filled with a colorful floral arrangement, sitting on a white railing. The bouquet features a",
+      "token_count": 32,
+      "status": "pass",
+      "wall_seconds": 43.62370419502258,
+      "peak_cuda_memory_bytes": 0
+    },
+    "nccl-smoke": {
+      "status": "pass",
+      "world_size": 2,
+      "all_reduce_sum": 3.0,
+      "torch": "2.13.0+cu129",
+      "nccl": [
+        2,
+        29,
+        7
+      ]
+    }
+  },
+  "scope": "Qwen3-VL-2B real-image BF16 DoRA one optimizer step via Accelerate and FA2; HF adapter reload generation; vLLM eager image generation; FA2 dense/varlen forward/backward; 2-GPU NCCL all-reduce. Full-scale training, DeepSpeed distributed training, and vLLM torch.compile/CUDAGraph paths are not tested.",
+  "flash_attention_source": "e9cf2c1651d2303191eb40a739a3c135fda00999",
+  "flash_attention_arch": "SM80 (A100)",
+  "conda_env_vars": {
+    "CUDA_HOME": "/root/miniconda3/envs/ms",
+    "CPATH": "/root/miniconda3/envs/ms/targets/x86_64-linux/include:/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/curand/include",
+    "LIBRARY_PATH": "/root/miniconda3/envs/ms/targets/x86_64-linux/lib"
+  },
+  "residual_preexisting_pip_check": "verl 0.8.0.dev0 requires codetiming, which is not installed.\nverl 0.8.0.dev0 requires hydra-core, which is not installed.\nverl 0.8.0.dev0 requires pybind11, which is not installed.\nverl 0.8.0.dev0 requires pylatexenc, which is not installed.\nverl 0.8.0.dev0 requires tensordict, which is not installed.\nverl 0.8.0.dev0 requires torchdata, which is not installed.\nverl 0.8.0.dev0 requires wandb, which is not installed.\nverl 0.8.0.dev0 has requirement numpy<2.0.0, but you have numpy 2.2.6.\ndecord 0.6.0 is not supported on this platform\n",
+  "activation": "Existing shells: conda deactivate, then conda activate ms to load new compiler paths.",
+  "vllm_success_log": "native-vllm-attempt5.log"
+}

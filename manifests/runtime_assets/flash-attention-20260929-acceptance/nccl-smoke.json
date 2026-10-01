@@ -1,0 +1,11 @@
+{
+  "status": "pass",
+  "world_size": 2,
+  "all_reduce_sum": 3.0,
+  "torch": "2.13.0+cu129",
+  "nccl": [
+    2,
+    29,
+    7
+  ]
+}

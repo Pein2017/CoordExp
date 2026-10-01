@@ -6,6 +6,31 @@ This folder contains dataset preparation for public detection/grounding datasets
 The preferred interface is the unified runner:
 `./public_data/run.sh <dataset> <command> ...`
 
+## COCO/LVIS fixed-review readback
+
+The maintained read-only label aggregator is
+`python -m public_data.scripts.audit_coco_lvis_proxy --help`. Its `--input` is a
+frozen review directory; `--output` must be absent and explicitly owned by the
+chosen retained worktree. The retained September 27 input is
+`/data/CoordExp/.worktrees/research-probes/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1`.
+Use a fresh output such as
+`/data/CoordExp/.worktrees/research-probes/outputs/research/coco-lvis-review-readback-<run>.json`.
+The command verifies the sample hash and label identities and does not rewrite
+`contract.json`, select images, export annotations or train a model.
+
+`python -m public_data.scripts.coco_lvis_pair_stats --help` exposes the original
+three shared-image split comparisons with explicit `--data-root` and a fresh
+`--output`. Full raw-data processing is separate from the focused fixture tests;
+IoU/coverage denominators and COCO crowd exclusion are preserved.
+
+Interpretation of the finite audit and the later weighted/hard v2 export lives
+in the canonical Research Probes `research/questions/physical-evaluation.md`.
+The storage migration did not alter the existing v2 exporter, tests or datasets.
+Source/report rollback and old-to-new asset identities are recorded in
+`openspec/changes/route-owned-outputs-and-migrate-legacy/` at root main. Remaining
+loose one-off output-directory generators are historical HOLDs, not supported
+entrypoints; do not launch them to recreate the old root-output layout.
+
 ## Scope & Prereqs
 - Repo root: `.` (run `./public_data/run.sh` from here).
 - Python env: activate the environment you want (e.g., `conda activate ms`) so `python` points to it.

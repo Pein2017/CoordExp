@@ -1,0 +1,15 @@
+{
+  "torch": "2.13.0+cu129",
+  "torchvision": "0.28.0+cu129",
+  "torchaudio": "2.11.0+cu129",
+  "torchcodec": "0.16.0+cpu",
+  "vllm": "0.29.0+cu129",
+  "transformers": "5.17.0",
+  "flash-attn": "2.8.4",
+  "flashinfer-python": "0.6.18",
+  "peft": "0.21.1",
+  "accelerate": "1.15.0",
+  "deepspeed": "0.19.7",
+  "openai": "3.22.0",
+  "mcp": "1.27.1"
+}

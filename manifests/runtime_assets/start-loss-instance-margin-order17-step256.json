@@ -1,0 +1,65 @@
+{
+  "purpose": "Selected immutable anchor retained for the original start-loss benchmark and current Research Probes consumer; not a whole-run promotion.",
+  "producer": {
+    "checkout": "/data/CoordExp/.worktrees/start-loss-benchmark",
+    "repository_provenance": {
+      "commit": {
+        "status": "available",
+        "value": "01941e687d7ea197df0667701bad5e8e40235652"
+      },
+      "execution_relevant_changes": {
+        "count": 0,
+        "path_classes": {},
+        "truncated": false
+      },
+      "execution_relevant_digest": {
+        "status": "available",
+        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "state": "dirty",
+      "tracked_changes_present": true,
+      "untracked_changes_present": false
+    },
+    "run_id": "instance_margin-order17-5f0261c80fc7",
+    "run_json_sha256": "3fe8770137e03ec5aa318e52f1af5c95db40877f14bbf4c1f560fd91c77ae68d",
+    "resolved_config_sha256": "503f23b9eb77bdab11c9ed85bad77543b17b03d1c175446448373b5e87179775",
+    "original_checkpoint": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256"
+  },
+  "payload": "payload",
+  "original_retention": "The original root run path is retired. The producer run is now owned by /data/CoordExp/.worktrees/start-loss-benchmark/outputs/infra_base/start-loss-benchmark-20260928; current Research Probes test consumers use the selected shared payload. No old-path alias.",
+  "external_inputs": "Base model/tokenizer and data references remain external as declared by unchanged payload/run/config records. This is not an independent full-model/data backup.",
+  "package_metadata_exception": "adapter/README.md is hash-bound PEFT package metadata; preserved exactly, not a research note.",
+  "verification": "All eight copied files verified against source SHA-256; all five component files also matched manifest-declared relative roots, sizes and hashes.",
+  "migration_receipt": "/data/CoordExp/openspec/changes/route-owned-outputs-and-migrate-legacy/migration.json",
+  "current_payload": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+  "historical_storage_record_sha256": "44b5b0985c9ef5163ffba315ad5d83100fc3f83bba8e84a1cd06d919a1e1db45",
+  "current_record_owner": "manifests/runtime_assets/start-loss-instance-margin-order17-step256.json",
+  "verified_native_manifest_sha256": "1fdd43eb9e94f21379b1494ca6ee51f65046b68f718787970ac8a5ce3ce420a1",
+  "verified_native_files": [
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/README.md",
+      "bytes": 5294,
+      "sha256": "2860abd12bc4395ca0cb2fd2af9582eb6c46a7e8e8525d0f6871b56a831af4bd"
+    },
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/adapter_config.json",
+      "bytes": 1119,
+      "sha256": "ece9d7c78d76468bfd55e4e962453d102410d534a384ed4cf2ac403316a26cd1"
+    },
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/adapter_model.safetensors",
+      "bytes": 72111984,
+      "sha256": "a60a7271cd3ed5da7f4ecd9df230b402b467dd644e25642534f84c16a2460003"
+    },
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/special_token_embeddings/special_token_embeddings.json",
+      "bytes": 33548,
+      "sha256": "66e8cabc12bef41e0677be6d9613a6321cd8b5158c4dac55081647109c16dfa9"
+    },
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/special_token_embeddings/special_token_embeddings.safetensors",
+      "bytes": 16449720,
+      "sha256": "5bb713ae7e575508822ca2ef6e0a58b12e94e3b311fb0d1d683d539a6821499d"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "artifact": {
+    "asset_id": "four-coordinate-xy-step2444",
+    "config_fingerprint": "89e5af1269c42bdcc28b7175c8c701a4b57673e4b2fa8255c8912ee8800283ae",
+    "data_identity": {
+      "base_model_path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+      "eval_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/val.coord.jsonl",
+      "manifest_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/pipeline_manifest.json",
+      "manifest_sha256": "f8162b91798fd5ac0e5612b5910b93adeb0cace1d9c12bca3fcd92e500bba378",
+      "train_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/train.coord.jsonl"
+    },
+    "embedding_metadata": {
+      "tensor_key": "shared_embed_delta",
+      "tie_word_embeddings": true
+    },
+    "file_count": 4,
+    "logical_bytes": 80371515,
+    "native_manifest": {
+      "status": "absent_at_source_and_target_no_synthetic_manifest_created"
+    },
+    "producer_commit": null,
+    "producer_commit_status": "unknown_run_receipt_has_no_repository_commit",
+    "resolved_config": {
+      "entry_config_path": "/data/CoordExp/.worktrees/8-coords-bbox/configs/coordexp_swift/experiments/4_coords_xy_sorted/prod_sorted_xy.yaml",
+      "path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/resolved_config.json",
+      "sha256": "8c4126e1bce845e8edb1b311515c18a21db5f059c43d98a539b0d142c44b8163",
+      "source_path_hashes_unavailable": true,
+      "source_paths": [
+        "/data/CoordExp/.worktrees/8-coords-bbox/configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1.yaml",
+        "/data/CoordExp/.worktrees/8-coords-bbox/configs/coordexp_swift/experiments/4_coords_xy_sorted/prod_sorted_xy.yaml"
+      ]
+    },
+    "run_id": "qwen3_vl_2b_desc_first_geo_sorted_xy_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1-89e5af1269c4",
+    "run_record": {
+      "completed_steps": 2444,
+      "path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/run.json",
+      "recorded_run_dir": "/data/CoordExp/.worktrees/8-coords-bbox/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_xy_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1-20260804T115832Z",
+      "sha256": "d343cf0b9d1a58b469ae7a1258b8357effcf5e7b194ee091af99b7954956b8e7",
+      "status": "completed"
+    },
+    "source_root": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "source_run_root": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy",
+    "target_root": "/data/CoordExp/outputs/shared/checkpoints/four-coordinate-xy-step2444/payload"
+  },
+  "preservation": {
+    "claim_scope": "Byte and path preservation only; no inference run or model-quality qualification.",
+    "method": "same_filesystem_hardlink_exclusive_no_clobber",
+    "originals_retained": true,
+    "raw_receipt_path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/runtime-assets-step2444-preservation.json",
+    "raw_receipt_sha256": "83ba2bb273d96a770719d0e8797f5ac937b724412612a05606e99fc96bed4686",
+    "status": "PASS_HASH_AND_INODE_VERIFIED"
+  },
+  "purpose": "deliberately selected cross-worktree inference checkpoint payload",
+  "recorded_at_utc": "2026-10-01T19:24:22.028958+00:00",
+  "schema": "coordexp.runtime-asset-provenance.v1",
+  "current_storage": {
+    "original_checkpoint_present": false,
+    "retirement_receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/selected-step2444-original-retirement.json",
+    "retirement_receipt_sha256": "e000e994664a4fc9b6ce40d5a7bd00f1f06fbaf4f21c7ae79645a79eeca288c5",
+    "retained_owner": "/data/CoordExp/outputs/shared/checkpoints/four-coordinate-xy-step2444/payload"
+  }
+}

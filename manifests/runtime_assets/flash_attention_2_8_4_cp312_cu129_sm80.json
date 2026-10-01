@@ -1,0 +1,50 @@
+{
+  "purpose": "Reinstall the locally built native FA2 extension currently installed in ms; not a model or run archive.",
+  "path": "outputs/shared/wheels/flash-attn-2.8.4-cp312-cu129-sm80/flash_attn-2.8.4-cp312-cp312-linux_x86_64.whl",
+  "size_bytes": 233270884,
+  "sha256": "cf3d8246f00bcb3a02e73f344b4cf49a8c4fc59151394a288f86d2e33ea8f8d7",
+  "producer_checkout": "unknown; later storage checkout is not the producer",
+  "original_path": "/data/CoordExp/outputs/environment-upgrades/2026-09-29-ms/wheelhouse/flash_attn-2.8.4-cp312-cp312-linux_x86_64.whl",
+  "flash_attention_source_commit": "e9cf2c1651d2303191eb40a739a3c135fda00999",
+  "build_architecture": "SM80 (A100)",
+  "build_stack": {
+    "torch": "2.13.0+cu129",
+    "flash-attn": "2.8.4"
+  },
+  "python_abi": "cp312",
+  "cuda": "12.9",
+  "native_library_parity": [
+    {
+      "file": "flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so",
+      "bytes": 508735816,
+      "sha256": "1633aef58bab4cb4fa2f8d7b1a25f9930dd3edcd4693ec7c81fcd4cd43bed64b",
+      "matches_installed": true
+    }
+  ],
+  "historical_acceptance": {
+    "path_at_capture": "/data/CoordExp/.worktrees/main-runs/outputs/environment-upgrades/2026-09-29-ms/final-acceptance.json",
+    "sha256": "22a440283a64d281cec720ca0ca8baa70747d2a6317e1d0c7f93ebe2c179ebb0",
+    "accepted_at": "2026-09-29T19:56:51.339612+00:00",
+    "flash_dense_and_varlen": {
+      "status": "pass",
+      "torch": "2.13.0+cu129",
+      "cuda": "12.9",
+      "flash_attn": "2.8.4",
+      "checks": [
+        {
+          "packed": false,
+          "max_abs_error_vs_sdpa": 0.0
+        },
+        {
+          "packed": true,
+          "max_abs_error_vs_sdpa": 0.0
+        }
+      ]
+    },
+    "scope": "Qwen3-VL-2B real-image BF16 DoRA one optimizer step via Accelerate and FA2; HF adapter reload generation; vLLM eager image generation; FA2 dense/varlen forward/backward; 2-GPU NCCL all-reduce. Full-scale training, DeepSpeed distributed training, and vLLM torch.compile/CUDAGraph paths are not tested."
+  },
+  "retained_acceptance_record": {
+    "path": "/data/CoordExp/manifests/runtime_assets/flash-attention-20260929-acceptance/final-acceptance.json",
+    "sha256": "22a440283a64d281cec720ca0ca8baa70747d2a6317e1d0c7f93ebe2c179ebb0"
+  }
+}

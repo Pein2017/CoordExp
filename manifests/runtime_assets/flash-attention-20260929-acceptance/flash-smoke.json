@@ -1,0 +1,16 @@
+{
+  "status": "pass",
+  "torch": "2.13.0+cu129",
+  "cuda": "12.9",
+  "flash_attn": "2.8.4",
+  "checks": [
+    {
+      "packed": false,
+      "max_abs_error_vs_sdpa": 0.0
+    },
+    {
+      "packed": true,
+      "max_abs_error_vs_sdpa": 0.0
+    }
+  ]
+}

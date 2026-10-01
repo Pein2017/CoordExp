@@ -4,6 +4,63 @@ This document owns the storage boundary in this checkout. Research meaning and
 knowledge layout remain owned by `/data/CoordExp/.worktrees/research-probes/research/CONVENTIONS.md`; checkpoint, decoder,
 loss, and evaluation semantics remain with their existing owners.
 
+## Choose the physical owner before writing
+
+`/data/CoordExp/outputs/` is an ignored **shared-asset store**, not the default
+run directory. A branch-owned run uses its owner's physical worktree `outputs/`.
+Infrastructure runs use `/data/CoordExp/.worktrees/coordexp-infras/outputs/`;
+research runs use their retained research worktree. The four retained checkouts
+are listed in [worktree policy](BRANCH_AND_WORKTREE_POLICY.md). The temporary
+main-runs checkout is retired. No worktree is a default legacy destination;
+retain only content with a concrete use and an explicit current owner.
+Research Probes uses `/data/CoordExp/.worktrees/research-probes/outputs/` and keeps
+its scientific summaries in its own `research/` tree. Other branches use their
+own checkout. Resolve `pwd -P`, Git identity and explicit output arguments; a
+relative `outputs/` launched from repository root is **not** branch-local.
+
+Promote only a deliberately selected, long-lived asset that has an explicit
+cross-worktree retention purpose. Another worktree reading a run once does not
+promote that run. Copy the selected checkpoint/JSONL/gallery to a fresh shared
+location, verify every file, and retain producer checkout/commit (or explicitly
+unknown commit plus captured source identity), run, config, data and original
+path in its provenance. A consumer's current HEAD is not the producer. Do not
+copy a whole branch run or retain only a symlink. Never overwrite a destination.
+Update current consumers to the selected destination, verify its bytes, then
+remove the original. Do not keep an old-path symlink or a second historical
+payload tree. Frozen receipts keep their original provenance fields; those
+fields do not make the old filesystem path a supported current input.
+
+Human-authored protocols, reports and interpretation go to existing Git-managed
+document/research owners; maintained scripts/configs go to their source owners.
+A disposable worker message uses task-owned `.local/scratch/`, while a JSON
+transport/run receipt can use that branch's output directory. Do not choose a
+message path by appending `.md` to an artifact root. Generated checkpoint cards
+are package metadata, not research notes; preserve compatibility before changing
+them. Resolved run configs are evidence, not maintained source configurations.
+
+COCO images, annotation sources and published annotation views belong under
+`public_data/coco/`, with their maintained provenance under
+`manifests/public_data_provenance/`. Preserve official raw inputs and the existing
+edited-view semantics. Editor databases, pending drafts, journals, locks,
+sessions and inference caches use the application's explicitly assigned runtime
+owner; the active cross-worktree Gate A service may use a selected shared root.
+They are not substitutes for the published dataset. For this maintenance round,
+the user explicitly defers annotation relocation: Gate A stays at
+`/data/CoordExp/outputs/coco_refinement/gate-a-20260717/`, and existing annotation
+payloads may remain under root outputs until the next public-data migration.
+The retired Label Studio service must not be restarted; its two exported drafts
+remain pending annotations, not published ground truth.
+
+Existing root trees are not retrospectively declared shared. The bounded
+[2026-09-30 migration](../openspec/changes/route-owned-outputs-and-migrate-legacy/design.md)
+records the finite source-to-owner migration. Legacy root run paths are retired
+inputs and forbidden destinations for new training/inference runs. Explicitly
+selected shared checkpoints may be read as inputs; runs never write into the
+root shared-asset store. Close live writers before moving their state, update
+current entrypoints and consumers, verify the destination, and remove old paths.
+Temporary execution blockers must be resolved rather than retained as permanent
+layout exceptions. Moving bytes does not authorize a research rerun.
+
 ## Maintained source and reusable operations
 
 Keep maintained experiment code and tests in `probes/<direction>/`, reusable
@@ -32,12 +89,15 @@ loose `.py`, `.md`, `.sh`, Python bytecode, virtual environments, vendor checkou
 or Git worktrees. Human-authored protocols, interpretation and current status
 belong to their research/document owners, not inside a run directory.
 
-Source captures are evidence, not implementation. Use
-`src.artifacts.source_provenance.preserve_source` for exact source copies outside
-outputs, below this checkout's `docs/history/run-sources/`. It returns a verified
-path for the caller's existing receipt; it does not change scientific admission
-or create a second receipt hierarchy. Include newly used shared dependencies.
-Current runs bind current code. Existing sealed receipts remain immutable.
+Current execution binds maintained Git source and records its commit, exact
+paths/digests and any permitted dirty-source identity in the existing run
+receipt. Do not retain copied executable sources, vendor trees or binary
+payloads in historical directories. Distill useful code into its maintained
+owner before removing obsolete copies. Historical Markdown records may retain
+original locators and interpretation. Existing sealed receipts remain immutable.
+
+Generated, manifest-bound checkpoint README files are package metadata and may
+remain with their owning checkpoint; they are not loose research reports.
 
 Generated PEFT cards are stored losslessly in `adapter/model_card.json` before
 atomic checkpoint publication. This is generated checkpoint metadata, not a place
@@ -49,26 +109,33 @@ Visualization descriptions are generated metadata in `manifest.json` under
 `summary`; `VisualizationResult.summary` returns that text. Renderers do not
 create a separate Markdown report in the output directory.
 
-## Historical recovery is not current execution validation
+## Retire old payloads after recording their identity
 
-The September 21 migration map is
-`/data/CoordExp/docs/history/output-sources/2026-09-21/manifest.json`.
-`python -B -m src.artifacts.source_archive --manifest <map> --source <original>
---sha256 <expected>` verifies and locates original bytes without restoring or
-executing them. `--verify` checks the complete archive.
+Decide whether content is useful before choosing a destination. Retain a payload
+only for an identified current consumer or a specific necessary reproduction
+of a maintained result. A historical path reference, unknown producer, available
+disk space or successful move is not evidence of usefulness. Integrate useful
+implementation into its existing source owner and keep its proportionate checks;
+distill useful conclusions into the existing research/document owner. Remove
+obsolete payloads and redundant copies after verifying those owners. Do not move
+whole legacy families into another ignored directory to call the migration done.
 
-Never replace an old receipt's hashes with today's hashes, resolve a current
-source failure by silently substituting an old snapshot, or infer permission to
-rerun from a preserved command. A reader explicitly consuming a checksum-pinned
-historical packet may verify archived sources; a new run must pass its current
-source checks and receive its own authorization. Recoverability and runnable
-original-context replay are different claims.
+Keep small maintained migration summaries and human interpretation in Git.
+Large per-file machine receipts belong to the maintenance owner's worktree
+outputs. The migration's `inventory.json` locates and hashes the complete raw
+receipt; that receipt records retired paths rather than supporting old-path
+execution. Do not preserve obsolete source or binary trees in `docs/history/`.
 
-Before moving/deleting a source or artifact, verify fresh Git, live consumers and
-holders, source/destination hashes, a recoverable backup, and a source-to-target
-mapping. Preserve original scientific records and unrelated dirty work. Retired
-virtual environments are backups, not runnable relocatable environments; rebuild
-them in an environment-owned location when reuse is separately authorized.
+Never replace a sealed receipt's hashes with today's hashes or silently replace
+its source with a different snapshot. A new run binds current maintained source,
+explicit current inputs and its normal research authorization. Historical Git
+records and Markdown explain past work; they are not default runtime fallbacks.
+
+Before removing an original, verify fresh Git and live holders, the exact
+source-to-target mapping, and destination bytes (or same-filesystem inode
+preservation for opaque data). Preserve scientific records, annotation drafts
+and unrelated dirty work. Do not retain obsolete environments as historical
+backups; use an environment-owned installation when execution is authorized.
 
 ## Closeout check
 
@@ -93,9 +160,8 @@ model-card JSON is separately recorded in `metadata_files`. A source adapter may
 omit a model card. A source Markdown card, when present, is packaged losslessly
 before publishing the new adapter directory.
 
-Reading a preserved version 1 materialization still verifies the actual live
-configuration/tensors and explicitly resolves its old README hash as historical
-metadata through the source archive. It does not claim that a README remains in
-the adapter directory, modify the old receipt, or permit an archive fallback for
-current version 2 metadata. This metadata change does not alter learned tensors,
-optimizer behavior, stage populations or natural evaluation gates.
+Historical version 1 receipts retain their original metadata identities. A
+current consumer uses the migrated checkpoint's actual configuration, tensors
+and packaged metadata; it must not fall back to an old executable archive or a
+retired path. This storage migration does not change learned tensors, optimizer
+behavior, stage populations or natural evaluation gates.

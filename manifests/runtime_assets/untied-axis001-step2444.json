@@ -1,0 +1,81 @@
+{
+  "artifact": {
+    "asset_id": "untied-axis001-step2444",
+    "config_fingerprint": "ed9c6fc6e36c36b3ff9215911befb673cbdea963d71c26cffdd2076bb783b3c1",
+    "data_identity": {
+      "base_model_path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+      "eval_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/val.coord.jsonl",
+      "manifest_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/pipeline_manifest.json",
+      "manifest_sha256": "f8162b91798fd5ac0e5612b5910b93adeb0cace1d9c12bca3fcd92e500bba378",
+      "train_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/train.coord.jsonl"
+    },
+    "embedding_metadata": {
+      "tensor_key": "input_embed_delta",
+      "tie_word_embeddings": false
+    },
+    "file_count": 6,
+    "logical_bytes": 88738129,
+    "native_manifest": {
+      "aggregate_digest": "3b168b98f23f5e42b00b6aa7ad8ca5438767bcb8c05f4cc4ce97087d800e0403",
+      "declared_file_count": 5,
+      "relative_path": "inference_payload_manifest.json",
+      "schema": "coordexp-infras-inference-checkpoint-payload-manifest",
+      "schema_version": 1,
+      "sha256": "ffc3ac18edb5d284e8cad905326eddda13fd4506c90e099cb40b5f85fe1353b5",
+      "status": "present_byte_identical_all_declared_members_verified"
+    },
+    "producer_commit": "365cd55d169e5292b60bb75b672c0a65813df5b0",
+    "producer_commit_status": "available_in_run_provenance",
+    "resolved_config": {
+      "entry_config_path": "/data/CoordExp/outputs/infra_base/untie-axis-20260918-restart1/production.yaml",
+      "path": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/resolved_config.json",
+      "sha256": "22f0ae4b0a04d18ee2fe96409bf6dcd1146b6c4e908ce93f6b6693d98a9baca1",
+      "source_path_hashes_unavailable": true,
+      "source_paths": [
+        "/data/CoordExp/outputs/infra_base/untie-axis-20260918-restart1/production.yaml"
+      ]
+    },
+    "run_id": "qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch-ed9c6fc6e36c",
+    "run_record": {
+      "completed_steps": 2444,
+      "path": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/run.json",
+      "recorded_run_dir": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch",
+      "sha256": "ed93011a6128f102f555c966d80ed3b1ad330eedb5a3c0a525233970173148c7",
+      "status": "completed"
+    },
+    "source_root": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444",
+    "source_run_root": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch",
+    "target_root": "/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444/payload"
+  },
+  "preservation": {
+    "claim_scope": "Byte and path preservation only; no inference run or model-quality qualification.",
+    "method": "same_filesystem_hardlink_exclusive_no_clobber",
+    "originals_retained": true,
+    "raw_receipt_path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/runtime-assets-step2444-preservation.json",
+    "raw_receipt_sha256": "83ba2bb273d96a770719d0e8797f5ac937b724412612a05606e99fc96bed4686",
+    "status": "PASS_HASH_AND_INODE_VERIFIED"
+  },
+  "purpose": "deliberately selected cross-worktree inference checkpoint payload",
+  "recorded_at_utc": "2026-10-01T19:24:22.028958+00:00",
+  "schema": "coordexp.runtime-asset-provenance.v1",
+  "current_storage": {
+    "original_checkpoint_present": false,
+    "retirement_receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/selected-step2444-original-retirement.json",
+    "retirement_receipt_sha256": "e000e994664a4fc9b6ce40d5a7bd00f1f06fbaf4f21c7ae79645a79eeca288c5",
+    "retained_owner": "/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444/payload"
+  },
+  "retained_producer_records": [
+    {
+      "path": "/data/CoordExp/manifests/runtime_assets/untied-axis001-step2444.resolved_config.json",
+      "size_bytes": 6132,
+      "sha256": "22f0ae4b0a04d18ee2fe96409bf6dcd1146b6c4e908ce93f6b6693d98a9baca1",
+      "historical_source_path": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/resolved_config.json"
+    },
+    {
+      "path": "/data/CoordExp/manifests/runtime_assets/untied-axis001-step2444.run.json",
+      "size_bytes": 92229,
+      "sha256": "ed93011a6128f102f555c966d80ed3b1ad330eedb5a3c0a525233970173148c7",
+      "historical_source_path": "/data/CoordExp/.worktrees/main-runs/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/run.json"
+    }
+  ]
+}
