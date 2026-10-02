@@ -6,16 +6,18 @@ status: draft
 authority: active-change
 change: coco-refinement
 domain: data
-summary: Operate the standalone human-only COCO refinement Gate A instance.
+summary: Operate the sole active human-only COCO refinement Gate A editor.
 tags: [data, coco, annotation, standalone, gate-a, runbook]
-updated: 2026-07-18
+updated: 2026-10-01
 ---
 
 # Standalone COCO Refinement Gate A Runbook
 
-This draft operates the human-only Gate A instance from the active
-`coco-refinement` OpenSpec change. It does **not** replace the canonical
-Label Studio V1 runbook or authorize retirement of the legacy workspace.
+Gate A is the sole active COCO refinement editor. The former Label Studio V1
+service is retired; its two pending drafts are preserved separately for human
+recovery and are not imported here. See
+[`COCO_REFINEMENT_RUNBOOK.md`](COCO_REFINEMENT_RUNBOOK.md) for the retired
+editor's recovery notes.
 
 Gate A is a lightweight, build-free FastAPI service with a browser-native
 HTML/CSS/ES-module SVG editor. SQLite stores sparse Drafts only for touched
@@ -44,12 +46,12 @@ The isolated Gate A identity is:
 
 ```text
 URL:          http://localhost:53662/
-runtime root: outputs/coco_refinement/gate-a-20260717
+runtime root: /data/CoordExp/outputs/coco_refinement/gate-a-20260717
 ```
 
 The UI opens on train and provides a train/val split selector. Numeric
-loopback is mandatory; port 8080 is reserved for the untouched legacy
-fallback.
+loopback is mandatory; the retired Label Studio service no longer uses port
+8080.
 
 Gate A now has one fixed direct browser endpoint and does not require a
 separate browser relay:
@@ -93,7 +95,7 @@ use `kill -9` for normal shutdown.
 
 ## Runtime roots and status
 
-All mutable standalone state is below:
+All mutable standalone state currently remains below the existing `outputs/` root:
 
 ```text
 outputs/coco_refinement/gate-a-20260717/
@@ -160,11 +162,22 @@ or poll the displayed batch identity. Do not edit SQLite, queue, journal, or
 working JSONL files by hand, and do not launch a fresh runtime root as a
 substitute for recovery.
 
+The current public-data source hashes differ from the original bootstrap
+contracts. Preserve this complete accepted runtime, including its per-split
+project receipts, publication receipts, journals, and working JSONL, so startup
+can verify the exact published generation. A fresh empty runtime would fail
+the frozen source-hash check; do not relax that check or create a replacement
+runtime to bypass it.
+
 ## Output and materialization status
 
 The current Gate A output is the generation-bound per-split
 `working.norm.jsonl` under the runtime root. It is derived output, not a source
 file, and advances only after terminal Commit success.
+
+Relocating these mutable annotation views out of the current runtime is
+explicitly USER-DEFERRED to the next round. Keep the complete accepted runtime
+at its existing `outputs/coco_refinement/gate-a-20260717` path until then.
 
 Standalone coord materialization is not yet an approved Gate A operator step:
 the active change still requires a representative terminal generation to be
@@ -174,11 +187,10 @@ or claim downstream materialization acceptance from this gate.
 
 ## Known exclusions
 
-Gate A does not include ROI selection or inference; ROI implementation begins
-only after explicit human-loop approval. It also excludes remote/LAN access,
-multiple users or browser writers, masks, polygons, rotated boxes, arbitrary
-classes, Label Studio Draft migration, synchronous publication, and automatic
-promotion into training.
+Gate A does not include ROI selection or inference. It also excludes remote/LAN
+access, multiple users or browser writers, masks, polygons, rotated boxes,
+arbitrary classes, automatic import of the two pending retired Label Studio
+Drafts, synchronous publication, and automatic promotion into training.
 
 ## Protected inputs and fallback
 
@@ -194,7 +206,7 @@ The runtime validates their identities and fails closed on drift. It must not
 rewrite or copy source JSONL or images; each split's `images` entry is a
 managed symlink to the shared image root.
 
-Before standalone acceptance, rollback means stopping port 53662 and returning
-to the unchanged legacy port-8080 workflow documented in
-[COCO_REFINEMENT_RUNBOOK.md](COCO_REFINEMENT_RUNBOOK.md). Do not deactivate,
-rewrite, migrate, or clean up that legacy runtime from this Gate A procedure.
+Gate A owns the active editor route. The retired Label Studio port 8080 is not
+a fallback and must remain unused. Do not restart its Django service or ROI
+model; consult [COCO_REFINEMENT_RUNBOOK.md](COCO_REFINEMENT_RUNBOOK.md) only
+for pending-draft recovery context.
