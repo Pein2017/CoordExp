@@ -1,15 +1,17 @@
 ---
 name: ask-advisor
-description: Consult a native Astra advisor on consequential unresolved research or design decisions that could change the next action. Use for explicit advisor requests or decision-changing uncertainty, not routine status, source lookup, or mandatory review.
+description: Consult a native Astra model for a distinct, read-only second opinion on an unresolved consequential decision. For primary handling of research, design, model/infrastructure reasoning, or mathematical work, follow model routing instead; not routine status or source lookup.
 ---
 
 # Ask Advisor
 
-Use an on-demand native advisor while the lead retains interpretation,
-acceptance and the next assignment. This supports a Sol lead and persistent
-Sol worker without changing either model or adding a persistent Astra task.
-The [agent contract](../../AGENTS.md#model-routing) owns model choice and
-delegation authority; this skill does not grant research or launch permission.
+Use this for a distinct, read-only second opinion on a consequential unresolved
+question. For new decision-bearing reasoning, scientific research/design,
+model-forward or infrastructure reasoning, or mathematical derivations, route
+the primary handling to Astra under the [agent contract](../../AGENTS.md#model-routing);
+do not use an advisor call as a substitute for that default. The lead retains
+user-facing decisions and acceptance. This skill grants no research or launch
+permission.
 For a user-mediated web GPT-Pro consultation, use [ask-pro](../ask-pro/SKILL.md).
 
 ## Decide whether advice changes the work
