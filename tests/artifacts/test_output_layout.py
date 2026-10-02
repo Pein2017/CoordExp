@@ -42,6 +42,26 @@ def _write_native_adapter_payload(root):
     return adapter
 
 
+def _write_legacy_identity_checkpoint(checkpoint):
+    payloads = {
+        "adapter/README.md": b"# Frozen adapter card\n",
+        "adapter/adapter_config.json": b"{}",
+        "adapter/adapter_model.safetensors": b"opaque tensor payload",
+        "special_token_embeddings/special_token_embeddings.json": b"{}",
+        "special_token_embeddings/special_token_embeddings.safetensors": b"opaque token payload",
+    }
+    identity = {}
+    for relative_path, content in payloads.items():
+        path = checkpoint / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        identity[relative_path] = hashlib.sha256(content).hexdigest()
+    (checkpoint / "identity.json").write_text(
+        json.dumps(identity), encoding="utf-8"
+    )
+    return checkpoint / "adapter/README.md"
+
+
 def test_artifacts_are_allowed_but_code_prose_environments_and_bytecode_are_not(tmp_path):
     (tmp_path / "result.json").write_text("{}")
     assert scan_output_root(tmp_path)["passed"]
@@ -188,6 +208,88 @@ def test_nested_native_adapter_directory_symlink_is_rejected(tmp_path):
             "reason": "manifest_bound_adapter_symlink",
         }
     ]
+
+
+def test_exact_legacy_identity_bound_adapter_readme_is_allowed(tmp_path):
+    readme = _write_legacy_identity_checkpoint(tmp_path / "checkpoint-17")
+
+    result = scan_output_root(tmp_path)
+
+    assert result["passed"]
+    assert result["findings"] == []
+
+
+def test_legacy_identity_adapter_directory_symlink_is_rejected(tmp_path):
+    checkpoint = tmp_path / "checkpoint-17"
+    readme = _write_legacy_identity_checkpoint(checkpoint)
+    adapter = readme.parent
+    for path in adapter.iterdir():
+        path.unlink()
+    adapter.rmdir()
+    adapter.symlink_to(tmp_path.parent, target_is_directory=True)
+
+    result = scan_output_root(tmp_path)
+
+    assert not result["passed"]
+    assert result["findings"] == [
+        {
+            "path": str(adapter),
+            "reason": "identity_bound_adapter_symlink",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "readme_hash_drift",
+        "traversal_identity_key",
+        "malformed_digest",
+        "readme_symlink",
+        "identity_symlink",
+        "invalid_native_manifest",
+        "adjacent_model_card",
+        "wrong_checkpoint_name",
+    ],
+)
+def test_legacy_identity_exception_fails_closed(tmp_path, mutation):
+    checkpoint = tmp_path / "checkpoint-17"
+    readme = _write_legacy_identity_checkpoint(checkpoint)
+    identity_path = checkpoint / "identity.json"
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+
+    if mutation == "readme_hash_drift":
+        readme.write_bytes(readme.read_bytes() + b"changed\n")
+    elif mutation == "traversal_identity_key":
+        identity["../outside.md"] = "0" * 64
+        identity_path.write_text(json.dumps(identity), encoding="utf-8")
+    elif mutation == "malformed_digest":
+        identity["adapter/README.md"] = "g" * 64
+        identity_path.write_text(json.dumps(identity), encoding="utf-8")
+    elif mutation == "readme_symlink":
+        external = tmp_path / "external.md"
+        external.write_bytes(readme.read_bytes())
+        readme.unlink()
+        readme.symlink_to(external)
+    elif mutation == "identity_symlink":
+        external = tmp_path / "identity-copy.json"
+        external.write_bytes(identity_path.read_bytes())
+        identity_path.unlink()
+        identity_path.symlink_to(external)
+    elif mutation == "invalid_native_manifest":
+        (checkpoint / "inference_payload_manifest.json").write_text(
+            "{", encoding="utf-8"
+        )
+    elif mutation == "adjacent_model_card":
+        (checkpoint / "adapter/model_card.json").write_text("{}", encoding="utf-8")
+    elif mutation == "wrong_checkpoint_name":
+        checkpoint.rename(tmp_path / "other-name")
+        readme = tmp_path / "other-name/adapter/README.md"
+
+    result = scan_output_root(tmp_path)
+
+    assert not result["passed"]
+    assert any(Path(item["path"]) == readme for item in result["findings"])
 
 
 @pytest.mark.parametrize(

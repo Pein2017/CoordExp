@@ -98,6 +98,10 @@ original locators and interpretation. Existing sealed receipts remain immutable.
 
 Generated, manifest-bound checkpoint README files are package metadata and may
 remain with their owning checkpoint; they are not loose research reports.
+The checker also accepts the exact five-file legacy `checkpoint-N/identity.json`
+inventory when its regular adapter README matches the recorded hash. It rejects
+symlinked components and does not bypass a present native payload manifest.
+This is a placement exception, not tensor-integrity or model qualification.
 
 Generated PEFT cards are stored losslessly in `adapter/model_card.json` before
 atomic checkpoint publication. This is generated checkpoint metadata, not a place
