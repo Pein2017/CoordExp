@@ -662,6 +662,35 @@ def readback(path, output, expected_sha):
     return result
 
 
+def live_phase_group(group):
+    """Linux process state, restricted to this phase's new session/group."""
+    assert group > 1
+    live=[]
+    for path in Path('/proc').glob('[0-9]*/stat'):
+        try: fields=path.read_text().rsplit(')',1)[1].split()
+        except (FileNotFoundError,ProcessLookupError): continue
+        if int(fields[2])==group and int(fields[3])==group and fields[0] not in ('Z','X'):
+            live.append(int(path.parent.name))
+    return live
+
+
+def cleanup_phase_group(process, deadline):
+    kill_at=(time.monotonic()+deadline)/2  # Reserve half the remaining budget for KILL/drain.
+    def send(sig):
+        try: os.killpg(process.pid,sig)
+        except ProcessLookupError: pass
+    if live_phase_group(process.pid): send(signal.SIGTERM)
+    killed=False
+    while True:
+        process.poll()  # Reap the leader; its exit does not establish group completion.
+        if not live_phase_group(process.pid): return True
+        now=time.monotonic()
+        if now>=deadline: return False
+        if now>=kill_at and not killed:
+            send(signal.SIGKILL); killed=True
+        time.sleep(min(.1,deadline-now))
+
+
 def package(path, output, expected_sha):
     c=entry(path,output,expected_sha,PHASES[0])
     output.mkdir(parents=True,exist_ok=False)
@@ -672,14 +701,17 @@ def package(path, output, expected_sha):
         with (output/f'{phase}.log').open('w') as log:
             process=subprocess.Popen(command,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             try:
-                code=process.wait(timeout=1830)
+                code=process.wait(timeout=c['bounds']['phase_seconds'])
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid,signal.SIGTERM)
-                try: process.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid,signal.SIGKILL); process.wait()
                 code=124
-        outcomes.append(dict(phase=phase,command=command,exit=code))
+            cleanup_deadline=time.monotonic()+c['bounds']['cleanup_seconds']
+            drained=True
+            if live_phase_group(process.pid):
+                code=code or 125  # A successful leader with live descendants is partial.
+                drained=cleanup_phase_group(process,cleanup_deadline)
+            if not drained: code=code or 125
+        outcomes.append(dict(phase=phase,command=command,exit=code,owned_group_drained=drained,
+            active_timeout_seconds=c['bounds']['phase_seconds'],cleanup_timeout_seconds=c['bounds']['cleanup_seconds']))
         b.write(output/f'package-status-{len(outcomes)}.json',dict(status='partial' if code else 'unreviewed',phases=outcomes))
         if code: raise RuntimeError(f'{phase} failed ({code}); preserve partial evidence, no replacement')
     readback(path,output,expected_sha)

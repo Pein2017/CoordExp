@@ -2,8 +2,11 @@
 import copy
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
+import signal
+import time
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -285,3 +288,112 @@ def test_phase_order_denominators_and_no_error_replacement(prepared):
     commands=x.phase_commands('manifest','output')
     assert [c[3] for c in commands]==['native','train','native','train','native']
     assert [c[-1] for c in commands]==['anchor','R-single','R-single','R-multiple','R-multiple']
+
+
+@pytest.mark.parametrize('parent_exit,timeout', [(0,True),(7,False),(0,False)])
+def test_package_drains_owned_descendant_after_parent_exit(tmp_path,monkeypatch,parent_exit,timeout):
+    # Real CPU descendant ignores TERM. Simulated clock verifies30s without waiting30s.
+    popen=subprocess.Popen; killpg=os.killpg; sleep=time.sleep
+    processes=[]; waits=[]; signals=[]; clock=[0.]
+    pid_file=tmp_path/'child.pid'
+    child_code='''import os,signal,time,sys
+pid=os.fork()
+if pid==0:
+    signal.signal(signal.SIGTERM,signal.SIG_IGN)
+    with open(sys.argv[1],'w') as f: f.write(str(os.getpid()))
+    while True: time.sleep(1)
+else:
+    while not os.path.exists(sys.argv[1]): time.sleep(.01)
+    os._exit(int(sys.argv[2]))
+'''
+    outsider=popen(['python','-c','import time; time.sleep(60)'],start_new_session=True)
+    def live(pid):
+        try: return Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()[0] not in ['Z','X']
+        except FileNotFoundError: return False
+    def launch(command,**kwargs):
+        assert kwargs['start_new_session'] is True
+        process=popen(['python','-c',child_code,str(pid_file),str(parent_exit)],**kwargs)
+        processes.append(process)
+        def wait(timeout=None):
+            waits.append(timeout)
+            code=process.wait(timeout=3)  # Bounded test setup, leader settles before cleanup.
+            if len(waits)==1 and timeout_simulated:
+                raise subprocess.TimeoutExpired(command,timeout)
+            return code
+        timeout_simulated=timeout
+        return SimpleNamespace(pid=process.pid,wait=wait,poll=process.poll)
+    def send(group,sig):
+        signals.append((group,sig,clock[0])); killpg(group,sig)
+    def tick(seconds):
+        clock[0]+=min(5,seconds*50); sleep(.02)
+    monkeypatch.setattr(x,'entry',lambda *a:dict(bounds=x.BOUNDS))
+    monkeypatch.setattr(x.subprocess,'Popen',launch)
+    monkeypatch.setattr(x.os,'killpg',send)
+    monkeypatch.setattr(x.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(x.time,'sleep',tick)
+    monkeypatch.setattr(x,'readback',lambda *a:pytest.fail('partial package reached readback'))
+    output=tmp_path/'package'
+    try:
+        with pytest.raises(RuntimeError,match='preserve partial evidence'):
+            x.package(tmp_path/'manifest',output,'CPU')
+        child=int(pid_file.read_text())
+        assert not live(child), 'owned live descendant survived parent settlement'
+        assert waits[0]==1800
+        assert len(processes)==1, 'orphaned success advanced to another phase'
+        assert [sig for _,sig,_ in signals]==[signal.SIGTERM,signal.SIGKILL]
+        assert all(group==processes[0].pid for group,_,_ in signals)
+        assert signals[-1][2]-signals[0][2]<30 and clock[0]-signals[0][2]<=30
+        assert outsider.poll() is None, 'unrelated group was touched'
+        receipt=x.b.load(output/'package-status-1.json')
+        assert receipt['status']=='partial' and receipt['phases'][0]['owned_group_drained'] is True
+        assert receipt['phases'][0]['active_timeout_seconds']==1800
+        assert receipt['phases'][0]['cleanup_timeout_seconds']==30
+        assert receipt['phases'][0]['exit']==(124 if timeout else parent_exit or 125)
+    finally:
+        for process in processes+[outsider]:
+            try: killpg(process.pid,signal.SIGKILL)
+            except ProcessLookupError: pass
+            process.wait(timeout=3)
+
+
+def test_package_cleanup_deadline_fail_closed(tmp_path,monkeypatch):
+    clock=[0.]; signals=[]; waits=[]; launched=[]
+    def wait(timeout): waits.append(timeout); return 7
+    process=SimpleNamespace(pid=123456789,wait=wait,poll=lambda:7)
+    monkeypatch.setattr(x,'entry',lambda *a:dict(bounds=x.BOUNDS))
+    monkeypatch.setattr(x.subprocess,'Popen',lambda *a,**k:launched.append(k) or process)
+    monkeypatch.setattr(x,'live_phase_group',lambda group:[group+1])
+    monkeypatch.setattr(x.os,'killpg',lambda group,sig:signals.append((group,sig,clock[0])))
+    monkeypatch.setattr(x.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(x.time,'sleep',lambda seconds:clock.__setitem__(0,clock[0]+1))
+    monkeypatch.setattr(x,'readback',lambda *a:pytest.fail('undrained group reached readback'))
+    output=tmp_path/'package'
+    with pytest.raises(RuntimeError,match='preserve partial evidence'):
+        x.package(tmp_path/'manifest',output,'CPU')
+    assert waits==[1800] and len(launched)==1 and clock[0]==30
+    assert signals==[(process.pid,signal.SIGTERM,0),(process.pid,signal.SIGKILL,15)]
+    receipt=x.b.load(output/'package-status-1.json')
+    assert receipt['status']=='partial' and receipt['phases'][0]['owned_group_drained'] is False
+
+
+def test_package_completed_group_and_zombies(tmp_path,monkeypatch):
+    proc=tmp_path/'proc'; proc.mkdir()
+    def stat(pid,state,group,session):
+        folder=proc/str(pid); folder.mkdir()
+        (folder/'stat').write_text(f'{pid} (name with ) bracket) {state} 1 {group} {session} 0\n')
+    stat(101,'Z',100,100); stat(102,'S',100,100)
+    stat(103,'S',100,999); stat(104,'S',999,999)
+    original_path=x.Path
+    monkeypatch.setattr(x,'Path',lambda path:proc if path=='/proc' else original_path(path))
+    assert x.live_phase_group(100)==[102]
+    (proc/'102/stat').write_text('102 (child) Z 1 100 100 0\n')
+    assert x.live_phase_group(100)==[]
+    waits=[]; readbacks=[]
+    monkeypatch.setattr(x,'entry',lambda *a:dict(bounds=x.BOUNDS))
+    monkeypatch.setattr(x.subprocess,'Popen',lambda *a,**k:SimpleNamespace(pid=100,wait=lambda timeout:waits.append(timeout) or 0))
+    monkeypatch.setattr(x.os,'killpg',lambda *a:pytest.fail('completed group was signaled'))
+    monkeypatch.setattr(x,'readback',lambda *a:readbacks.append(a))
+    output=tmp_path/'package'
+    x.package(tmp_path/'manifest',output,'CPU')
+    assert waits==[1800]*5 and len(readbacks)==1
+    assert all(x.b.load(output/f'package-status-{i}.json')['status']=='unreviewed' for i in range(1,6))
