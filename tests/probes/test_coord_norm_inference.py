@@ -110,8 +110,9 @@ def test_actual_persisted_score_rejects_resigned_wrong_group(tmp_path):
             directory=root/f'rank-{rank}';directory.mkdir(parents=True)
             artifacts={}
             for index,i in enumerate(group):
-                row=c.online.seal(dict(inputs[i],token_ids=[],text='',generated_tokens=0,
-                    stop_reason='length',generation_rank=rank,generation_batch_index=index),producer)
+                row=c.online.seal(dict(inputs[i],token_ids=[9],text='<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_0|><|coord_0|><|coord_999|><|coord_999|><|box_end|><|im_end|>',generated_tokens=1,
+                    stop_reason='im_end',generation_rank=rank,generation_batch_index=index),producer)
+                if condition=='reference':row=c.online.seal(dict(row,arm='greedy'),producer)
                 c.write(directory/f'{i}.json',row);artifacts[f'{i}.json']=c.online.p.digest(directory/f'{i}.json')
             policy=dict(mode=condition,identity='fixed',calls=1,coordinate_tokens=1000,
                 coordinate_ids=list(range(1000)),norm_min=1.,norm_max=2.,median_norm=1.,factor_min=.5,factor_max=1.,

@@ -168,7 +168,9 @@ def score(contract_path, output):
             validate_policy(policy, condition, contract)
             local = [row for row in rows if row['generation_rank'] == rank]
             assert [row['image_id'] for row in sorted(local, key=lambda x:x['generation_batch_index'])] == group
-        frozen[key] = rows
+        # The existing whole-image scorer requires arm metadata; raw acquisition stays immutable.
+        assert all('arm' not in row or row['arm'] == 'greedy' for row in rows)
+        frozen[key] = [dict(row, arm='greedy') for row in rows]
     for rank in range(8):
         receipt = load(output / f'rank-{rank}/complete.json')
         assert receipt['status'] == 'complete' and receipt['rank'] == rank
@@ -188,6 +190,7 @@ def score(contract_path, output):
         disabled_token_drift_image_ids=[a['image_id'] for a,b in zip(sorted(old,key=lambda r:r['image_id']),
             sorted(frozen['zero'],key=lambda r:r['image_id'])) if a['token_ids'] != b['token_ids']],
         matcher='class-agnostic cardinality-first IoU>=.5 one-to-one, then exact-description agreement',
+        scorer_projection='In-memory arm=greedy for existing whole-image parser; raw/producer/policy bytes unchanged',
         scope='One fixed-checkpoint policy contrast; no training or norm-origin causal claim'))
     write(output / 'readback.json', dict(status='complete', requests=36,
         tokens=sum(r['generated_tokens'] for rows in frozen.values() for r in rows),
