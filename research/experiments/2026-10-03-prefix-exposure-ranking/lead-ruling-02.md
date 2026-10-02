@@ -67,3 +67,20 @@ The next decision should distinguish those alternatives in the saved outputs
 before spending more model compute or interpreting all known-owner losses as
 missing entities. That work requires its own bounded unit and new execution
 worker; this package has no remaining launch authority.
+
+## Secondary saved-output diagnosis
+
+After the primary contrast closed, an Astra read-only analysis and direct lead
+recalculation compared saved token arrays. The descriptive readback is
+`lead-secondary-readback-01.json` at the same execution-local root. Both trained
+arms visit0/10 frozen contexts; anchor visits only the7511 original. Every one
+of the36 image/arm comparisons first diverges from anchor at generated position
+4–26, always coordinate-to-coordinate. Thus the endpoint natural trajectories
+do not demonstrate arrival at, then local repair of, these exact tested contexts.
+This does not identify which early change caused a later owner transition.
+
+Update2's pre-update HF telemetry, after exactly one optimizer step, already
+has margins1.125–1.625 for all six training views in both arms. The later margin
+near13 motivates a future fixed short-dose contrast, but early native repair
+and owner preservation remain unmeasured. This secondary analysis acquired no
+model outputs and does not alter the released primary contrast or its acceptance.
