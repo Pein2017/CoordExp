@@ -1,0 +1,29 @@
+{
+  "unit_id": "2026-10-03-matched-coordinate-branches",
+  "lifecycle": "planned",
+  "status": "CPU_PREPARATION_AUTHORIZED",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
+  "state_source": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
+  "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+  "worker_thread": "01a0fe2f-429e-7f12-a030-f65c47586256",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "predecessor": "2026-10-03-greedy-prefix-branching",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02",
+  "execution_checkout": null,
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "not_authorized": [
+    "worker scheduling a separate research unit",
+    "rewriting round01 or other historical receipts",
+    "GT-based candidate selection or new ranking calls",
+    "unreleased native execution",
+    "publication or unrelated workload interference"
+  ],
+  "job_state": "CPU preparation active; no model/native invocation.",
+  "boundary": "Autonomous lead-selected round02. Same four prefixes and frozen native-ranked alternatives; equal supplied-prefix request path and two planned repeats per condition. Round01 HOLD remains immutable. Native release follows lead CPU acceptance without another user approval.",
+  "worker_settings_verified": true
+}
