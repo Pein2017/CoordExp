@@ -215,3 +215,17 @@ def test_persisted_readback_and_offline_accept_then_reject_resigned_rollout_drif
             receipt_path.write_text(online.p.canonical(receipt) + '\n')
         with pytest.raises(ValueError, match='saved rollout assignment'):
             online.offline(output, root, 2, **kwargs)
+
+
+def test_global_records_route_to_ordered_learner_subsets_and_reject_corruption():
+    rows = [dict(image_id=i) for i in reversed(range(18))]
+    for rank in (0, 7):
+        local = list(range(18))[rank::8]
+        assert [row['image_id'] for row in route_records(rows, local)] == local
+    assert [row['image_id'] for row in route_records(rows, [16, 0, 8])] == [16, 0, 8]
+    for corrupted in (rows[:-1], rows + [rows[-1]], rows + [rows[0]], rows + [None], rows + [{}], rows + [{'image_id': True}]):
+        with pytest.raises(ValueError):
+            route_records(corrupted, [0, 8, 16])
+    for local in ([0, 0], [True], [19]):
+        with pytest.raises(ValueError):
+            route_records(rows, local)

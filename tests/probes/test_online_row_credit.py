@@ -1392,7 +1392,15 @@ class OnlineCreditTest(unittest.TestCase):
         cases=[('treatment',None,True,rank,'equal',1) for rank in (0,7)]
         self.resident_cases(cases,identity_events=True,completion_weighting='restored_M_mass',base=base)
 
-    def resident_cases(self, cases, identity_events=False, completion_weighting=None, base=None):
+    def test_balanced_resident_global18_reaches_fixed_rank0_learner(self):
+        self.resident_cases([('treatment',None,True,0,'equal',2)],identity_events=True,
+                            completion_weighting='restored_M_mass',balanced_boundary=True)
+
+    def test_balanced_resident_global18_reaches_fixed_rank7_learner(self):
+        self.resident_cases([('treatment',None,True,7,'equal',2)],identity_events=True,
+                            completion_weighting='restored_M_mass',balanced_boundary=True)
+
+    def resident_cases(self, cases, identity_events=False, completion_weighting=None, base=None, balanced_boundary=False):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
@@ -1420,7 +1428,7 @@ class OnlineCreditTest(unittest.TestCase):
                 self.receipts.append(dict(operation='generate',identity=identity))
                 version=sum(x['operation']=='generate' for x in self.receipts)-1;generations.append(version)
                 records=current(version);by={x['request_id']:x for x in records}
-                return [SimpleNamespace(token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
+                return [SimpleNamespace(request_id=x.request_id,token_ids=by[x.request_id]['token_ids'],stop_reason=by[x.request_id]['stop_reason'],raw_logprobs=None) for x in requests]
             def close(self):pass
         for arm,device_failure,completion,rank,guard_case,updates in cases:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
@@ -1429,6 +1437,16 @@ class OnlineCreditTest(unittest.TestCase):
                       self.identity_qualifier(root,checkpoint) if identity_events else
                       self.containment_qualifier(root,checkpoint) if guarded else
                       self.recall_qualifier(root,checkpoint) if completion else self.correction_qualifier(root,checkpoint))
+                if balanced_boundary:
+                    from probes.full_label_fit.recipe import full_label_recipe
+                    from probes.full_label_fit.experiment import decoder_runtime_identity
+                    from probes.full_label_fit.rollout import POLICY
+                    qual['correction']=full_label_recipe(checkpoint,'manifest',o.RETAINED,'manifest',rollout_policy=POLICY)
+                    qual.pop('evaluator_sha256',None)
+                    qual['input_manifest']=dict(path=str(root/'input-manifest.json'),sha256='manifest')
+                    qual['sha256']={str(path):'manifest' for path in (o.INPUTS,o.RETAINED,o.p.POLICY,root/'input-manifest.json')}
+                    qual['decoder_runtime_identity']=decoder_runtime_identity()
+                    qual['pairs']={'2':{'treatment':str(root/'balanced-run')}}
                 output=Path(qual['pairs'][str(updates)][arm]);directory=output/f'rank-{rank}';directory.mkdir(parents=True)
                 q=SimpleNamespace(model=Tiny(),base_model_path='/base',processor=self.q.processor,tokenizer=self.t,token_identity=self.q.token_identity)
                 delta=SimpleNamespace(delta_tensors=lambda:dict(input=q.model.embed_tokens.shared_embed_delta,output=q.model.lm_head.shared_embed_delta))
@@ -1462,7 +1480,16 @@ class OnlineCreditTest(unittest.TestCase):
                             target[1]['startup']['device']['physical']=copy.deepcopy(target[0]['request']['parent']['physical'])
                     elif isinstance(value,list):
                         producer=value[0]['producer'];all_records={x['image_id']:o.seal(x,producer) for x in current(producer['update'])}
-                        for j in range(8):target[j]=[all_records[i] for i in sorted(all_records)[j::8]]
+                        if balanced_boundary:
+                            from probes.full_label_fit.rollout import build_assignment
+                            assignment=build_assignment(sorted(all_records),{x['image_id']:len(x['prompt_token_ids']) for x in inputs},None,0)
+                            for j,row in enumerate(assignment['ranks']):
+                                ids=row['image_ids'];target[j]=[]
+                                for index,i in enumerate(ids):
+                                    target[j].append(dict(all_records[i],generation_rank=j,generation_batch_index=index,
+                                        generation_batch_size=len(ids),generation_batch_image_ids=ids))
+                        else:
+                            for j in range(8):target[j]=[all_records[i] for i in sorted(all_records)[j::8]]
                         target[rank]=value
                     else:
                         for j in range(8):target[j]=value
@@ -1491,15 +1518,33 @@ class OnlineCreditTest(unittest.TestCase):
                      patch('torch.cuda.max_memory_allocated',return_value=0),patch('torch.cuda.max_memory_reserved',return_value=0),
                      patch('src.qwen.vllm_rollout.VllmDoraRollout',Rollout),patch.object(torch.optim,'AdamW',Optimizer),
                      patch.object(o,'forward',side_effect=consume),patch.dict('os.environ',{'LOCAL_RANK':str(rank)})]
+                if balanced_boundary:
+                    def learner_boundary(model, jobs, replay):
+                        local=sorted(x['image_id'] for x in self.images)[rank::8]
+                        self.assertEqual([x['image_id'] for x in jobs if x['branch']=='trace'],local)
+                        self.assertTrue(all(x['weight']==8/18 for x in jobs))
+                        self.assertEqual(sum(x['sync'] for x in jobs),1)
+                        saved=[x.args[1]['image_id'] for x in write.call_args_list
+                               if x.args[0].parent==output/'rollout-0'/f'rank-{rank}' and x.args[0].name!='complete.json']
+                        self.assertEqual(saved,local)
+                        self.assertEqual(optimizers[0].steps,0)
+                        raise RuntimeError('balanced learner boundary reached')
+                    contexts.extend([patch('probes.full_label_fit.experiment.verify_inputs'),
+                                     patch.object(o.r,'accumulate_family_step',side_effect=learner_boundary)])
                 with ExitStack() as stack:
                     for context in contexts:stack.enter_context(context)
                     call=lambda:o.run(output,root,updates,geometry_weight=.1,start_checkpoint=checkpoint,recipe_sha256=o.identity(qual['correction']),correction_arm=arm,
-                        duplicate_weight=weight,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False)
-                    if device_failure:
+                        duplicate_weight=weight,rollout_backend='vllm',schema_geometry=True,activation_checkpointing=False,full_label_region=balanced_boundary)
+                    if balanced_boundary:
+                        with self.assertRaisesRegex(RuntimeError,'balanced learner boundary reached'):call()
+                    elif device_failure:
                         with self.assertRaises(ValueError):call()
                     elif guarded and guard_case not in ('equal','R211'):
                         with self.assertRaisesRegex(RuntimeError,'containment-stop'):call()
                     else:call()
+                if balanced_boundary:
+                    self.assertEqual(generations,[0]);self.assertEqual(seen,[])
+                    continue
                 if device_failure:
                     self.assertEqual(optimizers[0].steps,0);self.assertEqual(seen,[])
                     self.assertFalse(any(x.args[0].name=='producer-0.json' for x in write.call_args_list))

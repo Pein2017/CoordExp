@@ -130,17 +130,19 @@ def align_results(requests, results):
 
 
 def route_records(records, learner_image_ids):
-    """Restore inference results to the pre-existing learner image partition."""
+    """Select the learner partition, in its existing order, from global results."""
     expected = list(learner_image_ids)
-    if len(expected) != len(set(expected)):
-        raise ValueError('learner image IDs must be unique')
+    if any(type(image_id) is not int for image_id in expected) or len(expected) != len(set(expected)):
+        raise ValueError('learner image IDs must be unique integers')
     by_id = {}
     for record in records:
+        if not isinstance(record, Mapping):
+            raise ValueError('generated rollout records must be mappings')
         image_id = record.get('image_id')
         if type(image_id) is not int or image_id in by_id:
             raise ValueError('generated rollout records have duplicate or invalid image IDs')
         by_id[image_id] = record
-    if set(by_id) != set(expected):
+    if not set(expected).issubset(by_id):
         raise ValueError('generated rollout coverage differs from learner partition')
     return [by_id[image_id] for image_id in expected]
 
