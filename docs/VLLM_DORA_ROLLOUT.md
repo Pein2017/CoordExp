@@ -129,5 +129,7 @@ Eight-rank, full 3,084-token acquisition and the research loss itself remain
 the owning experiment's fresh qualification, not claims of this bounded smoke.
 
 Results and accepted launch limits are recorded in
-`/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/`.
-The lead's bounded infrastructure acceptance is `final-acceptance.json` there.
+`/data/CoordExp/.worktrees/research-probes/outputs/runtime/vllm-dora-20260929/`.
+The lead's bounded infrastructure acceptance is Git-managed at
+`/data/CoordExp/.worktrees/research-probes/research/evidence/vllm-dora-runtime-20260929/final-acceptance.json`.
+Original producer identities and the limits of this historical smoke are unchanged.

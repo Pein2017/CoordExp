@@ -1,0 +1,35 @@
+{
+  "status": "passed",
+  "model_calls": 0,
+  "producer": {
+    "path": "/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/recurrence_local_prefix_phase.py",
+    "sha256": "04ff7a04b4532954eb2f01259f66660ba89851301104d78510e5c1014145e58e",
+    "size_bytes": 43618
+  },
+  "cells": {
+    "query_only": {
+      "stale_before": true,
+      "actual_caller_after": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+        "sha256": "3f0b0e2dcff98e112689672c506266c4f043ccf60e5daff45454e2a38d4e6a33",
+        "size_bytes": 8553657
+      }
+    },
+    "identity_recompute": {
+      "stale_before": true,
+      "actual_caller_after": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+        "sha256": "3cb4a6620ddee8c4cacab1c78c11f832fafde20c2a814f5156db3e4eb5ffbf45",
+        "size_bytes": 14016257
+      }
+    },
+    "prefix_coherent": {
+      "stale_before": true,
+      "actual_caller_after": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+        "sha256": "38d3354455f9b735cf46ffededba3a5b412a2d955505ef1acc544f1174f87b14",
+        "size_bytes": 14016257
+      }
+    }
+  }
+}

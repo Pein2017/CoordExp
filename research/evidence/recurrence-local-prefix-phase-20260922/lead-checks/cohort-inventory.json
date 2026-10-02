@@ -1,0 +1,1193 @@
+{
+  "status": "lead-verified-saved-inventory",
+  "source_order": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/event-selection-order.json",
+    "sha256": "99773c98267209b31ddcba03742adf03867a3afd1447aa407aca3438a4fe9c6e",
+    "size_bytes": 1911
+  },
+  "adapter": "/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444/adapter",
+  "counts": {
+    "images": 145,
+    "complete_rows": 2607,
+    "prior_exact_later_rows": 1358,
+    "repeat_images": 9,
+    "consecutive_repeated_later_rows": 1336,
+    "repeat_runs": 61,
+    "im_end": 141,
+    "length": 4
+  },
+  "sources": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-00/receipt.json",
+      "sha256": "22567e98c84e7ac66ba4262b098fbad74a2b103f06be5e7b8dd6eb9daba4b134",
+      "size_bytes": 188707
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-00/raw.json",
+      "sha256": "82299ea14a0203f50c93d27dbb8b28cdac78d475e96e698721cc7c5719cc6d81",
+      "size_bytes": 16589
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-00/trace.json",
+      "sha256": "25897bc4e352b2975d0b9567d6c044d403a68c6de91ae16dc81ab4bf02169d42",
+      "size_bytes": 344123
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-01/receipt.json",
+      "sha256": "e19bb4c5f11265aaea918ca61b28eef3abbfd2c3cea20faad5459f550c84b5bc",
+      "size_bytes": 188362
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-01/raw.json",
+      "sha256": "a75b629267aaf6fd213cda72f116a8952d092f17dd737f0b0a096a86034dd312",
+      "size_bytes": 4275
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-01/trace.json",
+      "sha256": "e33e65c117ead010c16a57cc81b422b69d0b145609d8eb5d7d79784085034adf",
+      "size_bytes": 74736
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-02/receipt.json",
+      "sha256": "a16a16ed6570867df7a1280e170e54f7699124f499c35042bd5703a24abb618d",
+      "size_bytes": 188872
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-02/raw.json",
+      "sha256": "d79f0ae526d34fac06089c96583976d186fdbe5a72503c0a54d4cce116e4d6da",
+      "size_bytes": 4796
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-02/trace.json",
+      "sha256": "c173c61f0f69ab1961b4609d8202862f0792e75e836d5d09f2228eafe0702a6b",
+      "size_bytes": 71527
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-03/receipt.json",
+      "sha256": "5d7598d42a41e708f915c0ab3ad034c498d2b12a1c378f8001e0f33cca5f9397",
+      "size_bytes": 188364
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-03/raw.json",
+      "sha256": "9f4b218bfe275d6ab0e35745110b866f24e38cdd1f8c3000baea5259363af775",
+      "size_bytes": 6378
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-03/trace.json",
+      "sha256": "a3d470bc3d32a6f4717f7cff85b2c388f3d903a743cb075e4aa293354673ebdf",
+      "size_bytes": 162230
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/receipt.json",
+      "sha256": "f011b6e0a3513f5a66b9596eb034345ec208af5b64c05c1029bc4638f867220e",
+      "size_bytes": 186441
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/raw.json",
+      "sha256": "312856ccac49ae2f084174d6658494e2c88c0501e91b660eedcea48ec2c85bda",
+      "size_bytes": 3958
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-04/trace.json",
+      "sha256": "6322c205edf9a87e4dd6b9c736e9000c50b536b6cffc209d2f4de21a33919137",
+      "size_bytes": 52007
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-05/receipt.json",
+      "sha256": "9a4545ce6b2dd6577f9535c78b74e21173be0acd026faa21637e846e74337ce6",
+      "size_bytes": 187946
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-05/raw.json",
+      "sha256": "14e8875d1033ec77350362b968c8283dd054c26c842a0085b566201183d2da3a",
+      "size_bytes": 10461
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-05/trace.json",
+      "sha256": "b826e5748467503e8a05cd40bc57f0feb3f69391b7f58a85004bf5d39b225f1f",
+      "size_bytes": 194774
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/receipt.json",
+      "sha256": "23c43469d7f52bdf040291688063d151ffc6140eed987825542ecd2229813353",
+      "size_bytes": 189041
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/raw.json",
+      "sha256": "e727f0083d183c80a28e6ba14b94b705e2a633474ab5d4e43b74a262f75a9a8b",
+      "size_bytes": 90374
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-06/trace.json",
+      "sha256": "ab94cb74cf87f6ea96ada0d5f9e5f3ea1023db2b472e0cd117b76c53e2db8f16",
+      "size_bytes": 3283478
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-07/receipt.json",
+      "sha256": "c49dfbd5e9463730c194083015d0428c4d031f4161ad344c6229d6ec623b6ff6",
+      "size_bytes": 188684
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-07/raw.json",
+      "sha256": "f3dbccbd7f8deceda3cebaa152427c9a5d2152afe2be44ea3b355f26c89c8c9f",
+      "size_bytes": 6619
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-07/trace.json",
+      "sha256": "fb0b2be604d47747843aed8e224e00792ad9ccfca05578fb357485bf4a3ca72f",
+      "size_bytes": 131000
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-08/receipt.json",
+      "sha256": "456942035b153d9f6204decb9d41a076cfc0eb87f66b517e3ec33516544048f8",
+      "size_bytes": 188492
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-08/raw.json",
+      "sha256": "afc34e8a0079545727b2ce61ab79fff3b277788f72a99655834e823a7b67ffcc",
+      "size_bytes": 5153
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-08/trace.json",
+      "sha256": "e6fcf54909666e0740344f14e3e8bb9e28765b731fe353c017cb1225cc94219b",
+      "size_bytes": 107577
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-09/receipt.json",
+      "sha256": "c6361a86fbe698bf8fcf29709cbbefab7439a479f6860bb75f2653afbebfa7c4",
+      "size_bytes": 189178
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-09/raw.json",
+      "sha256": "05da6962f4b771c9f722dc6a65b01e35d2e259703a1f8c1525719f94dd4a3448",
+      "size_bytes": 5311
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-09/trace.json",
+      "sha256": "d0c13032b791b8275ea461040767290ec7f01cd0ace991ce29d6d875674ce93e",
+      "size_bytes": 83432
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-10/receipt.json",
+      "sha256": "98074951e9dcb915af88fe63ea251729d77eddb75c94886e97a3a4be40f54643",
+      "size_bytes": 190538
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-10/raw.json",
+      "sha256": "7ae0624bcd341f0b9388c6263cf2d3c4cb9cd496978fd8a6608b7b9b1193ddd1",
+      "size_bytes": 5327
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-10/trace.json",
+      "sha256": "a6c7c01ee0e5fd7a233da9b17600f82879cf6ce1f9d78b5a37c1899624561c66",
+      "size_bytes": 76895
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-11/receipt.json",
+      "sha256": "067f33a36aaf54abea754edaee5c0ff77a971634a65af7be71f035102619a09d",
+      "size_bytes": 186919
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-11/raw.json",
+      "sha256": "d498cda2362e54094007d3b5242bd094910fb479a06a78f3a0aadc45962ad18e",
+      "size_bytes": 2388
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-11/trace.json",
+      "sha256": "9d3933a967f05ca58af26e8b44a5b68776a3feb752a82abd397c300de444846a",
+      "size_bytes": 22729
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-12/receipt.json",
+      "sha256": "0feaca5666dba53991e4ee62c819220c7733e6d4fd48f0a57abc6fed4d5dd345",
+      "size_bytes": 189705
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-12/raw.json",
+      "sha256": "38768923560985591687fb5c982e58938c52d7d4ab9b1fbc5584dbf9f4cde181",
+      "size_bytes": 5267
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-12/trace.json",
+      "sha256": "6fef9a6b043c82b47e530574a8728f3863c09abb97afab665cdd48f124209f6e",
+      "size_bytes": 71474
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/receipt.json",
+      "sha256": "3f78b511506500f267b1b58b98a9bd4e88cb297a6207d02a244d2437a9746bee",
+      "size_bytes": 189037
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/raw.json",
+      "sha256": "f1281b240d404565e5201c50fcdf45bd498adfe1f6de8dd153b0afe753f1af51",
+      "size_bytes": 19634
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/trace.json",
+      "sha256": "794d83fde3b9be9f24123563ce150f17ba7241aebd1ad840d23c87e0ceac2f85",
+      "size_bytes": 594382
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/receipt.json",
+      "sha256": "eac0c27a301d8e22e3108d2d2a6c6e1fea2ca7ea4189362438dc4631b49810dd",
+      "size_bytes": 188845
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/raw.json",
+      "sha256": "5baabd06dc7cd98235b6b7530eeb17aa9d9cad7141b058f670e41c06b86672e9",
+      "size_bytes": 12280
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-14/trace.json",
+      "sha256": "59357edd80d35b6422333b1b6e25ef4e9ca73dd6069a14d25e03811b0388fd38",
+      "size_bytes": 375298
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-15/receipt.json",
+      "sha256": "16eeb8565607e9bc1f33812b0f6be66d6bc2e16ab83d1bc494dbebf02c58f6f1",
+      "size_bytes": 189705
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-15/raw.json",
+      "sha256": "1b3dacd04f519e9e3a5d2908d5c085f11d0c6c2ccd959d66ab213b9c69463bb8",
+      "size_bytes": 5369
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-15/trace.json",
+      "sha256": "d086c3b525ac90cc7c7a955bb5f25e1defbcfe901a9be5d384197ad70e93c835",
+      "size_bytes": 73670
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-16/receipt.json",
+      "sha256": "90a7060b3bdb70ccc2158ecb1d888725fc7f63cafd80f5552ae333d9ad1d504c",
+      "size_bytes": 189706
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-16/raw.json",
+      "sha256": "d76855bb5572816e4a641ab1f5957283015690b205bb1bbf1fe818df3090dfc6",
+      "size_bytes": 10846
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-16/trace.json",
+      "sha256": "b85b0268b5781d0295802990a3702b8486f9665503da7656f5e51c29675cf450",
+      "size_bytes": 174747
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-17/receipt.json",
+      "sha256": "3d6589640b9097c691b4fd9ffa1c28ace6e6d01eb62d7a0ad936354b80c9f935",
+      "size_bytes": 187132
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-17/raw.json",
+      "sha256": "503a51fdf8184e8b2a1699ea3cbc482d893e09da82675a92c1b2a82556a16bb4",
+      "size_bytes": 10903
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-17/trace.json",
+      "sha256": "3ae09bc2c2a04313a0a015a598d6dfd836d65eeca7d70a0b1aba4c32d452aabc",
+      "size_bytes": 143733
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/receipt.json",
+      "sha256": "23e219bab7f87097f1f6342e723b32b2c2e03c8f57f5d0559fc4ffa55b9a5875",
+      "size_bytes": 189037
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/raw.json",
+      "sha256": "5c3758e2d1e677aa6af6b789d4850012f030c652bca8c826ca8fd57a7f14719d",
+      "size_bytes": 16062
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-18/trace.json",
+      "sha256": "eea6a5b2d5ea16f9c3ce63cefdc31331b399c0e61ec7432b36256644fb83b5f7",
+      "size_bytes": 305572
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-19/receipt.json",
+      "sha256": "c26fcd9e35e67010bd237935f4bc9042322c1ea30be8f134c276c2718de64e27",
+      "size_bytes": 188460
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-19/raw.json",
+      "sha256": "6d38ac1898d4754945bcd5bff2ee7ed4ff4b189a73668365539399ed5d78c577",
+      "size_bytes": 5571
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-19/trace.json",
+      "sha256": "538da622ce80c14d4d94503740db22991160a4e0881b11586cae00fd768d60d6",
+      "size_bytes": 132802
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-20/receipt.json",
+      "sha256": "c1edc6aa9b29f783cb9d0b5be007270923561623f12856e7910d547239572332",
+      "size_bytes": 188941
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-20/raw.json",
+      "sha256": "eb716b66bf4cddc31f9007312139a13e62cf0c23a9478dd3cf62db187784b69c",
+      "size_bytes": 10814
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-20/trace.json",
+      "sha256": "475b52dc3877583a0bfaeb804937c7129da18ce04160e2861a7896f6cee8dace",
+      "size_bytes": 206664
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/receipt.json",
+      "sha256": "2000c02ef598b84017437a4d068adc687871588a9607862be3dec0454295112c",
+      "size_bytes": 189171
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/raw.json",
+      "sha256": "5c89052148e65d6358090714a206c04700584101046492a7c3acc3a64c46aef7",
+      "size_bytes": 100299
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-21/trace.json",
+      "sha256": "f24d9b0360eb5aca3338077cf516cec202702bffb478dee6bdf4d00b1c1e19e1",
+      "size_bytes": 3292156
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-22/receipt.json",
+      "sha256": "f8ac6cdb19e5d51a51e42af1cf60c0935297aa38aaf37e4062c196efc7697a0a",
+      "size_bytes": 187897
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-22/raw.json",
+      "sha256": "81ce369264d0e14839a6a87a2da16a09488125a8a39198fd94104803343e96d3",
+      "size_bytes": 3699
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-22/trace.json",
+      "sha256": "ef79be93adebbe51255b6ed6d0554c4d67bcb8abeceb4412b25101ef565aa7fe",
+      "size_bytes": 60703
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/receipt.json",
+      "sha256": "f2e5270a0c32b1ea0151e9e82663e12dea5e8bb9aa76e0c2339856cf2dbe6e46",
+      "size_bytes": 189709
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/raw.json",
+      "sha256": "09f34eb5494735a6c719495aa36265f0b63d3a97aba201c59f75c81b36926ceb",
+      "size_bytes": 26498
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/trace.json",
+      "sha256": "c00a7451fdaf67b72979acbfe610b75c2c15701fad36e1dfa4b97072be573e79",
+      "size_bytes": 360376
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-24/receipt.json",
+      "sha256": "429102705c737891a66f6f801d02e7cb6bf1c65ee6af939af69775f415814c39",
+      "size_bytes": 190375
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-24/raw.json",
+      "sha256": "c6b483668839cbd541c3ffb83786e6ea9f4e6a38e024fde814f5c02244daafc6",
+      "size_bytes": 2098
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-24/trace.json",
+      "sha256": "8095cff5276cf2a58db290fd1258c76d177ecadd72e6b58bb2f7bacace8c3d53",
+      "size_bytes": 22774
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/receipt.json",
+      "sha256": "b9f42e89181e28156debb71d41f3aa7307c64a8bf2ddea5ee9fbd6fd210303ce",
+      "size_bytes": 185130
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/raw.json",
+      "sha256": "68ce81f4ccc53df3bb404910f1ee0d7cd2dc2c308d0d77b38dd863ff49f73e9f",
+      "size_bytes": 5895
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-25/trace.json",
+      "sha256": "cb98c7443de5280cb137e71c7a85eaec9722ab30ae58c8048b09dbce6b49872a",
+      "size_bytes": 83308
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/receipt.json",
+      "sha256": "0bdfc96e08c0c7de8f50f8026120239147dce5cbb1eb28a3b876657e32b2d5bc",
+      "size_bytes": 189036
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/raw.json",
+      "sha256": "b20566533a3cf316e35d6e124ce59085a41f9a9d6f6b79194c46eba43782b96d",
+      "size_bytes": 5221
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-26/trace.json",
+      "sha256": "fbaa31e6cb70e8452d53c74107ceee2320324f9eff15ca3c8b5936229d358af4",
+      "size_bytes": 107589
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-27/receipt.json",
+      "sha256": "1441ed47d05e7016f64a39a2d7c19777b6624dd365c6a5a58ea38f9b460c5caf",
+      "size_bytes": 189324
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-27/raw.json",
+      "sha256": "f55dad27068d01b5e9e499973bb454bed66ca7daef28f10b81ceb85940e1962c",
+      "size_bytes": 9767
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-27/trace.json",
+      "sha256": "23efdbbe6ab5631e194c91358c8e805237def8fbc199f1f30800b047002af35d",
+      "size_bytes": 170718
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-28/receipt.json",
+      "sha256": "446c0bb6c5dac49d2a0c1661815153344c4086de471b2ba65a53ed6c51a8b40e",
+      "size_bytes": 189034
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-28/raw.json",
+      "sha256": "97244d7612796104713ba96069fb679ac8cf3e18fb8fdb62c6ed1d87b36a881a",
+      "size_bytes": 4738
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-28/trace.json",
+      "sha256": "fca416490ed736d565031165ef83687890c35b5f21cf86e55bd417aae8d746ce",
+      "size_bytes": 83297
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-29/receipt.json",
+      "sha256": "48a1b88a46fea6338efd468c0604e6f1ec978470a9796a300c4b6ce8ffeb5068",
+      "size_bytes": 187693
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-29/raw.json",
+      "sha256": "858c73035c1b57188c5eb9572c31dac0022bdf222dc270787c6b51b0b0060c78",
+      "size_bytes": 13634
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-29/trace.json",
+      "sha256": "39ad57e44a62c76911f5a92eba3d096df5ae5f469d54baaac6071a682a94741f",
+      "size_bytes": 227200
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-30/receipt.json",
+      "sha256": "07b64ff75cf36c9dfb7d15a457f9c995747a14272ca88e986be1336cebe911af",
+      "size_bytes": 189708
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-30/raw.json",
+      "sha256": "fe4934a85d191f0d8da64cf1cceb1964358785e9296558b550d53cd111793b17",
+      "size_bytes": 6888
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-30/trace.json",
+      "sha256": "3a5785fa407209bd02a7fdc275c100cc33e7fc15ac06c9669bdce17d6f44c24a",
+      "size_bytes": 157279
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-31/receipt.json",
+      "sha256": "07968add95653232c439bf361b100eaf62ea2bed72c50b69ee680733dcc7b9f9",
+      "size_bytes": 189708
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-31/raw.json",
+      "sha256": "6d1e56d436092a424ca76766d57cc32f1dba8034d23c6ebaf7c6357bc1577182",
+      "size_bytes": 7048
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-31/trace.json",
+      "sha256": "962484d9ab7f192539bbaa90094c56e1dfb1d7daea7a9114dec93cfc70690203",
+      "size_bytes": 113395
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/receipt.json",
+      "sha256": "819fbc93e377b9b94c40b66c67bc244024ec743e972698125020cf1d26a4395b",
+      "size_bytes": 186410
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/raw.json",
+      "sha256": "cf49a34ded3df998b3f8ddce7cfbe687d65d09b6f09a49b48dcc816554f7f061",
+      "size_bytes": 21433
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-00/trace.json",
+      "sha256": "f77d8fc2ec9e0449b59da1fae942a04ccce5e5427c2c1d4da4b2385071ff7922",
+      "size_bytes": 262943
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/receipt.json",
+      "sha256": "80f372759589cbb620dc45176b870239f46fa5d58179a07fff2e2fcd6266e11e",
+      "size_bytes": 187598
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/raw.json",
+      "sha256": "e1eac8fc2a83ca1759b233354eb827bbcab88eba4047b9f690c8f02830936fdc",
+      "size_bytes": 40378
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-01/trace.json",
+      "sha256": "8efc8bb91e7250e6ef73b389d53be352f8bd8167ba140251470a8ed4b38abdaf",
+      "size_bytes": 1021225
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/receipt.json",
+      "sha256": "e0297cf4b701f70badf594fe29372b6795d2d2bb0f2d8f9196bc4fa77a86b82a",
+      "size_bytes": 188746
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+      "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+      "size_bytes": 17227
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/trace.json",
+      "sha256": "0dba6a8172c84dc14e5c72442cd6a6c713110be437041c6d4e1222d0a5b8856a",
+      "size_bytes": 249346
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+      "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+      "size_bytes": 189302
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+      "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+      "size_bytes": 179870
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+      "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+      "size_bytes": 3312523
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+      "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d",
+      "size_bytes": 126942
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+      "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c",
+      "size_bytes": 8301
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+      "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f",
+      "size_bytes": 127664
+    }
+  ],
+  "candidates": [
+    {
+      "image_id": 14038,
+      "row_id": "coco2017_val_000000014038",
+      "source_rank": 10,
+      "group": "refined-02",
+      "batch_index": 2,
+      "stop": "im_end",
+      "episodes": [
+        {
+          "start_row": 8,
+          "last_row": 10,
+          "length": 3,
+          "token_range": [
+            77,
+            104
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 152465,
+            "new_token": 152471,
+            "raw_action_offset": 108
+          }
+        },
+        {
+          "start_row": 12,
+          "last_row": 13,
+          "length": 2,
+          "token_range": [
+            113,
+            131
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 5,
+            "role": "y1",
+            "old_token": 152346,
+            "new_token": 152350,
+            "raw_action_offset": 136
+          }
+        },
+        {
+          "start_row": 22,
+          "last_row": 23,
+          "length": 2,
+          "token_range": [
+            203,
+            221
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 1,
+            "role": "other",
+            "old_token": 2190,
+            "new_token": 5873,
+            "raw_action_offset": 222
+          }
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/receipt.json",
+        "sha256": "e0297cf4b701f70badf594fe29372b6795d2d2bb0f2d8f9196bc4fa77a86b82a",
+        "size_bytes": 188746
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/raw.json",
+        "sha256": "7d9388c7ca670a5833ea0d57e6fe8ee83e0e3ec97bdfa23951c1aacb4e210a08",
+        "size_bytes": 17227
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-02/trace.json",
+        "sha256": "0dba6a8172c84dc14e5c72442cd6a6c713110be437041c6d4e1222d0a5b8856a",
+        "size_bytes": 249346
+      }
+    },
+    {
+      "image_id": 351017,
+      "row_id": "coco2017_train_000000351017",
+      "source_rank": 15,
+      "group": "refined-03",
+      "batch_index": 2,
+      "stop": "length",
+      "episodes": [
+        {
+          "start_row": 3,
+          "last_row": 10,
+          "length": 8,
+          "token_range": [
+            27,
+            99
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151756,
+            "new_token": 151755,
+            "raw_action_offset": 106
+          }
+        },
+        {
+          "start_row": 12,
+          "last_row": 13,
+          "length": 2,
+          "token_range": [
+            108,
+            126
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151755,
+            "new_token": 151739,
+            "raw_action_offset": 133
+          }
+        },
+        {
+          "start_row": 15,
+          "last_row": 16,
+          "length": 2,
+          "token_range": [
+            135,
+            153
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151755,
+            "new_token": 151739,
+            "raw_action_offset": 160
+          }
+        },
+        {
+          "start_row": 18,
+          "last_row": 20,
+          "length": 3,
+          "token_range": [
+            162,
+            189
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151755,
+            "new_token": 151739,
+            "raw_action_offset": 196
+          }
+        },
+        {
+          "start_row": 24,
+          "last_row": 25,
+          "length": 2,
+          "token_range": [
+            216,
+            234
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151755,
+            "new_token": 151739,
+            "raw_action_offset": 241
+          }
+        },
+        {
+          "start_row": 26,
+          "last_row": 41,
+          "length": 16,
+          "token_range": [
+            234,
+            378
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151739,
+            "new_token": 151763,
+            "raw_action_offset": 385
+          }
+        },
+        {
+          "start_row": 43,
+          "last_row": 57,
+          "length": 15,
+          "token_range": [
+            387,
+            522
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151763,
+            "new_token": 151670,
+            "raw_action_offset": 529
+          }
+        },
+        {
+          "start_row": 58,
+          "last_row": 341,
+          "length": 284,
+          "token_range": [
+            522,
+            3078
+          ],
+          "termination": "cap",
+          "immediate_first_fork": null
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+        "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+        "size_bytes": 189302
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+        "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+        "size_bytes": 3312523
+      }
+    },
+    {
+      "image_id": 417044,
+      "row_id": "coco2017_train_000000417044",
+      "source_rank": 16,
+      "group": "refined-03",
+      "batch_index": 3,
+      "stop": "length",
+      "episodes": [
+        {
+          "start_row": 8,
+          "last_row": 9,
+          "length": 2,
+          "token_range": [
+            79,
+            99
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 8,
+            "role": "y2",
+            "old_token": 151911,
+            "new_token": 151917,
+            "raw_action_offset": 107
+          }
+        },
+        {
+          "start_row": 12,
+          "last_row": 13,
+          "length": 2,
+          "token_range": [
+            119,
+            139
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "x2",
+            "old_token": 151743,
+            "new_token": 151756,
+            "raw_action_offset": 146
+          }
+        },
+        {
+          "start_row": 16,
+          "last_row": 30,
+          "length": 15,
+          "token_range": [
+            159,
+            309
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 6,
+            "role": "y1",
+            "old_token": 151867,
+            "new_token": 151829,
+            "raw_action_offset": 315
+          }
+        },
+        {
+          "start_row": 32,
+          "last_row": 35,
+          "length": 4,
+          "token_range": [
+            319,
+            359
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 8,
+            "role": "y2",
+            "old_token": 151886,
+            "new_token": 151840,
+            "raw_action_offset": 367
+          }
+        },
+        {
+          "start_row": 36,
+          "last_row": 43,
+          "length": 8,
+          "token_range": [
+            359,
+            439
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 6,
+            "role": "y1",
+            "old_token": 151835,
+            "new_token": 151670,
+            "raw_action_offset": 445
+          }
+        },
+        {
+          "start_row": 44,
+          "last_row": 307,
+          "length": 264,
+          "token_range": [
+            439,
+            3079
+          ],
+          "termination": "cap",
+          "immediate_first_fork": null
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/receipt.json",
+        "sha256": "aebb2eb404e9d0d183976334e28cd56a35ec414c5748d33399023d2cd6ae325e",
+        "size_bytes": 189302
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/raw.json",
+        "sha256": "77a65cc8dc35220ec58766cca92b9caa9225eb4ce99c0330e340d40b6cfd8cbf",
+        "size_bytes": 179870
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-03/trace.json",
+        "sha256": "1b75265af561e712e74a74f455ae484dde17468fb5e76367b5cb32b6838295d6",
+        "size_bytes": 3312523
+      }
+    },
+    {
+      "image_id": 477415,
+      "row_id": "coco2017_train_000000477415",
+      "source_rank": 17,
+      "group": "refined-04",
+      "batch_index": 0,
+      "stop": "im_end",
+      "episodes": [
+        {
+          "start_row": 4,
+          "last_row": 5,
+          "length": 2,
+          "token_range": [
+            36,
+            54
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 151670,
+            "new_token": 151768,
+            "raw_action_offset": 58
+          }
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/receipt.json",
+        "sha256": "627de9146dc632c39593afdd229cab12e46b8a4a84c46cf4b7c4279269545d4d",
+        "size_bytes": 126942
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/raw.json",
+        "sha256": "5f8bdcc1eb2bb93c26389ee9c537043645a565ca8d6b1a028ab0f945d595751c",
+        "size_bytes": 8301
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/refined-04/trace.json",
+        "sha256": "fed8aed02e09d24c897f1b9c1e48021e4af878ae0a18d3bed604596b2c22235f",
+        "size_bytes": 127664
+      }
+    },
+    {
+      "image_id": 253212,
+      "row_id": "coco2017_train_000000253212",
+      "source_rank": 73,
+      "group": "fresh-13",
+      "batch_index": 3,
+      "stop": "im_end",
+      "episodes": [
+        {
+          "start_row": 3,
+          "last_row": 5,
+          "length": 3,
+          "token_range": [
+            27,
+            54
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151756,
+            "new_token": 151740,
+            "raw_action_offset": 61
+          }
+        },
+        {
+          "start_row": 6,
+          "last_row": 7,
+          "length": 2,
+          "token_range": [
+            54,
+            72
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 151716,
+            "new_token": 151730,
+            "raw_action_offset": 76
+          }
+        },
+        {
+          "start_row": 15,
+          "last_row": 16,
+          "length": 2,
+          "token_range": [
+            135,
+            153
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 6,
+            "role": "x2",
+            "old_token": 151787,
+            "new_token": 151791,
+            "raw_action_offset": 159
+          }
+        },
+        {
+          "start_row": 28,
+          "last_row": 29,
+          "length": 2,
+          "token_range": [
+            252,
+            270
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151756,
+            "new_token": 151746,
+            "raw_action_offset": 277
+          }
+        },
+        {
+          "start_row": 36,
+          "last_row": 39,
+          "length": 4,
+          "token_range": [
+            324,
+            360
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 6,
+            "role": "x2",
+            "old_token": 151868,
+            "new_token": 151870,
+            "raw_action_offset": 366
+          }
+        },
+        {
+          "start_row": 40,
+          "last_row": 43,
+          "length": 4,
+          "token_range": [
+            360,
+            396
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 7,
+            "role": "y2",
+            "old_token": 151745,
+            "new_token": 151761,
+            "raw_action_offset": 403
+          }
+        },
+        {
+          "start_row": 44,
+          "last_row": 48,
+          "length": 5,
+          "token_range": [
+            396,
+            441
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 151847,
+            "new_token": 151862,
+            "raw_action_offset": 445
+          }
+        },
+        {
+          "start_row": 49,
+          "last_row": 50,
+          "length": 2,
+          "token_range": [
+            441,
+            459
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 1,
+            "role": "other",
+            "old_token": 2190,
+            "new_token": 34196,
+            "raw_action_offset": 460
+          }
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/receipt.json",
+        "sha256": "3f78b511506500f267b1b58b98a9bd4e88cb297a6207d02a244d2437a9746bee",
+        "size_bytes": 189037
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/raw.json",
+        "sha256": "f1281b240d404565e5201c50fcdf45bd498adfe1f6de8dd153b0afe753f1af51",
+        "size_bytes": 19634
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-13/trace.json",
+        "sha256": "794d83fde3b9be9f24123563ce150f17ba7241aebd1ad840d23c87e0ceac2f85",
+        "size_bytes": 594382
+      }
+    },
+    {
+      "image_id": 386313,
+      "row_id": "coco2017_train_000000386313",
+      "source_rank": 109,
+      "group": "fresh-23",
+      "batch_index": 0,
+      "stop": "im_end",
+      "episodes": [
+        {
+          "start_row": 14,
+          "last_row": 15,
+          "length": 2,
+          "token_range": [
+            127,
+            145
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 152209,
+            "new_token": 152215,
+            "raw_action_offset": 149
+          }
+        },
+        {
+          "start_row": 26,
+          "last_row": 27,
+          "length": 2,
+          "token_range": [
+            235,
+            253
+          ],
+          "termination": "different_complete_row",
+          "immediate_first_fork": {
+            "offset": 4,
+            "role": "x1",
+            "old_token": 152274,
+            "new_token": 152278,
+            "raw_action_offset": 257
+          }
+        }
+      ],
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/receipt.json",
+        "sha256": "f2e5270a0c32b1ea0151e9e82663e12dea5e8bb9aa76e0c2339856cf2dbe6e46",
+        "size_bytes": 189709
+      },
+      "raw": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/raw.json",
+        "sha256": "09f34eb5494735a6c719495aa36265f0b63d3a97aba201c59f75c81b36926ceb",
+        "size_bytes": 26498
+      },
+      "trace": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/runtime/untied-original/fresh-23/trace.json",
+        "sha256": "c00a7451fdaf67b72979acbfe610b75c2c15701fad36e1dfa4b97072be573e79",
+        "size_bytes": 360376
+      }
+    }
+  ],
+  "boundary": "Immediate exit from an exact-token run is distinct from eventual sequence EOS. No physical-owner or replay-parity claim. No model calls."
+}

@@ -1,11 +1,21 @@
 import copy
+import tempfile
 import unittest
 from contextlib import ExitStack, nullcontext
+from pathlib import Path
 from unittest.mock import patch
 
 import torch
 
 from probes import online_row_credit as o
+
+FIXTURE_ROOT = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery')
+ROW_CREDIT_ROOT = FIXTURE_ROOT / '2026-09-27/rollout-row-credit-01'
+o.RETAINED = ROW_CREDIT_ROOT / 'cpu-04/retained-10.json'
+o.INPUTS = ROW_CREDIT_ROOT / 'retained-sft-01/inputs.json'
+o.ENCODINGS = ROW_CREDIT_ROOT / 'retained-sft-01/encodings.json'
+o.r.ZERO = FIXTURE_ROOT / '2026-09-27/iterative-positive-01/round-01/evaluation-zero'
+
 from src.losses.vocab import build_token_vocabulary_groups
 
 
@@ -179,7 +189,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_readback_requires_exact_scheduled_exports_and_valid_hashes(self):
         import tempfile
         from pathlib import Path
-        parent=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');parent.mkdir(parents=True,exist_ok=True)
+        parent=Path(tempfile.gettempdir());parent.mkdir(parents=True,exist_ok=True)
         original_load=o.p.load
         for updates,schedule in ((1,(0,1)),(16,(0,1,2,4,8,16)),(64,(0,1,2,4,8,16,32,64))):
             with self.subTest(updates=updates), tempfile.TemporaryDirectory(dir=parent) as tmp:
@@ -649,7 +659,7 @@ class OnlineCreditTest(unittest.TestCase):
             bad=o.seal(dict(er,token_ids=ids,text=self.t.decode(ids,skip_special_tokens=False),generated_tokens=len(ids),stop_reason=stop),self.producer)
             rejected=o.bridge_credit(empty,bad,self.t,self.producer,'chain')
             self.assertFalse(rejected['terminal_certified']);self.assertEqual(rejected['k'],0)
-        with TemporaryDirectory(dir='outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02') as d:
+        with TemporaryDirectory() as d:
             o.require_bridge_supervision({0:ep},Path(d),0)
             cap=o.seal(dict(er,text='',token_ids=[],generated_tokens=0,stop_reason='max_new_tokens'),self.producer)
             no=o.bridge_credit(empty,cap,self.t,self.producer,'chain');self.assertEqual(no['n'],0)
@@ -1270,7 +1280,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_readback_freshness_exports_partial_and_recipe(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        base=Path(tempfile.gettempdir())
         original=o.p.load
         for arm,updates in [('control',1),('treatment',1),('control',8),('treatment',8)]:
             with tempfile.TemporaryDirectory(dir=base) as tmp:
@@ -1341,7 +1351,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_correction_actual_offline_both_freezes_before_any_evaluator_read(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load
+        base=Path(tempfile.gettempdir());original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
             for arm in ('control','treatment'):outputs[arm],qual,images,inputs=self.correction_fixture_tree(root,arm)
@@ -1378,7 +1388,7 @@ class OnlineCreditTest(unittest.TestCase):
 
     def test_restored_m_resident_caller_emits_marker_on_rank0_and_rank7(self):
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01')
+        base=Path(tempfile.gettempdir())
         cases=[('treatment',None,True,rank,'equal',1) for rank in (0,7)]
         self.resident_cases(cases,identity_events=True,completion_weighting='restored_M_mass',base=base)
 
@@ -1386,7 +1396,7 @@ class OnlineCreditTest(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from types import SimpleNamespace
-        base=Path(base) if base is not None else Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        base=Path(base) if base is not None else Path(tempfile.gettempdir())
         original=o.p.load;inputs=original(o.INPUTS);optimizer_type=torch.optim.AdamW;decisions=[]
         class Tiny(torch.nn.Module):
             def __init__(self):
@@ -1521,7 +1531,7 @@ class OnlineCreditTest(unittest.TestCase):
 
     def test_correction_real18_stopped_fixture_all_supported_semantic_sites(self):
         from pathlib import Path
-        fixture=o.p.load(Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/cpu/real18-fixture.json'))
+        fixture=o.p.load(FIXTURE_ROOT / '2026-09-30/online-error-correction-01/cpu/real18-fixture.json')
         images={x['image_id']:x for x in self.images};sites=[]
         self.assertEqual(len(fixture),18);self.assertEqual(sum(x['plan']['literal_repeats'] for x in fixture),3060)
         for item in fixture:
@@ -1779,7 +1789,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_restored_m_persisted_readback_and_offline_marker_gate(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-10-01/chain-mass-restoration-01/cpu-01')
+        base=Path(tempfile.gettempdir())
         original_load=o.p.load;original_digest=o.p.digest
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={}
@@ -1878,7 +1888,7 @@ class OnlineCreditTest(unittest.TestCase):
 
     def test_recall_real18_native_prediction_only_supply(self):
         from pathlib import Path
-        native=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03')
+        native=FIXTURE_ROOT / '2026-09-30/online-error-correction-01/native-paired1-03'
         records=o.frozen_records(native/'control/rollout-0',[x['image_id'] for x in self.images]);by={x['image_id']:x for x in records}
         plans=[o.completion_credit(image,by[image['image_id']],self.t,by[image['image_id']]['producer'],'treatment') for image in self.images]
         self.assertEqual(sum(p['m'] for p in plans),222);self.assertEqual(sum(p['k'] for p in plans),288)
@@ -1926,7 +1936,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_persisted_readback_and_offline_pair_gating(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');base.mkdir(parents=True,exist_ok=True)
+        base=Path(tempfile.gettempdir());base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
@@ -1974,7 +1984,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_recall_eight_update_persisted_exports_and_versions(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');base.mkdir(parents=True,exist_ok=True)
+        base=Path(tempfile.gettempdir());base.mkdir(parents=True,exist_ok=True)
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'treatment',8,completion=True)
@@ -2013,7 +2023,7 @@ class OnlineCreditTest(unittest.TestCase):
 
     def containment_native_fixture(self, arm='control'):
         from pathlib import Path
-        native=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-30/online-error-correction-01/native-paired1-03')
+        native=FIXTURE_ROOT / '2026-09-30/online-error-correction-01/native-paired1-03'
         records=o.frozen_records(native/'control/rollout-0',[x['image_id'] for x in self.images])
         qual=self.containment_qualifier(Path('/cpu'),Path('/anchor'));recipe=o.identity(qual['correction'])
         binding=dict(arm=arm,duplicate_weight=1,completion_arm=arm,recipe_sha256=recipe,containment=qual['correction']['containment'])
@@ -2117,7 +2127,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_containment_persisted_readback_resigned_forgeries_and_offline_gate(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        base=Path(tempfile.gettempdir())
         original=o.p.load
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={};events=[]
@@ -2276,7 +2286,7 @@ class OnlineCreditTest(unittest.TestCase):
         import tempfile
         from pathlib import Path
         class EvaluatorBoundary(Exception):pass
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02')
+        base=Path(tempfile.gettempdir())
         original=o.p.load;digest=o.p.digest;attempts=[]
         with tempfile.TemporaryDirectory(dir=base) as tmp:
             root=Path(tmp);outputs={}
@@ -2341,7 +2351,7 @@ class OnlineCreditTest(unittest.TestCase):
             def forward(self,input_ids,logits_to_keep,**kw):
                 bias=torch.zeros(1,len(logits_to_keep),len(self_t));bias[0,self.target['site']['offset'],self.target['site']['bad']]=self.bad
                 return SimpleNamespace(logits=(self.w[None,None,:]+bias).to(self.dtype))
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load;self_t=self.t
+        base=Path(tempfile.gettempdir());original=o.p.load;self_t=self.t
         for k in (3,5):
             with self.subTest(K=k),tempfile.TemporaryDirectory(dir=base) as tmp:
                 root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,'control',identity_events=True,identity_count=k)
@@ -2385,7 +2395,7 @@ class OnlineCreditTest(unittest.TestCase):
     def test_identity_persisted_readback_resigned_selection_weight_and_supply(self):
         import tempfile
         from pathlib import Path
-        base=Path('outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/identity-cpu-02');original=o.p.load
+        base=Path(tempfile.gettempdir());original=o.p.load
         for arm in ('control','treatment'):
             with tempfile.TemporaryDirectory(dir=base) as tmp:
                 root=Path(tmp);output,qual,images,inputs=self.correction_fixture_tree(root,arm,identity_events=True)

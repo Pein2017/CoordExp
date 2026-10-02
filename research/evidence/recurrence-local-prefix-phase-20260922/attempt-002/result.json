@@ -1,0 +1,89 @@
+{
+  "status": "candidate",
+  "cell_order": [
+    "query_only",
+    "identity_recompute",
+    "prefix_coherent"
+  ],
+  "target_winners": {
+    "query_only": [
+      152249,
+      152669
+    ],
+    "identity_recompute": [
+      152249,
+      152669
+    ],
+    "prefix_coherent": [
+      151708,
+      151708
+    ]
+  },
+  "target_probabilities": {
+    "query_only": [
+      {
+        "p38": 3.571204126688354e-05,
+        "p999": 0.0011863718635359184,
+        "d_z38_minus_z999": -3.503167152404785
+      },
+      {
+        "p38": 0.025773299628451818,
+        "p999": 0.04773097284225189,
+        "d_z38_minus_z999": -0.616241455078125
+      }
+    ],
+    "identity_recompute": [
+      {
+        "p38": 3.571204126688354e-05,
+        "p999": 0.0011863718635359184,
+        "d_z38_minus_z999": -3.503167152404785
+      },
+      {
+        "p38": 0.025773299628451818,
+        "p999": 0.04773097284225189,
+        "d_z38_minus_z999": -0.616241455078125
+      }
+    ],
+    "prefix_coherent": [
+      {
+        "p38": 0.04952005439780037,
+        "p999": 0.0008138115647872744,
+        "d_z38_minus_z999": 4.108404159545898
+      },
+      {
+        "p38": 0.0291610633341737,
+        "p999": 0.02399977572488058,
+        "d_z38_minus_z999": 0.19478988647460938
+      }
+    ]
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/readback.json",
+    "sha256": "a6de2289e8872e484aad43f72d4244fee028a6b3dccf40ed0a769335eab1bf51",
+    "size_bytes": 645018
+  },
+  "source_manifest": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/source-to-cell.json",
+    "sha256": "0768ae4b2197f3c3540170fde73434ffcce238337c6b18be5ed0224915e05551",
+    "size_bytes": 113469
+  },
+  "artifacts": {
+    "query_only": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+      "sha256": "db7ae9009c5efa3820c8bf960a82a7d8f71bc944e47679d5851e34275cc703f2",
+      "size_bytes": 6405470
+    },
+    "identity_recompute": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+      "sha256": "db7ae9009c5efa3820c8bf960a82a7d8f71bc944e47679d5851e34275cc703f2",
+      "size_bytes": 6405470
+    },
+    "prefix_coherent": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+      "sha256": "4d5217099a0839bac9d28a55c9b58d06deee2e33248a311cd060738b8061adf5",
+      "size_bytes": 6405470
+    }
+  },
+  "model_forwards": 3,
+  "vision_forwards": 3
+}

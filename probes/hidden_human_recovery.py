@@ -13,9 +13,9 @@ from pathlib import Path
 from types import SimpleNamespace
 import time
 
-HUMAN = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.jsonl')
-REFINED = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-17-history-rereading-mechanism/human-evaluation/annotation-snapshot-v1')
-CHECKPOINT = Path('/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444')
+HUMAN = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/inputs/human13/human-refined-13.geo_sorted_xy.coord.jsonl')
+REFINED = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/inputs/refined5')
+CHECKPOINT = Path('/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444/payload')
 BASE = Path('/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent')
 IMAGE_ROOT = Path('/data/CoordExp/public_data/coco/rescale_32_1024_bbox')
 

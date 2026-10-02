@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from probes import hidden_human_recovery as probe
 
+FIXTURE_ROOT = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-09-26')
+
 
 def fixture():
     public = dict(image_id=1, image_path='/image.jpg', image_sha256='abc', width=1024, height=1024,
@@ -129,7 +131,7 @@ class CandidateLocalCPU(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from transformers import AutoTokenizer
-        cls.root=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26')
+        cls.root=FIXTURE_ROOT
         cls.raw=probe.read_frozen(cls.root/'pilot-01')
         cls.visible=probe.load(cls.root/'preparation-v3/acquisition/visible.json')
         cls.tokenizer=AutoTokenizer.from_pretrained(probe.BASE,local_files_only=True)
@@ -270,7 +272,7 @@ class VerificationCPU(unittest.TestCase):
         self.assertEqual(coverage['visible_denominator'],1)
 
     def test_real_smoke_neighbor_only_regression(self):
-        root=Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-26/candidate-local-01')
+        root=FIXTURE_ROOT/'candidate-local-01'
         plan=probe.load(root/'selection.json');raw=probe.read_frozen(root/'smoke');ids={r['target_prediction_id'] for r in raw}
         plan['selected']=[t for t in plan['selected'] if t['prediction_id'] in ids];plan['requests']=[r for r in plan['requests'] if r['target_prediction_id'] in ids]
         out=probe.compact_local(plan,raw);x=next(x for x in out['targets'] if x['image_id']==1584)

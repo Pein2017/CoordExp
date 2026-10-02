@@ -10,12 +10,12 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from probes.hidden_human_recovery import (load, write, digest, canonical, validate_visible,
+from probes.hidden_human_recovery import (CHECKPOINT, load, write, digest, canonical, validate_visible,
                                          native_request, request_plan, candidates, original_coverage)
 from src.eval.saved_rows import iou_xyxy
 
-ROOT = Path('/data/CoordExp/outputs/research/hidden-human-annotation-recovery/2026-09-27/iterative-positive-01')
-OLD = ROOT.parent.parent / '2026-09-26'
+ROOT = Path(__file__).resolve().parents[1] / 'outputs/research/physical-fn-recovery/2026-09-27/iterative-positive-01'
+OLD = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-09-26')
 VISIBLE = OLD / 'preparation-v3/acquisition/visible.json'
 POLICY = OLD / 'smoke-policy-01.json'
 REPLAY = Path('/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/train.coord.jsonl')
@@ -219,8 +219,12 @@ def compose(checkpoint, evaluation=False):
     from src.qwen.untied_embeddings import (SpecialTokenSelection,
         install_special_token_embedding_deltas, load_special_token_embedding_deltas)
     policy = load(POLICY)
-    for p, expected in policy['payload_sha256'].items():
-        assert digest(p)==expected,p
+    policy_checkpoint = Path(policy['checkpoint'])
+    for payload, expected in policy['payload_sha256'].items():
+        payload = Path(payload)
+        if payload.is_relative_to(policy_checkpoint):
+            payload = CHECKPOINT / payload.relative_to(policy_checkpoint)
+        assert digest(payload)==expected,payload
     q = load_qwen_components_from_options(QwenLoadOptions(policy['base_model'],'bf16',
                       'sdpa' if evaluation else 'flash_attention_2',load_model=True))
     # Same fixed BF16 base conversion for zero/control/treatment natural evaluation.

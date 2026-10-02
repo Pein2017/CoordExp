@@ -60,5 +60,5 @@ The compose/native-batch dependency still consumes `probes.iterative_positive.PO
 the explicit policy must match it. This is the retained fixed-bank recipe, not a
 new generic loader, training run, vLLM benchmark or evidence of numerical parity.
 The saved 2026-09-29 result is relocated to
-`outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/`; original source and
+`/data/CoordExp/.worktrees/research-probes/outputs/runtime/vllm-dora-20260929/hf-compat/`; original source and
 producer mappings live in the root OpenSpec migration receipt.

@@ -13,20 +13,20 @@ The current assembly owners are `src.qwen.runtime_loading`, `src.adapters.dora`
 and `src.qwen.special_token_embeddings` / `src.qwen.untied_embeddings`.
 
 Tied x->y Source step2444:
-`/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444`.
+`/data/CoordExp/outputs/shared/checkpoints/four-coordinate-xy-step2444/payload`.
 Compose base + `adapter/` + `special_token_embeddings/`; loading only the DoRA
 adapter is not equivalent. The1004 selected IDs comprise1000 coordinates and
 four wrappers. Input/output deltas are shared.
 
 Mature untied+axis001 step2444:
-`/data/CoordExp/outputs/infra_base/train/qwen3-vl-2b-geo-sorted-xy-untied-axis001-ebs24-4epoch/checkpoints/step-2444`.
+`/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444/payload`.
 Compose the same base with this root's adapter and independent input/output deltas.
 `inference_payload_manifest.json` binds its inference payload. It is not an
 untie-only causal control: objective and training history differ from tied Source.
 Original training source: `365cd55d169e5292b60bb75b672c0a65813df5b0`.
 
 Exact compared recipes live in `configs.tied` / `configs.untied` of
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/panel.json`.
+`/data/CoordExp/.worktrees/research-probes/outputs/research/untied-highconfidence18/2026-09-18/panel.json`.
 The retired convenience loader is recoverable from Git, not a current API.
 New execution must explicitly select the current model/input/policy contract.
 
@@ -50,19 +50,20 @@ Human13 has392 reviewed positives across val2017 images:
 1584:19,2299:46,2685:29,4134:37,5001:23,6040:15,7511:44,10707:19,
 13348:15,13923:21,14038:47,14439:27,16228:50. It is development data, not held-out.
 The frozen sorted input and matching receipt are
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.jsonl`
+`/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/inputs/human13/human-refined-13.geo_sorted_xy.coord.jsonl`
 and adjacent `human-refined-13.geo_sorted_xy.coord.receipt.json`.
 Preserve owner/image IDs, including negative human-added annotation IDs.
 
 Refined5 has178 positives in train2017 images7116:5,309264:14,351017:49,417044:63,
 477415:47. The original pre-edit source contains83 positives, not the same labels.
 Frozen research reference:
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-17-history-rereading-mechanism/human-evaluation/annotation-snapshot-v1/working.norm.jsonl`.
-The live Label Studio workspace is
+`/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/inputs/refined5/working.norm.jsonl`.
+The former Label Studio workspace at
 `/data/CoordExp/public_data/coco/rescale_32_1024_bbox/label_studio_refinement_4`
-(Project3 despite its directory suffix); future exports create new versions,
-not permission to rewrite old results. Refinement does not establish exhaustive
-scene labels or verified negatives.
+was retired (Project3 despite its directory suffix). Its drafts were exported to
+`/data/CoordExp/public_data/coco/annotation_drafts/retired-label-studio-20261002/drafts.jsonl`;
+they are not a live editor or current training GT. Refinement does not establish
+exhaustive scene labels or verified negatives.
 
 The mature panel above binds Human13(13/392), refined5(5/178), sentinel128(128/919).
 There are145 unique images rather than146: bird309264 has different memberships.

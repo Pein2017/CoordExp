@@ -94,3 +94,11 @@ Reopen only for a matched improvement in fitting cost, old-owner preservation or
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.
+
+The retained machine evidence for the untied high-confidence18 comparison is
+`research/evidence/untied-highconfidence18-20260918/`; its recipe panel and
+full reduction are in this worktree's `outputs/research/untied-highconfidence18/2026-09-18/`.
+The protected-null sentinel receipt is in
+`outputs/research/image2299-protected-null-sentinel/2026-08-31/`.
+These replace the retired root run payloads; original receipt fields and
+scientific boundaries are unchanged.

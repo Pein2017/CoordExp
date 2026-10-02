@@ -1,0 +1,208 @@
+{
+  "status": "lead-accepted",
+  "lead": "01a0a3d5-dc45-7693-8467-4801aa7190df",
+  "utc": "2026-09-18T16:44:01.411254+00:00",
+  "candidate_terminal": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/integrated-terminal.json",
+    "sha256": "e30b7f42517396b127e245c751be0748b4927229be0853b246bdcc14ce0b851f",
+    "size_bytes": 2138
+  },
+  "candidate_manifest": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/candidate-manifest.json",
+    "sha256": "47d8c6918fbeb4b3b71dad87f6560e2c0f444e8a268cc3115f8df273872eeefa",
+    "size_bytes": 13646
+  },
+  "candidate_source_preservation": [
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-highconfidence18-natural/state.json",
+        "sha256": "93570334c10bc449fa5c0f976b7e52270cff7f95f8060424aa157bdc768b3755",
+        "size_bytes": 943
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-highconfidence18-natural/state.json",
+        "sha256": "93570334c10bc449fa5c0f976b7e52270cff7f95f8060424aa157bdc768b3755",
+        "size_bytes": 943
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-highconfidence18-natural/results.md",
+        "sha256": "0b8f183ccadd2c1b14b6576b59ed9ec362cecf705754795356db638d0d2358f3",
+        "size_bytes": 6775
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-highconfidence18-natural/results.md",
+        "sha256": "0b8f183ccadd2c1b14b6576b59ed9ec362cecf705754795356db638d0d2358f3",
+        "size_bytes": 6775
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-active-readout-geometry/state.json",
+        "sha256": "e789cc477d520e199133abeea87229ae019348c0b8c401c1d1ead3d77510ebf1",
+        "size_bytes": 973
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-active-readout-geometry/state.json",
+        "sha256": "e789cc477d520e199133abeea87229ae019348c0b8c401c1d1ead3d77510ebf1",
+        "size_bytes": 973
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-active-readout-geometry/results.md",
+        "sha256": "ccd3f050402edf18029cfa12e722113a29ca432650402aabb12db9fc53f6e08d",
+        "size_bytes": 4393
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-active-readout-geometry/results.md",
+        "sha256": "ccd3f050402edf18029cfa12e722113a29ca432650402aabb12db9fc53f6e08d",
+        "size_bytes": 4393
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-gradient-path-accounting/state.json",
+        "sha256": "5a16cf59710c9a6f30563b9314accf4467d5b25931915707939355b9d9547883",
+        "size_bytes": 973
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-gradient-path-accounting/state.json",
+        "sha256": "5a16cf59710c9a6f30563b9314accf4467d5b25931915707939355b9d9547883",
+        "size_bytes": 973
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-gradient-path-accounting/results.md",
+        "sha256": "d3cac36cad0f80b62a1bc249383072af763325370ec91b4fc51236ee373a879f",
+        "size_bytes": 3794
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-gradient-path-accounting/results.md",
+        "sha256": "d3cac36cad0f80b62a1bc249383072af763325370ec91b4fc51236ee373a879f",
+        "size_bytes": 3794
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-recurrence-feedback/state.json",
+        "sha256": "776742184bd38fc8df65a089704539fdbb8ad4b4557cb9f884fb3b1be44a5f1f",
+        "size_bytes": 899
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-recurrence-feedback/state.json",
+        "sha256": "776742184bd38fc8df65a089704539fdbb8ad4b4557cb9f884fb3b1be44a5f1f",
+        "size_bytes": 899
+      }
+    },
+    {
+      "original": {
+        "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-recurrence-feedback/results.md",
+        "sha256": "0904bc1d09ae32a2e49def1b20f7bdfa5d355ebeadc9c6ccf49b7f94844e8e72",
+        "size_bytes": 1434
+      },
+      "preserved": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/candidate-source-snapshot/2026-09-18-untied-recurrence-feedback/results.md",
+        "sha256": "0904bc1d09ae32a2e49def1b20f7bdfa5d355ebeadc9c6ccf49b7f94844e8e72",
+        "size_bytes": 1434
+      }
+    }
+  ],
+  "current_records": [
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-highconfidence18-natural/state.json",
+      "sha256": "654d50a076456326db6027cd141a4a40ea623717380469e7700ad1cdb0aba604",
+      "size_bytes": 1042
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-highconfidence18-natural/results.md",
+      "sha256": "bf93aa479cfcd63115ef2a285ad2fc93cebb9011bfd4bb8c598157848befa0bf",
+      "size_bytes": 7113
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-active-readout-geometry/state.json",
+      "sha256": "348d867c2ec74bfc13d8961e3412be6105eb02fb5d17507aefd18b9a6d48c426",
+      "size_bytes": 1060
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-active-readout-geometry/results.md",
+      "sha256": "bed7827e538175aa8bab9fbb81f1fa8d92d798fa862fbb1ca56a4ad848815dc5",
+      "size_bytes": 4735
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-gradient-path-accounting/state.json",
+      "sha256": "cbfbdcf7ddefe726ade2256bf59f2d598da668a4eafa9145375cea59f98c0fc3",
+      "size_bytes": 1047
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-gradient-path-accounting/results.md",
+      "sha256": "13c130cd5c6b58b6b8162406789a6aa05549f12178c5ce93bd83678f52db9078",
+      "size_bytes": 4161
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-recurrence-feedback/state.json",
+      "sha256": "ca34657b792edbbe7825bcb14aa2bcec99ed6583f85a751b68342acc9ee5ab73",
+      "size_bytes": 986
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-18-untied-recurrence-feedback/results.md",
+      "sha256": "ac2c5150d4d469f8f18b4a3325f021464280ce466dc92a6aa5fff7d38dd8817b",
+      "size_bytes": 1790
+    }
+  ],
+  "unit_verdicts": {
+    "2026-09-18-untied-highconfidence18-natural": "Lead-accepted natural contrast: package-specific normalization benefit and damage; no population recall or deployment promotion",
+    "2026-09-18-untied-active-readout-geometry": "Lead-accepted fixed-state readout accounting: scale-sensitive subset; substantial endpoint alignment survives; no causal layer or recurrence claim",
+    "2026-09-18-untied-gradient-path-accounting": "Technical-invalid gradient experiment; lead-accepted CPU correction and failure accounting; numerical question unanswered",
+    "2026-09-18-untied-recurrence-feedback": "Lead-accepted CPU admission-HOLD; physical A/B/control tuple unresolved; no model work executed"
+  },
+  "independent_verification": {
+    "candidate_manifest_bindings": 46,
+    "execution_bindings": 800,
+    "natural_saved_reduction_json_exact": true,
+    "natural_output_rows": 580,
+    "readout_recomputed_slots": 442,
+    "natural_reduction": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/lead-natural-reduction.json",
+      "sha256": "ba8aec76d7db6a856b42466ea7b916fbe82fc51fc172e0b9d7722168977a4885",
+      "size_bytes": 60427734
+    },
+    "readout_reconstruction": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/lead-readout-verification.json",
+      "sha256": "5e54b939e539deca7c8a685ea0e73f2617118908fa41dabcdda12927666d013b",
+      "size_bytes": 667
+    },
+    "axis_CPU_correction": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-gradient-path-accounting/cpu-axis-correction/lead-verification.json",
+      "sha256": "9aaea513c09cb38771a1910b88e5ea43523610ef6e61591baf34c686167af6fd",
+      "size_bytes": 709
+    },
+    "physical_review_scope": "30 selected events; reviewer judgments only,16HOLD plus2region-retained identity-HOLD; no population precision claim",
+    "bounded_readout_claim_review": "No blocker; coordinate/full-vocabulary winners coincide on292 selected coordinate slots; scale sensitivity is not recurrence causality"
+  },
+  "technical_status": "A/B saved evidence valid; C gradient invalid; D unexecuted",
+  "scientific_status": "Bounded readout-scale contribution and package-dependent natural effects; recurrence origin/maintenance unresolved",
+  "live_jobs": [],
+  "cost": {
+    "model_forwards": 56247,
+    "backwards": 2,
+    "allocated_gpu_seconds": 7794.607999064028,
+    "additional_model_calls_during_closeout": 0,
+    "actual_pt_file_bytes": {
+      "2026-09-18-untied-highconfidence18-natural": 411511170,
+      "2026-09-18-untied-active-readout-geometry": 1942968903,
+      "2026-09-18-untied-gradient-path-accounting": 25376559,
+      "2026-09-18-untied-recurrence-feedback": 0
+    }
+  },
+  "successor_authorization": "none",
+  "knowledge_check": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/coordination/lead-closeout-knowledge.json",
+    "sha256": "537a9535ec65298316ea644d34e1544fee09d0eff1b8c8824b9fc020ed33702a",
+    "ok": true
+  },
+  "closed_at": "2026-09-18T16:44:36.355644+00:00",
+  "git_diff_check": "passed"
+}

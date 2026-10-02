@@ -5,16 +5,19 @@ from pathlib import Path
 
 import torch
 
+from probes import hidden_human_recovery as hidden
 from probes import iterative_positive as p
 from src.losses.vocab import build_token_vocabulary_groups
 from src.qwen.runtime_loading import QwenLoadOptions,load_qwen_components_from_options
 from src.supervision.tokens import TokenSequence
 
+FIXTURE_ROOT = Path('/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-09-27/iterative-positive-01')
+
 
 class IterativePositiveTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.plan=p.load(p.ROOT/'learning-plan.json')
+        cls.plan=p.load(FIXTURE_ROOT/'learning-plan.json')
         cls.q=load_qwen_components_from_options(QwenLoadOptions(p.load(p.POLICY)['base_model'],'fp32','sdpa',load_model=False))
         cls.vocab=build_token_vocabulary_groups(cls.q.token_identity,tokenizer=cls.q.tokenizer)
 
@@ -23,7 +26,7 @@ class IterativePositiveTest(unittest.TestCase):
         from types import SimpleNamespace
         from src.qwen.untied_embeddings import (SpecialTokenEmbeddingInstallReceipt,
             load_special_token_embedding_deltas)
-        checkpoint=Path(p.load(p.POLICY)['checkpoint'])
+        checkpoint=hidden.CHECKPOINT
         metadata=p.load(checkpoint/'special_token_embeddings/special_token_embeddings.json')
         class Loaded(Exception): pass
         def install(model,selection,**kwargs):
@@ -49,8 +52,23 @@ class IterativePositiveTest(unittest.TestCase):
             with self.assertRaises(Loaded):
                 p.compose(checkpoint)
 
+    def test_compose_rejects_wrong_rebased_checkpoint_hash_before_model_load(self):
+        from unittest.mock import Mock, patch
+        checkpoint=hidden.CHECKPOINT
+        relative=Path('adapter/adapter_config.json')
+        correct=p.digest(checkpoint/relative)
+        wrong=correct[:-1]+('0' if correct[-1]!='0' else '1')
+        anchor=Path('/retired/step-2444')
+        policy=dict(checkpoint=str(anchor),payload_sha256={str(anchor/relative):wrong},base_model='unused')
+        load_model=Mock()
+        with patch.object(p,'load',side_effect=lambda path: policy if Path(path)==p.POLICY else self.fail('unexpected load')), \
+             patch('src.qwen.runtime_loading.load_qwen_components_from_options',load_model):
+            with self.assertRaises(AssertionError):
+                p.compose(checkpoint)
+        load_model.assert_not_called()
+
     def test_real_diversity_and_hidden_independence(self):
-        bank=p.load(p.ROOT/'candidates.json')
+        bank=p.load(FIXTURE_ROOT/'candidates.json')
         selected=p.diverse_selection(bank)
         altered=copy.deepcopy(bank)
         altered['hidden_truth']=[{'box':[0,0,999,999],'category':'changed'}]
@@ -108,8 +126,8 @@ class IterativePositiveTest(unittest.TestCase):
         self.assertEqual(a.input_ids,b.input_ids);self.assertEqual(seq,seq2)
 
     def test_novel_selection_real_bank_and_fractional_or_quantized(self):
-        bank=p.load(p.ROOT/'candidates.json')
-        ordinary,_=p.candidates(p.read_evaluation(p.ROOT/'round-01/evaluation-zero'))
+        bank=p.load(FIXTURE_ROOT/'candidates.json')
+        ordinary,_=p.candidates(p.read_evaluation(FIXTURE_ROOT/'round-01/evaluation-zero'))
         selected=p.novel_selection(bank,ordinary)
         old={c['candidate_id'] for c in p.diverse_selection(bank)['selected']}
         covered=set(selected['ordinary_greedy_witnesses'])

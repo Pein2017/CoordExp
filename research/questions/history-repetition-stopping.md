@@ -202,3 +202,8 @@ keeps original evidence labels, artifact locators and exact recovery paths.
 Detailed protocols/populations/config bindings, acceptance notes and tables are
 recoverable in Git `108dede0154abfd90a54d18234d9e0bac780a3ba` at the recorded unit
 root. Historical reading is not continuation authority or verified GPU replay.
+
+The accepted local-prefix-phase machine summary and readback are Git-managed at
+`research/evidence/recurrence-local-prefix-phase-20260922/`. Other attempts, raw
+tensors and expanded duplicate readbacks were retired; this does not change the
+catalogued claim or qualify a new execution.

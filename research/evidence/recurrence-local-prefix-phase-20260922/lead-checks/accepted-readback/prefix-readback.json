@@ -1,0 +1,345 @@
+{
+  "status": "root-independent-readback-qualified",
+  "attempt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002",
+  "source_capture": {
+    "path": "/data/CoordExp/.worktrees/research-probes/reference/retained-sources/runs/00445736f3e40ab974ec209bfd77cfe335c7b252a8140bb09bb3436f8b721a6a/recurrence_local_prefix_phase_readback.py",
+    "sha256": "bb70d77202bea371ecb6b0d30c8a15a666cf4d5d7ca969612b3eaa07624f8d6e",
+    "size_bytes": 12097
+  },
+  "verified_bindings": 34,
+  "corrected_tensor_bindings": {
+    "query_only": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+      "sha256": "3f0b0e2dcff98e112689672c506266c4f043ccf60e5daff45454e2a38d4e6a33",
+      "size_bytes": 8553657
+    },
+    "identity_recompute": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+      "sha256": "3cb4a6620ddee8c4cacab1c78c11f832fafde20c2a814f5156db3e4eb5ffbf45",
+      "size_bytes": 14016257
+    },
+    "prefix_coherent": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+      "sha256": "38d3354455f9b735cf46ffededba3a5b412a2d955505ef1acc544f1174f87b14",
+      "size_bytes": 14016257
+    }
+  },
+  "producer_binding_defect": {
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt": {
+      "producer_pre_enrichment_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+        "sha256": "db7ae9009c5efa3820c8bf960a82a7d8f71bc944e47679d5851e34275cc703f2",
+        "size_bytes": 6405470
+      },
+      "fresh_enriched_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+        "sha256": "3f0b0e2dcff98e112689672c506266c4f043ccf60e5daff45454e2a38d4e6a33",
+        "size_bytes": 8553657
+      }
+    },
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt": {
+      "producer_pre_enrichment_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+        "sha256": "db7ae9009c5efa3820c8bf960a82a7d8f71bc944e47679d5851e34275cc703f2",
+        "size_bytes": 6405470
+      },
+      "fresh_enriched_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+        "sha256": "3cb4a6620ddee8c4cacab1c78c11f832fafde20c2a814f5156db3e4eb5ffbf45",
+        "size_bytes": 14016257
+      }
+    },
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt": {
+      "producer_pre_enrichment_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+        "sha256": "4d5217099a0839bac9d28a55c9b58d06deee2e33248a311cd060738b8061adf5",
+        "size_bytes": 6405470
+      },
+      "fresh_enriched_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+        "sha256": "38d3354455f9b735cf46ffededba3a5b412a2d955505ef1acc544f1174f87b14",
+        "size_bytes": 14016257
+      }
+    }
+  },
+  "parity_errors": {
+    "baseline_vs_prior": 0.0,
+    "identity_vs_baseline": 0.0
+  },
+  "gates": {
+    "query_only": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 0.0,
+      "relative_phase_score_error": 0.0,
+      "identity_attention_error": 0.0
+    },
+    "identity_recompute": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 1.3082627191352003e-05,
+      "relative_phase_score_error": 0.0,
+      "identity_attention_error": 0.0
+    },
+    "prefix_coherent": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 1.3823287275727125e-05,
+      "relative_phase_score_error": 6.697651768305946e-05,
+      "identity_attention_error": 0.0
+    }
+  },
+  "summaries": {
+    "query_only": {
+      "winner_token": 152249,
+      "winner_bin": 579,
+      "top10": [
+        {
+          "token": 152249,
+          "bin": 579,
+          "logit": 16.719303131103516,
+          "probability": 0.022592349605746055
+        },
+        {
+          "token": 152245,
+          "bin": 575,
+          "logit": 16.5068359375,
+          "probability": 0.018267876637040374
+        },
+        {
+          "token": 152262,
+          "bin": 592,
+          "logit": 16.498842239379883,
+          "probability": 0.01812243084527288
+        },
+        {
+          "token": 152275,
+          "bin": 605,
+          "logit": 16.497098922729492,
+          "probability": 0.018090865232258533
+        },
+        {
+          "token": 152252,
+          "bin": 582,
+          "logit": 16.49180030822754,
+          "probability": 0.017995262216821652
+        },
+        {
+          "token": 152267,
+          "bin": 597,
+          "logit": 16.444738388061523,
+          "probability": 0.017167989819711276
+        },
+        {
+          "token": 152246,
+          "bin": 576,
+          "logit": 16.3201961517334,
+          "probability": 0.01515763486621182
+        },
+        {
+          "token": 152244,
+          "bin": 574,
+          "logit": 16.316511154174805,
+          "probability": 0.015101881806769918
+        },
+        {
+          "token": 152250,
+          "bin": 580,
+          "logit": 16.288145065307617,
+          "probability": 0.01467951919335571
+        },
+        {
+          "token": 152254,
+          "bin": 584,
+          "logit": 16.287992477416992,
+          "probability": 0.01467727944737001
+        }
+      ],
+      "d38_minus_999": -3.503167152404785,
+      "probes": {
+        "38": {
+          "probability": 3.571204126688354e-05,
+          "rank": 420
+        },
+        "999": {
+          "probability": 0.0011863718635359184,
+          "rank": 124
+        },
+        "579": {
+          "probability": 0.022592349605746055,
+          "rank": 1
+        }
+      }
+    },
+    "identity_recompute": {
+      "winner_token": 152249,
+      "winner_bin": 579,
+      "top10": [
+        {
+          "token": 152249,
+          "bin": 579,
+          "logit": 16.719303131103516,
+          "probability": 0.022592349605746055
+        },
+        {
+          "token": 152245,
+          "bin": 575,
+          "logit": 16.5068359375,
+          "probability": 0.018267876637040374
+        },
+        {
+          "token": 152262,
+          "bin": 592,
+          "logit": 16.498842239379883,
+          "probability": 0.01812243084527288
+        },
+        {
+          "token": 152275,
+          "bin": 605,
+          "logit": 16.497098922729492,
+          "probability": 0.018090865232258533
+        },
+        {
+          "token": 152252,
+          "bin": 582,
+          "logit": 16.49180030822754,
+          "probability": 0.017995262216821652
+        },
+        {
+          "token": 152267,
+          "bin": 597,
+          "logit": 16.444738388061523,
+          "probability": 0.017167989819711276
+        },
+        {
+          "token": 152246,
+          "bin": 576,
+          "logit": 16.3201961517334,
+          "probability": 0.01515763486621182
+        },
+        {
+          "token": 152244,
+          "bin": 574,
+          "logit": 16.316511154174805,
+          "probability": 0.015101881806769918
+        },
+        {
+          "token": 152250,
+          "bin": 580,
+          "logit": 16.288145065307617,
+          "probability": 0.01467951919335571
+        },
+        {
+          "token": 152254,
+          "bin": 584,
+          "logit": 16.287992477416992,
+          "probability": 0.01467727944737001
+        }
+      ],
+      "d38_minus_999": -3.503167152404785,
+      "probes": {
+        "38": {
+          "probability": 3.571204126688354e-05,
+          "rank": 420
+        },
+        "999": {
+          "probability": 0.0011863718635359184,
+          "rank": 124
+        },
+        "579": {
+          "probability": 0.022592349605746055,
+          "rank": 1
+        }
+      }
+    },
+    "prefix_coherent": {
+      "winner_token": 151708,
+      "winner_bin": 38,
+      "top10": [
+        {
+          "token": 151708,
+          "bin": 38,
+          "logit": 20.764432907104492,
+          "probability": 0.04952005439780037
+        },
+        {
+          "token": 151707,
+          "bin": 37,
+          "logit": 20.58993148803711,
+          "probability": 0.04159068848885261
+        },
+        {
+          "token": 151714,
+          "bin": 44,
+          "logit": 20.424633026123047,
+          "probability": 0.03525395938382489
+        },
+        {
+          "token": 151710,
+          "bin": 40,
+          "logit": 20.372512817382812,
+          "probability": 0.033463578457175264
+        },
+        {
+          "token": 151715,
+          "bin": 45,
+          "logit": 20.338987350463867,
+          "probability": 0.03236029376691635
+        },
+        {
+          "token": 151706,
+          "bin": 36,
+          "logit": 20.24233055114746,
+          "probability": 0.029378860083244113
+        },
+        {
+          "token": 151709,
+          "bin": 39,
+          "logit": 20.207956314086914,
+          "probability": 0.02838614386012192
+        },
+        {
+          "token": 151713,
+          "bin": 43,
+          "logit": 20.205394744873047,
+          "probability": 0.028313523838224476
+        },
+        {
+          "token": 151712,
+          "bin": 42,
+          "logit": 20.01357650756836,
+          "probability": 0.023371593392650245
+        },
+        {
+          "token": 151717,
+          "bin": 47,
+          "logit": 19.991153717041016,
+          "probability": 0.022853368783279388
+        }
+      ],
+      "d38_minus_999": 4.108404159545898,
+      "probes": {
+        "38": {
+          "probability": 0.04952005439780037,
+          "rank": 1
+        },
+        "999": {
+          "probability": 0.0008138115647872744,
+          "rank": 103
+        },
+        "579": {
+          "probability": 5.385792582811056e-06,
+          "rank": 345
+        }
+      }
+    }
+  },
+  "model_forwards": 3,
+  "vision_forwards": 3,
+  "failed_attempt_model_forwards": 0,
+  "full_text_sdpa_calls": 84,
+  "selected_sdpa_calls": 54,
+  "tensor_bytes": 45371874,
+  "elapsed_seconds": 156.5594920963049,
+  "peak_reserved_bytes": 13214154752
+}

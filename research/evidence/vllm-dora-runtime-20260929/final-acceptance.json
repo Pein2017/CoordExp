@@ -1,0 +1,121 @@
+{
+  "status": "lead-accepted-bounded-infrastructure",
+  "utc": "2026-09-29T20:36:00.552559+00:00",
+  "repository": "/data/CoordExp/.worktrees/research-probes",
+  "final_commit": "feffa29a6e68a45cd1da91ef058bf4b0b8bccedc",
+  "runtime_code_commit": "26df55678fd0d5968b9aa4810a360ccf0f3211a2",
+  "graph_benchmark_commit": "0eee3d4e998ec562d8862ea75a7880733d2396f9",
+  "scope": "Repository-local resident Qwen3-VL DoRA rollout, HF forward/backward, dynamic refresh and two-rank DDP coexistence; no Conda package mutation",
+  "versions": {
+    "flash-attn": "2.8.4",
+    "peft": "0.21.1",
+    "torch": "2.13.0+cu129",
+    "transformers": "5.17.0",
+    "vllm": "0.29.0+cu129"
+  },
+  "hardware": "NVIDIA A100 80GB PCIe",
+  "qualified_workload": {
+    "checkpoint": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256",
+    "images": [
+      1584,
+      2299
+    ],
+    "max_new_tokens": 128,
+    "initial_snapshot": "2005a9b4a07c19296c8e2af98ef5e24dc9ddabe33ad9a94d42d8b7d83984ad3b",
+    "world_size_mechanics": 2,
+    "ddp_max_new_tokens": 32,
+    "trainable_tensors": 590
+  },
+  "measurement": {
+    "hf_sequential_seconds": 25.268311381340027,
+    "vllm_eager_batch_seconds": 7.599307976663113,
+    "vllm_graph_batch_seconds": 1.7680894061923027,
+    "realized_tokens": 255,
+    "warm_rollout_speedup": 14.291308625482353,
+    "graph_cold_startup_seconds": 45.6754150763154,
+    "single_gpu_refresh_end_to_end_seconds": 0.6336952820420265,
+    "ddp_refresh_seconds": [
+      1.042193479835987,
+      1.0308739319443703
+    ],
+    "vllm_worker_peak_pytorch_bytes": 7476120576
+  },
+  "correctness": {
+    "local_PEFT_math_tests": "Passed including CUDA BF16 tiny-wrapper exact parity",
+    "actual_saved_adapter_tensors": 588,
+    "embedding_delta_tensors": 2,
+    "hf_teacher_gradients": "590 finite nonzero per DDP rank",
+    "ddp_updated_snapshot": "c0ead06020f772f1a8c0fcca81914cf5f22e6a9f1d788fce00fd4b0b4dccf125",
+    "graph_refresh_changes_output": [
+      true,
+      true
+    ],
+    "graph_restore_exact_tokens_and_logprobs": [
+      true,
+      true
+    ],
+    "eager_graph_initial_token_ids_equal": true,
+    "hf_vllm_shared_prefixes": [
+      {
+        "hf_tokens": 127,
+        "image_id": 1584,
+        "shared_tokens": 14,
+        "vllm_tokens": 127
+      },
+      {
+        "hf_tokens": 128,
+        "image_id": 2299,
+        "shared_tokens": 33,
+        "vllm_tokens": 128
+      }
+    ],
+    "hf_vllm_teacher_first32": [
+      {
+        "image_id": 1584,
+        "max_abs_difference": 0.15325188636779785,
+        "mean_abs_difference": 0.020179296483907372,
+        "tokens": 32
+      },
+      {
+        "image_id": 2299,
+        "max_abs_difference": 0.2971625328063965,
+        "mean_abs_difference": 0.029584813104783114,
+        "tokens": 32
+      }
+    ]
+  },
+  "checks": {
+    "focused_suite": "72 passed; before graph default promotion",
+    "final_rollout_suite": "3 passed",
+    "graph_smoke_exit": 0,
+    "ddp_smoke_exit": 0,
+    "diff_and_compile": "passed"
+  },
+  "limitations": [
+    "Single bounded warm timing, not full training speedup or efficacy",
+    "HF and vLLM greedy trajectories are not identical; HF remains the experiment default and vLLM needs fresh explicit qualification",
+    "No 8-rank or 3084-token full research launch performed",
+    "Peak allocation is worker-only, excluding HF and non-PyTorch allocations",
+    "Prior stopped scientific recipe and unrelated dirty research records preserved"
+  ],
+  "preserved_failed_attempts": {
+    "eager-smoke-01": "PEFT saved magnitude key without weight suffix; fixed exact-key normalization",
+    "eager-smoke-02": "Per-tensor IPC file descriptor exhaustion; fixed byte-serialized snapshots",
+    "ddp-smoke-01": "Default 92 percent startup gate conflicts with resident DDP; explicit20 percent guard with2GiB KV passed"
+  },
+  "receipts_sha256": {
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/graph-smoke-01/receipt.json": "9a32e2e7a4d2b2106593ea90c53e2b06c51f8bad709a439b8253f0524935a464",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/eager-smoke-03/receipt.json": "183adfa69fdb26abcb9e54801420a9939238fae5e267e454d1f1de8a857d3409",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/ddp-smoke-02/rank-0/receipt.json": "0d8b318baaceac10bb48794886f2fb45416188bddb9e8991afb0ece316b073f2",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/ddp-smoke-02/rank-1/receipt.json": "86e9b84228f05346e1021640bec2bbaa5f9827a82436b1552977e7f3ec5eb61c",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/checks-final.log": "63e087b12c04515c354feb2ab5e80380c9a961d1badaa140b010df6f4bcd0bdd",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/checks-rollout-final.log": "1eca57cb23cb4cdd52ee119b10b0a5fd72d659c094f496e95b3ff7ddb882bbd3",
+    "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/result.json": "91ed7f696ba58b628cd455b21c3b6dfb9f26fd875b6503493a642d01728f16da"
+  },
+  "runtime_processes": "All validation invocations exited; no process retained in validation checkout",
+  "handoff_target": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "handoff_dispatch_receipt": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/training-handoff-dispatch.json",
+  "handoff_dispatch_sha256": "06b0d03975b854637d29c1131bf8d2f8ab68d11d202aa00e0391a2f5ebf29f0a",
+  "handoff_message_sha256": "a3d8ed57759dad93daa8fbf51421a0b55a9b99d4999a9ee0ddb66b059ef4c78b",
+  "validation_worktree_cleanup": "Managed validation checkout archived and confirmed by Codex artifact registry; all validation processes exited; canonical code and external receipts retained"
+}

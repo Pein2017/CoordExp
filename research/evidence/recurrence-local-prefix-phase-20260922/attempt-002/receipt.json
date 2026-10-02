@@ -1,0 +1,48 @@
+{
+  "schema": "recurrence_local_prefix_phase.receipt.v1",
+  "status": "candidate_complete",
+  "pid": 4099071,
+  "device": "cuda:4",
+  "model_forwards": 3,
+  "vision_forwards": 3,
+  "cell_order": [
+    "query_only",
+    "identity_recompute",
+    "prefix_coherent"
+  ],
+  "completed_cells": [
+    "query_only",
+    "identity_recompute",
+    "prefix_coherent"
+  ],
+  "calls": [
+    {
+      "cell": "query_only",
+      "seconds": 53.98139165341854
+    },
+    {
+      "cell": "identity_recompute",
+      "seconds": 49.36403717845678
+    },
+    {
+      "cell": "prefix_coherent",
+      "seconds": 46.39699174463749
+    }
+  ],
+  "started_unix": 1790097741.343334,
+  "started": 36235656.36792162,
+  "manifest": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/source-to-cell.json",
+    "sha256": "0768ae4b2197f3c3540170fde73434ffcce238337c6b18be5ed0224915e05551",
+    "size_bytes": 113469
+  },
+  "current_cell": "prefix_coherent",
+  "tensor_bytes": 10250328,
+  "result": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/result.json",
+    "sha256": "2c133d254c854ec470af62c1cd1be64fc47c8cf7791775c54c167334a72f2258",
+    "size_bytes": 2813
+  },
+  "elapsed_seconds": 156.5594920963049,
+  "peak_reserved_bytes": 13214154752
+}

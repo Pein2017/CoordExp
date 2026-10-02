@@ -1,0 +1,351 @@
+{
+  "status": "lead-accepted",
+  "unit_id": "2026-09-22-recurrence-local-prefix-phase",
+  "scientific_disposition": "Local prefix phase alignment restores38; predecessor579 is sensitive to introduced local incoherence; late state plus phase/local alignment remains insufficient for999.",
+  "technical_disposition": "Independent raw readback qualified; producer pre-enrichment hashes superseded by explicit fresh tensor bindings; original evidence preserved.",
+  "protocol": {
+    "path": "research/experiments/2026-09-22-recurrence-local-prefix-phase/unit.md",
+    "sha256": "79b70ddc637effa21fae8a3ca1b9131e6858df079f14daf4f9e901ad41d40f6b",
+    "size_bytes": 6711
+  },
+  "results": {
+    "path": "research/experiments/2026-09-22-recurrence-local-prefix-phase/results.md",
+    "sha256": "7a6165c00a6795895a6a238e83221752820a63bcac56f8a5b1793cf2b6a6c717",
+    "size_bytes": 7767
+  },
+  "readback": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-checks/accepted-readback/prefix-readback.json",
+    "sha256": "9d683a2f86c1684b431b8456299c5474ed48441a9732fd5dd70944df1f8a6c78",
+    "size_bytes": 11070
+  },
+  "metadata_repair_check": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-checks/binding-repair-check.json",
+    "sha256": "7849552c50787599a10cecbbbba0fa52607ddb76037466f5e7500fb278db3d97",
+    "size_bytes": 1451
+  },
+  "saved_cohort_inventory": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-checks/cohort-inventory.json",
+    "sha256": "51e0a72c07d6c1c2631e8c65af5310d18cf80f06d4190f6528395da24dff830e",
+    "size_bytes": 50987
+  },
+  "executed_producer_capture": {
+    "path": "/data/CoordExp/.worktrees/research-probes/reference/retained-sources/runs/c8953d72d9546bc670c48227e832d60ac52a72a54d57861a2baf6e745f47c9c3/recurrence_local_prefix_phase.py",
+    "sha256": "12c1e858db6f7ac1b6425b266ddd29327e62936d10584d5ea99efdc4fac78424",
+    "size_bytes": 43555
+  },
+  "maintained_producer_after_metadata_fix": {
+    "path": "probes/training_set_completion/recurrence_local_prefix_phase.py",
+    "sha256": "04ff7a04b4532954eb2f01259f66660ba89851301104d78510e5c1014145e58e",
+    "size_bytes": 43618
+  },
+  "tensors": {
+    "query_only": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/query_only/held_late_phase.pt",
+      "sha256": "3f0b0e2dcff98e112689672c506266c4f043ccf60e5daff45454e2a38d4e6a33",
+      "size_bytes": 8553657
+    },
+    "identity_recompute": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/identity_recompute/held_late_phase.pt",
+      "sha256": "3cb4a6620ddee8c4cacab1c78c11f832fafde20c2a814f5156db3e4eb5ffbf45",
+      "size_bytes": 14016257
+    },
+    "prefix_coherent": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-002/prefix_coherent/held_late_phase.pt",
+      "sha256": "38d3354455f9b735cf46ffededba3a5b412a2d955505ef1acc544f1174f87b14",
+      "size_bytes": 14016257
+    }
+  },
+  "parity_errors": {
+    "baseline_vs_prior": 0.0,
+    "identity_vs_baseline": 0.0
+  },
+  "gates": {
+    "query_only": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 0.0,
+      "relative_phase_score_error": 0.0,
+      "identity_attention_error": 0.0
+    },
+    "identity_recompute": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 1.3082627191352003e-05,
+      "relative_phase_score_error": 0.0,
+      "identity_attention_error": 0.0
+    },
+    "prefix_coherent": {
+      "incoming_state_error": 0.0,
+      "companion_error": 0.0,
+      "prefix_rotation_error": 1.3823287275727125e-05,
+      "relative_phase_score_error": 6.697651768305946e-05,
+      "identity_attention_error": 0.0
+    }
+  },
+  "summaries": {
+    "query_only": {
+      "winner_token": 152249,
+      "winner_bin": 579,
+      "top10": [
+        {
+          "token": 152249,
+          "bin": 579,
+          "logit": 16.719303131103516,
+          "probability": 0.022592349605746055
+        },
+        {
+          "token": 152245,
+          "bin": 575,
+          "logit": 16.5068359375,
+          "probability": 0.018267876637040374
+        },
+        {
+          "token": 152262,
+          "bin": 592,
+          "logit": 16.498842239379883,
+          "probability": 0.01812243084527288
+        },
+        {
+          "token": 152275,
+          "bin": 605,
+          "logit": 16.497098922729492,
+          "probability": 0.018090865232258533
+        },
+        {
+          "token": 152252,
+          "bin": 582,
+          "logit": 16.49180030822754,
+          "probability": 0.017995262216821652
+        },
+        {
+          "token": 152267,
+          "bin": 597,
+          "logit": 16.444738388061523,
+          "probability": 0.017167989819711276
+        },
+        {
+          "token": 152246,
+          "bin": 576,
+          "logit": 16.3201961517334,
+          "probability": 0.01515763486621182
+        },
+        {
+          "token": 152244,
+          "bin": 574,
+          "logit": 16.316511154174805,
+          "probability": 0.015101881806769918
+        },
+        {
+          "token": 152250,
+          "bin": 580,
+          "logit": 16.288145065307617,
+          "probability": 0.01467951919335571
+        },
+        {
+          "token": 152254,
+          "bin": 584,
+          "logit": 16.287992477416992,
+          "probability": 0.01467727944737001
+        }
+      ],
+      "d38_minus_999": -3.503167152404785,
+      "probes": {
+        "38": {
+          "probability": 3.571204126688354e-05,
+          "rank": 420
+        },
+        "999": {
+          "probability": 0.0011863718635359184,
+          "rank": 124
+        },
+        "579": {
+          "probability": 0.022592349605746055,
+          "rank": 1
+        }
+      }
+    },
+    "identity_recompute": {
+      "winner_token": 152249,
+      "winner_bin": 579,
+      "top10": [
+        {
+          "token": 152249,
+          "bin": 579,
+          "logit": 16.719303131103516,
+          "probability": 0.022592349605746055
+        },
+        {
+          "token": 152245,
+          "bin": 575,
+          "logit": 16.5068359375,
+          "probability": 0.018267876637040374
+        },
+        {
+          "token": 152262,
+          "bin": 592,
+          "logit": 16.498842239379883,
+          "probability": 0.01812243084527288
+        },
+        {
+          "token": 152275,
+          "bin": 605,
+          "logit": 16.497098922729492,
+          "probability": 0.018090865232258533
+        },
+        {
+          "token": 152252,
+          "bin": 582,
+          "logit": 16.49180030822754,
+          "probability": 0.017995262216821652
+        },
+        {
+          "token": 152267,
+          "bin": 597,
+          "logit": 16.444738388061523,
+          "probability": 0.017167989819711276
+        },
+        {
+          "token": 152246,
+          "bin": 576,
+          "logit": 16.3201961517334,
+          "probability": 0.01515763486621182
+        },
+        {
+          "token": 152244,
+          "bin": 574,
+          "logit": 16.316511154174805,
+          "probability": 0.015101881806769918
+        },
+        {
+          "token": 152250,
+          "bin": 580,
+          "logit": 16.288145065307617,
+          "probability": 0.01467951919335571
+        },
+        {
+          "token": 152254,
+          "bin": 584,
+          "logit": 16.287992477416992,
+          "probability": 0.01467727944737001
+        }
+      ],
+      "d38_minus_999": -3.503167152404785,
+      "probes": {
+        "38": {
+          "probability": 3.571204126688354e-05,
+          "rank": 420
+        },
+        "999": {
+          "probability": 0.0011863718635359184,
+          "rank": 124
+        },
+        "579": {
+          "probability": 0.022592349605746055,
+          "rank": 1
+        }
+      }
+    },
+    "prefix_coherent": {
+      "winner_token": 151708,
+      "winner_bin": 38,
+      "top10": [
+        {
+          "token": 151708,
+          "bin": 38,
+          "logit": 20.764432907104492,
+          "probability": 0.04952005439780037
+        },
+        {
+          "token": 151707,
+          "bin": 37,
+          "logit": 20.58993148803711,
+          "probability": 0.04159068848885261
+        },
+        {
+          "token": 151714,
+          "bin": 44,
+          "logit": 20.424633026123047,
+          "probability": 0.03525395938382489
+        },
+        {
+          "token": 151710,
+          "bin": 40,
+          "logit": 20.372512817382812,
+          "probability": 0.033463578457175264
+        },
+        {
+          "token": 151715,
+          "bin": 45,
+          "logit": 20.338987350463867,
+          "probability": 0.03236029376691635
+        },
+        {
+          "token": 151706,
+          "bin": 36,
+          "logit": 20.24233055114746,
+          "probability": 0.029378860083244113
+        },
+        {
+          "token": 151709,
+          "bin": 39,
+          "logit": 20.207956314086914,
+          "probability": 0.02838614386012192
+        },
+        {
+          "token": 151713,
+          "bin": 43,
+          "logit": 20.205394744873047,
+          "probability": 0.028313523838224476
+        },
+        {
+          "token": 151712,
+          "bin": 42,
+          "logit": 20.01357650756836,
+          "probability": 0.023371593392650245
+        },
+        {
+          "token": 151717,
+          "bin": 47,
+          "logit": 19.991153717041016,
+          "probability": 0.022853368783279388
+        }
+      ],
+      "d38_minus_999": 4.108404159545898,
+      "probes": {
+        "38": {
+          "probability": 0.04952005439780037,
+          "rank": 1
+        },
+        "999": {
+          "probability": 0.0008138115647872744,
+          "rank": 103
+        },
+        "579": {
+          "probability": 5.385792582811056e-06,
+          "rank": 345
+        }
+      }
+    }
+  },
+  "cost": {
+    "model_forwards": 3,
+    "vision_forwards": 3,
+    "failed_attempt_model_forwards": 0,
+    "full_text_sdpa_calls": 84,
+    "selected_sdpa_calls": 54,
+    "tensor_bytes": 45371874,
+    "elapsed_seconds": 156.5594920963049,
+    "peak_reserved_bytes": 13214154752
+  },
+  "failed_attempt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/attempt-001/receipt.json",
+    "sha256": "f09ed3773d5f03ec9a4bd161826801b2778dfdf00af51b4be14df374041d1e0f",
+    "size_bytes": 537
+  },
+  "terminal_pids": [
+    4092902,
+    4099071
+  ],
+  "next_action": "Closed local coherence unit. Cross-image natural-history comparison is a distinct unlaunched direction; select episodes, not image EOS classes.",
+  "non_overlap": "No peer codebook/three-loss model work, no checkpoint change, no training or generation."
+}

@@ -1,0 +1,20 @@
+{
+  "status": "candidate_complete",
+  "acceptance": "unreviewed_by_root",
+  "result": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-18-untied-highconfidence18-natural/result.json",
+    "sha256": "28467412fddbe7ce432e2d4b689f296897e7dd2f51c950aef4738665bc675115",
+    "size_bytes": 321006
+  },
+  "cost": {
+    "forwards": 55804,
+    "gpu_seconds": 6433.049303017557,
+    "vision_forwards": 160,
+    "active_tokens": 85553,
+    "padded_token_work": 202369,
+    "completed_batches": 148,
+    "allocated_gpu_seconds_completed_workers": 6704.371750839055
+  },
+  "live_jobs": [],
+  "closed_at": "2026-09-18T16:37:50.830967+00:00"
+}
