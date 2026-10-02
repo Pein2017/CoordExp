@@ -312,15 +312,15 @@
     "user_limit_removed_utc": "2026-10-02T09:20:46Z",
     "original_limit_gpu_hours": 64,
     "original_limit_status": "historical_superseded",
-    "cumulative_used_gpu_hours": 16.193740099274315,
-    "current_unit_used_gpu_hours": 13.996486765940984,
+    "cumulative_used_gpu_hours": 16.55464640225291,
+    "current_unit_used_gpu_hours": 14.35739306891958,
     "reserved_gpu_hours": 0,
     "usage_meaning": "informational, not a stop gate",
-    "accounting_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/lower-lr-accounting-02.json",
-    "accounting_receipt_sha256": "60c7b55d59ff0a621c884a09f7e06b74edce4f86d55bba6b738f0ecdf0e1a9f9",
+    "accounting_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/coord-norm-accounting-01.json",
+    "accounting_receipt_sha256": "1bfda3fc53bea2c3090a488a8daa34bd19e350cbedf48b5ff667325aec4fbc25",
     "operational_bounds": "finite invocation wall/work/identity/failure supervision is specified by each exact release"
   },
-  "job_state": "All released native jobs terminal and cleaned; user requested pause for joint analysis on 2026-10-02; no next invocation released.",
+  "job_state": "All released native jobs terminal and cleaned, including the one user-authorized coord-norm inference exception. Broader research remains paused for analysis; no next invocation released.",
   "native_released": false,
   "lead_accepted": true,
   "user_scientific_acceptance": false,
@@ -2364,7 +2364,49 @@
   },
   "pause": {
     "reason": "User requested pause to analyze current research situation; Notion synthesis authorized concurrently.",
-    "scope": "New experiments and native launches paused; existing-result analysis and documentation continue.",
+    "scope": "Broader new experiments remain paused. The separately authorized one 36-request same-checkpoint coord-norm contrast is complete and consumed; existing-result analysis and documentation may continue.",
     "no_live_native_job": true
+  },
+  "coord_norm_followup": {
+    "status": "lead-accepted",
+    "technical_status": "complete_after_CPU_only_scoring_repair",
+    "scientific_status": "mixed_fixed_checkpoint_policy_effect_no_default_change",
+    "authority": "User explicitly authorized one same-checkpoint OFF/median paired inference after the analysis pause; grant consumed by exactly 36 requests. No training, retry or additional native work.",
+    "contract": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/contract.json",
+      "sha256": "63728738cf06907ded479fa833a6bd8f9831c208e2188f51a9034b53d1f0917d"
+    },
+    "checkpoint": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/constant/native-observation-16-02/checkpoint-16",
+    "native_source_commit": "f731f2de73ab5ae8927456ec0b1b723883028e58",
+    "consumer_source_commit": "52e6f4c49e96fefa4933f4e6991fceb22466a67b",
+    "terminal_candidate": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/native-terminal-candidate-01.json",
+      "sha256": "e4190708e29904188b3a8bf84d86fdabbc687f14490c92b67f044ebaaa17725d"
+    },
+    "lead_acceptance": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/lead-acceptance-01.json",
+      "sha256": "b0f43a9034360aea554b35f831a8ff4720a246471309258a4dd4cd2bb53a244d"
+    },
+    "metrics": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/native-01/metrics.json",
+      "sha256": "1a9d5a03d00f5b29b43107961644b1db76309b8f0bf487b9d72623a225f86b30"
+    },
+    "accounting": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/coord-norm-accounting-01.json",
+      "sha256": "1bfda3fc53bea2c3090a488a8daa34bd19e350cbedf48b5ff667325aec4fbc25"
+    },
+    "requests": 36,
+    "images": 18,
+    "annotation_denominator": 570,
+    "owner_transition": {
+      "gained": 30,
+      "lost": 24,
+      "retained": 240
+    },
+    "decision": "Retain existing norm-OFF default; mixed policy evidence, no general improvement or preservation-safe effect established.",
+    "native_release_consumed": true,
+    "live_job": false,
+    "next_native_released": false,
+    "user_scientific_acceptance": false
   }
 }

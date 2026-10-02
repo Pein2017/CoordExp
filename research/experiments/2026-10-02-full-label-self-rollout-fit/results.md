@@ -1,6 +1,34 @@
 # Full-label self-rollout: accepted finite observations
 
-## Lower-LR balanced pair (current)
+## Same-checkpoint coordinate norm (latest inference contrast)
+
+The user reopened one inference-only comparison after the research-analysis pause: original-LR balanced endpoint16, the same18 inputs/570 labels, and fresh OFF versus median output-coordinate normalization. All8 resident TP1 ranks use identical frozen endpoint16 image groups; prompt/media, weights, BF16 runtime, greedy settings and3084-token caps are fixed. There are exactly36 requests and no optimizer, HF replay, weight update, or native retry. Native source is `f731f2de73ab5ae8927456ec0b1b723883028e58`; the separate CPU scorer repair is `52e6f4c49e96fefa4933f4e6991fceb22466a67b`.
+
+| Metric | Fresh OFF | Median norm |
+|---|---:|---:|
+| TP / FN | 264 /306 |270 /300 |
+| Valid predictions / annotation-unmatched |653 /389 |727 /457 |
+| Annotation F1 |0.431725 |0.416345 |
+| Complete literal repeats |497 |257 |
+| Strict-valid literal repeats |84 |200 |
+| Near-repeat occurrence pairs |126 |3278 |
+| Geometry-invalid / malformed rows |429 /2 |66 /1 |
+| Generated tokens |9923 |7305 |
+| EOS / capped requests |16 /2 |17 /1 |
+
+Median retains240 fresh-OFF owners, gains30 and loses24: net+6 TP with substantial turnover. Image351017 supplies233 of the aggregate240 fewer complete repeats (233→0), invalid175→0, valid repeats60→0, and cap→EOS; its TP15→16 contains4 gains and3 losses. Image7511 remains capped: complete repeats264→255, invalid253→65, valid repeats24→198 and near-repeat pairs8→3277, with TP9→11. This shows mixed burden changes, not proof that identical invalid boxes became valid duplicates. Near-repeat pairs are combinatorial occurrence pairs, not independent objects.
+
+**Lead ruling:** technical comparison accepted; retain the existing OFF default. Median helps geometry and length on part of this panel but does not establish a general or owner-preserving improvement. Full-label fitting remains unachieved. This is one fixed-checkpoint policy contrast, not a training intervention, replicated winner, norm-origin causal explanation, or physically exhaustive evaluation. Annotation-unmatched predictions are not verified physical false positives.
+
+The historical endpoint16 is a separate reference (TP265). Fresh OFF differs in tokens on5 images (2299,4134,309264,351017,477415), with1 owner gained and2 lost versus that reference; it is not pooled or substituted as control. Both current conditions miss image4134/annotation294005. Scoring retains class-agnostic cardinality-first IoU>=.5 one-to-one matching followed by exact-description credit, all570 annotation IDs, and per-image gain/loss ledgers.
+
+The native run exited0 and sealed all36 outputs; the original scorer and wrapper exited1 on missing `arm`. A separately tested CPU-only projection adds `arm=greedy` in memory after sealed validation, preserving policy in `producer.condition`; scoring then exits0 on unchanged raw/frozen bytes. The lead reproduced the saved scores/owner ledgers at the JSON consumer boundary, checked all8 active median witnesses and both-condition grouping, and confirmed all67 exact owner/descendant identities absent. Factor range is0.9404875–1.0227903. Existing CPU sensitivity/regression evidence is reused; the native witness proves active coordinate scaling, while noncoordinate invariance is CPU-tested and preserved by the implementation rather than full-backend parity.
+
+The one native owner took162.407836s, charged0.360906303 informational GPU-hours, and generated17228 tokens. The separately disclosed tiny CUDA unit-test exception loaded no Qwen model and added no image request; its unmeasured allocation time is excluded from the native-owner accounting. No model remains live and no further native work is released; the broader user-requested analysis pause continues.
+
+Evidence: [lead acceptance](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/lead-acceptance-01.json), [paired metrics and all owner IDs](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/native-01/metrics.json), [terminal candidate](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/native-terminal-candidate-01.json), [contract](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/contract.json), [accounting](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/coord-norm-01/coord-norm-accounting-01.json). The cumulative informational native-owner total is16.5546464023 GPU-hours; this unit is14.3573930689, reservation0, no cumulative cap.
+
+## Lower-LR balanced pair
 
 Both independent fresh 16-update runs are technically complete and lead-accepted on source `b8d4d8cbb0dffbb70adee691c795fb36ffc8ce44`. Only LR scale differs: original language DoRA/delta rates 1e-5/5e-6 versus 0.1 times both; warmup0, objectives, modules, full18/570 labels, anchor and greedy decoder remain fixed. Both use `previous_rollout_tokens_lpt_v1`, taking scheduling history only from their own previous rollout. Independently acquired baselines happen to match at TP237 and the same 237 annotation IDs; old unbalanced TP247 trajectories remain separate evidence.
 
