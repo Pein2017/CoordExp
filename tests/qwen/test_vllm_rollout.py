@@ -234,3 +234,79 @@ def test_coordinate_norm_rpc_is_explicit_and_snapshot_bound():
     for mode,identity in [('bad','fixed'),('median','stale')]:
         with pytest.raises(ValueError):engine.configure_coordinate_output_norm(mode,range(1000),identity=identity)
     assert engine._call.call_count==1
+
+
+def exact_cpu_engine(request, *, vocab_size=12):
+    """Actual installed token placeholder replacement; no model allocation."""
+    from vllm.multimodal.processing.processor import PromptReplacement, _apply_token_matches_with_placeholders
+    import math
+    calls = []
+    def generate(prompts, params, **kwargs):
+        calls.append((prompts,params))
+        prompt = prompts[0]
+        assert 'prompt' not in prompt and prompt['mm_processor_kwargs'] == {'do_resize':False}
+        ids, matched, placeholders = _apply_token_matches_with_placeholders(
+            prompt['prompt_token_ids'], {'image':[[PromptReplacement(
+                modality='image',target=[7],replacement=[7,7,7]).resolve(0)]]})
+        assert matched == {'image':[0]} and placeholders['image'][0].length == 3
+        logprobs = None
+        if params[0].logprobs == -1:
+            logprobs = [{t:SimpleNamespace(logprob=-math.log(vocab_size-1) if t else -math.inf)
+                         for t in range(vocab_size)}]
+        completion = SimpleNamespace(token_ids=[5]*params[0].max_tokens,finish_reason='length',logprobs=logprobs)
+        return [SimpleNamespace(prompt_token_ids=ids,outputs=[completion])]
+    return SimpleNamespace(generate=generate, calls=calls,
+        llm_engine=SimpleNamespace(model_config=SimpleNamespace(get_vocab_size=lambda:vocab_size)))
+
+
+def test_exact_tokens_expand_original_media_and_preserve_literal_prefix():
+    from PIL import Image
+    from src.qwen.vllm_rollout import _generate_exact
+    request = NativeRequest('exact','must not tokenize this',Image.new('RGB',(32,32)),
+                            expected_token_ids=(2,7,7,7,3))
+    engine = exact_cpu_engine(request)
+    kwargs = dict(chat_token_ids=[[2,7,3]],extensions=[[8,9]],budgets=[1],
+                  eos_token_id=11,pad_token_id=0,full_scores=True,vocab_size=12)
+    result = _generate_exact(engine,[request],**kwargs)[0]
+    assert result['processed_prompt_token_ids'] == [2,7,7,7,3,8,9]
+    assert result['full_scores'][0] == '-inf' and len(result['full_scores']) == 12
+    assert engine.calls[0][0][0]['prompt_token_ids'] == [2,7,3,8,9]
+    kwargs.update(full_scores=False,budgets=[10])
+    result = _generate_exact(engine,[request],**kwargs)[0]
+    assert result['full_scores'] is None and engine.calls[-1][1][0].logprobs is None
+    with pytest.raises(ValueError,match='one-token'):
+        _generate_exact(engine,[request],**dict(kwargs,full_scores=True))
+    request = NativeRequest('bad','irrelevant',request.image,expected_token_ids=(2,7,7,3))
+    with pytest.raises(RuntimeError,match='exact prompt tokens'):
+        _generate_exact(engine,[request],**kwargs)
+
+
+def test_exact_score_support_and_snapshot_fail_closed():
+    from PIL import Image
+    from src.qwen.vllm_rollout import _generate_exact
+    request = NativeRequest('exact','irrelevant',Image.new('RGB',(32,32)),expected_token_ids=(2,7,7,7,3))
+    engine = exact_cpu_engine(request)
+    valid = engine.generate
+    kwargs = dict(chat_token_ids=[[2,7,3]],extensions=[[8,9]],budgets=[1],
+                  eos_token_id=11,pad_token_id=0,full_scores=True,vocab_size=12)
+    for mutate, message in [(lambda raw:raw.pop(2),'incomplete'),
+                           (lambda raw:setattr(raw[2],'logprob',float('nan')),'NaN'),
+                           (lambda raw:setattr(raw[2],'logprob',float('inf')),'NaN'),
+                           (lambda raw:setattr(raw[2],'logprob',0),'argmax'),
+                           (lambda raw:[setattr(v,'logprob',v.logprob+1) for v in raw.values()],'normalization')]:
+        def corrupt(*args,**kw):
+            outputs = valid(*args,**kw); mutate(outputs[0].outputs[0].logprobs[0]); return outputs
+        engine.generate = corrupt
+        with pytest.raises(RuntimeError,match=message):
+            _generate_exact(engine,[request],**kwargs)
+    engine.generate = valid
+    with pytest.raises(ValueError,match='vocabulary'):
+        _generate_exact(engine,[request],**dict(kwargs,vocab_size=13))
+    for ids in [[-1],[True],[12]]:
+        with pytest.raises(ValueError,match='token ID'):
+            _generate_exact(engine,[request],**dict(kwargs,extensions=[ids]))
+    wrapper = object.__new__(VllmDoraRollout); wrapper.identity='bound'; wrapper._call=Mock()
+    with pytest.raises(ValueError,match='snapshot'):
+        wrapper.generate_exact([request],chat_token_ids=[[2,7,3]],extensions=[[]],budgets=[1],
+            eos_token_id=11,pad_token_id=0,identity='wrong',vocab_size=12)
+    wrapper._call.assert_not_called()

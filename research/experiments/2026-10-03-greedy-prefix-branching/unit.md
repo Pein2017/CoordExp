@@ -111,3 +111,10 @@ evidence; routine repairs within the package are allowed. Do not silently relax
 scientific contracts, replace cases, or rerun successful requests. End the native
 unit after the declared branches and consumer acceptance, then let the lead
 choose the next question from the outcomes.
+
+## CPU candidate and shared interface ruling
+
+The [lead ruling](lead-ruling-01.md) authorizes only the narrow exact-token-prefix
+and one-token native-score extension in `src/qwen/vllm_rollout.py` and its focused
+tests. The [CPU candidate](results.md) records the finite sites, checks, commands,
+consumer and fidelity stop rules. This preparation does not release native work.

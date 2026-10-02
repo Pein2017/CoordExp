@@ -1,7 +1,7 @@
 """Resident, TP=1 DoRA rollout engine isolated from the HF training process.
 
-The caller owns training, snapshot identity and sampling scope. Only empty-history
-greedy continuations are supported. No model merge, checkpoint export or package
+The caller owns training, snapshot identity and sampling scope. Exact-history
+greedy continuations are explicitly requested. No model merge, checkpoint export or package
 patch is performed when refreshing the current adapter.
 """
 from __future__ import annotations
@@ -190,6 +190,80 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
             image.close()
 
 
+
+def _generate_exact(engine, requests, chat_token_ids, extensions, budgets,
+                    eos_token_id, pad_token_id, full_scores, vocab_size):
+    """Token prompts expand only the original media placeholder, never history text."""
+    import math
+    from vllm import SamplingParams
+    from vllm.inputs import TokensPrompt
+
+    if not requests or not len(requests) == len(chat_token_ids) == len(extensions) == len(budgets):
+        raise ValueError('exact requests/prefixes/budgets must be nonempty and aligned')
+    if len({r.request_id for r in requests}) != len(requests):
+        raise ValueError('duplicate exact request IDs')
+    if type(full_scores) is not bool or (full_scores and any(b != 1 for b in budgets)):
+        raise ValueError('full scores require one-token budgets')
+    if type(vocab_size) is not int or vocab_size <= 0:
+        raise ValueError('bound vocabulary size required')
+    if engine.llm_engine.model_config.get_vocab_size() != vocab_size:
+        raise ValueError('native vocabulary size differs from bound mapping')
+    for request, chat, prefix, budget in zip(requests, chat_token_ids, extensions, budgets, strict=True):
+        if request.expected_token_ids is None or not chat or type(budget) is not int or budget <= 0:
+            raise ValueError('exact continuation needs bound prompt and positive budget')
+        if any(type(t) is not int or not 0 <= t < vocab_size
+               for sequence in (chat, prefix, request.expected_token_ids) for t in sequence):
+            raise ValueError('invalid exact prompt/prefix token ID')
+    images = []
+    try:
+        for request in requests:
+            images.append(_open_image(request))
+        prompts = [TokensPrompt(prompt_token_ids=list(chat)+list(prefix),
+                   multi_modal_data={'image': im}, mm_processor_kwargs={'do_resize': False})
+                   for chat, prefix, im in zip(chat_token_ids, extensions, images, strict=True)]
+        params = [SamplingParams(temperature=0, top_p=1, top_k=-1, repetition_penalty=1,
+                  max_tokens=b, stop_token_ids=[eos_token_id], detokenize=False,
+                  logprobs=-1 if full_scores else None) for b in budgets]
+        outputs = engine.generate(prompts, params, use_tqdm=False)
+        if len(outputs) != len(requests):
+            raise RuntimeError('vLLM omitted exact requests')
+        results = []
+        for request, prefix, budget, output in zip(requests, extensions, budgets, outputs, strict=True):
+            expected = tuple(request.expected_token_ids)+tuple(prefix)
+            if tuple(output.prompt_token_ids) != expected:
+                raise RuntimeError(f'vLLM changed exact prompt tokens: {request.request_id}')
+            if len(output.outputs) != 1:
+                raise RuntimeError('vLLM must return exactly one exact continuation')
+            completion = output.outputs[0]
+            ids, reason = trim_suffix(completion.token_ids, budget=budget,
+                                     eos_token_id=eos_token_id, pad_token_id=pad_token_id)
+            if completion.finish_reason != ('stop' if reason == 'im_end' else 'length'):
+                raise RuntimeError('vLLM exact stop reason differs from token evidence')
+            value = dict(request_id=request.request_id, token_ids=list(ids), stop_reason=reason,
+                         processed_prompt_token_ids=list(expected), full_scores=None)
+            if full_scores:
+                if len(ids) != 1 or completion.logprobs is None or len(completion.logprobs) != 1:
+                    raise RuntimeError('missing one-token native score payload')
+                raw = completion.logprobs[0]
+                if set(raw) != set(range(vocab_size)):
+                    raise RuntimeError('incomplete native full-vocabulary scores')
+                scores = {int(t):float(v.logprob) for t,v in raw.items()}
+                if any(math.isnan(v) or v == math.inf for v in scores.values()):
+                    raise RuntimeError('NaN/+inf native raw log probabilities')
+                if scores[ids[0]] != max(scores.values()):
+                    raise RuntimeError('native greedy token disagrees with full-score argmax')
+                if abs(sum(math.exp(v) for v in scores.values())-1) >= 1e-4:
+                    raise RuntimeError('native full-vocabulary normalization differs')
+                value['full_scores'] = {t:('-inf' if v == -math.inf else v) for t,v in scores.items()}
+                value['score_semantics'] = 'native_raw_logprobs_full_vocabulary'
+                value['vocab_size'] = vocab_size
+            results.append(value)
+        return tuple(results)
+    finally:
+        for image in images:
+            image.close()
+
+
 def _worker(connection, request, base_model, checkpoint, identity, options, log_path):
     # A separate process avoids sharing vLLM's process group with training DDP.
     for key in list(os.environ):
@@ -253,6 +327,11 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                         raise RuntimeError("vLLM did not reset its prefix cache")
                     identity = next_identity
                     value = None
+                elif command == "generate_exact":
+                    requested_identity, *generation = payload
+                    if requested_identity != identity:
+                        raise ValueError("stale exact snapshot identity")
+                    value = _generate_exact(engine, *generation)
                 elif command == "generate":
                     requested_identity, *generation = payload
                     if requested_identity != identity:
@@ -288,7 +367,7 @@ class VllmDoraRollout:
     def __init__(self, *, base_model, checkpoint, identity, log_path,
                  device=None, trainer_rank=None, max_model_len=16000, max_num_seqs=3,
                  kv_cache_memory_bytes=2 * 1024**3, gpu_memory_utilization=0.2,
-                 enforce_eager=False, timeout=1800, seed=None):
+                 enforce_eager=False, timeout=1800, seed=None, max_logprobs=20):
         import torch
         from importlib.metadata import version
         if version("vllm").split("+")[0] != "0.29.0":
@@ -297,6 +376,8 @@ class VllmDoraRollout:
             raise ValueError("a nonempty snapshot identity is required")
         if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
             raise ValueError('vLLM seed must be an unsigned 32-bit integer')
+        if type(max_logprobs) is not int or max_logprobs < -1:
+            raise ValueError("max_logprobs must be -1 or nonnegative")
         device_index = torch.cuda.current_device() if device is None else device
         visible = os.environ.get("CUDA_VISIBLE_DEVICES")
         physical_device = _physical_token(visible, device_index)
@@ -312,7 +393,7 @@ class VllmDoraRollout:
         self._timeout, self._closed = timeout, False
         self.identity = identity
         self.receipts = []
-        options = dict(max_model_len=max_model_len, max_num_seqs=max_num_seqs,
+        options = dict(max_model_len=max_model_len, max_num_seqs=max_num_seqs, max_logprobs=max_logprobs,
                        kv_cache_memory_bytes=kv_cache_memory_bytes,
                        gpu_memory_utilization=gpu_memory_utilization, enforce_eager=enforce_eager)
         if seed is not None:
@@ -385,6 +466,13 @@ class VllmDoraRollout:
                  pad_token_id, identity, trace=False):
         return self._call("generate", (identity, requests, budgets, eos_token_id,
                                        pad_token_id, trace))
+
+    def generate_exact(self, requests, *, chat_token_ids, extensions, budgets,
+                       eos_token_id, pad_token_id, identity, vocab_size, full_scores=False):
+        if identity != self.identity:
+            raise ValueError('stale exact snapshot identity')
+        return self._call('generate_exact', (identity, requests, chat_token_ids, extensions,
+                          budgets, eos_token_id, pad_token_id, full_scores, vocab_size))
 
     def configure_coordinate_output_norm(self, mode, token_ids, *, identity):
         if mode not in ('off', 'median') or identity != self.identity:
