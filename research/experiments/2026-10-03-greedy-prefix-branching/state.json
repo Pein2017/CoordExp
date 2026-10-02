@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-greedy-prefix-branching",
   "lifecycle": "closed",
-  "status": "NATIVE_TERMINAL_CANDIDATE_PENDING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
+  "status": "LEAD_ACCEPTED_COMPLETED_AS_RELEASED_WITH_NATIVE_FIDELITY_HOLD",
+  "evidence": "accepted",
   "scientific_status": "alternative_continuation_unmeasured_due_to_native_fidelity_HOLD",
   "protocol": "research/experiments/2026-10-03-greedy-prefix-branching/unit.md",
   "state_source": "research/experiments/2026-10-03-greedy-prefix-branching/unit.md",
@@ -11,7 +11,7 @@
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "high",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01",
-  "boundary": "Round01 release01 is consumed and technically terminal: native/readback exited0 and owned processes are absent. All4 sites retain native-fidelity HOLD; alternative-continuation scientific comparison remains unmeasured. Lead retains final native acceptance and separate next-unit scheduling. No more execution, retry, source repair or new research is authorized to this worker.",
+  "boundary": "Round01 release01 is closed and lead-accepted as completed-as-released with native fidelity HOLD. Native/readback/cleanup exited0 and owned processes are absent. All4 sites retain fidelity HOLD; alternative-continuation comparison remains unmeasured, with no efficacy/null claim. Acceptance is the separate immutable lead receipt; sealed candidate/raw/readback artifacts remain unchanged. Round02 belongs to a separate worker. No further execution, retry, source repair or research is authorized to this worker.",
   "not_authorized": [
     "worker scheduling a separate research unit",
     "rewriting historical receipts",
@@ -69,7 +69,7 @@
   },
   "lead_native_ruling": "research/experiments/2026-10-03-greedy-prefix-branching/lead-ruling-02.md",
   "cpu_lead_accepted": true,
-  "native_lead_accepted": false,
+  "native_lead_accepted": true,
   "terminal_candidate": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/native-terminal-candidate-01.json",
   "native_complete": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/native-01/complete.json",
   "native_readback": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/native-01/readback.json",
@@ -113,5 +113,12 @@
   "evidence_scope": "native_exact_prefix_full_vocab_scores_and_fidelity_controls",
   "result": "research/experiments/2026-10-03-greedy-prefix-branching/results.md",
   "worker_package_closed": true,
-  "native_release_consumed": true
+  "native_release_consumed": true,
+  "technical_status": "completed_as_released_with_native_fidelity_HOLD",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/lead-acceptance-01.json",
+    "sha256": "cea0da67d3bf7f1469035af39d6522e734f7d4ac027c76dc2569311e0fa0d6ab"
+  },
+  "terminal_candidate_sha256": "63a9c1b6ae3bc3d0b48983f6a1cd7f06eee42977fbe54d9a8a3d23ab9b0abeec",
+  "continuation_unit": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md"
 }

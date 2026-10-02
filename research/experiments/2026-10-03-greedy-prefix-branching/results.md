@@ -3,8 +3,11 @@
 Native and maintained readback completed with exits0/0; cleanup verification
 exited0. All four frozen sites retain native-fidelity HOLD, so all eight
 alternative requests were skipped and the alternative-continuation comparison
-remains unmeasured. The execution package is closed; final native acceptance
-remains with the lead. No more model work or rerun is authorized to this worker.
+remains unmeasured. The lead accepted the closed execution package as
+completed-as-released with native fidelity HOLD. This acceptance covers exact-prefix
+native full scores and declared control outcomes; it supports no model efficacy,
+scientific null or physical-negative claim. No more model work or rerun is
+authorized to this worker.
 See [terminal results](#native-terminal-candidate-fidelity-hold) below.
 
 The following CPU preparation evidence is historical within this unit. The
@@ -169,8 +172,8 @@ the CPU packet. Frozen scientific/input/checkpoint/raw fields are unchanged.
 The worker launched exactly the declared timeout1200s+cleanup30s command on
 device0. Artifacts belong to that checkout's unit output root: `native-01/`,
 `native-01.log` and `native-invocation-01.json`. No tracked source/state in the
-execution checkout is modified. Terminal results and actual exit status follow
-here when available; launch is not scientific or terminal acceptance.
+execution checkout was modified. Terminal results and actual exit status follow
+below; lead acceptance is recorded separately from the sealed execution artifacts.
 
 ## Native terminal candidate: fidelity HOLD
 
@@ -187,7 +190,21 @@ The terminal candidate is
 `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/native-terminal-candidate-01.json`.
 It binds immutable native and readback artifacts, raw score quantities, complete
 per-owner/prefix ledgers, per-case burden/owner transitions, release identity and
-cleanup evidence. The lead retains terminal acceptance and next-unit selection.
+cleanup evidence. Its SHA256 is
+`63a9c1b6ae3bc3d0b48983f6a1cd7f06eee42977fbe54d9a8a3d23ab9b0abeec`.
+
+The separate immutable [lead acceptance receipt](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/lead-acceptance-01.json),
+SHA256 `cea0da67d3bf7f1469035af39d6522e734f7d4ac027c76dc2569311e0fa0d6ab`,
+records `lead-accepted`, technical completion as released with native fidelity
+HOLD, and an unmeasured alternative-continuation comparison. The lead checked
+terminal/readback/candidate bindings, clean exact execution source, skipped
+alternatives and absent owned processes, and independently projected score and
+first-difference observations. Sealed candidate/raw/readback acceptance flags
+remain historical; this receipt owns final acceptance. User scientific
+acceptance remains false.
+
+The lead assigned [round02](../2026-10-03-matched-coordinate-branches/unit.md)
+to a separate worker; round01 performs no further execution or scheduling.
 
 ### Exact fidelity observations
 
