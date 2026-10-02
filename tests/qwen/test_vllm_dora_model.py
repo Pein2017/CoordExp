@@ -131,8 +131,8 @@ def test_saved_and_live_magnitude_key_forms_reject_duplicates():
 
 
 _ANCHOR = Path(
-    "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/"
-    "instance_margin-order17/checkpoints/step-256/adapter"
+    "/data/CoordExp/outputs/shared/checkpoints/"
+    "start-loss-instance-margin-order17-step256/payload/adapter"
 )
 
 
