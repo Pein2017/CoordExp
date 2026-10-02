@@ -1,11 +1,21 @@
-# CPU candidate: matched supplied-coordinate continuations
+# Native terminal candidate: stable matched continuations
 
-CPU preparation and focused checks exited0. Native execution is unreleased;
-no model/GPU invocation occurred. The scientific contrast remains unmeasured.
-The immutable candidate receipt at
+Native and maintained readback exited0/0. All24 requests completed; all12
+condition pairs agreed on the primary semantic vector and exact tokens/stop.
+All8 C-A/C-B contrasts are eligible within the frozen supplied-prefix scope.
+Final native acceptance remains with the lead. The351017-31 B condition gained
+3 known annotation owners and lost1, with EOS at663 total tokens; it did not
+preserve every incumbent. Other alternatives produced structural repair or
+owner loss without new known owners.
+
+## Accepted CPU preparation
+
+The immutable CPU candidate receipt at
 `outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-candidate-01.json`
 carries the scoped source commit, owned paths, evidence hashes and commands.
-Lead acceptance and clean execution-source qualification remain pending.
+The lead accepted the CPU package and qualified its exact source for native
+release in [ruling01](lead-ruling-01.md). The CPU preparation below is historical
+evidence and its6-check suite was not repeated.
 
 The new `probes.matched_coordinate_branches` reuses maintained round01
 prefix construction, parser, annotation matcher, media assembly, producer
@@ -78,3 +88,133 @@ Identity/media/checkpoint/source/budget failures stop the package; semantic
 instability changes claim eligibility without changing the fixed schedule.
 No model/policy promotion, fresh cases, population or empty-history efficacy,
 physical-negative interpretation, or next-unit scheduling is authorized here.
+
+## Released execution and terminal identity
+
+Execution cwd/source: `/data/CoordExp/.worktrees/greedy-prefix-native-01`,
+`51cae37b2754104cdbb99f06e51bb13c5ff56f40`. The existing detached checkout was advanced by
+lead after round01 acceptance/cleanup; prior raw evidence stayed unchanged.
+Canonical records and transport stayed in Research Probes. No tracked execution
+writes, source repairs, replacements, extra qualification calls or retries occurred.
+
+Exact released contract: `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/released-contract-01.json`,
+SHA256 `3c3d9a51b8fc4f4105d0ed149d31d17aa514435b32fa5fa58e7b93643a24e6db`.
+Compact terminal candidate: `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/native-terminal-candidate-02.json`,
+SHA256 `d464ca98cc10cccc32a3ac5c03d2fb72a6dae6e968cc1a655139b6d99be36196`.
+It binds native/readback, raw per-request identities, site-ledger hashes,
+command/cleanup receipts, counts and measured resources. Full owner-prefix
+bin/token traces remain in raw request artifacts; they are not embedded here.
+
+Native/readback exits **0/0**. All declared observed wrapper/timeout/parent/
+engine/resource-tracker PIDs are absent. Engine close preceded terminal publication;
+the execution checkout is clean at the exact source commit. Native and readback
+logs remain at `native-01.log` and `native-readback-01.log` in that output root.
+A CPU terminal projection initially exited1 because an existing observation helper
+requires `arm='greedy'`; correcting only the inline summary call exited0. Both
+projection logs/exit receipts remain. This was not a native/readback failure or
+rerun, and no maintained source changed.
+
+## Repeat identity and selected owner contrasts
+
+Both repeats in every C/A/B condition share exact request prefix identity,
+processed length, remaining budget, token sequence and stop. The raw producer
+identity differs by its declared repeat index. All measured burden ranges are
+therefore degenerate `[n,n]` within condition; two repeats do not prove global
+determinism. No semantic instability occurred, so no contrast was masked or retried.
+
+Raw geometry and category owner ledgers agree for every output. Every assisted
+current-row owner set is empty; all current rows complete. Unknown/unmatched
+rows remain neutral. In these outputs later-free and later-new-unique owner sets
+also agree; inherited/assisted geometric owners were excluded from new-unique
+credit. Whole and later subsets remain independently matched and nonadditive.
+
+| Site | Contrast | Whole gained/lost/retained | Later-free gained/lost/retained | Assisted gains |
+|---|---|---|---|---|
+| 7511-626 | C-A | 0/0/9 | 0/0/0 | 0 |
+| 7511-626 | C-B | 0/0/9 | 0/0/0 | 0 |
+| 7511-203 | C-A | 0/1/8 | 0/1/2 | 0 |
+| 7511-203 | C-B | 0/1/8 | 0/1/2 | 0 |
+| 351017-1507 | C-A | 0/0/15 | 0/0/0 | 0 |
+| 351017-1507 | C-B | 0/0/15 | 0/0/0 | 0 |
+| 351017-31 | C-A | 0/1/14 | 0/1/13 | 0 |
+| 351017-31 | C-B | 3/1/14 | 3/1/13 | 0 |
+
+At7511-203 both alternatives lost owner `-182`. At351017-31 A lost `94212`;
+B gained `-4882320705970708`, `90429`, `91179` and lost `-3265773791321472`.
+The whole B ledger is17 known owners versus15 for C; the later-free ledger is16
+versus14. Selected-image denominators are44 and49, within the frozen18/570
+snapshot; no pooled population or physical-completeness rate follows.
+
+## Supplied row and output burdens
+
+`Literal` refers to the current completed row repeating an earlier complete row;
+`Near` refers to a distinct earlier valid same-description box atIoU>=.9.
+These flags were projected with maintained observation/geometry helpers from
+bound raw output, separately from whole-output burden counts.
+
+| Site | Condition | Current box | Strict valid | Literal / Near | Whole / later known owners | Tokens / stop |
+|---|---|---|---|---|---|---|
+| 7511-626 | A | [982, 601, 999, 638] | True | True / False | 9 / 0 | 3084 / length |
+| 7511-626 | B | [968, 601, 999, 638] | True | False / False | 9 / 0 | 3084 / length |
+| 7511-626 | C | [999, 601, 999, 641] | False | False / False | 9 / 0 | 3084 / length |
+| 7511-203 | A | [637, 575, 645, 600] | True | False / False | 8 / 2 | 3084 / length |
+| 7511-203 | B | [632, 575, 645, 600] | True | False / False | 8 / 2 | 3084 / length |
+| 7511-203 | C | [630, 577, 645, 600] | True | False / True | 9 / 3 | 3084 / length |
+| 351017-1507 | A | [966, 915, 999, 999] | True | True / True | 15 / 0 | 3084 / length |
+| 351017-1507 | B | [968, 915, 999, 999] | True | False / True | 15 / 0 | 3084 / length |
+| 351017-1507 | C | [999, 915, 999, 999] | False | False / False | 15 / 0 | 3084 / length |
+| 351017-31 | A | [1, 0, 33, 86] | True | False / True | 14 / 13 | 3084 / length |
+| 351017-31 | B | [72, 0, 999, 999] | True | False / False | 17 / 16 | 663 / im_end |
+| 351017-31 | C | [0, 0, 33, 86] | True | True / False | 15 / 14 | 3084 / length |
+
+| Site | Condition | Valid rows | Complete / valid repeats | Near pairs | Geometry invalid | Malformed | Annotation unmatched |
+|---|---|---|---|---|---|---|---|
+| 7511-626 | A | 100 | 265 / 31 | 12 | 242 | 1 | 91 |
+| 7511-626 | B | 96 | 267 / 29 | 20 | 246 | 1 | 87 |
+| 7511-626 | C | 91 | 271 / 26 | 14 | 251 | 1 | 82 |
+| 7511-203 | A | 99 | 264 / 29 | 31 | 243 | 1 | 91 |
+| 7511-203 | B | 89 | 261 / 17 | 25 | 253 | 1 | 81 |
+| 7511-203 | C | 87 | 261 / 19 | 44 | 255 | 1 | 78 |
+| 351017-1507 | A | 162 | 233 / 61 | 127 | 174 | 1 | 147 |
+| 351017-1507 | B | 163 | 232 / 61 | 142 | 173 | 1 | 148 |
+| 351017-1507 | C | 161 | 233 / 60 | 116 | 175 | 1 | 146 |
+| 351017-31 | A | 159 | 228 / 55 | 84 | 177 | 1 | 145 |
+| 351017-31 | B | 67 | 2 / 2 | 0 | 0 | 0 | 50 |
+| 351017-31 | C | 153 | 232 / 53 | 26 | 183 | 1 | 138 |
+
+At both impossible-coordinate sites A/B make the current row strictly valid,
+but neither adds a known owner, and invalid geometry recurs later. The repeat-site
+A/B changes at7511-203 remove the current literal/near symptom while losing an
+owner. At351017-31 A exchanges the literal current repeat for a near repeat and
+loses a known owner; B redirects to a much larger current box, reaches EOS and
+exchanges known owners while reducing burdens. The supplied row itself receives
+no known-owner credit in any condition.
+
+These observations support a repeatable selected conditional trajectory change.
+The B gain is an annotation-owner exchange with one incumbent loss, not automatic
+new physical recovery. Generic trajectory redirection remains an explanation;
+this panel does not identify an internal mechanism, establish empty-history or
+population efficacy, or authorize promotion. Lead owns interpretation and next-unit
+selection; this worker scheduled none.
+
+## Measured work and closure
+
+Actual work: **24 continuation requests,0 score requests,54,948 newly generated
+native tokens**,24 supplied tokens and69,174 whole-output tokens including fixed
+history. Twenty-two outputs reached cap and two B351017-31 outputs reached EOS.
+No HF forward/optimizer work or additional GPU qualification request occurred.
+
+Command wall `662.995708s`; internal wall
+`653.465784s`; startup `27.558126s`;
+engine-operation time `608.033820s`; readback
+`12.471723s`. Maximum CUDA allocated bytes
+`7,475,757,568`. CPU maximum resident set
+`6,792,676KiB` is Linux RUSAGE_CHILDREN for the waited timeout
+command and reaped descendants, not a sampled per-process trace. Native output
+payload is `6,455,155bytes` before the separate candidate.
+All are measured counters/receipts; no estimate substitutes for a measurement.
+
+The released package is terminal and consumed. No live native job, retries,
+source changes, next-unit scheduling or further execution is authorized to this
+worker without a new lead assignment. Native evidence remains candidate pending
+lead acceptance; no user scientific acceptance is asserted.

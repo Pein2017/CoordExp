@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-matched-coordinate-branches",
   "lifecycle": "planned",
-  "status": "CPU_CANDIDATE_PENDING_LEAD_ACCEPTANCE",
+  "status": "NATIVE_TERMINAL_CANDIDATE_PENDING_LEAD_ACCEPTANCE",
   "evidence": "unreviewed",
-  "scientific_status": "matched_supplied_continuation_unmeasured",
+  "scientific_status": "repeatable_selected_supplied_prefix_owner_exchange_pending_lead_acceptance",
   "protocol": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "state_source": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,9 +12,9 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-greedy-prefix-branching",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02",
-  "execution_checkout": null,
-  "native_released": false,
-  "lead_accepted": false,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "native_released": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "not_authorized": [
     "worker scheduling a separate research unit",
@@ -23,8 +23,8 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "CPU preparation/checks complete, exits0. No GPU/model invocation. Native release absent.",
-  "boundary": "Frozen CPU package candidate. Finalized round01 acceptance bound without changing historical identities. Lead owns source isolation, native release and scientific acceptance. No live native job or next-unit scheduling.",
+  "job_state": "Native/readback exits0/0; all24 requests complete. Owned observed processes absent; no live job or retry.",
+  "boundary": "Released native package is technically terminal; all8 selected contrasts repeat-stable. Annotation-owner exchange and burdens only, no physical/population/empty-history efficacy or promotion claim. Lead owns final acceptance and next-unit scheduling; worker has no further execution grant.",
   "worker_settings_verified": true,
   "result": "research/experiments/2026-10-03-matched-coordinate-branches/results.md",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-candidate-01.json",
@@ -41,9 +41,9 @@
     "sha256": "cea0da67d3bf7f1469035af39d6522e734f7d4ac027c76dc2569311e0fa0d6ab"
   },
   "clean_source_qualification": {
-    "status": "pending_lead_selected_execution_checkout",
-    "source": null,
-    "worker_created_worktree": false
+    "status": "lead_verified_clean_exact_execution_checkout",
+    "exit_code": 0,
+    "canonical_source_preserved": true
   },
   "native_bounds": {
     "gpus": 1,
@@ -59,5 +59,50 @@
     "cleanup_seconds": 30,
     "HF_forwards": 0,
     "optimizer_steps": 0
-  }
+  },
+  "cpu_lead_accepted": true,
+  "native_lead_accepted": false,
+  "execution_source_commit": "51cae37b2754104cdbb99f06e51bb13c5ff56f40",
+  "execution_output_root": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02",
+  "release_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/released-contract-01.json",
+    "sha256": "3c3d9a51b8fc4f4105d0ed149d31d17aa514435b32fa5fa58e7b93643a24e6db"
+  },
+  "lead_native_ruling": "research/experiments/2026-10-03-matched-coordinate-branches/lead-ruling-01.md",
+  "native_invocation": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/native-invocation-01.json",
+  "terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/native-terminal-candidate-02.json",
+    "sha256": "d464ca98cc10cccc32a3ac5c03d2fb72a6dae6e968cc1a655139b6d99be36196"
+  },
+  "native_complete": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/native-01/complete.json",
+  "native_readback": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/native-01/readback.json",
+  "actual_execution": {
+    "native_exit": 0,
+    "readback_exit": 0,
+    "requests": 24,
+    "score_requests": 0,
+    "generated_tokens": 54948,
+    "supplied_tokens": 24,
+    "logical_whole_output_tokens": 69174,
+    "internal_wall_seconds": 653.4657837301493,
+    "command_wall_seconds": 662.9957083910704,
+    "max_cuda_allocated_bytes": 7475757568,
+    "CPU_max_rss_kib": 6792676,
+    "live_job": false,
+    "retries": 0,
+    "replacement_cases": 0,
+    "HF_forwards": 0,
+    "optimizer_steps": 0,
+    "accepted_CPU_suite_repeated": false,
+    "terminal_projection_CPU_repairs": 1
+  },
+  "stability": {
+    "condition_pairs": 12,
+    "semantic_stable": 12,
+    "exact_tokens_and_stop": 12,
+    "eligible_comparisons": 8,
+    "unstable_comparisons": 0
+  },
+  "worker_package_closed": true,
+  "native_release_consumed": true
 }
