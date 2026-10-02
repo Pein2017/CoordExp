@@ -1,55 +1,56 @@
 {
   "artifact_type": "processed_directory",
   "checksums": {
-    "aggregate_sha256": "3a488249693f6d3db68fc928fca36da9162f74b589bd94163e8b6b0e95da41c6",
+    "aggregate_sha256": "f0377f0b8964afe4e18cde8ed71acdffce00219f73426327c8702e3b7cc18d7e",
     "aggregate_source": "sorted path sha256 size_bytes records lines",
     "algorithm": "sha256",
     "files": [
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
         "records": 117266,
-        "sha256": "e61a7f7e2bddadeb3ffe5550f83feac1ecccc99149c7f98271113e9a3f9580f8",
-        "size_bytes": 172531224
+        "sha256": "f62928103287dc0843d1e089c12563237bdfdeb7466c093a16c7f9b1eb94a7b8",
+        "size_bytes": 159737911
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.jsonl",
-        "records": 117266,
-        "sha256": "93cf023169dfec0406c0e9148345f2e70976535d21717866acb403d9a5989aaf",
-        "size_bytes": 131997248
+        "sha256": "24710157eeed5ee6d44eda2aca078fbf6b3c65c5a6088b00e20043fd49d4fcf2",
+        "size_bytes": 131992404,
+        "records": 117266
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl",
         "records": 117266,
-        "sha256": "d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a",
-        "size_bytes": 131733768
+        "sha256": "74afa22e053d14c7e65ec4f5bc789e0c82bb2daac81ec173dd115a91778c4732",
+        "size_bytes": 118935703
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
         "records": 4952,
-        "sha256": "0aad73adb45d7d8c0b8238bac8cecec897583e99c484e18e58a9e132fcbd7e27",
-        "size_bytes": 6788221
+        "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894",
+        "size_bytes": 6808307
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.jsonl",
-        "records": 4952,
-        "sha256": "64042f65d3e7e9b662b55592fccf9ab41a8b475c3483ed02fd1cb9269acdece3",
-        "size_bytes": 5598645
+        "sha256": "2d13f94742718b7d7fa5bcfa8cdde4db748df8f3edd8a3cf7cfe5a5934aa7430",
+        "size_bytes": 5598508,
+        "records": 4952
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
         "records": 4952,
-        "sha256": "ab4f667dc83414cae1eb37ef5a6fe4a5367b6064f27a262f8de0cba62d37c605",
-        "size_bytes": 5042989
+        "sha256": "44ab9fd985890129128bdacb07081cc00bd4affe8c6768d5e49609ca20a72e52",
+        "size_bytes": 5056739
       }
     ],
     "scope": "jsonl_training_samples_only"
   },
   "code_ref": {
     "git_commit": "70f9272082823406996bc5432bf0769f2e07e8b0",
-    "git_dirty_allowed": true
+    "git_dirty_allowed": true,
+    "annotation_conversion_git_commit": "7c4b3545af2eab2bc0cc2e5589f4bfc1658d6fb3"
   },
   "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force",
-  "generated_at_utc": "2026-07-18T08:52:26Z",
+  "generated_at_utc": "2026-10-02T19:02:59.690189+00:00",
   "inputs": [
     {
       "kind": "processed_base",
@@ -60,6 +61,21 @@
       "kind": "training_config",
       "notes": "Latest compact-full prompt/model/template contract.",
       "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    },
+    {
+      "kind": "published_annotation_history",
+      "path": "public_data/coco/annotation_sources/gate-a-20260717/train/training.publish.receipt.json",
+      "notes": "Unchanged historical Gate A train receipt; train generation 1 is parent of this offline adoption, val generation 7 remains current."
+    },
+    {
+      "kind": "published_annotation_history",
+      "path": "public_data/coco/annotation_sources/gate-a-20260717/val/training.publish.receipt.json",
+      "notes": "Unchanged historical Gate A val receipt; train generation 1 is parent of this offline adoption, val generation 7 remains current."
+    },
+    {
+      "kind": "submitted_human_annotation_source",
+      "path": "public_data/coco/annotation_sources/label-studio-project3-20260918/completed-annotations.json",
+      "notes": "Exact five submitted manual completions; excludes unfinished draft content."
     }
   ],
   "key_params": {
@@ -69,7 +85,7 @@
     "max_objects": null,
     "max_pixels": 1048576,
     "max_total_tokens": 12000,
-    "routine_sync_policy": "regenerate_from_raw_plus_manifest",
+    "routine_sync_policy": "regenerate_from_raw_plus_manifest_and_preserved_human_annotation_sources",
     "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
     "template": "compact_full",
     "token_budget_components": [
@@ -79,9 +95,30 @@
       "assistant_compact_full_detection_tokens"
     ],
     "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
+    "base_build_command_role": "historical_base_processing_only",
+    "original_manifest_git_ref": {
+      "commit": "7c4b3545af2eab2bc0cc2e5589f4bfc1658d6fb3",
+      "path": "manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json"
+    },
+    "file_roles": {
+      "train.coord.jsonl": "edited_model_facing_coord",
+      "train.jsonl": "original_pixel_annotations",
+      "train.norm.jsonl": "edited_model_facing_norm",
+      "val.coord.jsonl": "edited_model_facing_coord",
+      "val.jsonl": "original_pixel_annotations",
+      "val.norm.jsonl": "edited_model_facing_norm"
+    },
+    "annotation_publication": "public_data/coco/annotation_sources/label-studio-project3-20260918/publication.json",
+    "adopted_image_ids": [
+      7116,
+      309264,
+      351017,
+      417044,
+      477415
+    ]
   },
-  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget; val norm/coord were formally promoted from committed coco-refinement generation 1 with outputs/coco_refinement/gate-a-20260717/val/training.publish.receipt.json.",
+  "notes": "Current six-file identity after Gate A train generation 1 / val generation 7 and offline adoption of five submitted Label Studio project-3 human annotations on 2026-10-02. Exactly five train norm/coord rows changed (83 to 178 objects); pixel files, val views, sibling bytes and row order are unchanged in this adoption. The previous manifest was stale for all six materialized files. The command/producer describe historical base preparation, not standalone recovery of edited views; recovery also requires preserved committed annotation history and submitted-source data. Sealed historical receipts were not rewritten.",
   "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
   "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
   "schema_version": 1,
