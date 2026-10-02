@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-completed-row-crossover",
-  "lifecycle": "preparing",
-  "status": "CPU_CANDIDATE_AWAITING_LEAD_RELEASE",
-  "evidence": "CPU caller/consumer checks only",
-  "scientific_status": "unmeasured",
+  "lifecycle": "terminal_candidate",
+  "status": "NATIVE_TERMINAL_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
+  "evidence": "Six released native requests, same-release readback and cleanup; worker candidate only",
+  "scientific_status": "measured_selected_conditional_candidate",
   "protocol": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,8 +12,8 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-matched-coordinate-branches",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03",
-  "execution_checkout": null,
-  "native_released": false,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "not_authorized": [
@@ -23,9 +23,55 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "No model/native invocation. CPU preparation and six-request producer/consumer doubles completed; awaiting exact lead source selection/release.",
+  "job_state": "Released invocation and same-release readback exited0; all declared native processes absent, clean execution source unchanged. No live job, extra request or retry; terminal candidate awaits separate lead acceptance.",
   "boundary": "Autonomous round03 tests three fixed completed-row histories with equal input length and two planned repeats. Primary comparisons are selected conditional observations, not natural greedy or physical recovery. Native release follows lead CPU acceptance.",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-candidate-01.json",
   "cpu_contract": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-01/contract.json",
-  "source_qualification": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/qualified-contract-01.json"
+  "source_qualification": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/qualified-contract-01.json",
+  "cpu_lead_accepted": true,
+  "execution_source_commit": "5ce39ccca78edf5be0714c40ab07c9221ae62d5a",
+  "released_contract": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/released-contract-01.json",
+  "released_contract_sha256": "565a2b63ee401da73d7157bba70e9112d5474b946c28ad1529c3aef30d7b98f0",
+  "lead_release_receipt": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/lead-release-01.json",
+  "native_invocation": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/native-invocation-01.json",
+  "native_exec_session": 22866,
+  "native_output_root": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03",
+  "native_terminal_candidate": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/native-terminal-candidate-01.json",
+  "native_terminal_candidate_sha256": "b98c35e54bb6fa97e32afb0264e00b278c200c6d552e5c3c4c232eb508821c8b",
+  "native_terminal": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/native-01/complete.json",
+  "native_readback": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/native-01/readback.json",
+  "native_exit": 0,
+  "readback_exit": 0,
+  "counters": {
+    "continuation_requests": 6,
+    "generated_tokens": 8312,
+    "requests": 6,
+    "score_requests": 0
+  },
+  "native_cleanup": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/native-cleanup-01.json",
+  "native_owned_processes_absent": true,
+  "execution_source_clean": true,
+  "paired_stability": {
+    "B": {
+      "exact_tokens_and_stop": true,
+      "request_identity": true,
+      "semantic": true
+    },
+    "C": {
+      "exact_tokens_and_stop": true,
+      "request_identity": true,
+      "semantic": true
+    },
+    "H": {
+      "exact_tokens_and_stop": true,
+      "request_identity": true,
+      "semantic": true
+    }
+  },
+  "eligible_comparisons": [
+    "B-H",
+    "C-B",
+    "C-H"
+  ],
+  "next_unit_scheduled": false
 }
