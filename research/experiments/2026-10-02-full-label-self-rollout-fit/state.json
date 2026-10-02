@@ -1236,5 +1236,34 @@
     "layer_freezing": "Separate factor: freeze existing lower-layer SFT adapters while preserving their forward/export values; no deletion, reinitialization or rank change.",
     "per_occurrence_duplicates": "Separate event-coverage and negative-objective factors. Preserve first certified owner positive, actual repeated prefixes, exact identity and unknown neutrality; mean within identity preserves total identity weight. Existing coordinate redirect has no explicit bad-token margin; whole-row product unlikelihood may weaken with length and shift credit to shared schema tokens.",
     "scope": "Discussion does not alter completed frozen profiles, authorize missing-label proxies or provide a guarantee of first-owner preservation."
+  },
+  "rollout_balancing": {
+    "status": "CANDIDATE_TRANSFERRED_FOR_WORKER_INTEGRATION",
+    "package": "probes.full_label_fit",
+    "policy": "previous_rollout_tokens_lpt_v1",
+    "scope": "Inference assignment only; fixed learner ownership, loss weights, objective and DDP reduction order.",
+    "cost_inputs": "Current prompt lengths and immediately previous same-run generated lengths; no evaluator, labels, losses or future trajectories.",
+    "native_check": {
+      "updates": 2,
+      "ranks": 8,
+      "requests": 54,
+      "max_generated_tokens": 166536,
+      "owner_wall_ceiling_seconds": 900,
+      "fresh_anchor": true,
+      "learning_rates": [
+        1e-05,
+        5e-06
+      ]
+    },
+    "native_released": false,
+    "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01",
+    "claim_boundary": "CPU fixed-trace workload balance is not wall-time speedup or numerical equivalence of changed batches; no new 16-update scientific trajectory is released.",
+    "execution_worker": {
+      "thread": "01a0fb72-f08e-76b0-9c82-32b0cacc80e0",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "dispatch_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01/worker-dispatch-01.json",
+      "ownership": "Sole implementation writer after temporary children completed; lead retains CPU/native acceptance and release."
+    }
   }
 }

@@ -7,6 +7,9 @@ from pathlib import Path
 from probes import rollout_row_credit as r
 from probes import iterative_positive as p
 from probes.hidden_human_recovery import negative_evidence
+from probes.full_label_fit.recipe import (FULL_LABEL_MODE, OWNER_REGION, FULL_LABEL_BOUNDS,
+    FULL_LABEL_DECODER, IDENTITY_SELECTION, IDENTITY_NORMALIZATION, RESTORED_M_WEIGHTING,
+    RESTORED_M_COMPLETION, validate_lr_profile, full_label_learning_rates, full_label_recipe)
 from src.eval.saved_rows import iou_xyxy, one_to_one_matches
 
 ROOT = p.ROOT.parent / 'online-row-credit-01'
@@ -17,36 +20,6 @@ RELEASE_SHA = 'b5354c24780367c65249e4a6b6df21e71054d73a593a15c33c573785406b1664'
 CONTAINMENT = dict(baseline='fresh_full18_version0',complete_literal_repeats_le_initial=True,
     geometry_invalid_le_initial=True,malformed_max=0,caps_max=0,retained_category_percent=95,
     initial_valid_image_nonempty=True)
-IDENTITY_SELECTION = 'first_eligible_literal_duplicate_per_identity_round'
-IDENTITY_NORMALIZATION = 'complete_positive_plus_margin_mean_1_over_K_per_image'
-RESTORED_M_WEIGHTING = 'restored_M_mass'
-RESTORED_M_COMPLETION = 'CHAIN_ALL_M_relocated_1_over_m_plus_B_1_over_m_plus_k'
-FULL_LABEL_MODE = 'full-label-region-v1'
-OWNER_REGION = dict(kind='owner_region_max_hinge_v1',tau=.5,margin=.2,coefficient=1,
-    prefix='actual_first_violation',coordinate_ce='replaced',coordinate_redirect_margin='included_in_row_region',
-    auxiliary='existing_type_and_actual_prefix_order_geometry')
-FULL_LABEL_BOUNDS = dict(vocabulary=152670,trace=[4456,3084],bridge=[5032,628],redirect=[4467,11])
-FULL_LABEL_DECODER = dict(backend='vllm',version='0.29.0+cu129',generation_config='vllm',logprobs_mode='raw_logprobs',
-    temperature=0,top_p=1,top_k=-1,repetition_penalty=1,min_tokens=0,custom_processor=False,
-    score_order='neutral_processing_greedy_argmax',loss_scores='HF_replay',outcomes='native_vllm_greedy')
-
-
-def validate_lr_profile(profile):
-    import math
-    assert type(profile) is dict and set(profile)=={'lr_scale','warmup_updates'}, 'unknown LR profile fields'
-    assert type(profile['lr_scale']) in (int,float) and math.isfinite(profile['lr_scale']) and profile['lr_scale']>0, 'invalid LR scale'
-    assert type(profile['warmup_updates']) is int and 0<=profile['warmup_updates']<=16, 'invalid warmup horizon'
-
-
-def full_label_learning_rates(profile, global_update):
-    assert type(global_update) is int and 1<=global_update<=16, 'invalid global LR update'
-    if profile is None:return [1e-5,5e-6]
-    validate_lr_profile(profile)
-    warmup=profile['warmup_updates']
-    factor=profile['lr_scale']*(min(global_update/warmup,1) if warmup else 1)
-    return [1e-5*factor,5e-6*factor]
-
-
 def optimizer_step(optimizer, global_update, correction=None):
     if correction is not None and 'lr_profile' in correction:
         assert correction.get('owner_region')==OWNER_REGION, 'LR profiles require full label region fitting'
@@ -56,29 +29,16 @@ def optimizer_step(optimizer, global_update, correction=None):
         for group,rate in zip(optimizer.param_groups,rates):group['lr']=rate
     optimizer.step()
 
-
-def full_label_recipe(checkpoint, manifest_sha256, training_path, training_sha256, lr_profile=None):
-    if lr_profile is not None:validate_lr_profile(lr_profile)
-    recipe=dict(mode=FULL_LABEL_MODE,checkpoint=str(checkpoint),manifest_sha256=manifest_sha256,
-        training_path=str(training_path),training_sha256=training_sha256,owner_region=dict(OWNER_REGION),
-        arms={'treatment':1},updates=[2,16],completion={'treatment':RESTORED_M_COMPLETION},
-        completion_weighting=RESTORED_M_WEIGHTING,event=IDENTITY_SELECTION,event_normalization=IDENTITY_NORMALIZATION,
-        objective='positive_row_region_plus_description_divergence_softplus_1',execution_bounds=dict(FULL_LABEL_BOUNDS),decoder=dict(FULL_LABEL_DECODER),
-        optimizer=dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711))
-    if lr_profile is not None:recipe['optimizer']['lr_profile']=dict(lr_profile)
-    return recipe
-
-
 def owner_box(image, row):
     owners=[o for o in image['objects'] if o['coco_ann_id']==row['annotation_id']]
     assert len(owners)==1 and owners[0]['desc']==row['description'], 'owner identity or description drift'
-    from probes.owner_region_ranking import acceptable_bins
+    from probes.full_label_fit.region import acceptable_bins
     bbox=owners[0]['bbox_2d'];acceptable_bins(bbox,[])
     return bbox
 
 
 def region_row_evidence(sequence, row, image, vocab, region):
-    from probes.owner_region_ranking import owner_slots
+    from probes.full_label_fit.region import owner_slots
     assert region==OWNER_REGION, 'owner region recipe drift'
     atoms=[a for a in sequence.atoms if a.token_type=='coordinate']
     assert len(atoms)==4 and [a.coordinate_target.slot_index for a in atoms]==list(range(4))
@@ -95,7 +55,7 @@ def region_row_evidence(sequence, row, image, vocab, region):
 def owner_row_loss(logits, sequence, vocab, positions, row, image, region=None, components=None):
     if region is None:return p.image_loss(logits,sequence,vocab,positions)[0]
     import torch
-    from probes.owner_region_ranking import owner_slots, region_margin
+    from probes.full_label_fit.region import owner_slots, region_margin
     from src.losses.context import LossContext
     from src.losses.base_ce import BaseTokenCE
     from src.losses.token_type_gate import TokenTypeGateLoss
@@ -1256,8 +1216,11 @@ def parameter_identity(model):
 
 
 def source_paths(full_label_region=False):
-    return (['probes/full_label_self_rollout.py','probes/owner_region_ranking.py'] if full_label_region else [])+['probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
-            *sorted(str(x) for x in Path('src').rglob('*.py'))]
+    full_label = (['probes/full_label_fit/experiment.py','probes/full_label_fit/region.py',
+                   'probes/full_label_fit/rollout.py'] if full_label_region else [])
+    return ['probes/full_label_fit/__init__.py','probes/full_label_fit/recipe.py',*full_label,
+            'probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py',
+            'probes/hidden_human_recovery.py',*sorted(str(x) for x in Path('src').rglob('*.py'))]
 
 
 def start(output, root):
@@ -1311,11 +1274,13 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         assert checkpoint is not None and str(checkpoint)==spec['checkpoint']
         profile=spec['optimizer'].get('lr_profile')
         if 'lr_profile' in spec['optimizer']:validate_lr_profile(profile)
-        assert spec==full_label_recipe(checkpoint,spec['manifest_sha256'],spec['training_path'],spec['training_sha256'],profile), 'full label recipe drift'
+        rollout_policy=spec.get('rollout_policy')
+        assert spec==full_label_recipe(checkpoint,spec['manifest_sha256'],spec['training_path'],spec['training_sha256'],
+                                        profile,rollout_policy=rollout_policy), 'full label recipe drift'
         assert recipe_sha256==identity(spec) and qual['rollout_backend']=='vllm' and qual['schema_geometry'] is True
         manifest=qual['input_manifest'];path=Path(spec['training_path'])
         assert p.digest(manifest['path'])==manifest['sha256'] and p.digest(path)==spec['training_sha256']
-        from probes.full_label_self_rollout import verify_inputs, decoder_runtime_identity
+        from probes.full_label_fit.experiment import verify_inputs, decoder_runtime_identity
         verify_inputs(path.parent.parent)
         assert qual['decoder_runtime_identity']==decoder_runtime_identity(), 'decoder runtime/source drift'
         assert set(qual['sha256'])=={str(x) for x in (INPUTS,path,p.POLICY,Path(manifest['path']))}, 'full label input whitelist drift'
@@ -1327,7 +1292,8 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
             manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm',
             completion_arm=arm,completion_weighting=RESTORED_M_WEIGHTING,redirect_selection=IDENTITY_SELECTION,
             owner_region=dict(OWNER_REGION),training_path=spec['training_path'],training_sha256=spec['training_sha256'],
-            **({'lr_profile':dict(profile)} if profile is not None else {}))
+            **({'lr_profile':dict(profile)} if profile is not None else {}),
+            **({'rollout_policy':rollout_policy} if rollout_policy is not None else {}))
     if arm is None:
         assert spec is None and weight==0, 'explicit correction arm required'
         return None
@@ -1461,6 +1427,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     assert set(images)==set(inputs)==set(encodings) and len(images)==18
     if bank is not None:assert set(bank)==set(images)
     local=sorted(images)[rank::8];previous_metrics=None
+    rollout_policy=correction.get('rollout_policy') if correction is not None else None
     dist.init_process_group('nccl')
     q,delta,composition=p.compose(start_checkpoint if start_checkpoint is not None else Path(p.load(p.POLICY)['checkpoint']),evaluation=False)
     p.write(out/'composition.json',composition)
@@ -1498,8 +1465,20 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             rollout.close()
             raise
         p.write(out/'vllm-devices.json',devices)
-        requests=vllm_requests(q,inputs,local)
+        if rollout_policy is None:
+            requests=vllm_requests(q,inputs,local)
+        else:
+            request_image_ids=sorted(images)
+            native_requests=vllm_requests(q,inputs,request_image_ids)
+            if len(native_requests)!=len(request_image_ids):
+                raise ValueError('vLLM request construction changed image coverage')
+            requests_by_image={};request_ids=set()
+            for image_id,request in zip(request_image_ids,native_requests,strict=True):
+                if request.request_id!=inputs[image_id]['request_id'] or request.request_id in request_ids:
+                    raise ValueError('vLLM request IDs differ from input image mapping')
+                request_ids.add(request.request_id);requests_by_image[image_id]=request
     containment_baseline=None
+    previous_rollout_records=None
     for version in range(updates+1):
         fingerprint=parameter_identity(q.model); hashes=[None]*8
         dist.all_gather_object(hashes,identity(fingerprint));assert len(set(hashes))==1
@@ -1512,16 +1491,34 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             if 'lr_profile' in correction:producer['lr_profile']=dict(correction['lr_profile'])
         if correction is not None and 'completion_arm' in correction:producer['completion_arm']=correction_arm
         if correction is not None and 'redirect_selection' in correction:producer['redirect_selection']=correction['redirect_selection']
+        if rollout_policy is not None:producer['rollout_policy']=rollout_policy
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
         q.model.eval();records=[];before=time.monotonic()
+        generation_ids=local
+        assignment=None
+        if rollout_policy is not None:
+            from probes.full_label_fit.rollout import POLICY, build_assignment, rank_image_ids
+            assert rollout_policy==POLICY
+            assignment=build_assignment(sorted(images),
+                {image_id:len(inputs[image_id]['prompt_token_ids']) for image_id in images},
+                previous_rollout_records,version)
+            assignment_hashes=[None]*8
+            dist.all_gather_object(assignment_hashes,identity(assignment))
+            assert len(set(assignment_hashes))==1, 'ranks derived different rollout assignments'
+            p.write(out/f'rollout-assignment-{version}.json',assignment)
+            generation_ids=rank_image_ids(assignment,rank)
+        request_batch=[requests_by_image[i] for i in generation_ids] if rollout_policy is not None else None
         if rollout is not None:
             if version:rollout.refresh(q.model,delta,identity=hashes[0])
             generation_start=time.monotonic()
-            generated=rollout.generate(requests,budgets=[3084]*len(local),
+            generated=rollout.generate(request_batch if rollout_policy is not None else requests,budgets=[3084]*len(generation_ids),
                 eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,
-                identity=hashes[0],trace=version==0 and min(images) in local)
+                identity=hashes[0],trace=version==0 and min(images) in generation_ids)
             batch_seconds=time.monotonic()-generation_start
-        for index,i in enumerate(local):
+            if rollout_policy is not None:
+                from probes.full_label_fit.rollout import align_results
+                generated_by_request=align_results(request_batch,generated)
+        for index,i in enumerate(generation_ids):
             generation_start=time.monotonic()
             item=dict(inputs[i],arm='greedy',seed=92711,temperature=0)
             if rollout is None:
@@ -1532,18 +1529,39 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
                         trace='raw_and_policy' if version==0 and i==min(images) else 'none',seed=None)[0]
                 seconds=time.monotonic()-generation_start
             else:
-                result=generated[index];seconds=batch_seconds/len(local)
-                item.update(generation_timing='batch_wall_divided_by_requests',generation_batch_seconds=batch_seconds,generation_batch_size=len(local))
+                result=(generated_by_request[inputs[i]['request_id']] if rollout_policy is not None else generated[index])
+                seconds=batch_seconds/len(generation_ids)
+                item.update(generation_timing='batch_wall_divided_by_requests',generation_batch_seconds=batch_seconds,generation_batch_size=len(generation_ids))
             record=seal(dict(item,token_ids=list(result.token_ids),text=q.tokenizer.decode(result.token_ids,skip_special_tokens=False),
                 generated_tokens=len(result.token_ids),stop_reason=result.stop_reason,generation_seconds=seconds,raw_logprobs=result.raw_logprobs if version==0 and i==min(images) else None),producer)
+            if rollout_policy is not None:
+                rank_ids=rank_image_ids(assignment,rank)
+                record.update(generation_rank=rank,generation_batch_index=index,
+                    generation_batch_size=len(rank_ids),generation_batch_image_ids=rank_ids)
             records.append(record)
-        # No rank updates until every same-version trajectory is saved and validated.
+        # Balanced acquisition is gathered and globally verified before restoring the
+        # established learner shards. The legacy route keeps its historical order.
+        if rollout_policy is not None:
+            from probes.full_label_fit.rollout import route_records, verify_assignment
+            gathered=[None]*8;dist.all_gather_object(gathered,records)
+            all_records=[x for part in gathered for x in part]
+            verify_producer(all_records,producer,sorted(images))
+            verify_assignment(assignment,sorted(images),
+                {image_id:len(inputs[image_id]['prompt_token_ids']) for image_id in images},
+                previous_rollout_records,all_records,producer)
+            records=route_records(all_records,local)
+            previous_rollout_records=all_records
         directory=output/f'rollout-{version}'/f'rank-{rank}';directory.mkdir(parents=True,exist_ok=False)
         for record in records:p.write(directory/f"{record['image_id']}.json",record)
         p.write(directory/'complete.json',dict(status='complete',source=source,producer=producer,
             artifacts={x.name:p.digest(x) for x in directory.glob('*.json')}))
-        gathered=[None]*8;dist.all_gather_object(gathered,records)
-        all_records=[x for part in gathered for x in part];verify_producer(all_records,producer,sorted(images))
+        if rollout_policy is None:
+            gathered=[None]*8;dist.all_gather_object(gathered,records)
+            all_records=[x for part in gathered for x in part];verify_producer(all_records,producer,sorted(images))
+        else:
+            # Preserve the save-before-learning boundary after inference ownership is
+            # routed back to the fixed learner partition.
+            dist.barrier()
         if correction is not None and 'containment' in correction:
             containment_baseline,decision=containment_decision(list(images.values()),all_records,producer,correction,containment_baseline)
             if version==0:p.write(out/'containment-baseline.json',containment_baseline)
@@ -1625,6 +1643,28 @@ def frozen_records(root, image_ids, freeze=False):
     return sorted(records,key=lambda x:x['image_id'])
 
 
+def verify_rollout_assignment_artifact(output, version, prompt_lengths, records, producer, previous_records):
+    """Verify the same persisted balanced schedule in a fresh reader process."""
+    from probes.full_label_fit.rollout import verify_assignment
+    name=f'rollout-assignment-{version}.json';saved=None;root_binding=None
+    for rank in range(8):
+        directory=output/f'rank-{rank}'
+        receipt=p.load(directory/'complete.json')
+        assert receipt['status']=='complete' and receipt['updates']>=version
+        assert receipt['source']['commit']==producer['source'], 'rollout assignment source differs from producer'
+        binding=(receipt['source'],receipt['updates'])
+        if root_binding is None:root_binding=binding
+        else:assert binding==root_binding, 'rank completion bindings differ'
+        assert name in receipt['artifacts'], f'missing rollout assignment artifact on rank {rank}'
+        path=directory/name
+        assert p.digest(path)==receipt['artifacts'][name], f'rollout assignment artifact hash drift on rank {rank}'
+        assignment=p.load(path)
+        if saved is None:saved=assignment
+        else:assert assignment==saved, 'ranks saved different rollout assignments'
+    return verify_assignment(saved, sorted(prompt_lengths), prompt_lengths,
+                             previous_records, records, producer)
+
+
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
              geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0, full_label_region=False):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
@@ -1646,6 +1686,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
     if geometry is not None:assert preservation_weight==0 and preservation_bank_sha256 is None
     if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     inputs={x['image_id']:x for x in p.load(INPUTS)};result=[]
+    rollout_prompt_lengths={image_id:len(item['prompt_token_ids']) for image_id,item in inputs.items()}
     if rollout_backend=='vllm':
         from src.qwen.vllm_rollout import validate_device_assignments
         devices=[dict(rank=rank,request=p.load(output/f'rank-{rank}'/'vllm-device-request.json'),
@@ -1761,6 +1802,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         for name,sha in p.load(checkpoint/'identity.json').items():assert p.digest(checkpoint/name)==sha
     if geometry is not None:verify_start_export(start_checkpoint,output/'checkpoint-0')
     containment_baseline=None
+    previous_rollout_records=None
     for version in range(updates+1):
         records=frozen_records(output/f'rollout-{version}',set(inputs),freeze=True)
         producer=records[0]['producer'];verify_producer(records,producer,list(inputs));assert producer['update']==version and producer['kind']=='live_online'
@@ -1773,6 +1815,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert producer.get('owner_region')==correction.get('owner_region') and producer.get('training_sha256')==correction.get('training_sha256'), 'full label producer binding drift'
             if full_label_region:
                 assert ('lr_profile' in producer)==('lr_profile' in correction) and producer.get('lr_profile')==correction.get('lr_profile'), 'LR producer binding drift'
+                assert producer.get('rollout_policy')==correction.get('rollout_policy'), 'rollout policy producer binding drift'
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']
@@ -1784,6 +1827,9 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         if result:assert producer['parameter_sha256']!=result[-1]['producer']['parameter_sha256']
         for record in records:
             for key in inputs[record['image_id']]:assert record[key]==inputs[record['image_id']][key],key
+        if full_label_region and correction.get('rollout_policy') is not None:
+            verify_rollout_assignment_artifact(output,version,rollout_prompt_lengths,records,producer,previous_rollout_records)
+            previous_rollout_records=records
         if correction is not None and 'containment' in correction:
             containment_baseline,decision=containment_decision(list(images.values()),records,producer,correction,containment_baseline)
             verify_containment_evidence(output,containment_baseline,decision)
@@ -1856,10 +1902,18 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
     read=p.load(output/'readback.json')
     assert [x['update'] for x in read]==list(range(updates+1))
     images=p.load(correction['training_path'] if full_label_region else RETAINED);frozen={}
+    rollout_prompt_lengths=None
+    if full_label_region and correction.get('rollout_policy') is not None:
+        rollout_inputs={row['image_id']:row for row in p.load(INPUTS)}
+        rollout_prompt_lengths={image_id:len(row['prompt_token_ids']) for image_id,row in rollout_inputs.items()}
+    previous_rollout_records=None
     for row in read:
         directory=output/f"rollout-{row['update']}"
         records=frozen_records(directory,[x['image_id'] for x in images],freeze=True)
         assert p.digest(directory/'frozen.json')==row['frozen_sha256']
+        if full_label_region and correction.get('rollout_policy') is not None:
+            verify_rollout_assignment_artifact(output,row['update'],rollout_prompt_lengths,records,row['producer'],previous_rollout_records)
+            previous_rollout_records=records
         frozen['zero' if row['update']==0 else str(row['update'])]=records
     p.write(output/'offline-inputs-frozen.json',read)
     if correction is not None:
@@ -1928,7 +1982,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                 distinct_inserted_ids=sorted(distinct),distinct_supervised_ids=sorted(supervised)))
         p.write(output/'insertion-supply.json',supply)
     if full_label_region:
-        from probes.full_label_self_rollout import evaluate_versions
+        from probes.full_label_fit.experiment import evaluate_versions
         execution=execution_binding(root,correction_arm,microbatch,activation_checkpointing)
         for row in read:
             assert row['correction']==correction and row['execution']==execution and row['requests']==18

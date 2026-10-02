@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from probes import full_label_self_rollout as f
+from probes.full_label_fit import experiment as f
+from probes.full_label_fit import recipe as fit_recipe
 from probes import iterative_positive as p
 from probes import rollout_row_credit as r
 
@@ -21,7 +22,7 @@ class FullLabelDataTest(unittest.TestCase):
 
     def _run_qualification_cli(self, root, *profile_args):
         checkpoint = Path('/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload')
-        argv = ['full_label_self_rollout', 'qualify', '--unit', str(f.UNIT), '--root', str(root),
+        argv = ['full_label_fit.experiment', 'qualify', '--unit', str(f.UNIT), '--root', str(root),
                 '--qualification-run', str(root / 'run-2'), '--observation-run', str(root / 'run-16'),
                 '--checkpoint', str(checkpoint), *profile_args]
         with patch('sys.argv', argv), patch(
@@ -71,9 +72,14 @@ class FullLabelDataTest(unittest.TestCase):
             checkpoint, qual = self._run_qualification_cli(root)
             manifest = f.UNIT / 'inputs/manifest.json'
             training = f.UNIT / 'inputs/full-labels.json'
-            self.assertEqual(o.full_label_recipe(checkpoint, f.sha(checkpoint / 'inference_payload_manifest.json'),
-                                                  training, f.sha(training)), qual['correction'])
-            self.assertEqual(HISTORICAL_RECIPE_SHA256, o.identity(qual['correction']))
+            historical = fit_recipe.full_label_recipe(checkpoint, f.sha(checkpoint / 'inference_payload_manifest.json'),
+                                             training, f.sha(training))
+            self.assertEqual(HISTORICAL_RECIPE_SHA256, o.identity(historical))
+            expected = fit_recipe.full_label_recipe(checkpoint, f.sha(checkpoint / 'inference_payload_manifest.json'),
+                training, f.sha(training), rollout_policy='previous_rollout_tokens_lpt_v1')
+            self.assertEqual(expected, qual['correction'])
+            self.assertEqual('previous_rollout_tokens_lpt_v1', qual['correction']['rollout_policy'])
+            self.assertNotEqual(HISTORICAL_RECIPE_SHA256, o.identity(qual['correction']))
             self.assertNotIn('lr_profile', qual['correction']['optimizer'])
             self.assertEqual({'path': str(manifest), 'sha256': f.sha(manifest)}, qual['input_manifest'])
             self.assertEqual({str(x) for x in (o.INPUTS, training, o.p.POLICY, manifest)}, set(qual['sha256']))
@@ -103,9 +109,9 @@ class FullLabelDataTest(unittest.TestCase):
                     root, '--lr-scale', str(scale), '--warmup-updates', str(warmup_updates))
                 training = f.UNIT / 'inputs/full-labels.json'
                 expected_profile = {'lr_scale': scale, 'warmup_updates': warmup_updates}
-                expected = o.full_label_recipe(checkpoint,
+                expected = fit_recipe.full_label_recipe(checkpoint,
                     f.sha(checkpoint / 'inference_payload_manifest.json'), training, f.sha(training),
-                    lr_profile=expected_profile)
+                    lr_profile=expected_profile, rollout_policy='previous_rollout_tokens_lpt_v1')
                 self.assertEqual(expected, qual['correction'])
                 self.assertEqual(expected_profile, qual['correction']['optimizer']['lr_profile'])
                 with patch('src.artifacts.git_identity.verify_source_identity'):
@@ -116,7 +122,7 @@ class FullLabelDataTest(unittest.TestCase):
 
     def test_cli_rejects_missing_or_malformed_lr_profile_before_source_capture(self):
         checkpoint = Path('/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload')
-        base = ['full_label_self_rollout', 'qualify', '--unit', str(f.UNIT)]
+        base = ['full_label_fit.experiment', 'qualify', '--unit', str(f.UNIT)]
         with patch('src.artifacts.git_identity.capture_source_identity') as capture_source:
             for partial_pair in (('--lr-scale', '1'), ('--warmup-updates', '4')):
                 with self.subTest(partial_pair=partial_pair), patch('sys.argv', base + [

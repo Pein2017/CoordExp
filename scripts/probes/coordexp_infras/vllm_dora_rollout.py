@@ -57,10 +57,7 @@ def main():
     from src.qwen.vllm_rollout import VllmDoraRollout, validate_device_assignments
     from src.artifacts.git_identity import capture_source_identity, verify_source_identity
 
-    sources = [str(path.relative_to(REPO)) for path in (REPO/'src').rglob('*.py')]
-    sources += ['probes/online_row_credit.py', 'probes/rollout_row_credit.py',
-                'probes/iterative_positive.py', 'probes/hidden_human_recovery.py',
-                'scripts/probes/coordexp_infras/vllm_dora_rollout.py']
+    sources = o.source_paths() + ['scripts/probes/coordexp_infras/vllm_dora_rollout.py']
     source_identity = capture_source_identity(sources, root=REPO)
 
     source = {row['image_id']: row for row in p.load(o.INPUTS)}

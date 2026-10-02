@@ -3,7 +3,7 @@ import unittest
 
 import torch
 
-from probes.owner_region_ranking import acceptable_bins, owner_slots, region_margin
+from probes.full_label_fit.region import acceptable_bins, owner_slots, region_margin
 
 
 def iou_at_least(box, gt, tau):

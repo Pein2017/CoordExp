@@ -13,7 +13,8 @@ from unittest.mock import patch
 import torch
 
 from probes import online_row_credit as o
-from probes.owner_region_ranking import owner_slots, region_margin
+from probes.full_label_fit import recipe as fit_recipe
+from probes.full_label_fit.region import owner_slots, region_margin
 
 
 class FullLabelRegionTest(unittest.TestCase):
@@ -31,7 +32,7 @@ class FullLabelRegionTest(unittest.TestCase):
 
     @classmethod
     def region_producer(cls, **extra):
-        return dict(cls.helper.producer, owner_region=dict(o.OWNER_REGION),
+        return dict(cls.helper.producer, owner_region=dict(fit_recipe.OWNER_REGION),
                     training_sha256='training-fixture-sha256', **extra)
 
     def region_record(self, boxes, objects=None, **producer_fields):
@@ -39,7 +40,7 @@ class FullLabelRegionTest(unittest.TestCase):
         producer = self.region_producer(**producer_fields)
         return image, o.seal(record, producer)
 
-    def persisted_full_label_fixture(self, root, lr_profile=None):
+    def persisted_full_label_fixture(self, root, lr_profile=None, rollout_policy=None):
         helper = self.helper()
 
         def rewrite(path, value):
@@ -61,7 +62,7 @@ class FullLabelRegionTest(unittest.TestCase):
         with patch.object(helper, 'restored_m_qualifier', side_effect=two_update_qualifier):
             output, old_qual, images, inputs = helper.correction_fixture_tree(
                 root, 'treatment', updates=2, completion=True, identity_events=True,
-                completion_weighting=o.RESTORED_M_WEIGHTING)
+                completion_weighting=fit_recipe.RESTORED_M_WEIGHTING)
         checkpoint = root / 'anchor'
         training = root / 'training.json'
         manifest = root / 'input-manifest.json'
@@ -71,8 +72,9 @@ class FullLabelRegionTest(unittest.TestCase):
         o.p.write(manifest, dict(training=str(training)))
         manifest_sha = o.p.digest(checkpoint / 'inference_payload_manifest.json')
         training_sha = o.p.digest(training)
-        recipe = o.full_label_recipe(checkpoint, manifest_sha, training, training_sha, lr_profile=lr_profile)
-        from probes import full_label_self_rollout
+        recipe = fit_recipe.full_label_recipe(checkpoint, manifest_sha, training, training_sha,
+                                     lr_profile=lr_profile, rollout_policy=rollout_policy)
+        from probes.full_label_fit import experiment as full_label_self_rollout
         qual = dict(correction=recipe,
                     decoder_runtime_identity=full_label_self_rollout.decoder_runtime_identity(),
                     input_manifest=dict(path=str(manifest), sha256=o.p.digest(manifest)),
@@ -83,17 +85,27 @@ class FullLabelRegionTest(unittest.TestCase):
                                                   activation_checkpointing=False)]),
                     pairs={'2': {'treatment': str(output)}})
         rewrite(root / 'qualification.json', qual)
-        with patch('probes.full_label_self_rollout.verify_inputs'), \
+        with patch('probes.full_label_fit.experiment.verify_inputs'), \
              patch('src.artifacts.git_identity.verify_source_identity'), \
              patch.object(o, 'verify_anchor_payload'):
             binding = o.correction_binding(root, 'treatment', 1, checkpoint, .1,
                                            o.identity(recipe), full_label_region=True)
 
+        previous_rollout_records=None
         for version in range(3):
             initial = o.p.load(output / 'rank-0' / f'producer-{version}.json')
             producer = dict(initial['producer'], recipe_sha256=o.identity(recipe),
-                            owner_region=dict(o.OWNER_REGION), training_sha256=training_sha)
+                            owner_region=dict(fit_recipe.OWNER_REGION), training_sha256=training_sha)
             if lr_profile is not None:producer['lr_profile'] = dict(lr_profile)
+            if rollout_policy is not None:producer['rollout_policy']=rollout_policy
+            assignment=None;assignment_items={};assignment_batches={};version_records=[]
+            if rollout_policy is not None:
+                from probes.full_label_fit.rollout import build_assignment
+                assignment=build_assignment(sorted(images),
+                    {image_id:len(inputs[image_id]['prompt_token_ids']) for image_id in images},
+                    previous_rollout_records,version)
+                assignment_items={item['image_id']:item for item in assignment['items']}
+                assignment_batches={row['rank']:row['image_ids'] for row in assignment['ranks']}
             for rank in range(8):
                 directory = output / f'rank-{rank}'
                 bound = o.p.load(directory / f'producer-{version}.json')
@@ -101,6 +113,8 @@ class FullLabelRegionTest(unittest.TestCase):
                 rewrite(directory / f'producer-{version}.json', bound)
                 rewrite(directory / 'correction.json', binding)
                 rewrite(directory / 'geometry.json', binding)
+                if assignment is not None:
+                    rewrite(directory / f'rollout-assignment-{version}.json', assignment)
 
                 rawdir = output / f'rollout-{version}' / f'rank-{rank}'
                 records = {}
@@ -108,7 +122,14 @@ class FullLabelRegionTest(unittest.TestCase):
                     if path.name == 'complete.json':
                         continue
                     record = o.seal(o.p.load(path), producer)
+                    if assignment is not None:
+                        item=assignment_items[record['image_id']];generation_rank=item['generation_rank']
+                        record.update(generation_rank=generation_rank,
+                            generation_batch_index=item['generation_batch_index'],
+                            generation_batch_size=len(assignment_batches[generation_rank]),
+                            generation_batch_image_ids=assignment_batches[generation_rank])
                     records[record['image_id']] = record
+                    version_records.append(record)
                     rewrite(path, record)
                 raw_complete_path = rawdir / 'complete.json'
                 raw_complete = o.p.load(raw_complete_path)
@@ -137,8 +158,8 @@ class FullLabelRegionTest(unittest.TestCase):
                                correction=dict(arm='treatment', duplicate_weight=1,
                                                plan_sha256=o.identity(plan)),
                                completion_arm='treatment',
-                               completion_weighting=o.RESTORED_M_WEIGHTING,
-                               owner_region=dict(o.OWNER_REGION), training_sha256=training_sha)
+                               completion_weighting=fit_recipe.RESTORED_M_WEIGHTING,
+                               owner_region=dict(fit_recipe.OWNER_REGION), training_sha256=training_sha)
                     row['cached_replay'] = []
                     if row['branch'] == 'trace':
                         selected = o.bridge_trace_plan(plan, 'chain')
@@ -147,7 +168,7 @@ class FullLabelRegionTest(unittest.TestCase):
                         row['row_losses'] = [dict(atoms=[atom.to_artifact_dict() for atom in sequence.atoms],
                                                   owner_region=o.region_row_evidence(
                                                       sequence, target, image, self.vocab,
-                                                      o.OWNER_REGION))
+                                                      fit_recipe.OWNER_REGION))
                                              for target, sequence in zip(selected['M'], sequences)]
                         reduction_weight=1/len(sequences) if sequences else 0
                         for value in row['row_losses']:
@@ -183,7 +204,7 @@ class FullLabelRegionTest(unittest.TestCase):
                         row['row_losses'] = [dict(
                             atoms=[atom.to_artifact_dict() for atom in sequence.atoms],
                             owner_region=o.region_row_evidence(
-                                sequence, target, image, self.vocab, o.OWNER_REGION))]
+                                sequence, target, image, self.vocab, fit_recipe.OWNER_REGION))]
                         row['row_losses'][0]['loss_components']=fixture_components(1.,target.get('event_weight',1))
                         row['redirect'].update(target=target,
                                                site_kind=sequence.atoms[target['site']['offset']].token_type)
@@ -196,6 +217,7 @@ class FullLabelRegionTest(unittest.TestCase):
                     for name, value in row['terms'].items():
                         row['logit_derivatives'][name]['loss'] = value
                 rewrite(update_path, update)
+            if rollout_policy is not None:previous_rollout_records=version_records
 
         for rank in range(8):
             directory = output / f'rank-{rank}'
@@ -232,7 +254,7 @@ class FullLabelRegionTest(unittest.TestCase):
                                                dict(params=params[1:], lr=5e-6)], weight_decay=0)
                 reference = torch.optim.AdamW([dict(params=expected[:1], lr=1e-5),
                                                dict(params=expected[1:], lr=5e-6)], weight_decay=0)
-                correction = dict(owner_region=dict(o.OWNER_REGION))
+                correction = dict(owner_region=dict(fit_recipe.OWNER_REGION))
                 if profile is not None:correction['lr_profile'] = profile
                 observed = []
                 def step(opt, *args, **kwargs):
@@ -256,15 +278,15 @@ class FullLabelRegionTest(unittest.TestCase):
                 for actual, wanted in zip(params, expected):torch.testing.assert_close(actual, wanted, rtol=0, atol=0)
 
     def test_lr_profile_trust_boundary_and_historical_default_identity(self):
-        from probes.full_label_self_rollout import UNIT
+        from probes.full_label_fit.experiment import UNIT
         historical = o.p.load(UNIT / 'state.json')['recipe']
-        default = o.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
+        default = fit_recipe.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
                                       Path(historical['training_path']), historical['training_sha256'])
         self.assertEqual(o.identity(default), 'a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141')
         self.assertNotIn('lr_profile', default['optimizer'])
         profiles = [dict(lr_scale=1.,warmup_updates=0), dict(lr_scale=1.,warmup_updates=4),
                     dict(lr_scale=.90625,warmup_updates=0)]
-        identities = {o.identity(o.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
+        identities = {o.identity(fit_recipe.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
                       Path(historical['training_path']), historical['training_sha256'], lr_profile=p)) for p in profiles}
         self.assertEqual(len(identities),3)
         self.assertNotIn(o.identity(default),identities)
@@ -275,9 +297,13 @@ class FullLabelRegionTest(unittest.TestCase):
                    dict(lr_scale=1,warmup_updates=True),dict(lr_scale=1,warmup_updates=4.),
                    dict(lr_scale=1,warmup_updates=-1),dict(lr_scale=1,warmup_updates=17)]
         for profile in invalid:
-            with self.subTest(profile=profile), self.assertRaises(AssertionError):o.validate_lr_profile(profile)
+            with self.subTest(profile=profile), self.assertRaises(AssertionError):fit_recipe.validate_lr_profile(profile)
         for update in [0,17,True,1.,'1']:
-            with self.subTest(update=update), self.assertRaises(AssertionError):o.full_label_learning_rates(profiles[1],update)
+            with self.subTest(update=update), self.assertRaises(AssertionError):fit_recipe.full_label_learning_rates(profiles[1],update)
+        for rollout_policy in ('unsupported', '', False, 0):
+            with self.subTest(rollout_policy=rollout_policy), self.assertRaises(AssertionError):
+                fit_recipe.full_label_recipe(Path('/cpu/anchor'), 'manifest', Path('/cpu/training'), 'training',
+                                    rollout_policy=rollout_policy)
 
     def test_profiled_persisted_readback_rejects_resigned_lr_update_and_profile_drift(self):
         profile = dict(lr_scale=1.,warmup_updates=4)
@@ -291,7 +317,7 @@ class FullLabelRegionTest(unittest.TestCase):
                         correction_arm='treatment',duplicate_weight=1,rollout_backend='vllm',schema_geometry=True,
                         activation_checkpointing=False,full_label_region=True)
             with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
-                 patch('probes.full_label_self_rollout.verify_inputs'),patch('src.artifacts.git_identity.verify_source_identity'), \
+                 patch('probes.full_label_fit.experiment.verify_inputs'),patch('src.artifacts.git_identity.verify_source_identity'), \
                  patch.object(o,'verify_start_export'):
                 o.readback(output,root,2,**kwargs)
                 self.assertEqual(original_load(output/'readback.json')[0]['producer']['lr_profile'],profile)
@@ -313,13 +339,19 @@ class FullLabelRegionTest(unittest.TestCase):
 
     def test_recipe_binding_source_closure_and_cli_delivery(self):
         checkpoint, training = Path('/cpu/anchor'), Path('/cpu/training.json')
-        recipe = o.full_label_recipe(checkpoint, 'manifest-sha', training, 'training-sha')
+        recipe = fit_recipe.full_label_recipe(checkpoint, 'manifest-sha', training, 'training-sha',
+                                     rollout_policy='previous_rollout_tokens_lpt_v1')
         self.assertEqual(recipe['mode'], 'full-label-region-v1')
-        self.assertEqual(recipe['owner_region'], o.OWNER_REGION)
+        self.assertEqual(recipe['owner_region'], fit_recipe.OWNER_REGION)
         self.assertEqual((recipe['arms'], recipe['updates']), ({'treatment': 1}, [2, 16]))
+        base_sources = o.source_paths()
+        self.assertEqual(base_sources[:2], [
+            'probes/full_label_fit/__init__.py', 'probes/full_label_fit/recipe.py',
+        ])
         self.assertEqual(o.source_paths(True), [
-            'probes/full_label_self_rollout.py', 'probes/owner_region_ranking.py',
-            *o.source_paths(),
+            *base_sources[:2], 'probes/full_label_fit/experiment.py',
+            'probes/full_label_fit/region.py', 'probes/full_label_fit/rollout.py',
+            *base_sources[2:],
         ])
 
         root, manifest = Path('/cpu'), Path('/cpu/manifest.json')
@@ -329,7 +361,7 @@ class FullLabelRegionTest(unittest.TestCase):
         qual = dict(correction=recipe, input_manifest=dict(path=str(manifest), sha256='input-manifest'),
                     sha256=hashes, source={'commit': 'fixture', 'files': []},
                     decoder_runtime_identity=__import__(
-                        'probes.full_label_self_rollout', fromlist=['decoder_runtime_identity']
+                        'probes.full_label_fit.experiment', fromlist=['decoder_runtime_identity']
                     ).decoder_runtime_identity(),
                     rollout_backend='vllm', schema_geometry=True)
         original_load = o.p.load
@@ -341,12 +373,12 @@ class FullLabelRegionTest(unittest.TestCase):
 
         with patch.object(o.p, 'load', side_effect=load), \
              patch.object(o.p, 'digest', side_effect=lambda path: hashes.get(str(path), 'manifest-sha')), \
-             patch('probes.full_label_self_rollout.verify_inputs') as verify_inputs, \
+             patch('probes.full_label_fit.experiment.verify_inputs') as verify_inputs, \
              patch('src.artifacts.git_identity.verify_source_identity') as verify_source, \
              patch.object(o, 'verify_anchor_payload'):
             bound = o.correction_binding(root, 'treatment', 1, checkpoint, .1,
                                          o.identity(recipe), full_label_region=True)
-            self.assertEqual(bound['owner_region'], o.OWNER_REGION)
+            self.assertEqual(bound['owner_region'], fit_recipe.OWNER_REGION)
             self.assertEqual(bound['training_sha256'], 'training-sha')
             verify_inputs.assert_called_once_with(training.parent.parent)
             verify_source.assert_called_once_with(qual['source'], required_paths=o.source_paths(True))
@@ -397,7 +429,7 @@ class FullLabelRegionTest(unittest.TestCase):
                 emitted = bins[atom.token_id]
                 logits[0, j, atom.token_id] = 0
                 if atom.coordinate_target.slot_index == 0:
-                    evidence = o.region_row_evidence(sequence, row, image, self.vocab, o.OWNER_REGION)
+                    evidence = o.region_row_evidence(sequence, row, image, self.vocab, fit_recipe.OWNER_REGION)
                     allowed = owner_slots(evidence['gt'], evidence['actual'])[1][0]
                     alternative = next(value for value in allowed if value != emitted)
                     logits[0, j, atom.token_id] = -7
@@ -405,7 +437,7 @@ class FullLabelRegionTest(unittest.TestCase):
             else:
                 logits[0, j, atom.token_id] = 0
         logits.requires_grad_()
-        evidence = o.region_row_evidence(sequence, row, image, self.vocab, o.OWNER_REGION)
+        evidence = o.region_row_evidence(sequence, row, image, self.vocab, fit_recipe.OWNER_REGION)
         self.assertEqual(evidence['gt'], actual)
         self.assertNotEqual(evidence['gt'], image['objects'][0]['bbox_2d'])
         slot0 = next(site for site in evidence['sites'] if site['slot'] == 0)
@@ -420,8 +452,8 @@ class FullLabelRegionTest(unittest.TestCase):
         point_ce = BaseTokenCE().per_atom_loss(context)
         gate = TokenTypeGateLoss().per_atom_loss(context).mean()
         order = ConditionalOrderGateLoss().per_segment_loss(context).segment_losses.mean()
-        actual_loss = o.owner_row_loss(logits, sequence, self.vocab, positions, row, image, o.OWNER_REGION)
-        slots, allowed, _ = owner_slots(evidence['gt'], evidence['actual'], o.OWNER_REGION['tau'])
+        actual_loss = o.owner_row_loss(logits, sequence, self.vocab, positions, row, image, fit_recipe.OWNER_REGION)
+        slots, allowed, _ = owner_slots(evidence['gt'], evidence['actual'], fit_recipe.OWNER_REGION['tau'])
         allowed_by_slot = dict(zip(slots, allowed))
         lookup = {position: j for j, position in enumerate(positions)}
         expected_atoms = []
@@ -432,7 +464,7 @@ class FullLabelRegionTest(unittest.TestCase):
                 accepted = [self.vocab.coordinate[b]
                             for b in allowed_by_slot[atom.coordinate_target.slot_index]]
                 z = logits[0, lookup[atom.causal_logits_position]]
-                expected_atoms.append(region_margin(z, accepted, o.OWNER_REGION['margin']))
+                expected_atoms.append(region_margin(z, accepted, fit_recipe.OWNER_REGION['margin']))
             else:
                 expected_atoms.append(logits[0, lookup[atom.causal_logits_position]].sum() * 0)
         expected_loss = torch.stack(expected_atoms).mean() + .1 * gate + .01 * order
@@ -442,14 +474,14 @@ class FullLabelRegionTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(gate) and torch.isfinite(order))
         with patch.object(o.p, 'image_loss', side_effect=AssertionError('legacy point CE reached')):
             torch.testing.assert_close(actual_loss, o.owner_row_loss(
-                logits, sequence, self.vocab, positions, row, image, o.OWNER_REGION))
+                logits, sequence, self.vocab, positions, row, image, fit_recipe.OWNER_REGION))
 
         translated = copy.deepcopy(image)
         translated['objects'][1]['bbox_2d'] = [750, 300, 850, 500]
-        translated_evidence = o.region_row_evidence(sequence, row, translated, self.vocab, o.OWNER_REGION)
+        translated_evidence = o.region_row_evidence(sequence, row, translated, self.vocab, fit_recipe.OWNER_REGION)
         self.assertEqual(translated_evidence['gt'], translated['objects'][1]['bbox_2d'])
         translated_loss = o.owner_row_loss(logits, sequence, self.vocab, positions, row,
-                                           translated, o.OWNER_REGION)
+                                           translated, fit_recipe.OWNER_REGION)
         self.assertGreater(float(translated_loss.detach()), float(actual_loss.detach()))
 
         legacy = o.p.image_loss(logits, sequence, self.vocab, positions)[0]
@@ -461,7 +493,7 @@ class FullLabelRegionTest(unittest.TestCase):
         image, record = self.region_record([actual], [dict(coco_ann_id=9, desc='person', bbox_2d=gt)])
         row = dict(o.observations(record, self.t)[0][0], annotation_id=9)
         sequence = o.r.positive_sequence(image, record, row, self.t)
-        evidence = o.region_row_evidence(sequence, row, image, self.vocab, o.OWNER_REGION)
+        evidence = o.region_row_evidence(sequence, row, image, self.vocab, fit_recipe.OWNER_REGION)
         self.assertEqual((evidence['first_failure'], evidence['eligible']), (2, 3))
         self.assertEqual([site['slot'] for site in evidence['sites']], [0, 1, 2])
 
@@ -483,7 +515,7 @@ class FullLabelRegionTest(unittest.TestCase):
         point_ce = BaseTokenCE().per_atom_loss(context)
         gate = TokenTypeGateLoss().per_atom_loss(context).mean()
         order = ConditionalOrderGateLoss().per_segment_loss(context).segment_losses.mean()
-        valid_slots, valid_bins, _ = owner_slots(evidence['gt'], evidence['actual'], o.OWNER_REGION['tau'])
+        valid_slots, valid_bins, _ = owner_slots(evidence['gt'], evidence['actual'], fit_recipe.OWNER_REGION['tau'])
         allowed_by_slot = dict(zip(valid_slots, valid_bins))
         expected_atoms = []
         for j, atom in enumerate(sequence.atoms):
@@ -493,17 +525,17 @@ class FullLabelRegionTest(unittest.TestCase):
                 accepted = [self.vocab.coordinate[b]
                             for b in allowed_by_slot[atom.coordinate_target.slot_index]]
                 z = logits[0, positions_lookup[atom.causal_logits_position]]
-                expected_atoms.append(region_margin(z, accepted, o.OWNER_REGION['margin']))
+                expected_atoms.append(region_margin(z, accepted, fit_recipe.OWNER_REGION['margin']))
             else:
                 expected_atoms.append(logits[0, positions_lookup[atom.causal_logits_position]].sum() * 0)
         actual_loss = o.owner_row_loss(logits, sequence, self.vocab, positions, row,
-                                       image, o.OWNER_REGION)
+                                       image, fit_recipe.OWNER_REGION)
         expected_loss = torch.stack(expected_atoms).mean() + .1 * gate + .01 * order
         torch.testing.assert_close(actual_loss, expected_loss)
         owner_terms = [region_margin(logits[0, positions.index(site['position'])],
                                      [self.vocab.coordinate[value] for value in
                                       owner_slots(evidence['gt'], evidence['actual'])[1][site['slot']]],
-                                     o.OWNER_REGION['margin']) for site in evidence['sites']]
+                                     fit_recipe.OWNER_REGION['margin']) for site in evidence['sites']]
         gradients, = torch.autograd.grad(torch.stack(owner_terms).sum(), logits)
         coord_atoms = {atom.coordinate_target.slot_index: atom for atom in sequence.atoms
                        if atom.token_type == 'coordinate'}
@@ -534,13 +566,13 @@ class FullLabelRegionTest(unittest.TestCase):
                           activation_checkpointing=False, full_label_region=True)
             with patch.object(o.p, 'load', side_effect=load), \
                  patch.object(o.r, 'frontend', return_value=self.q), \
-                 patch('probes.full_label_self_rollout.verify_inputs'), \
+                 patch('probes.full_label_fit.experiment.verify_inputs'), \
                  patch('src.artifacts.git_identity.verify_source_identity'), \
                  patch.object(o, 'verify_start_export'):
                 o.readback(output, root, 2, **kwargs)
                 result = original_load(output / 'readback.json')
                 self.assertEqual([row['update'] for row in result], [0, 1, 2])
-                self.assertTrue(all(row['correction']['owner_region'] == o.OWNER_REGION
+                self.assertTrue(all(row['correction']['owner_region'] == fit_recipe.OWNER_REGION
                                     and row['producer']['training_sha256'] ==
                                     qual['correction']['training_sha256']
                                     for row in result))
@@ -592,11 +624,11 @@ class FullLabelRegionTest(unittest.TestCase):
         ])
         raw = dict(record, text=text, token_ids=self.t.encode(text, add_special_tokens=False),
                    generated_tokens=len(self.t.encode(text, add_special_tokens=False)), stop_reason='im_end')
-        producer = self.region_producer(completion_weighting=o.RESTORED_M_WEIGHTING,
-                                        redirect_selection=o.IDENTITY_SELECTION)
+        producer = self.region_producer(completion_weighting=fit_recipe.RESTORED_M_WEIGHTING,
+                                        redirect_selection=fit_recipe.IDENTITY_SELECTION)
         record = o.seal(raw, producer)
         plan = o.completion_credit(image, record, self.t, producer, 'treatment', True,
-                                   o.RESTORED_M_WEIGHTING)
+                                   fit_recipe.RESTORED_M_WEIGHTING)
         self.assertEqual((plan['m'], plan['k']), (2, 4))
         self.assertEqual(plan['redirects'][0]['description'], 'traffic light')
 
@@ -633,7 +665,7 @@ class FullLabelRegionTest(unittest.TestCase):
                 row.update(image_weight=8/18, sync=True)
                 loss.backward()
                 self.assertTrue(torch.isfinite(model.w.grad).all())
-                self.assertEqual(row['owner_region'], o.OWNER_REGION)
+                self.assertEqual(row['owner_region'], fit_recipe.OWNER_REGION)
                 self.assertEqual(row['training_sha256'], producer['training_sha256'])
                 if branch == 'trace':
                     self.assertEqual(row['terms']['M'], 0)
@@ -702,11 +734,11 @@ class FullLabelRegionTest(unittest.TestCase):
                                                  {image['image_id']: record}, {image['image_id']: image},
                                                  self.t, 'treatment', 1)
             complete_image=dict(image,objects=objects[:2])
-            complete_producer=self.region_producer(completion_weighting=o.RESTORED_M_WEIGHTING,
-                                                   redirect_selection=o.IDENTITY_SELECTION)
+            complete_producer=self.region_producer(completion_weighting=fit_recipe.RESTORED_M_WEIGHTING,
+                                                   redirect_selection=fit_recipe.IDENTITY_SELECTION)
             complete_record=o.seal(raw,complete_producer)
             complete_plan=o.completion_credit(complete_image,complete_record,self.t,complete_producer,
-                                               'treatment',True,o.RESTORED_M_WEIGHTING)
+                                               'treatment',True,fit_recipe.RESTORED_M_WEIGHTING)
             self.assertEqual(complete_plan['k'],0)
             model.zero_grad(set_to_none=True)
             loss,row=o.forward(q,model,batch,complete_image,complete_record,complete_plan,None,self.vocab,
@@ -728,11 +760,11 @@ class FullLabelRegionTest(unittest.TestCase):
             self.assertTrue(torch.isfinite(model.w.grad).all())
         self.assertEqual(len(histories), 4)
         coord_image, coord_record, _ = self.helper().multi_fixture()
-        coord_producer = self.region_producer(completion_weighting=o.RESTORED_M_WEIGHTING,
-                                              redirect_selection=o.IDENTITY_SELECTION)
+        coord_producer = self.region_producer(completion_weighting=fit_recipe.RESTORED_M_WEIGHTING,
+                                              redirect_selection=fit_recipe.IDENTITY_SELECTION)
         coord_record = o.seal(coord_record, coord_producer)
         coord_plan = o.completion_credit(coord_image, coord_record, self.t, coord_producer, 'treatment', True,
-                                         o.RESTORED_M_WEIGHTING)
+                                         fit_recipe.RESTORED_M_WEIGHTING)
         coordinate_target = coord_plan['redirects'][0]
         sequence = o.redirect_sequence(coord_image, coord_record, coordinate_target, self.t)
         positions = tuple(atom.causal_logits_position for atom in sequence.atoms)
@@ -740,7 +772,7 @@ class FullLabelRegionTest(unittest.TestCase):
         parts = {}
         value, terms = o.redirect_objective(logits, positions, sequence, coordinate_target,
                                             len(coord_record['prompt_token_ids']), self.vocab, coord_image,
-                                            o.OWNER_REGION, parts)
+                                            fit_recipe.OWNER_REGION, parts)
         receipt = o.owner_loss_component_receipt(parts, coordinate_target.get('event_weight', 1))
         self.assertAlmostEqual(sum(receipt[name] for name in ('lexical_schema_ce', 'coordinate_region_hinge',
                                                                'type_gate_weighted', 'conditional_order_weighted')),

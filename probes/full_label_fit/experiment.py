@@ -9,8 +9,9 @@ from pathlib import Path
 
 from probes import iterative_positive as p
 from probes import rollout_row_credit as r
+from probes.full_label_fit.recipe import full_label_recipe, validate_lr_profile
 
-UNIT = Path(__file__).resolve().parents[1] / 'research/experiments/2026-10-02-full-label-self-rollout-fit'
+UNIT = Path(__file__).resolve().parents[2] / 'research/experiments/2026-10-02-full-label-self-rollout-fit'
 INPUT_DIR = UNIT / 'inputs'
 TRUTH = r.TRUTH
 RETAINED = r.ROOT / 'cpu-04/retained-10.json'
@@ -311,7 +312,7 @@ def prepare_qualification(unit: Path, root: Path, qualification_run: Path, obser
     lr_profile = None
     if lr_scale is not None:
         lr_profile = {'lr_scale': lr_scale, 'warmup_updates': warmup_updates}
-        o.validate_lr_profile(lr_profile)
+        validate_lr_profile(lr_profile)
 
     input_path, manifest_path = unit / 'inputs/full-labels.json', unit / 'inputs/manifest.json'
     _, manifest = verify_inputs(unit)
@@ -322,10 +323,8 @@ def prepare_qualification(unit: Path, root: Path, qualification_run: Path, obser
     training_path = input_path
     training_sha = sha(training_path)
     source = capture_source_identity(o.source_paths(full_label_region=True))
-    if lr_profile is None:
-        recipe = o.full_label_recipe(checkpoint, anchor_sha, training_path, training_sha)
-    else:
-        recipe = o.full_label_recipe(checkpoint, anchor_sha, training_path, training_sha, lr_profile=lr_profile)
+    recipe = full_label_recipe(checkpoint, anchor_sha, training_path, training_sha, lr_profile=lr_profile,
+                                rollout_policy='previous_rollout_tokens_lpt_v1')
     qualification = {
         'schema': 'full-label-self-rollout-qualification-v1', 'unit': str(unit),
         'runs': {'qualification': str(qualification_run), 'observation': str(observation_run)},

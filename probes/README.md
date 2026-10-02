@@ -42,11 +42,17 @@ Common correction, geometry and containment stay fixed; v3 remains unchanged.
 All three `probes.online_row_credit` stages bind the qualified recipe through
 `--recipe-sha256`; a separate lead release is required for native execution.
 
-The opt-in `--full-label-region` route uses the existing online runner with
-570 known labels and owner-region coordinate ranking. CPU snapshot/qualification
-preparation is `python -m probes.full_label_self_rollout --help`; exact data,
-loss, metric, bounds and proposed argv belong to the
+The full-label route is opt-in: without `--full-label-region`, the online runner
+keeps its existing paired row-credit contract. With the flag, the runner selects
+the separate 570-label owner-region fit. `probes.full_label_fit.experiment`
+owns snapshot preparation, qualification and annotation evaluation; `region`
+owns CPU-testable geometry/ranking; `recipe` owns the fit recipe and LR profile;
+`rollout` owns balanced generation assignment and verification. The snapshot and
+qualification CLI is `python -m probes.full_label_fit.experiment --help`; exact
+data, loss, metric, bounds and proposed argv belong to the
 [full-label unit](../research/experiments/2026-10-02-full-label-self-rollout-fit/unit.md).
+The owner CLI defaults to `--mode paired1` (six stages). The full-label packet
+uses `--mode full-label --updates 2|16` and runs `run`, `readback`, then `offline`.
 
 The former finite-panel producers, model-specific convenience loaders, stage
 controllers and repair/closeout chains are no longer maintained. Their useful
