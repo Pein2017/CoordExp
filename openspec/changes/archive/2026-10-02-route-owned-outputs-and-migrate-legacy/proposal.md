@@ -4,7 +4,7 @@ The root ignored output tree mixes branch-owned runs, handwritten reports and ex
 
 ## What Changes
 
-- Clarify the existing storage/worktree guides: owner-worktree outputs for branch runs; root outputs only for explicitly selected durable shared runtime assets. Separate maintained code/research records and disposable transport messages from runtime receipts.
+- Clarify the existing storage/worktree guides: owner-worktree outputs for branch runs; root outputs only for selected large checkpoint packages with required metadata and inference results/metrics. Separate maintained code/research records and disposable transport messages from runtime receipts.
 - Establish a locked, detached main-owned linked worktree at the verified main commit for main-owned output storage; no branch checkout override, merge, launch or automatic lifecycle cleanup.
 - Correct the lead-worker assignment/report routing at its existing skill owner, preserving the already-dirty transport reference and shared AGENTS unchanged.
 - Move detailed inference/evaluation operator steps into the existing inference/evaluation skill; keep `docs/eval/` as a concise route, contract, and interpretation surface.
@@ -12,7 +12,7 @@ The root ignored output tree mixes branch-owned runs, handwritten reports and ex
 - Evaluate a selected checkpoint for explicit shared retention; never promote its entire benchmark run or overwrite a destination.
 - Absorb all remaining human-authored research records into their existing research owners, preserving evidence status and provenance, then remove the redundant output copies.
 - Remove obsolete checkpoint, rollout, inference, frozen-source, and script payloads only after exact active-writer and consumer checks; record source/script path, size and hash without retaining executable copies.
-- Retire old Label Studio after exporting its two pending drafts; continue Gate A. The latest user ruling defers annotation relocation to the next public-data migration, so this round preserves its existing root runtime and published views.
+- Preserve the eight already-published Gate A generations and their existing receipts/journals at public_data's annotation-source owner; retire the old instance and discard its five unfinished drafts. Absorb all five submitted human Label Studio completions into the corresponding train.norm/coord rows, preserving deletions and edited geometry. Then discard the two unfinished Label Studio drafts and obsolete databases/runtime. Move the self-contained research review UI to Research Probes while preserving its URL and browser storage key. No new annotation service is required.
 - Qualify legacy content by an actual current consumer or named necessary reproduction before assigning a destination; a generic move into main-runs is not retention acceptance. Retire obsolete payloads after useful meaning is distilled and recorded. Preserve frozen receipt fields as provenance, update current consumers, and remove originals without old-path symlinks or historical binary/source copies.
 - Keep a small Git-managed inventory summary and the exact large per-file machine receipt in the maintenance worktree outputs. Use this finite record, not a new governance registry.
 - Finish the 2026-10-02 closeout against current consumers: retire the obsolete v1 COCO/LVIS proxy and its unsupported reconstruction route, retain the consumed base COCO dataset, reconcile remaining historical source/config copies, and qualify generated checkpoint cards and visual descriptions at their existing owners.
@@ -25,19 +25,21 @@ None. This is operator routing, bounded maintenance tooling and content migratio
 
 ### Modified Capabilities
 
-None. `skip_specs: true` applies: no training/inference/checkpoint schema, scientific rule, supported base-data recovery guarantee or continuation gate is changed. The user explicitly retires the obsolete v1 proxy and does not require its reconstruction route. Existing `coordexp-infras-training-artifacts` and Research Probes `research-probe-development` remain their behavioral owners. In particular, historical source bindings stay immutable and dirty/unqualified sources gain no permission to execute. Do not invent an output-governance capability to duplicate the current operator guides.
+None. `skip_specs: true` applies: this bounded maintenance pass uses existing training/inference/checkpoint and annotation conversion contracts. The user explicitly authorizes adopting their five completed annotations and retiring the obsolete proxy/editor states; it does not introduce a new annotation behavior or data format. Existing `coordexp-infras-training-artifacts`, annotation specifications and Research Probes `research-probe-development` remain their behavioral owners. Historical source bindings stay immutable and dirty/unqualified sources gain no permission to execute. Do not invent an output-governance capability to duplicate the current operator guides.
 
 ## Impact
 
 Root main owns the OpenSpec change and global storage/main-worktree policy. The canonical Research Probes checkout owns its local policy, runtime probe and scientific interpretation. Main's public_data owns retained annotation-audit tooling and the base COCO builders; the unconsumed v1-dependent v2 constructor and its dedicated test are retired. The user's separate ruling also retires weighted-v2/hard-v2 data while preserving their original small provenance/consumer receipts at the existing research artifact owner. Shared guidance remains with its separately coordinated owner.
 
 The 2026-10-02 user ruling supersedes the earlier permanent legacy-path holds.
-Dataset labels, model tensors, loss/geometry/matching rules and Codex transcripts
-are unchanged. Frozen source/script identities are metadata, not retained
-executable archives. New training/inference writers reject root outputs; selected
-shared assets remain valid inputs. Annotation relocation is explicitly deferred by the latest user ruling;
-Gate A retains its existing live root. Old Label Studio is retired and its two
-drafts are exported without publishing or importing them. Do not stop training jobs or ambiguous external log producers. No GPU
+Model tensors, loss/geometry/matching rules and Codex transcripts are unchanged.
+Exactly five train annotation rows receive the user's completed human corrections;
+all other rows, val views and original pixel views remain unchanged. Frozen
+source/script identities are metadata, not retained executable archives. New
+training/inference writers reject root outputs; selected shared inputs remain
+valid. The latest user ruling supersedes annotation deferral: preserve submitted
+annotations and source/publication evidence, discard unfinished drafts and obsolete
+editor states. Do not stop training jobs or ambiguous external log producers. No GPU
 research, pushes, worktree removal, remote transfer or environment
 change is authorized. The later 2026-10-02 user authorization permits the proposed
 bounded source/document/output closeout, proportionate checks and scoped local

@@ -1,0 +1,269 @@
+{
+  "schema": "coordexp.output-migration-inventory-summary.v1",
+  "observed_at": "2026-09-30T11:49:37.062754+00:00",
+  "completed_at": "2026-10-02T19:15:01.576959+00:00",
+  "full_inventory": {
+    "path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/inventory.full.json",
+    "sha256": "556f9d3f7363585b45f2778693eba21bedfdb8f1c12f3bd8890d050e37db3072",
+    "size_bytes": 30319760,
+    "scope": "Exact original machine inventory, including every file identity and retirement receipt."
+  },
+  "producer_sessions": [
+    {
+      "id": "01a0e2e2-ef29-7291-9045-f631930359c1",
+      "cwd": "/data/CoordExp",
+      "source_write_line": 854,
+      "scope": "COCO/LVIS audit; 2026-09-27"
+    },
+    {
+      "id": "01a0eec2-93f9-7242-b1bd-8e2a92cf584b",
+      "cwd": "/data/CoordExp/.worktrees/research-probes",
+      "source_write_lines": [
+        220,
+        258
+      ],
+      "scope": "HF compatibility; 2026-09-29"
+    },
+    {
+      "id": "01a0f0cc-423f-7773-a1ee-0a2d6c848424",
+      "cwd": "/data/CoordExp/.worktrees/research-probes",
+      "report_send_lines": [
+        1317,
+        1561
+      ],
+      "scope": "worker message reused root run directory"
+    }
+  ],
+  "roots_before": [
+    {
+      "path": "/data/CoordExp/outputs/_baidu_filename_mapping",
+      "regular_files": 2,
+      "bytes": 81046,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/_probe_labelstudio_bootstrap_1k_20260716",
+      "regular_files": 20,
+      "bytes": 13303661,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/archive",
+      "regular_files": 305,
+      "bytes": 1923537974,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/async-batch-probe-10k-100-fix-20260716",
+      "regular_files": 9,
+      "bytes": 21837325,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/async-batch-probe-10k-100-fix-final-20260716",
+      "regular_files": 9,
+      "bytes": 21837384,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/attestations",
+      "regular_files": 2,
+      "bytes": 5769,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/bench",
+      "regular_files": 1579,
+      "bytes": 844211505,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/benchmarks",
+      "regular_files": 24,
+      "bytes": 232533,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/cache_logs",
+      "regular_files": 1,
+      "bytes": 7217,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/coco_refinement",
+      "regular_files": 114,
+      "bytes": 695367564,
+      "status": "HOLD_ACTIVE_HOLDER"
+    },
+    {
+      "path": "/data/CoordExp/outputs/codex-audit-async-batch-tiny",
+      "regular_files": 9,
+      "bytes": 37031,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/coordexp_swift",
+      "regular_files": 396,
+      "bytes": 127481522,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/environment-upgrades",
+      "regular_files": 150,
+      "bytes": 5499522495,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/eval",
+      "regular_files": 494,
+      "bytes": 144178192,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/git-hygiene-owner-scale-20260914-CYqDZ1",
+      "regular_files": 12,
+      "bytes": 628206,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/infer",
+      "regular_files": 8057,
+      "bytes": 6635544095,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/infra_base",
+      "regular_files": 4499,
+      "bytes": 72150600422,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/label_studio_coco_refinement",
+      "regular_files": 414,
+      "bytes": 5493634309,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/label_studio_reviews",
+      "regular_files": 51,
+      "bytes": 4603758,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/launch_logs",
+      "regular_files": 3,
+      "bytes": 25073,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/oracle_k",
+      "regular_files": 293,
+      "bytes": 208596597,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/prod",
+      "regular_files": 79,
+      "bytes": 611810572,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research",
+      "regular_files": 111720,
+      "bytes": 158330667995,
+      "status": "HOLD_ACTIVE_HOLDER"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research-probe-forks",
+      "regular_files": 115,
+      "bytes": 40066498,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research-probe-infras",
+      "regular_files": 255,
+      "bytes": 2483065,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research-probe-infras-final-smoke-flykAS",
+      "regular_files": 4,
+      "bytes": 652438,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research-probe-infras-validation-gHpGim",
+      "regular_files": 4,
+      "bytes": 652438,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/runtime-optimization",
+      "regular_files": 32,
+      "bytes": 5270239,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    },
+    {
+      "path": "/data/CoordExp/outputs/stage1_2b_base",
+      "regular_files": 0,
+      "bytes": 0,
+      "status": "HOLD_LEGACY_OWNER_OR_PATH_RECOVERY"
+    }
+  ],
+  "roots_before_scope": "Historical initial snapshot; current disposition is below and original exact evidence is the unchanged full inventory.",
+  "roots_after": [
+    {
+      "path": "/data/CoordExp/outputs/shared/checkpoints",
+      "regular_files": 26,
+      "bytes": 346671422,
+      "symlinks_not_followed": 0,
+      "status": "ACCEPTED_SELECTED_SHARED_CHECKPOINTS",
+      "selected_packages": 4
+    }
+  ],
+  "storage_rule": "Root outputs: selected large checkpoint packages with required metadata, and inference results/metrics only; branch runs use owning physical worktree outputs.",
+  "summarized_at": "2026-10-02T19:15:01.576959+00:00",
+  "current_closeout": {
+    "status": "lead-accepted",
+    "global_migration_completed": true,
+    "retained_worktrees": [
+      "/data/CoordExp",
+      "/data/CoordExp/.worktrees/coordexp-infras",
+      "/data/CoordExp/.worktrees/research-probes",
+      "/data/CoordExp/.worktrees/research-probes-web-codex"
+    ],
+    "root_regular_files": 26,
+    "root_logical_bytes": 346671422,
+    "root_symlinks": 0,
+    "output_roots_zero_findings": 4,
+    "annotation_source_owner": "public_data/coco/annotation_sources",
+    "submitted_human_rows_adopted": 5,
+    "submitted_human_objects_before_after": [
+      83,
+      178
+    ],
+    "submitted_human_added_removed_box_edits": [
+      105,
+      10,
+      7
+    ],
+    "discarded_unfinished_drafts": {
+      "native_gate_a": 5,
+      "label_studio": 2
+    },
+    "old_editor_roots_absent": true,
+    "review_ui": {
+      "artifact_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/qwen3-vl-dense-enumeration/2026-07-16-human-audited-rare-object-trajectory-genealogy/human-review-candidate-ledger-20260716a",
+      "url": "http://localhost:8766/unmatched-prediction-review.html",
+      "http_status": 200,
+      "same_origin_filename_storage_key_and_source_bytes": true
+    },
+    "final_receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/final-global-closeout.json",
+    "source_guard_commit": "7c4b3545a",
+    "annotation_and_document_commit": "a2d46c325",
+    "prior_source_metadata_receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/source-and-metadata-closeout.json",
+    "historical_receipts_rewritten": false,
+    "generic_legacy_relocation_accepted": false,
+    "unrelated_active_research_preserved": true
+  }
+}

@@ -49,9 +49,9 @@ qualification. Reused acceptance: 27 base-COCO tests, 32 metadata tests, four
 output roots with zero findings, and knowledge/OpenSpec checks. Existing sealed
 checkpoint-card bytes were retained; new cards use the maintained packager.
 
-[Verification owner](../../openspec/changes/route-owned-outputs-and-migrate-legacy/verification.md),
+[Verification owner](../../openspec/changes/archive/2026-10-02-route-owned-outputs-and-migrate-legacy/verification.md),
 [scoped evidence](../../.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/source-and-metadata-closeout.json)
-and the [owning inventory](../../openspec/changes/route-owned-outputs-and-migrate-legacy/inventory.json)
+and the [owning inventory](../../openspec/changes/archive/2026-10-02-route-owned-outputs-and-migrate-legacy/inventory.json)
 remain authoritative; main closeout record `3c8eaaa8a` completed this handoff.
 Global migration is not complete: annotation relocation is
 user-deferred, the max60 proxy input is outside this retirement scope, and the

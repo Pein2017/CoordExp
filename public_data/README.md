@@ -31,7 +31,7 @@ Their original pipeline and validation/consumer receipts remain unchanged at
 the existing Research Probes COCO/LVIS artifact owner; complete-export replay
 is no longer supported from those retired files.
 Source/report rollback and old-to-new asset identities are recorded in
-`openspec/changes/route-owned-outputs-and-migrate-legacy/` at root main. Remaining
+`openspec/changes/archive/2026-10-02-route-owned-outputs-and-migrate-legacy/` at root main. Remaining
 loose one-off output-directory generators were retired; they are not supported
 entrypoints; do not launch them to recreate the old root-output layout.
 
