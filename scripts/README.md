@@ -3,7 +3,7 @@
 This directory contains user-facing entrypoints plus compatibility wrappers and
 historical diagnostics. The canonical training/inference implementation is
 owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/coordexp_infras.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+`docs/SYSTEM_OVERVIEW.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
 
 ## Stable entrypoints
 
@@ -34,7 +34,7 @@ owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
 
 No current transfer helper is owned by this directory or a first-party skill.
 For an explicitly authorized outputs transfer, follow
-`docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md`, inspect the installed
+`docs/OUTPUT_STORAGE_POLICY.md`, inspect the installed
 BaiduPCS-Go client, and bind exact local and remote roots before acting. Do not
 use Baidu Netdisk as the default sync surface for `model_cache/`, raw
 `public_data/`, or processed `public_data/` contents.

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "source_study_decision",
+  "component": "selected_embeddings",
+  "decision": "accepted",
+  "mechanism": "custom_qwen_wrapper_pair",
+  "roundtrip_receipt_required": true,
+  "source": {
+    "commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+    "path": "docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/special-token-embeddings.md",
+    "sha256": "59bc7bfc24614a73244535d77129194be82fd6d33635a6a52c33037666206efd"
+  },
+  "boundary": "Records an existing mechanism decision, not a new model run, measured qualification, or continuation authority. Missing roundtrip evidence remains an error.",
+  "semantics": "additive_delta"
+}

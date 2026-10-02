@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -57,18 +58,37 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
     assert artifact["coord_token_ids_contiguous"] is True
 
 
-def test_default_special_token_embedding_source_gate_loads_canonical_evidence() -> None:
-    evidence = load_default_special_token_embedding_source_gate_evidence(
-        Path(__file__).resolve().parents[2]
-    )
+@pytest.fixture
+def embedding_source_gate_root(tmp_path: Path) -> Path:
+    """Use explicit synthetic contract evidence, never an ignored real run."""
+    root = tmp_path / "embedding-source-gate"
+    repo_root = Path(__file__).resolve().parents[2]
+    relative = Path("manifests/qualification/selected-embedding-source-study.json")
+    study = root / relative
+    study.parent.mkdir(parents=True)
+    shutil.copyfile(repo_root / relative, study)
+    receipt = root / "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
+    receipt.parent.mkdir(parents=True)
+    payload = dict(_source_gate(selected_count=1004).probe_receipt)
+    payload["fixture_kind"] = "synthetic_contract_not_measured_evidence"
+    receipt.write_text(json.dumps(payload), encoding="utf-8")
+    return root
 
+
+def test_default_special_token_embedding_source_gate_loads_contract_fixture(
+    embedding_source_gate_root: Path,
+) -> None:
+    evidence = load_default_special_token_embedding_source_gate_evidence(embedding_source_gate_root)
     assert evidence.source_study_passed is True
     assert evidence.roundtrip_probe_passed is True
-    assert evidence.probe_receipt is not None
-    assert evidence.probe_receipt["ok"] is True
     assert evidence.probe_receipt["semantics"] == "additive_delta"
     assert evidence.probe_receipt["num_selected_tokens"] == 1004
-    assert evidence.probe_receipt["runtime_tied_input_lm_head_identity"] is True
+
+    (embedding_source_gate_root / "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json").unlink()
+    missing = load_default_special_token_embedding_source_gate_evidence(embedding_source_gate_root)
+    assert missing.source_study_passed is True
+    assert missing.roundtrip_probe_passed is False
+    assert missing.probe_receipt is None
 
 
 def test_special_token_embedding_install_requires_source_gate() -> None:
@@ -489,7 +509,10 @@ def test_inference_embedding_delta_identity_accepts_matching_metadata(
 
 def test_inference_embedding_delta_load_installs_wrappers_and_payload(
     tmp_path: Path,
+    embedding_source_gate_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.chdir(embedding_source_gate_root)
     qwen = _qwen_identity_context(model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4))
     selection = build_default_special_token_selection(
         SpecialTokenEmbeddingsConfig(

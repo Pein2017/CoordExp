@@ -15,11 +15,10 @@ either framework just to obtain a model or token scores.
 ## Load only the relevant knowledge
 
 - For architecture, processor/image grids, MRoPE, compact logits, cache or
-  DeepStack hooks, read the matching section of the selected checkout's
-  `docs/standards/upstream/QWEN_VL.md`. The maintained research copy is
-  [here](/data/CoordExp/.worktrees/research-probes/docs/standards/upstream/QWEN_VL.md).
-  Its installed-version scope is explicit; inspect the actual loaded dependency
-  when a version-sensitive behavior matters.
+  DeepStack hooks, use exact-checkout CodeGraph to find the actual caller and
+  inspect its source plus the installed dependency implementation. Verify loaded
+  paths and versions for version-sensitive behavior; do not maintain a parallel
+  upstream implementation manual or use another branch's notes as runtime truth.
 - For precision, normalization, causal alignment, batches or template assembly,
   use only the applicable section of [execution checks](references/execution-checks.md).
   It points to code/spec/test owners rather than another execution framework.

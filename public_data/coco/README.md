@@ -219,7 +219,7 @@ conda run -n ms python public_data/scripts/validate_jsonl.py public_data/coco/ra
 ```
 
 Real benchmark follow-up:
-- see `docs/eval/COCO_TEST_SUBMISSION.md` for the full 1024-budget infer -> score -> export -> upload runbook
+- Use the selected checkout's evaluator/export source, CLI help and stable evaluation spec for supported submission behavior; old budget-specific launch/upload instructions are historical and do not authorize an upload.
 
 ## Directory layout (after full download)
 ```text

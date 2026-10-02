@@ -32,7 +32,7 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - Outputs include enough metadata to reproduce: dataset id, preset/run name, seed, max_objects, etc.
 - Artifact naming is self-describing (avoid ambiguous “train.jsonl” meaning multiple things).
 - Manifest/summaries are written deterministically and consistently.
-- Resolve required artifact names and schemas through the audited checkout's `docs/AGENT_INDEX.md` and `docs/IMPLEMENTATION_MAP.md`; do not apply an older pipeline's manifest list to a current run.
+- Resolve artifact names and schemas from the audited checkout's source, stable specs and consumer tests. Use `docs/AGENT_INDEX.md` only when ownership is unclear; never apply an older pipeline's manifest list to a current run.
 - For current coordexp-infras training, verify outputs against the `coordexp-infras-training-artifacts` contract and its `src/artifacts/run_writer.py` / `src/artifacts/checkpoints.py` owners. For inference/evaluation, use `coordexp-infer-eval-workflow` and the owning inference-scoring-artifacts / detection-evaluator contracts. Historical runs retain their version-bound contracts.
 - Downstream eval/vis jobs can recover authoritative root-image and config provenance without guessing from the current working directory.
 
@@ -52,4 +52,4 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - There is at least one “parity” or regression test for contract-critical behavior.
 - Add or suggest the smallest test that proves the invariant (avoid broad refactors).
 - Prefer tests that do not require network; use fixtures or synthetic slices.
-- Prefer targeted tests from `docs/IMPLEMENTATION_MAP.md` before broad suites.
+- Use exact-checkout CodeGraph and retained callers to select focused tests; verify source and test paths before broad suites.

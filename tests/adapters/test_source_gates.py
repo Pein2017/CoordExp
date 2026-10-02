@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -14,17 +16,30 @@ from src.common.errors import RuntimeContractError
 from src.config.models import AdapterConfig
 
 
-def test_default_dora_source_gate_loads_historical_evidence() -> None:
-    evidence = load_default_adapter_source_gate_evidence(
-        Path(__file__).resolve().parents[2]
-    )
+def test_default_dora_source_gate_loads_decision_and_contract_receipt(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    relative = Path("manifests/qualification/dora-source-study.json")
+    study = tmp_path / relative
+    study.parent.mkdir(parents=True)
+    shutil.copyfile(repo_root / relative, study)
+    receipt = tmp_path / "outputs/probes/coordexp_swift/dora_roundtrip/receipt.json"
+    receipt.parent.mkdir(parents=True)
+    payload = _passing_dora_probe_receipt()
+    payload["fixture_kind"] = "synthetic_contract_not_measured_evidence"
+    receipt.write_text(json.dumps(payload), encoding="utf-8")
 
+    evidence = load_default_adapter_source_gate_evidence(tmp_path)
     assert evidence.dora_source_study_passed is True
     assert evidence.dora_probe_passed is True
-    assert evidence.dora_source_study_path is not None
-    assert "docs/history/architecture/proposals" in str(
-        evidence.dora_source_study_path
-    )
+    assert evidence.dora_source_study_path == study
+    assert build_adapter_setup_plan(_adapter_config(path=None), evidence).source_gate.status == "passed"
+
+    receipt.unlink()
+    missing = load_default_adapter_source_gate_evidence(tmp_path)
+    assert missing.dora_source_study_passed is True
+    assert missing.dora_probe_passed is False
+    with pytest.raises(RuntimeContractError, match="source-study|probe"):
+        build_adapter_setup_plan(_adapter_config(path=None), missing)
 
 
 def test_dora_setup_plan_requires_source_study_before_initialization() -> None:

@@ -68,7 +68,7 @@ manifest identity, logical data root, counts, and checksum status.
 - Keep one-off cleanup helpers disposable and outside durable repository
   surfaces.
 - Keep shared run-artifact transport outside this skill. Resolve its current
-  owner from `docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md` and live
+  owner from `docs/OUTPUT_STORAGE_POLICY.md` and live
   operator tooling; do not revive a removed transfer skill or treat a public
   data manifest as transfer authorization.
 

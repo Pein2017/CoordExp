@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "status": "sealed",
+  "source_commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+  "source_docs_tree": "394c96c3210ce2f0f1b4c5e23d73ba97607ef74a",
+  "git_file_count": 784,
+  "untracked_file_count": 12,
+  "replacement_routes": {
+    "docs/PROJECT_CONTEXT.md": "docs/README.md",
+    "docs/IMPLEMENTATION_MAP.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/coordexp_infras.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/RESEARCH_PROBE_INFRA_BASE.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/ARTIFACTS.md": "docs/OUTPUT_STORAGE_POLICY.md",
+    "docs/VLLM_DORA_ROLLOUT.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/catalog.yaml": "docs/README.md",
+    "docs/AGENT_ENGINEERING_CONSTITUTION.md": "docs/standards/CODE_STYLE.md",
+    "docs/data/README.md": "docs/data/CONTRACT.md",
+    "docs/data/PACKING.md": "docs/data/CONTRACT.md",
+    "docs/data/PREPARATION.md": "docs/data/CONTRACT.md",
+    "docs/eval/README.md": "docs/eval/CONTRACT.md",
+    "docs/eval/WORKFLOW.md": "docs/eval/CONTRACT.md",
+    "docs/training/README.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/architecture/README.md": "docs/SYSTEM_OVERVIEW.md",
+    "docs/standards/README.md": "docs/standards/CODE_STYLE.md",
+    "docs/standards/UPSTREAM.md": "docs/standards/CODE_STYLE.md",
+    "docs/standards/PORTING.md": "docs/standards/CODE_STYLE.md",
+    "docs/standards/REPO_HYGIENE.md": "docs/standards/CODE_STYLE.md",
+    "docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md": "docs/OUTPUT_STORAGE_POLICY.md",
+    "docs/adapters/dora-qualification.md": "manifests/qualification/dora-source-study.json",
+    "docs/adapters/selected-embedding-qualification.md": "manifests/qualification/selected-embedding-source-study.json"
+  },
+  "boundary": "Closed documentation retirement. Source decisions and original evidence are preserved; no new model qualification, scientific efficacy or external backup is claimed. Do not append new records here.",
+  "sealed_extras": {
+    "path": "manifests/documentation/sealed-untracked-20261003.json",
+    "sha256": "90b03147fd5887f04210996cbad4bd0b8a843cc65c0974fb66dc18f572cfaf86",
+    "count": 12
+  },
+  "retired_tests": [
+    {
+      "path": "tests/test_legacy_surface_absence.py",
+      "source_commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+      "sha256": "8ff5d267c6ba7f5a63692a175375a18f1b74ddb41da3ac0c871be2acd6909026",
+      "reason": "Outside the configured default suite; imports removed legacy training/config APIs. Docs-only invariants are covered by tests/artifacts/test_documentation_layout.py; do not revive obsolete runtime for these tests."
+    },
+    {
+      "path": "tests/test_removed_training_mechanisms_absent.py",
+      "source_commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+      "sha256": "23df31874fbbb04efe44a20f1146aa22f68a8dbb5443ae18a5b2b84adf1f929a",
+      "reason": "Outside the configured default suite; imports removed legacy training/config APIs. Docs-only invariants are covered by tests/artifacts/test_documentation_layout.py; do not revive obsolete runtime for these tests."
+    },
+    {
+      "path": "tests/test_stage1_metric_key_parity.py",
+      "source_commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+      "sha256": "535bb2f18d1c8f0c06fe3013080d5501a07d50522bc50063cbdb9679a68b2363",
+      "reason": "Outside the configured default suite; imports removed legacy training/config APIs. Docs-only invariants are covered by tests/artifacts/test_documentation_layout.py; do not revive obsolete runtime for these tests."
+    }
+  ],
+  "live_docs_at_retirement": [
+    "docs/AGENT_INDEX.md",
+    "docs/BRANCH_AND_WORKTREE_POLICY.md",
+    "docs/OUTPUT_STORAGE_POLICY.md",
+    "docs/README.md",
+    "docs/RETENTION.md",
+    "docs/SYSTEM_OVERVIEW.md",
+    "docs/data/CONTRACT.md",
+    "docs/eval/CONTRACT.md",
+    "docs/standards/CODE_STYLE.md"
+  ]
+}

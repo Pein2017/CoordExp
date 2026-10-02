@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "source_study_decision",
+  "component": "dora",
+  "decision": "accepted",
+  "mechanism": "peft.LoraConfig(use_dora=True)",
+  "roundtrip_receipt_required": true,
+  "source": {
+    "commit": "681a7446b4029c4174d37c92f4909ac356c5a922",
+    "path": "docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/dora.md",
+    "sha256": "f123d65d7591a542a67d91989a8b0eedeb78e7447e5a095631d78da3718a9d83"
+  },
+  "boundary": "Records an existing mechanism decision, not a new model run, measured qualification, or continuation authority. Missing roundtrip evidence remains an error."
+}
