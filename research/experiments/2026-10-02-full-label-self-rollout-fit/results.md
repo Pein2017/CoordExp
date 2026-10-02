@@ -1,4 +1,34 @@
-# Full-label self-rollout: accepted 16-update observation
+# Full-label self-rollout: accepted finite observations
+
+## Completed learning-rate-profile comparison
+
+All three independent fresh 16-update runs are technically complete and lead-accepted. None achieves full-label fitting or stable preservation on these 18 images / 570 annotations. Each independently measured baseline is TP 247, FN 323, valid rows 391 and F1=0.514048. All 17 versions per arm remain evidence; no quality stop, rollback, checkpoint selection or extension occurred.
+
+| Profile | Endpoint TP | FN | F1 | Valid rows | Gained vs baseline | Lost vs baseline | Invalid | Complete repeats | Valid repeats | Malformed | Caps |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| constant | 256 | 314 | 0.392939 | 733 | 54 | 45 | 548 | 708 | 176 | 3 | 2 |
+| warmup4 | 258 | 312 | 0.416465 | 669 | 60 | 49 | 244 | 321 | 86 | 1 | 1 |
+| constant_dose | 266 | 304 | 0.398801 | 764 | 56 | 37 | 397 | 506 | 122 | 2 | 2 |
+
+[All-version trajectory figure](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/figures/lr-profile-trajectories.png) · [All 51 observations as CSV](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/figures/lr-profile-trajectories.csv). F1 uses all strict-valid rows, including duplicates; invalid/malformed rows are separate burdens. Annotation-unmatched predictions are not verified physical false positives.
+
+Warmup4 has lower endpoint repetition/invalid burden and higher F1 than the two current constant profiles, but loses 49 baseline owners versus 45 and 37. Constant_dose has the highest endpoint TP 266 and fewest baseline losses 37, while still having 397 invalid rows and 506 complete repeats. All profiles have late bursts; warmup's maximum invalid count is 483, despite its lower endpoint 244. This is a tradeoff across single trajectories, not a stable or replicated scheduler winner. The earlier nominally same-rate constant observation below ended at TP 261 / F1=0.466488 / lost 32; it remains separate evidence and is not pooled with this repeat.
+
+Most endpoint invalid rows are exact repeats: constant: 532/548; warmup4: 235/244; constant_dose: 384/397. The latter 397 rows comprise 13 distinct invalid category-box identities across three images. This overlap is descriptive: the counts must not be read as hundreds of independent geometry failures, nor as proof that incomplete duplicate supervision caused the bursts. All three endpoints lose the image 4134 / annotation 294005 tie. The full per-image and baseline/adjacent/recovered-ID ledgers remain in the reports.
+
+The observed actual LR factors are constant 1; warmup .25,.5,.75,1 then 1; and constant .90625. Their nominal sums are 16/14.5/14.5 for both parameter groups. Recipes were independently checked equal after removing lr_profile; equal nominal sums do not imply equal adaptive updates or generated histories. These runs do not test a large LR reduction or layer freezing. A proposed next discriminator is constant 0.1 of both LR groups with all layers/objectives fixed; it must show learning as well as stability. Per-occurrence duplicate supervision is a separate proposed factor, preserving the first trusted positive and actual later prefixes. No such new native run, loss change, sampling change or missing-label proxy has been released.
+
+## Profile technical acceptance and accounting
+
+Executed source: `da504d0c0dfb26e4527bb0d953187577455de0f4`. The lead verified each of 336 report artifact hashes and 22 terminal hashes per arm, all 51 export identities/raw versions, 384 actual rank-update receipts, eight generate/refresh sequences per arm and 2187 finite forward receipts. Independent maintained recomputation exactly reproduced all three full offline artifacts after JSON key normalization, all 570 denominator IDs, all per-image metrics, owner transitions and endpoint raw-to-credit observations. Nine run/readback/offline stages exited 0, invocations were strictly sequential and all 84 exact owner/descendant identities were absent. No operational failures or retries occurred.
+
+[Combined worker report](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/lr-sequence-worker-report-01.json), SHA256 `fabd559b035b68623801e115c2768c5202cfd5239d20931a850b73a92bdedc30`. [Lead sequence acceptance](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/lead-sequence-acceptance-01.json), SHA256 `3394e0de360ba83a0a12bd00f0dd8b30e99009208212ad0d28206a2f4f82c95c`. Per-arm runtime, metric and invalid-repeat proofs are linked from the lead acceptance.
+
+The three external invocations used 3343.9020067602396 seconds at eight charged slots, or 7.430893348356088 GPU-hours. Completed cumulative usage is 11.979529944976038 GPU-hours; usage is informational under the user's removed cumulative cap. No reservation or live native job remains. Recorded VRAM peaks cover vLLM operations only; RSS is sampled descendant aggregate, and selected-logit FP32 sizes are shape-derived envelopes, not measured allocations. HF score witnesses are local to checked original prefixes and do not certify native argmax parity.
+
+---
+
+## Initial fresh16 observation (historical)
 
 The fresh constant-rate trajectory is technically complete and lead-accepted. It does not achieve full-label fitting or stable preservation: endpoint TP increases247→261, while F1 decreases0.514048→0.466488, annotation FP doubles144→288 and valid predictions increase391→549. Of247 baseline matches,215 remain,46 other labels are gained and32 baseline labels are lost. Missing-label proxies remain deferred.
 
@@ -38,7 +68,7 @@ Potential explanations include excessive early updates after resetting AdamW mom
 
 [Saved-update evidence](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lr-observed-updates-01.json). AdamW is fresh, with fixed1e-5 DoRA /5e-6 deltas, clip1, betas(.9,.999),eps1e-8,WD0. The16 recorded total preclip norms are all greater than1. Relative A/B/magnitude coordinate movement is parameterization-dependent; functional/logit sensitivity has not been isolated.
 
-The next lead-selected comparison changes only the learning-rate time profile; its exact contract is in unit.md and state.json. Separate fresh16 runs compare constant1, linear warmup4 then constant1, and constant0.90625 (the same nominal learning-rate sum as warmup4). Input/output delta rates remain equal; other loss/data/decode/model settings remain fixed. This separates a time-profile comparison from gross nominal-dose reduction, without pretending equal summed rates imply equal AdamW updates or matched generated histories. One run per arm is a bounded diagnostic; any apparent advantage remains a candidate for replication. No GPU launch for this follow-up is yet released.
+The subsequent lead-selected comparison changed only the learning-rate time profile; its completed contract is in unit.md and state.json. Separate fresh16 runs compare constant1, linear warmup4 then constant1, and constant0.90625 (the same nominal learning-rate sum as warmup4). Input/output delta rates remain equal; other loss/data/decode/model settings remain fixed. This separates a time-profile comparison from gross nominal-dose reduction, without pretending equal summed rates imply equal AdamW updates or matched generated histories. One run per arm is a bounded diagnostic; any apparent advantage remains a candidate for replication. The exact three-arm follow-up is now complete and accepted above.
 
 ## Technical acceptance and provenance
 

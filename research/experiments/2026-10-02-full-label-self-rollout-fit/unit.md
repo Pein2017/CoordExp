@@ -50,9 +50,9 @@ Expected native HOLD: the real qualifier exits1 at `capture_source_identity` wit
 
 Changed surfaces: probes/online_row_credit.py, probes/owner_region_ranking.py, probes/full_label_self_rollout.py, probes/README.md; corresponding three tests/probes/ files; this unit's unit.md/state.json/inputs snapshot and manifest; one current catalog entry. Old lead-owned results/state, unrelated Qwen test, historical inputs/partitions/receipts, src/ infrastructure, shared assets and budget ledger were not edited. GPU spend0; reservation0; all worker-owned CPU checks terminal; no live model/GPU/owner invocation. No commit/push. Worker stops at this candidate for root acceptance.
 
-## Current optimizer follow-up contract — 2026-10-02
+## Completed optimizer follow-up contract — 2026-10-02
 
-The original fresh16 observation is complete; see results.md. User delegated scheduler/module-LR judgment and removed the cumulative GPU-hour ceiling. Root selects a bounded learning-rate-profile comparison within the same full-label fitting question. No native follow-up release exists yet.
+The original fresh16 observation is complete; see results.md. User delegated scheduler/module-LR judgment and removed the cumulative GPU-hour ceiling. Root selects a bounded learning-rate-profile comparison within the same full-label fitting question. The exact three-arm sequence is now complete and lead-accepted; results.md owns its bounded conclusions. No further native job is released.
 
 Each arm starts the same named anchor with fresh continuous AdamW for16 global updates: constant uses scale1/warmup0; warmup4 uses factors.25,.5,.75,1 then1; constant_dose uses scale.90625 throughout. Warmup4 and constant_dose each sum to14.5 nominal factors, versus16 for constant. Apply the factor before optimizer.step, indexed by global update1..16, never by microbatch/branch/rank. The nominal base rates remain1e-5 for languageDoRA and5e-6 for each independent embedding delta. This does not assert an optimal module ratio or equal functional effects. All labels, prompts, geometry/loss weights, anchor, optimizer betas/epsilon/clip/weight decay, decoder and work bounds remain fixed. No tower is unfrozen.
 

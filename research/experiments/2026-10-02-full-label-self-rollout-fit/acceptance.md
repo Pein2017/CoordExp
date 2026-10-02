@@ -17,3 +17,7 @@ The separate2-update qualification and fresh16 observation are now lead-accepted
 ## Learning-rate-profile CPU acceptance
 
 The lead accepted the opt-in scalar profile revision after exact source/argv/recipe review and 15 fresh CPU tests; the eight preserved legacy checks also passed with verified source/log identities. One focused read-only pass found no blocker in global-step delivery or re-signed readback rejection. Default recipe identity is unchanged. The candidate and acceptance receipts under optimizer-lr-shape-01/cpu-01 own hashes, commands, RED/GREEN evidence and exact three-arm argv. Native profile behavior still requires the finite real runs; no source or model-quality equivalence is inferred from CPU tests.
+
+## Learning-rate-profile native acceptance
+
+All three exact fresh 16-update invocations are now lead-accepted as technically valid observations. Source, input, payload, actual LR delivery, raw/metric/owner ledgers and cleanup were independently checked; the combined acceptance and all-version comparison are linked from results.md and state.json. Full-label fitting remains unachieved, no profile is selected as superior, and no additional native experiment is released.

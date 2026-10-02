@@ -8,7 +8,7 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The active [full-label self-rollout fitting unit](experiments/2026-10-02-full-label-self-rollout-fit/unit.md) has an accepted fresh16 observation on18images/570labels: native coverage gains coexist with baseline-owner losses and output bursts, so stable full fitting is not achieved. [Results and the optimizer-profile follow-up](experiments/2026-10-02-full-label-self-rollout-fit/results.md) own the current decision. Missing-label proxies remain deferred; no follow-up native job is released.
+The active [full-label self-rollout fitting unit](experiments/2026-10-02-full-label-self-rollout-fit/unit.md) has accepted the original fresh 16-update observation and three independent 16-update LR-profile runs on 18 images / 570 labels. All profiles gain some labeled owners while losing baseline owners and developing late output bursts; stable full fitting is not achieved and no scheduler winner is selected. [Results and complete trajectories](experiments/2026-10-02-full-label-self-rollout-fit/results.md) own the current decision. Missing-label proxies remain deferred; all released jobs are complete and no further native job is released.
 
 ### Predecessor evidence
 
