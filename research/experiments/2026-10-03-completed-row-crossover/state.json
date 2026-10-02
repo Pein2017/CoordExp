@@ -80,5 +80,6 @@
   "lead_acceptance": {
     "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/lead-acceptance-01.json",
     "sha256": "ec559aac3ed02be82513bd98ed7fa4f21861a7c9879ea01cabef6e942feb0d26"
-  }
+  },
+  "result": "research/experiments/2026-10-03-completed-row-crossover/results.md"
 }
