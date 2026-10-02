@@ -1,8 +1,15 @@
-# CPU candidate: native coordinate branching
+# Native coordinate branching: terminal fidelity HOLD
 
-CPU preparation is complete; scientific evidence remains unmeasured. No model,
-GPU, optimizer or HF replay call was made. The exact native packet awaits lead
-review/release, under [lead ruling 01](lead-ruling-01.md). The worker is live
+Native and maintained readback completed with exits0/0; cleanup verification
+exited0. All four frozen sites retain native-fidelity HOLD, so all eight
+alternative requests were skipped and the alternative-continuation comparison
+remains unmeasured. The execution package is closed; final native acceptance
+remains with the lead. No more model work or rerun is authorized to this worker.
+See [terminal results](#native-terminal-candidate-fidelity-hold) below.
+
+The following CPU preparation evidence is historical within this unit. The
+lead accepted its18 passing checks and released the isolated native run under
+[ruling02](lead-ruling-02.md), without repeating the suite. The worker is live
 verified `gpt-6.1-sol/high`, thread `01a0fe03-4ce4-7490-b937-5285451b0b11`.
 
 ## Certified saved cases
@@ -141,3 +148,133 @@ whole and later-free gains/losses/retention, assisted-row transitions and output
 burdens. Independently matched subsets are explicitly nonadditive. Unknown and
 annotation-unmatched rows remain neutral. No empty-history/population efficacy,
 best-branch promotion or next-unit scheduling is authorized to this worker.
+
+## Native release 01
+
+The lead accepted the CPU package without repeating its18 checks and authorized
+execution in [ruling02](lead-ruling-02.md). Native maintained imports and command
+cwd are the clean detached checkout
+`/data/CoordExp/.worktrees/greedy-prefix-native-01`, at frozen source
+`464bc8c0bfb38eba0dd284157a3b50937805cfab`. Canonical dirty work is preserved;
+scientific state and direct transport remain in Research Probes. The explicit
+execution/output owner replaces canonical-cwd-only for this released run.
+
+The immutable released contract is
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/released-contract-01.json`,
+SHA256 `1dbfb7d38fced4e986d8cf909412ba617405903379427f5deece3a87c6768bdc`.
+Lead qualification and validation both exited0. Only execution provenance,
+output destination, clean source qualification and native release differ from
+the CPU packet. Frozen scientific/input/checkpoint/raw fields are unchanged.
+
+The worker launched exactly the declared timeout1200s+cleanup30s command on
+device0. Artifacts belong to that checkout's unit output root: `native-01/`,
+`native-01.log` and `native-invocation-01.json`. No tracked source/state in the
+execution checkout is modified. Terminal results and actual exit status follow
+here when available; launch is not scientific or terminal acceptance.
+
+## Native terminal candidate: fidelity HOLD
+
+Native and maintained readback exited **0/0**. The exact-prefix input and
+full-vocabulary score surfaces passed their runtime checks, but **all four sites
+are `HOLD_native_fidelity`**. Ordinary and same-saved-token sham full suffixes
+disagree at every site; no ordinary suffix reproduces its sealed historical
+trace, and only the351017/1507 sham reproduces history. The frozen rules therefore
+skipped all8 alternative requests. This is a completed technical diagnostic with
+an unmeasured alternative-continuation contrast, not a scientific null. No
+request was retried and no case/source/policy was changed.
+
+The terminal candidate is
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/native-terminal-candidate-01.json`.
+It binds immutable native and readback artifacts, raw score quantities, complete
+per-owner/prefix ledgers, per-case burden/owner transitions, release identity and
+cleanup evidence. The lead retains terminal acceptance and next-unit selection.
+
+### Exact fidelity observations
+
+First differences below are zero-based original generated-token offsets; they
+are measured over the entire suffix, not just the supplied coordinate. The
+scoring request's emitted token matches fresh ordinary continuation at all4
+sites. Historical x1 and fresh native x1 differ only at351017/1507 (999 versus966).
+
+| Site | Ordinary vs historical first difference | Sham vs historical first difference | Ordinary vs sham first difference | Historical/native x1 |
+|---|---:|---:|---:|---|
+|7511/626|645|629|629|999/999|
+|7511/203|204|204|230|630/630|
+|351017/1507|1507|exact match|1507|999/966|
+|351017/31|52|52|123|0/0|
+
+These observations establish suffix sensitivity to replay/supply conditions,
+not its cause. The matching first-token score controls do not establish full
+historical or sham numerical fidelity.
+
+### Native x1 score quantities
+
+The denominator is every token ID0..152669, from norm-OFF vLLM raw log
+probabilities. The gap is best acceptable minus best full-vocabulary complement
+log probability, equivalent to a same-prefix logit gap. Legal x1 support has999
+bins (0..998); owner-union support uses all same-description known labels in
+the frozen full570 snapshot, retrospectively. Overlapping owner masses are
+not added. Full per-owner scores/regions remain in each `scores.json` and the
+terminal candidate; alternatives here are ranked candidates, **not executed**.
+
+| Site | Native top2 legal alternatives excluding saved token | Legal mass / gap | Owner-union mass / gap | Same-description owners |
+|---|---|---|---|---:|
+|7511/626|982(-3.196777),968(-3.321777)|0.953660 / -0.125|0.800622 / -0.250|41|
+|7511/203|637(-4.263688),632(-4.388688)|0.998148 / 2.687500|0.760203 / 0.937500|41|
+|351017/1507|966(-3.065753),968(-3.190753)|0.953378 / 0.000000|0.00000707859 / -12.187500|2|
+|351017/31|1(-4.443820),72(-4.568820)|0.999251 / 5.062500|0.998322 / 5.062500|4|
+
+### Current rows and owner accounting
+
+All8 current rows completed. None matched a known annotation owner in the
+current-row subset; there are no supplied-row assisted gains. This does not
+make these rows physical negatives. The first-row boxes and literal repetition
+were checked with the maintained parser on the frozen native outputs.
+
+| Site | Ordinary current row | Sham current row | Category owner whole gains/losses vs history | Later-free gains/losses vs history |
+|---|---|---|---|---|
+|7511/626|[999,601,999,638],invalid|[999,601,999,641],invalid|both0/0|both0/0|
+|7511/203|[630,577,645,600],valid,not literal repeat|same,valid,not literal repeat|ordinary0/1;sham0/0|ordinary0/1;sham0/0|
+|351017/1507|[966,915,999,999],valid,literal repeat|[999,915,999,999],invalid|both0/0|both0/0|
+|351017/31|[0,0,33,86],valid,literal repeat|same,valid,literal repeat|ordinary0/1;sham0/0|ordinary0/1;sham0/0|
+
+The ordinary lost owner is annotation-182 at7511/203 and annotation
+-3265773791321472 at351017/31. Geometric and exact-description transition sets
+agree in these8 outputs. These are separately matched whole/later subsets,
+not additive contributions or a population rate. Current-row prefix-completable
+sets become empty atx1 for both invalid cases, and atx2 for both repeat cases;
+full per-owner and union support at every current-row coordinate is retained.
+The selected-image denominators remain44/49 within the fixed570-label snapshot.
+
+### Burdens and resources
+
+All8 controls reached the original3084-token cap with one malformed/censored
+span each and no EOS. Counts below are whole-output burdens, not pooled rates.
+`Complete repeats` includes complete valid and invalid rows; near pairs are
+same-description, distinct-box occurrence pairs atIoU>=.9.
+
+| Site/branch | Valid rows | Complete repeats | Valid repeats | Near pairs | Invalid geometry | Annotation-unmatched |
+|---|---:|---:|---:|---:|---:|---:|
+|7511/626 ordinary|85|268|25|17|257|76|
+|7511/626 sham|91|271|26|14|251|82|
+|7511/203 ordinary|92|267|26|45|250|84|
+|7511/203 sham|87|261|19|44|255|78|
+|351017/1507 ordinary|162|233|61|127|174|147|
+|351017/1507 sham|161|233|60|116|175|146|
+|351017/31 ordinary|160|230|58|35|176|146|
+|351017/31 sham|153|232|53|26|183|138|
+
+Actual work:12requests=4one-token full-score requests+8suffix controls;19,938
+new native tokens=4score tokens+19,934free tokens. Four supplied sham tokens
+remain inside the branch ceilings;8full original-output branches total24,672
+logical tokens. No HF forward or optimizer step occurred. Internal wall was
+268.724446s (startup27.275049s; acquisition222.274230s). Maximum CUDA allocated
+bytes were7,475,757,568 from actual engine operation receipts. CPU RSS was not
+measured; the earlier estimate is not substituted for a measurement. Native
+artifacts/readback/logs inside `native-01/` occupy23,615,526bytes before the
+separate terminal-candidate file.
+
+Timeout/parent/engine PIDs1522444/1522445/1522880 are absent. Terminal publication
+follows engine close; the detached execution checkout remains clean at the
+frozen source commit. Its source/output retention stays intact. No source
+repair, native relaunch, promotion or next-unit scheduling was performed.
