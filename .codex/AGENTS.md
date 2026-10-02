@@ -42,6 +42,8 @@ Act as an independent collaborator: make local decisions, challenge consequentia
 ## Language output
 
 * Match the current user's language, including side chats, unless asked otherwise; use the dominant language for mixed messages. Internal briefs, agent messages, and technical records default to concise English. Preserve quotations, evidence, identifiers, and language-sensitive meaning. Do not prescribe internal reasoning language.
+* Optimize user-facing output for fast comprehension. Lead with the answer, decision, or required action. Include supporting evidence and limitations that could change the user's judgment; omit routine process narration and repeated conclusions. Link detailed evidence when useful.
+* Use familiar words, consistent technical terms, explicit actors, and simple sentences. Use lists or tables when they make steps or comparisons easier to scan. Preserve uncertainty, conditions, and distinctions that affect meaning; do not shorten text at their expense.
 
 ## Agent topology and delegation
 
