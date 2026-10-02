@@ -219,3 +219,18 @@ def test_refresh_590_tensors_uses_bytes_not_per_tensor_file_descriptors():
     assert operation == 'refresh' and isinstance(a, bytes) and isinstance(e, bytes)
     assert len(load(a)) == 588 and load(a)['587'].item() == 587
     assert set(load(e)) == set(embeddings) and identity == runtime.identity == 'new'
+
+
+def test_coordinate_norm_rpc_is_explicit_and_snapshot_bound():
+    from src.qwen import vllm_rollout as v
+    model=SimpleNamespace(configure_coordinate_output_norm=Mock(return_value={'mode':'median','identity':'fixed'}),
+                          coordinate_output_norm_receipt=Mock(return_value={'calls':2}))
+    assert v._configure_coordinate_output_norm(model,'median',list(range(1000)),'fixed')['mode']=='median'
+    model.configure_coordinate_output_norm.assert_called_once_with('median',list(range(1000)),identity='fixed')
+    assert v._coordinate_output_norm_receipt(model)=={'calls':2}
+    engine=object.__new__(VllmDoraRollout);engine.identity='fixed';engine._call=Mock(return_value='ack')
+    assert engine.configure_coordinate_output_norm('off',range(1000),identity='fixed')=='ack'
+    engine._call.assert_called_once_with('coordinate_output_norm',('off',list(range(1000)),'fixed'))
+    for mode,identity in [('bad','fixed'),('median','stale')]:
+        with pytest.raises(ValueError):engine.configure_coordinate_output_norm(mode,range(1000),identity=identity)
+    assert engine._call.call_count==1

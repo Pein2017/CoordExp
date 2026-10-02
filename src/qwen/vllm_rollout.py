@@ -129,6 +129,14 @@ def _refresh_model(model, adapter, embeddings, identity):
     return identity
 
 
+def _configure_coordinate_output_norm(model, mode, token_ids, identity):
+    return model.configure_coordinate_output_norm(mode, token_ids, identity=identity)
+
+
+def _coordinate_output_norm_receipt(model):
+    return model.coordinate_output_norm_receipt()
+
+
 def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
     from vllm import SamplingParams
     from vllm.inputs import TextPrompt
@@ -217,12 +225,23 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
             )
             connection.send({"ok": True, "value": {"identity": identity, "device": device_receipt,
                                                      "startup_seconds": time.monotonic()-started}})
+            norm_configured = False
             while True:
                 command, payload = connection.recv()
                 if command == "close":
                     break
                 started = time.monotonic()
-                if command == "refresh":
+                if command == "coordinate_output_norm":
+                    mode, token_ids, requested_identity = payload
+                    if requested_identity != identity:
+                        raise ValueError("stale coordinate norm snapshot identity")
+                    observed = engine.apply_model(partial(_configure_coordinate_output_norm,
+                        mode=mode, token_ids=token_ids, identity=identity))
+                    if len(observed) != 1 or observed[0]['mode'] != mode or observed[0]['identity'] != identity:
+                        raise RuntimeError("coordinate output norm was not acknowledged")
+                    value = observed[0]
+                    norm_configured = True
+                elif command == "refresh":
                     from safetensors.torch import load
                     adapter_bytes, embedding_bytes, next_identity = payload
                     adapter, embeddings = load(adapter_bytes), load(embedding_bytes)
@@ -242,10 +261,13 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                 else:
                     raise ValueError(f"unknown rollout operation: {command}")
                 import torch
+                norm_evidence = (engine.apply_model(_coordinate_output_norm_receipt)[0]
+                                 if norm_configured else None)
                 connection.send({"ok": True, "value": value,
                                  "receipt": {"identity": identity,
                                              "seconds": time.monotonic()-started,
-                                             "peak_allocated": torch.cuda.max_memory_allocated()}})
+                                             "peak_allocated": torch.cuda.max_memory_allocated(),
+                                             **({"coordinate_output_norm": norm_evidence} if norm_configured else {})}})
     except EOFError:
         pass
     except BaseException:
@@ -266,13 +288,15 @@ class VllmDoraRollout:
     def __init__(self, *, base_model, checkpoint, identity, log_path,
                  device=None, trainer_rank=None, max_model_len=16000, max_num_seqs=3,
                  kv_cache_memory_bytes=2 * 1024**3, gpu_memory_utilization=0.2,
-                 enforce_eager=False, timeout=1800):
+                 enforce_eager=False, timeout=1800, seed=None):
         import torch
         from importlib.metadata import version
         if version("vllm").split("+")[0] != "0.29.0":
             raise RuntimeError("local DoRA rollout is qualified only for vLLM 0.29.0")
         if not isinstance(identity, str) or not identity:
             raise ValueError("a nonempty snapshot identity is required")
+        if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
+            raise ValueError('vLLM seed must be an unsigned 32-bit integer')
         device_index = torch.cuda.current_device() if device is None else device
         visible = os.environ.get("CUDA_VISIBLE_DEVICES")
         physical_device = _physical_token(visible, device_index)
@@ -291,6 +315,8 @@ class VllmDoraRollout:
         options = dict(max_model_len=max_model_len, max_num_seqs=max_num_seqs,
                        kv_cache_memory_bytes=kv_cache_memory_bytes,
                        gpu_memory_utilization=gpu_memory_utilization, enforce_eager=enforce_eager)
+        if seed is not None:
+            options['seed'] = seed
         if not enforce_eager:
             # Native decode graphs keep refreshable buffers; no compiler needed.
             options['compilation_config'] = dict(mode=0, cudagraph_mode='FULL_DECODE_ONLY',
@@ -359,6 +385,11 @@ class VllmDoraRollout:
                  pad_token_id, identity, trace=False):
         return self._call("generate", (identity, requests, budgets, eos_token_id,
                                        pad_token_id, trace))
+
+    def configure_coordinate_output_norm(self, mode, token_ids, *, identity):
+        if mode not in ('off', 'median') or identity != self.identity:
+            raise ValueError('invalid coordinate norm policy or stale snapshot identity')
+        return self._call('coordinate_output_norm', (mode, list(token_ids), identity))
 
     def close(self):
         if self._closed:

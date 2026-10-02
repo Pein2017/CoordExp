@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -13,6 +14,7 @@ from torch import nn
 
 from src.qwen.vllm_dora_model import (
     CoordExpDoRAQwen3VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
     _DoRALinear,
     _SelectedInput,
     _target_tensors,
@@ -29,6 +31,54 @@ class PackedBase(nn.Module):
 
     def forward(self, x):
         return F.linear(x, self.weight, self.bias), None
+
+
+def _coordinate_model(*, bias: bool = False):
+    model = CoordExpDoRAQwen3VLForConditionalGeneration.__new__(
+        CoordExpDoRAQwen3VLForConditionalGeneration
+    )
+    nn.Module.__init__(model)
+    coordinate_ids = tuple(range(1000))
+    selected_ids = tuple(range(1000, 1004)) + coordinate_ids
+    vocab_size = 1010
+    head = nn.Linear(2, vocab_size, bias=bias, dtype=torch.bfloat16)
+    with torch.no_grad():
+        head.weight.fill_(0)
+        head.weight[:, 1] = 1
+    model.language_model = SimpleNamespace(lm_head=head)
+    model.coordexp_dora_identity = "snapshot-1"
+    model._coordexp_coordinate_token_ids = coordinate_ids
+    model._coordexp_linears = ()
+    model.register_buffer("coordexp_token_ids", torch.tensor(selected_ids, dtype=torch.long))
+    rows = torch.full((vocab_size,), -1, dtype=torch.long)
+    rows[torch.tensor(selected_ids)] = torch.arange(len(selected_ids))
+    model.register_buffer("coordexp_token_rows", rows)
+    model.register_buffer("coordexp_input_embed_delta", torch.zeros(len(selected_ids), 2))
+    model.register_buffer("coordexp_output_embed_delta", torch.zeros(len(selected_ids), 2))
+    return model, coordinate_ids
+
+
+def _refresh_adapter_payload():
+    target = "model.language_model.layers.0.mlp.down_proj"
+    prefix = "base_model.model." + target
+    return {
+        prefix + ".lora_A.weight": torch.tensor([[0.2]], dtype=torch.float32),
+        prefix + ".lora_B.weight": torch.tensor([[0.3]], dtype=torch.float32),
+        prefix + ".lora_magnitude_vector.weight": torch.tensor([1.0], dtype=torch.float32),
+    }
+
+
+def _install_refresh_linear(model):
+    target = "model.language_model.layers.0.mlp.down_proj"
+    layer = _DoRALinear(
+        PackedBase([torch.ones(1, 1)], None),
+        (target,),
+        (1,),
+        _target_tensors(_refresh_adapter_payload()),
+        1.0,
+    )
+    model._coordexp_linears = (layer,)
+    return layer
 
 
 @pytest.mark.parametrize("widths", [(5,), (3, 4), (3, 2, 2)])
@@ -128,6 +178,163 @@ def test_saved_and_live_magnitude_key_forms_reject_duplicates():
     payload[prefix + ".lora_magnitude_vector.default.weight"] = torch.ones(4)
     with pytest.raises(ValueError, match="duplicate DoRA tensor"):
         _target_tensors(payload)
+
+
+def test_coordinate_output_norm_default_and_off_preserve_base_logits(monkeypatch):
+    model, coordinate_ids = _coordinate_model()
+
+    def base_compute_logits(self, hidden_states):
+        return F.linear(hidden_states, self.language_model.lm_head.weight)
+
+    monkeypatch.setattr(Qwen3VLForConditionalGeneration, "compute_logits", base_compute_logits)
+    hidden = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.bfloat16)
+    expected = base_compute_logits(model, hidden)
+    torch.testing.assert_close(model.compute_logits(hidden), expected, atol=0, rtol=0)
+
+    receipt = model.configure_coordinate_output_norm("off", coordinate_ids, identity="snapshot-1")
+    actual = model.compute_logits(hidden)
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+    assert receipt["calls"] == 0
+    receipt = model.coordinate_output_norm_receipt()
+    json.dumps(receipt)
+    assert receipt["calls"] == 1
+    assert receipt["coordinate_positions_processed"] == 2
+    assert receipt["first_call"] == {
+        "native_dtype": "torch.bfloat16",
+        "scaling_active": False,
+        "changed_coordinates": 0,
+        "max_abs_difference": 0.0,
+        "non_coordinate_unchanged": True,
+    }
+
+
+def test_coordinate_output_norm_scales_only_coordinates_and_can_flip_greedy(monkeypatch):
+    model, coordinate_ids = _coordinate_model()
+    with torch.no_grad():
+        model.language_model.lm_head.weight[0] = torch.tensor([0.1, 0.0])
+        model.language_model.lm_head.weight[1] = torch.tensor([0.2, 1.0])
+
+    def base_compute_logits(self, hidden_states):
+        return F.linear(hidden_states, self.language_model.lm_head.weight)
+
+    monkeypatch.setattr(Qwen3VLForConditionalGeneration, "compute_logits", base_compute_logits)
+    hidden = torch.tensor([[1.0, 0.0]], dtype=torch.bfloat16)
+    before = base_compute_logits(model, hidden)
+    assert int(before.argmax(-1)) == 1
+    model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+    after = model.compute_logits(hidden)
+    assert int(after.argmax(-1)) == 0
+    assert after.dtype == before.dtype
+    non_coordinates = torch.ones(before.shape[-1], dtype=torch.bool)
+    non_coordinates[torch.tensor(coordinate_ids)] = False
+    torch.testing.assert_close(after[..., non_coordinates], before[..., non_coordinates], atol=0, rtol=0)
+    torch.testing.assert_close(after[..., 1009], before[..., 1009], atol=0, rtol=0)
+
+    receipt = model.coordinate_output_norm_receipt()
+    json.dumps(receipt)
+    assert receipt["calls"] == 1
+    assert receipt["coordinate_positions_processed"] == 1
+    assert receipt["coordinate_tokens"] == 1000
+    assert len(receipt["coordinate_ids"]) == 1000
+    assert receipt["norm_min"] > 0
+    assert receipt["median_norm"] == pytest.approx(1.0)
+    assert receipt["first_call"]["native_dtype"] == "torch.bfloat16"
+    assert receipt["first_call"]["scaling_active"] is True
+    assert receipt["first_call"]["changed_coordinates"] > 0
+    assert receipt["first_call"]["max_abs_difference"] > 0
+    assert receipt["first_call"]["non_coordinate_unchanged"] is True
+
+
+def test_coordinate_output_norm_uses_effective_base_plus_output_delta():
+    model, coordinate_ids = _coordinate_model()
+    with torch.no_grad():
+        model.language_model.lm_head.weight[0] = torch.tensor([1.0, 0.0])
+        model.coordexp_output_embed_delta[4] = torch.tensor([2.0, 0.0])
+    model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+    receipt = model.coordinate_output_norm_receipt()
+    assert receipt["median_norm"] == pytest.approx(1.0)
+    assert receipt["norm_max"] == pytest.approx(3.0)
+    assert receipt["factor_min"] == pytest.approx(1.0 / 3.0, rel=1e-5)
+
+
+def test_coordinate_output_norm_rejects_bad_binding_and_invalid_norms():
+    model, coordinate_ids = _coordinate_model()
+    with pytest.raises(ValueError, match="mode"):
+        model.configure_coordinate_output_norm("mean", coordinate_ids, identity="snapshot-1")
+    with pytest.raises(ValueError, match="identity"):
+        model.configure_coordinate_output_norm("median", coordinate_ids, identity="stale")
+    with pytest.raises(ValueError, match="1,000"):
+        model.configure_coordinate_output_norm("median", coordinate_ids[:-1], identity="snapshot-1")
+    duplicate_ids = list(coordinate_ids)
+    duplicate_ids[-1] = duplicate_ids[0]
+    with pytest.raises(ValueError, match="unique"):
+        model.configure_coordinate_output_norm("median", duplicate_ids, identity="snapshot-1")
+    wrong_coordinate_ids = list(coordinate_ids)
+    wrong_coordinate_ids[-1] = 1000
+    with pytest.raises(ValueError, match="selected output coordinate rows"):
+        model.configure_coordinate_output_norm("median", wrong_coordinate_ids, identity="snapshot-1")
+
+    with torch.no_grad():
+        model.language_model.lm_head.weight[0] = torch.tensor([1.0, 0.0])
+        model.coordexp_output_embed_delta[4] = torch.tensor([-1.0, 0.0])
+    with pytest.raises(ValueError, match="finite and positive"):
+        model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+
+    model.coordexp_output_embed_delta[4] = torch.tensor([float("nan"), 0.0])
+    with pytest.raises(ValueError, match="finite FP32"):
+        model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+
+
+def test_coordinate_output_norm_rejects_head_bias():
+    model, coordinate_ids = _coordinate_model(bias=True)
+    with pytest.raises(ValueError, match="bias"):
+        model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+
+
+def test_coordinate_output_norm_refreshes_factor_in_place_and_rejects_bad_refresh():
+    model, coordinate_ids = _coordinate_model()
+    layer = _install_refresh_linear(model)
+    with torch.no_grad():
+        model.language_model.lm_head.weight[0] = torch.tensor([1.0, 0.0])
+    model.configure_coordinate_output_norm("off", coordinate_ids, identity="snapshot-1")
+    model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+    factors = model.coordexp_coordinate_output_norm_factors
+    factor_ptr = factors.data_ptr()
+
+    output_delta = torch.zeros_like(model.coordexp_output_embed_delta)
+    output_delta[4, 0] = 1.0
+    assert model.refresh_coordexp_dora(
+        _refresh_adapter_payload(),
+        {"input_embed_delta": torch.zeros_like(output_delta), "output_embed_delta": output_delta},
+        identity="snapshot-2",
+    ) == "snapshot-2"
+    assert model.coordexp_coordinate_output_norm_factors.data_ptr() == factor_ptr
+    assert model.coordexp_coordinate_output_norm_factors[0].item() == pytest.approx(0.5)
+    assert model.coordinate_output_norm_receipt()["identity"] == "snapshot-2"
+
+    before_input_delta = model.coordexp_input_embed_delta.clone()
+    before_delta = model.coordexp_output_embed_delta.clone()
+    before_factor = factors.clone()
+    before_layer_buffers = {
+        name: value.clone() for name, value in layer.named_buffers()
+    }
+    bad_adapter = _refresh_adapter_payload()
+    bad_adapter[next(key for key in bad_adapter if "lora_A" in key)] *= 2
+    bad_adapter[next(key for key in bad_adapter if "magnitude" in key)] *= 2
+    invalid_delta = torch.zeros_like(output_delta)
+    invalid_delta[4, 0] = -1.0
+    with pytest.raises(ValueError, match="finite and positive"):
+        model.refresh_coordexp_dora(
+            bad_adapter,
+            {"input_embed_delta": torch.ones_like(output_delta), "output_embed_delta": invalid_delta},
+            identity="snapshot-3",
+        )
+    assert model.coordexp_dora_identity == "snapshot-2"
+    torch.testing.assert_close(model.coordexp_input_embed_delta, before_input_delta, atol=0, rtol=0)
+    torch.testing.assert_close(model.coordexp_output_embed_delta, before_delta, atol=0, rtol=0)
+    torch.testing.assert_close(factors, before_factor, atol=0, rtol=0)
+    for name, value in layer.named_buffers():
+        torch.testing.assert_close(value, before_layer_buffers[name], atol=0, rtol=0)
 
 
 _ANCHOR = Path(

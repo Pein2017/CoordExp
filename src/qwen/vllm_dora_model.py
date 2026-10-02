@@ -7,6 +7,7 @@ through vLLM's ``ModelRegistry``. The PEFT payload remains unmerged.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -18,9 +19,11 @@ from vllm.model_executor.models.qwen3_vl import Qwen3VLForConditionalGeneration
 
 from src.adapters.dora import inspect_dora_adapter_payload, normalize_dora_state_key
 from src.qwen.untied_embeddings import inspect_special_token_embedding_delta_payload
+from src.qwen.tokens import DEFAULT_COORDINATE_TOKENS
 
 
 _KINDS = frozenset({"lora_A", "lora_B", "lora_magnitude_vector"})
+_COORDINATE_TOKENS = frozenset(DEFAULT_COORDINATE_TOKENS)
 _SUFFIXES = (
     (".lora_A.weight", "lora_A"),
     (".lora_B.weight", "lora_B"),
@@ -191,6 +194,7 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         self._coordexp_config = cfg
         self.coordexp_dora_identity: str | None = None
         self._coordexp_linears: tuple[_DoRALinear, ...] = ()
+        self._coordexp_coordinate_token_ids: tuple[int, ...] = ()
 
     def load_weights(self, weights) -> set[str]:
         if self.coordexp_dora_identity is not None:
@@ -254,6 +258,11 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         delta_path = Path(embedding["root"]) / "special_token_embeddings.safetensors"
         delta_tensors = load_file(str(delta_path), device="cpu")
         token_ids = semantic["token_ids"]
+        self._coordexp_coordinate_token_ids = tuple(
+            int(token_id)
+            for token, token_id in zip(semantic["token_strings"], token_ids, strict=True)
+            if token in _COORDINATE_TOKENS
+        )
         base_embedding = self.language_model.model.embed_tokens.weight
         head = self.language_model.lm_head.weight
         if base_embedding.data_ptr() != head.data_ptr() or max(token_ids) >= base_embedding.shape[0]:
@@ -304,6 +313,12 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
             if not isinstance(source, torch.Tensor) or source.shape != destination.shape or source.dtype != destination.dtype or not torch.isfinite(source).all():
                 raise ValueError(f"invalid refresh tensor: {key}")
             copies.append((destination, source))
+        refreshed_coordinate_norms = None
+        if getattr(self, "_coordinate_output_norm_mode", "off") == "median":
+            refreshed_coordinate_norms = self._coordinate_output_norm_values(
+                self.coordexp_coordinate_output_norm_ids,
+                output_delta=embedding_tensors["output_embed_delta"],
+            )
         scale_copies = [
             (getattr(layer, f"scale_{index}"), value)
             for layer in self._coordexp_linears
@@ -314,7 +329,173 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         for destination, source in scale_copies:
             destination.copy_(source)
         self.coordexp_dora_identity = identity
+        if refreshed_coordinate_norms is not None:
+            self.coordexp_coordinate_output_norm_factors.copy_(
+                refreshed_coordinate_norms["factors"]
+            )
+            self._store_coordinate_output_norm_stats(refreshed_coordinate_norms)
+        elif getattr(self, "_coordinate_output_norm_configured", False):
+            self._coordinate_output_norm_stats = None
         return identity
+
+    @staticmethod
+    def _coordinate_output_norm_ids(token_ids) -> tuple[int, ...]:
+        if isinstance(token_ids, torch.Tensor):
+            if token_ids.ndim != 1:
+                raise ValueError("coordinate token IDs must be one-dimensional")
+            values = token_ids.detach().cpu().tolist()
+        else:
+            try:
+                values = list(token_ids)
+            except TypeError as exc:
+                raise ValueError("coordinate token IDs must be a sequence") from exc
+        if len(values) != 1000 or any(
+            isinstance(value, bool) or not isinstance(value, int) for value in values
+        ):
+            raise ValueError("coordinate token IDs must contain 1,000 integer IDs")
+        result = tuple(values)
+        if len(set(result)) != 1000 or any(value < 0 for value in result):
+            raise ValueError("coordinate token IDs must be 1,000 unique non-negative IDs")
+        return result
+
+    @torch.no_grad()
+    def _coordinate_output_norm_values(
+        self,
+        token_ids: torch.Tensor,
+        *,
+        output_delta: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor | float]:
+        head = self.language_model.lm_head
+        weight = getattr(head, "weight", None)
+        if not isinstance(weight, torch.Tensor) or weight.ndim != 2 or weight.dtype != torch.bfloat16:
+            raise ValueError("coordinate output norms require a BF16 language head")
+        if getattr(head, "bias", None) is not None:
+            raise ValueError("coordinate output norms do not support an output-head bias")
+        delta = (
+            getattr(self, "coordexp_output_embed_delta")
+            if output_delta is None
+            else output_delta
+        )
+        if (
+            not isinstance(delta, torch.Tensor)
+            or delta.ndim != 2
+            or delta.shape[1] != weight.shape[1]
+            or delta.dtype != torch.float32
+            or not torch.isfinite(delta).all()
+        ):
+            raise ValueError("coordinate output norm delta must be finite FP32 rows")
+        ids = token_ids.to(device=weight.device, dtype=torch.long)
+        if ids.numel() != 1000 or int(ids.min()) < 0 or int(ids.max()) >= weight.shape[0]:
+            raise ValueError("coordinate output norm IDs are outside the language head")
+        selected_rows = self.coordexp_token_rows.index_select(0, ids.to(self.coordexp_token_rows.device))
+        if (
+            selected_rows.shape != ids.shape
+            or (selected_rows < 0).any()
+            or int(selected_rows.max()) >= delta.shape[0]
+        ):
+            raise ValueError("coordinate IDs are missing selected output delta rows")
+        effective = weight.index_select(0, ids).to(torch.float32) + delta.to(
+            device=weight.device, dtype=torch.float32
+        ).index_select(0, selected_rows.to(weight.device))
+        norms = torch.linalg.vector_norm(effective.to(torch.float64), ord=2, dim=1)
+        if not torch.isfinite(norms).all() or (norms <= 0).any():
+            raise ValueError("coordinate output row norms must be finite and positive")
+        median = torch.median(norms)
+        factors = median / norms
+        if not torch.isfinite(factors).all() or (factors <= 0).any():
+            raise ValueError("coordinate output norm factors must be finite and positive")
+        return {
+            "factors": factors,
+            "norm_min": float(norms.min().item()),
+            "norm_max": float(norms.max().item()),
+            "median_norm": float(median.item()),
+            "factor_min": float(factors.min().item()),
+            "factor_max": float(factors.max().item()),
+        }
+
+    def _store_coordinate_output_norm_stats(self, values: Mapping[str, torch.Tensor | float]) -> None:
+        self._coordinate_output_norm_stats = {
+            key: float(value) for key, value in values.items() if key != "factors"
+        }
+
+    @torch.no_grad()
+    def configure_coordinate_output_norm(
+        self,
+        mode: str,
+        token_ids,
+        *,
+        identity: str,
+    ) -> dict[str, object]:
+        if mode not in ("off", "median"):
+            raise ValueError("coordinate output norm mode must be 'off' or 'median'")
+        if not isinstance(identity, str) or not identity or identity != self.coordexp_dora_identity:
+            raise ValueError("coordinate output norm identity differs from installed DoRA snapshot")
+        ids = self._coordinate_output_norm_ids(token_ids)
+        expected_ids = getattr(self, "_coordexp_coordinate_token_ids", ())
+        selected_ids = getattr(self, "coordexp_token_ids", None)
+        if (
+            len(expected_ids) != 1000
+            or ids != tuple(expected_ids)
+            or not isinstance(selected_ids, torch.Tensor)
+            or not set(ids).issubset(set(int(value) for value in selected_ids.detach().cpu().tolist()))
+        ):
+            raise ValueError("coordinate IDs differ from selected output coordinate rows")
+        head = self.language_model.lm_head
+        ids_tensor = torch.tensor(ids, dtype=torch.long, device=head.weight.device)
+        values = self._coordinate_output_norm_values(ids_tensor) if mode == "median" else None
+        id_buffer = getattr(self, "coordexp_coordinate_output_norm_ids", None)
+        if id_buffer is None:
+            self.register_buffer("coordexp_coordinate_output_norm_ids", ids_tensor, persistent=False)
+        else:
+            id_buffer.copy_(ids_tensor)
+        if mode == "median":
+            assert values is not None
+            factor_buffer = getattr(self, "coordexp_coordinate_output_norm_factors", None)
+            if factor_buffer is None:
+                self.register_buffer(
+                    "coordexp_coordinate_output_norm_factors",
+                    values["factors"],
+                    persistent=False,
+                )
+            else:
+                factor_buffer.copy_(values["factors"])
+            self._store_coordinate_output_norm_stats(values)
+        else:
+            self._coordinate_output_norm_stats = None
+        self._coordinate_output_norm_mode = mode
+        self._coordinate_output_norm_configured = True
+        self._coordinate_output_norm_calls = 0
+        self._coordinate_output_norm_positions = 0
+        self._coordinate_output_norm_first_call = None
+        return self.coordinate_output_norm_receipt()
+
+    def coordinate_output_norm_receipt(self) -> dict[str, object]:
+        stats = getattr(self, "_coordinate_output_norm_stats", None) or {}
+        ids = getattr(self, "coordexp_coordinate_output_norm_ids", None)
+        first_call = getattr(self, "_coordinate_output_norm_first_call", None)
+        if first_call is not None:
+            first_call = dict(first_call)
+            for key in ("changed_coordinates", "max_abs_difference"):
+                value = first_call[key]
+                if isinstance(value, torch.Tensor):
+                    value = value.detach().cpu().item()
+                if key == "max_abs_difference" and not math.isfinite(float(value)):
+                    value = None
+                first_call[key] = int(value) if key == "changed_coordinates" else value
+        return {
+            "mode": getattr(self, "_coordinate_output_norm_mode", "off"),
+            "identity": getattr(self, "coordexp_dora_identity", None),
+            "coordinate_ids": None if ids is None else ids.detach().cpu().tolist(),
+            "coordinate_tokens": 0 if ids is None else int(ids.numel()),
+            "calls": int(getattr(self, "_coordinate_output_norm_calls", 0)),
+            "coordinate_positions_processed": int(getattr(self, "_coordinate_output_norm_positions", 0)),
+            "norm_min": stats.get("norm_min"),
+            "norm_max": stats.get("norm_max"),
+            "median_norm": stats.get("median_norm"),
+            "factor_min": stats.get("factor_min"),
+            "factor_max": stats.get("factor_max"),
+            "first_call": first_call,
+        }
 
     def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
         logits = super().compute_logits(hidden_states)
@@ -325,4 +506,32 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         correction = correction.to(logits.dtype)
         index = self.coordexp_token_ids.view(*([1] * (correction.ndim - 1)), -1).expand_as(correction)
         logits.scatter_add_(-1, index, correction)
+        if getattr(self, "_coordinate_output_norm_configured", False):
+            self._coordinate_output_norm_calls += 1
+            self._coordinate_output_norm_positions += logits.numel() // logits.shape[-1]
+            if self._coordinate_output_norm_mode == "median":
+                norm_ids = self.coordexp_coordinate_output_norm_ids.to(logits.device)
+                before = logits.index_select(-1, norm_ids)
+                scaled = before.to(torch.float64) * self.coordexp_coordinate_output_norm_factors.to(
+                    device=logits.device, dtype=torch.float64
+                )
+                scaled = scaled.to(logits.dtype)
+                if self._coordinate_output_norm_first_call is None:
+                    delta = (scaled.to(torch.float64) - before.to(torch.float64)).abs()
+                    self._coordinate_output_norm_first_call = {
+                        "native_dtype": str(logits.dtype),
+                        "scaling_active": True,
+                        "changed_coordinates": torch.count_nonzero(scaled != before),
+                        "max_abs_difference": delta.max() if delta.numel() else torch.zeros((), device=logits.device),
+                        "non_coordinate_unchanged": True,
+                    }
+                logits.index_copy_(-1, norm_ids, scaled)
+            elif self._coordinate_output_norm_first_call is None:
+                self._coordinate_output_norm_first_call = {
+                    "native_dtype": str(logits.dtype),
+                    "scaling_active": False,
+                    "changed_coordinates": 0,
+                    "max_abs_difference": 0.0,
+                    "non_coordinate_unchanged": True,
+                }
         return logits
