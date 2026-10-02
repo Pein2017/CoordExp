@@ -26,8 +26,10 @@ one; use an existing task for follow-ups. Keep the assignment in its existing
 research/change artifact, not a new registry. Give the worker the outcome and
 non-goals, roles and return target, cwd and owned paths, permissions, authoritative
 source/input identities, relevant entrypoints, consumer/schema and acceptance
-evidence, dependencies, output format and stop rule. For exploration, name known
-paths or symbols and the uncertainty to resolve. Add budgets only when material.
+evidence, dependencies, output format, next steps the worker may take without
+another reply, retry/relaunch limits, and the boundary requiring a lead or user
+decision. For exploration, name known paths or symbols and the uncertainty to
+resolve. Add budgets only when material.
 
 Bind storage ownership separately from transport. For CoordExp, consult
 `/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`: a durable protocol/report belongs

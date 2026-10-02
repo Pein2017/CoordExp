@@ -28,9 +28,10 @@ tool schema, and set overrides only when the chosen fork supports them.
 
 Brief the outcome and non-goals, cwd and owned paths, permissions, authoritative
 source and input identities, dependencies, real consumer/schema and acceptance
-evidence, output format, and stop rule. For exploration, name known entry paths
-or symbols and the uncertainty to resolve. Add budgets or other constants only
-when they affect execution.
+evidence, output format, next steps the worker may take without another reply,
+retry/relaunch limits, and the boundary requiring a lead or user decision. For
+exploration, name known entry paths or symbols and the uncertainty to resolve.
+Add budgets or other constants only when they affect execution.
 
 ## Coordinate and return
 
@@ -53,10 +54,13 @@ and a counterexample, or take over the coupled work. Increasing effort alone
 does not correct the brief.
 
 Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with
-changed paths, source identities, consumer checks, unresolved questions and job
-state. The lead verifies the stable candidate and alone marks it
-`lead-accepted`; user-owned decisions require separate `user-accepted` evidence.
-Worker self-acceptance and transport completion are not acceptance.
+changed paths, source/input/runtime/artifact identities, relevant command exit
+statuses, structured results and raw-evidence pointers, consumer checks,
+unresolved questions and job state. Reuse evidence only for unchanged identities
+and acceptance targets. The lead verifies the stable candidate at its final
+consumer or decision-bearing boundary and alone marks it `lead-accepted`;
+user-owned decisions require separate `user-accepted` evidence. Worker
+self-acceptance and transport completion are not acceptance.
 
 ## Durable job handoff
 
