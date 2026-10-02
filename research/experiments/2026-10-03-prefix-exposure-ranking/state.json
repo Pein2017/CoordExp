@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-prefix-exposure-ranking",
-  "lifecycle": "planned",
-  "status": "CPU_CANDIDATE_02_PREPARED",
+  "lifecycle": "ready",
+  "status": "NATIVE_TERMINAL_CANDIDATE",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "scientific_status": "measured_fixed_contrast_unreviewed",
   "protocol": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,8 +12,8 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-completed-row-crossover",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04",
-  "execution_checkout": null,
-  "native_released": false,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "not_authorized": [
@@ -43,5 +43,20 @@
     "active_seconds": 1800,
     "cleanup_seconds": 30,
     "live_owned_group_required_absent": true
-  }
+  },
+  "cpu_lead_accepted": true,
+  "execution_source_commit": "fef0320926a5cde311caf203a5fbfa6a3e042ad8",
+  "execution_invocation": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-invocation-01.json",
+  "released_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/released-contract-01.json",
+    "sha256": "0fe3deac8f3eff7ec542686bdda8c7673aeee91b993bd3ca1628ac2233bf441b"
+  },
+  "native_terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/native-terminal-candidate-01.json",
+    "sha256": "78583948601bdb86b94e3d08d6086b82d452d0c8f3fd834cac235af375304080"
+  },
+  "package_exit": 0,
+  "readback_exit": 0,
+  "cleanup_verified": true,
+  "next_unit_scheduled": false
 }

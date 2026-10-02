@@ -77,3 +77,200 @@ RED: the actual package caller failed all three bounded CPU subprocess cases (ti
 GREEN: `python -m pytest -q tests/probes/test_prefix_exposure_ranking.py -k package_`, exit0:5passed/5deselected in7.49s (`package-green-02.log`). The same real-descendant cases now drain without advancing. Controlled time verifies1800 active/30 cleanup without waiting those durations; an undrainable double stops at30 with a partial receipt. A separate process-state check distinguishes live from zombie and other-session/group members, and completed groups permit the five normal phases.
 
 Scientific-caller source/evidence is unchanged and reused from candidate01 and the lead review. Candidate02 and qualified manifest02 bind the new scoped clean commit; native authority remains false, lifecycle planned, and execution checkout5ce remains untouched. No real model/GPU work or observation, recipe, research-meaning or scheduling change occurred.
+
+## Released package execution
+
+Exact release0fe3deac authorizes one serial five-phase package at clean execution sourcefef032092. Launched2026-10-02 UTC; invocation/PID/session and parent log are recorded at the execution-local `package-invocation-01.json`. Package deadlines govern phases; no outer supervisor-only timeout, extra model requests or CPU suites were added. Native outcomes are still unreviewed and require terminal evidence and separate lead acceptance.
+
+## Released terminal candidate (worker report; lead review pending)
+
+
+The single released package and separate final same-source CPU readback both exited0. All five phase exits are0, all five owned-group receipts report drained, and final Linux process checks find the supervisor, three native parents and their three children absent. No matching package/phase command remains. Training phase PIDs were not separately captured; their group completion is evidenced by the exact package receipts. Execution source remains clean at `fef0320926a5cde311caf203a5fbfa6a3e042ad8`. No CPU suites, model retries, extra warmup requests or replacements were run.
+
+Immutable terminal candidate: `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/native-terminal-candidate-01.json` SHA256 `78583948601bdb86b94e3d08d6086b82d452d0c8f3fd834cac235af375304080`. Raw terminal: `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01/complete.json`; separate readback: `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01/readback.json`. The candidate binds159 artifact/ledger/receipt/log/checkpoint hashes, original raw locators, release/lead-release identity, actual commands, sessions45343/48250 and cleanup evidence. Package file bytes533634088; phase-published artifact bytes529801948. Explicit native tokens26480 include30 scored tokens; natural outputs account for26450 tokens.
+
+Observed counters:32 optimizer steps,192 training replays,30 HF diagnostics,30 native scores and54 natural continuations (84 requests). Sum of recorded phase active windows573.326s; observed supervisor wall662.649s. Each phase uses its frozen1800 active+30 cleanup deadline, within9000 active ceiling. Native internal startup/capture physical forward count and CUDA peaks remain unmeasured. Maintained capture defaults are unchanged; costs are included in native resource windows, while supervisor wall also includes validation and frontend work. One GPU/rank/sequence, context4456 and2GiB KV are unchanged.
+
+
+| Phase | Active seconds | Resource seconds | Parent peak RSS KiB | Reaped-child peak RSS KiB | HF allocated/reserved bytes |
+|---|---:|---:|---:|---:|---|
+
+| native-R-multiple | 142.395 | 147.507 | 1254932 | 6832740 | None/None |
+
+| native-R-single | 134.671 | 139.964 | 1235608 | 6801268 | None/None |
+
+| native-anchor | 155.034 | 159.931 | 1236436 | 6802636 | None/None |
+
+| train-R-multiple | 69.287 | 69.287 | 13504520 | 13504520 | 20999968256/22011707392 |
+
+| train-R-single | 71.939 | 71.939 | 13472208 | 13472208 | 20996906496/22106079232 |
+
+
+Both independent arms reloaded exact anchor07ea98e9 and passed runtime588 FP32 language DoRA+2FP32[1004,2048] delta, frozen BF16 FA2 base/vision/projector, zero dropout and checkpointingOFF checks. Fresh AdamW/constant LRs1e-5+5e-6/betas.9,.999/epsilon1e-8/weight decay0/clip1 remained fixed. Six equal1/6 losses precede each single clip/step. All losses, gradients and parameters passed finite guards.
+
+R-single: endpoint `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01/train-R-single/checkpoint-16`, weight identity `ff2cee614a1d30c2933a76df5933b731ee5ca6b4b3ced72e7636969ea5794a21`. First update mean loss1.35970587, preclip norm93.1567307; update16 mean loss4.46154718e-06, preclip norm0.00207804935. Both take exactly16 updates.
+
+R-multiple: endpoint `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01/train-R-multiple/checkpoint-16`, weight identity `7ab33db4db3d60b6d6e5037884cb632be428dc133882b28897e615b09877408f`. First update mean loss1.39115045, preclip norm91.9184189; update16 mean loss5.1085827e-06, preclip norm0.0026078925. Both take exactly16 updates.
+
+
+Native literal legality: each endpoint repaired6/6 baseline-illegal and retained4/4 baseline-legal contexts, with0 legality losses. Original contexts:1/1 repaired and1/1 retained; training-neighbors:3/3 repaired and1/1 retained; held-out neighbors:2/2 repaired and2/2 retained. The351017 original is baseline-legal, so its repair denominator is0. The frozen original-error contrast is therefore observed at7511 only. Rounded zero native margins are ties; emitted tokens decide legality. HF anchor disagreements remain visible and do not replace native outcomes.
+
+
+| Context | Anchor bin/legal/native margin | Single bin/legal/native margin | Multiple bin/legal/native margin | HF margins anchor/single/multiple |
+|---|---|---|---|---|
+
+| 7511-626/+0 | 999/no/-0.125000 | 981/yes/13.375000 | 981/yes/13.562500 | -0.125000/13.375000/13.437500 |
+
+| 7511-626/-1 | 999/no/-0.125000 | 981/yes/13.500000 | 981/yes/13.625000 | -0.125000/13.937500/13.625000 |
+
+| 7511-626/+1 | 982/yes/0.000000 | 981/yes/13.250000 | 981/yes/13.500000 | -0.250000/13.437500/13.375000 |
+
+| 7511-626/-2 | 982/yes/0.000000 | 981/yes/12.875000 | 981/yes/13.625000 | -0.250000/13.250000/13.437500 |
+
+| 7511-626/+2 | 999/no/-0.125000 | 981/yes/13.375000 | 981/yes/13.562500 | 0.000000/13.875000/13.250000 |
+
+| 351017-1507/+0 | 966/yes/0.000000 | 966/yes/12.875000 | 966/yes/13.500000 | 0.000000/12.750000/13.125000 |
+
+| 351017-1507/-1 | 999/no/-0.250000 | 966/yes/12.875000 | 966/yes/13.375000 | 0.000000/12.750000/13.375000 |
+
+| 351017-1507/+1 | 999/no/-0.125000 | 966/yes/13.125000 | 966/yes/13.250000 | -0.125000/13.000000/13.250000 |
+
+| 351017-1507/-2 | 999/no/-0.125000 | 966/yes/13.125000 | 966/yes/13.250000 | -0.125000/13.000000/13.375000 |
+
+| 351017-1507/+2 | 966/yes/0.000000 | 966/yes/13.125000 | 966/yes/13.500000 | 0.000000/12.875000/13.375000 |
+
+
+Full-vocabulary legal mass, token IDs, exact unrounded margins, HF logit identities and prefix identities remain in the terminal candidate and raw score files. Endpoint native margins span12.875–13.500(single) and13.250–13.625(multiple); these are separate from the HF diagnostics. These observations do not establish ranking-over-mass or certified owner-invariant histories.
+
+
+Natural outputs, each arm versus the fresh anchor: category-aware known-owner counts single gained31/lost29/retained245, multiple gained24/lost30/retained244. Geometry-only owner counts single34/30/245, multiple26/30/245. Owner identities and matching details remain at the raw terminal locator. Labels18/570 are evaluator-only; unmatched remains neutral.
+
+
+| Burden | Anchor | Single | Multiple | Single delta | Multiple delta |
+|---|---:|---:|---:|---:|---:|
+
+| caps | 2 | 1 | 1 | -1 | -1 |
+
+| category_disagreements | 1 | 3 | 3 | 2 | 2 |
+
+| eos | 16 | 17 | 17 | 1 | 1 |
+
+| generated_tokens | 9922 | 7907 | 8621 | -2015 | -1301 |
+
+| geometry_invalid | 430 | 151 | 159 | -279 | -271 |
+
+| literal_complete_repeats | 502 | 202 | 227 | -300 | -275 |
+
+| literal_valid_repeats | 89 | 88 | 112 | -1 | 23 |
+
+| malformed | 2 | 1 | 1 | -1 | -1 |
+
+| near_repeat_occurrence_pairs | 92 | 126 | 191 | 34 | 99 |
+
+| unmatched | 377 | 426 | 505 | 49 | 128 |
+
+| valid_rows | 652 | 705 | 776 | 53 | 124 |
+
+
+Per-image category and geometry-only owner transitions (G/L/R), with every burden delta relative to anchor. Complete absolute burdens and stop reasons are in candidate `per_image`; full owner IDs remain in `package-01/complete.json`.
+
+
+### R-single vs anchor
+
+
+| Image | Category G/L/R | Geometry G/L/R | Tokens | Invalid | Complete repeats | Valid repeats | Near pairs | Unmatched | Valid rows | Category disagree | Malformed | Cap/EOS |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+
+| 1584 | 1/1/9 | 1/1/9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0/0 |
+
+| 2299 | 2/3/31 | 2/3/31 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0/0 |
+
+| 2685 | 0/1/11 | 0/1/11 | 19 | 0 | 0 | 0 | 0 | 3 | 2 | 0 | 0 | 0/0 |
+
+| 4134 | 0/2/18 | 0/2/18 | -27 | 0 | 0 | 0 | -1 | -1 | -3 | 0 | 0 | 0/0 |
+
+| 5001 | 3/1/15 | 3/1/15 | 2 | 0 | 0 | 0 | -1 | -2 | 0 | 0 | 0 | 0/0 |
+
+| 6040 | 0/0/10 | 0/0/10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0/0 |
+
+| 7116 | 0/0/4 | 0/0/4 | 9 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0/0 |
+
+| 7511 | 3/1/8 | 4/1/8 | 0 | -104 | -77 | 49 | 88 | 101 | 104 | 1 | 0 | 0/0 |
+
+| 10707 | 0/0/14 | 1/1/14 | 27 | 0 | 0 | 0 | 0 | 3 | 3 | 0 | 0 | 0/0 |
+
+| 13348 | 1/0/3 | 1/0/3 | 144 | 0 | 4 | 4 | 18 | 15 | 16 | 0 | 0 | 0/0 |
+
+| 13923 | 0/0/11 | 0/0/11 | -9 | 0 | 0 | 0 | 0 | -1 | -1 | 0 | 0 | 0/0 |
+
+| 14038 | 2/1/6 | 2/1/6 | 18 | 0 | 0 | 0 | 0 | 1 | 2 | 0 | 0 | 0/0 |
+
+| 14439 | 1/1/21 | 1/1/21 | -1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0/0 |
+
+| 16228 | 2/5/23 | 2/5/23 | 9 | 0 | 0 | 0 | 0 | 4 | 1 | 0 | 0 | 0/0 |
+
+| 309264 | 3/1/0 | 3/1/0 | -18 | -1 | 0 | 0 | 0 | -3 | -1 | 0 | 0 | 0/0 |
+
+| 351017 | 3/6/9 | 3/6/9 | -2173 | -174 | -227 | -54 | -70 | -67 | -70 | 0 | -1 | -1/1 |
+
+| 417044 | 5/5/27 | 6/5/27 | -60 | 0 | 0 | 0 | 0 | -7 | -6 | 1 | 0 | 0/0 |
+
+| 477415 | 5/1/25 | 5/1/25 | 45 | 0 | 0 | 0 | 0 | 1 | 5 | 0 | 0 | 0/0 |
+
+
+### R-multiple vs anchor
+
+
+| Image | Category G/L/R | Geometry G/L/R | Tokens | Invalid | Complete repeats | Valid repeats | Near pairs | Unmatched | Valid rows | Category disagree | Malformed | Cap/EOS |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+
+| 1584 | 2/0/10 | 2/0/10 | 0 | 0 | 0 | 0 | 0 | -2 | 0 | 0 | 0 | 0/0 |
+
+| 2299 | 0/2/32 | 0/2/32 | -9 | 0 | 0 | 0 | 0 | 1 | -1 | 0 | 0 | 0/0 |
+
+| 2685 | 0/0/12 | 0/0/12 | 28 | 0 | 0 | 0 | 0 | 3 | 3 | 0 | 0 | 0/0 |
+
+| 4134 | 0/3/17 | 0/3/17 | -54 | 0 | 0 | 0 | -1 | -3 | -6 | 0 | 0 | 0/0 |
+
+| 5001 | 2/2/14 | 2/2/14 | 20 | 0 | 0 | 0 | -1 | 2 | 2 | 0 | 0 | 0/0 |
+
+| 6040 | 0/0/10 | 0/0/10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0/0 |
+
+| 7116 | 0/0/4 | 0/0/4 | 9 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0/0 |
+
+| 7511 | 3/1/8 | 4/1/8 | 0 | -104 | -76 | 51 | 128 | 101 | 104 | 1 | 0 | 0/0 |
+
+| 10707 | 1/0/14 | 1/0/15 | 10 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0/0 |
+
+| 13348 | 1/0/3 | 1/0/3 | 144 | 0 | 4 | 4 | 15 | 15 | 16 | 0 | 0 | 0/0 |
+
+| 13923 | 0/0/11 | 0/0/11 | -9 | 0 | 0 | 0 | 0 | -1 | -1 | 0 | 0 | 0/0 |
+
+| 14038 | 2/1/6 | 2/1/6 | 18 | 0 | 0 | 0 | 0 | 1 | 2 | 0 | 0 | 0/0 |
+
+| 14439 | 2/2/20 | 2/2/20 | -1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0/0 |
+
+| 16228 | 1/6/22 | 1/6/22 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0/0 |
+
+| 309264 | 2/1/0 | 2/1/0 | 279 | -1 | 4 | 4 | 1 | 31 | 32 | 0 | 0 | 0/0 |
+
+| 351017 | 2/5/10 | 2/5/10 | -1713 | -166 | -207 | -36 | -43 | -24 | -27 | 0 | -1 | -1/1 |
+
+| 417044 | 4/6/26 | 5/6/26 | -50 | 0 | 0 | 0 | 0 | -4 | -5 | 1 | 0 | 0/0 |
+
+| 477415 | 2/1/25 | 2/1/25 | 27 | 0 | 0 | 0 | 0 | 2 | 3 | 0 | 0 | 0/0 |
+
+
+Natural validity and complete-repeat burdens decreased in both arms, while owner losses, category disagreements, unmatched rows and near-repeat pairs remain visible. This is a measured selected conditional/natural contrast awaiting lead interpretation and acceptance. It makes no physical, population, global determinism or ranking-over-mass claim. No next unit is scheduled.
+
+
+Execution commands (cwd `/data/CoordExp/.worktrees/greedy-prefix-native-01`), actual exits0:
+
+```bash
+python -m probes.prefix_exposure_ranking package --contract /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/released-contract-01.json --contract-sha256 0fe3deac8f3eff7ec542686bdda8c7673aeee91b993bd3ca1628ac2233bf441b --output /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01
+python -m probes.prefix_exposure_ranking readback --contract /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/released-contract-01.json --contract-sha256 0fe3deac8f3eff7ec542686bdda8c7673aeee91b993bd3ca1628ac2233bf441b --output /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/package-01
+```
+
+Release SHA256 `0fe3deac8f3eff7ec542686bdda8c7673aeee91b993bd3ca1628ac2233bf441b`; separate lead-release SHA256 `169e146d67d602db14f571bfd014c1d1f407b682e4f335e918db4152116d8d66`. Accepted CPU candidate02 SHA256 `9c051db4439038bb1126776fe5c2116cb71c608cde0974c7365dc1602417e11b`. Package session45343/PID1687760; explicit readback session48250. Logs `package-01.log`, `readback-01.log` and five execution-local phase logs are hashed in the terminal candidate. All phase exits0: native-anchor, train-R-single, native-R-single, train-R-multiple, native-R-multiple.
+
+Canonical record consumer `python -m scripts.check_research_knowledge check` exited0:334 entries/10 current/167 claim references; `outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/research-consumer-terminal-01.log` SHA256 `f9e734338f18ee0e7fc441240e1359066d1360bf1cde3a7420176ae8c0792ddd`. Consumer scope is record integrity, separate from scientific acceptance.
