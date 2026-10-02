@@ -301,9 +301,17 @@ def evaluate_versions(images: list[dict], frozen: dict[str, list[dict]]) -> dict
             'limitations': 'Annotation TP/FP/FN use class-agnostic one-to-one IoU assignment at 0.5 then exact description equality. Annotation-unmatched predictions and category disagreements are annotation errors, not verified physical false positives; no confidence scores or mAP are defined.'}
 
 
-def prepare_qualification(unit: Path, root: Path, qualification_run: Path, observation_run: Path, checkpoint: Path) -> Path:
+def prepare_qualification(unit: Path, root: Path, qualification_run: Path, observation_run: Path, checkpoint: Path,
+                         lr_scale: float | None = None, warmup_updates: int | None = None) -> Path:
     from src.artifacts.git_identity import capture_source_identity
     from probes import online_row_credit as o
+
+    if (lr_scale is None) != (warmup_updates is None):
+        raise ValueError('--lr-scale and --warmup-updates must be supplied together')
+    lr_profile = None
+    if lr_scale is not None:
+        lr_profile = {'lr_scale': lr_scale, 'warmup_updates': warmup_updates}
+        o.validate_lr_profile(lr_profile)
 
     input_path, manifest_path = unit / 'inputs/full-labels.json', unit / 'inputs/manifest.json'
     _, manifest = verify_inputs(unit)
@@ -314,7 +322,10 @@ def prepare_qualification(unit: Path, root: Path, qualification_run: Path, obser
     training_path = input_path
     training_sha = sha(training_path)
     source = capture_source_identity(o.source_paths(full_label_region=True))
-    recipe = o.full_label_recipe(checkpoint, anchor_sha, training_path, training_sha)
+    if lr_profile is None:
+        recipe = o.full_label_recipe(checkpoint, anchor_sha, training_path, training_sha)
+    else:
+        recipe = o.full_label_recipe(checkpoint, anchor_sha, training_path, training_sha, lr_profile=lr_profile)
     qualification = {
         'schema': 'full-label-self-rollout-qualification-v1', 'unit': str(unit),
         'runs': {'qualification': str(qualification_run), 'observation': str(observation_run)},
@@ -346,11 +357,16 @@ def main() -> None:
     q.add_argument('--qualification-run', type=Path, required=True)
     q.add_argument('--observation-run', type=Path, required=True)
     q.add_argument('--checkpoint', type=Path, required=True)
+    q.add_argument('--lr-scale', type=float)
+    q.add_argument('--warmup-updates', type=int)
     args = parser.parse_args()
     if args.command == 'prepare-inputs':
         prepare_inputs()
     else:
-        prepare_qualification(args.unit, args.root, args.qualification_run, args.observation_run, args.checkpoint)
+        if (args.lr_scale is None) != (args.warmup_updates is None):
+            parser.error('--lr-scale and --warmup-updates must be supplied together')
+        prepare_qualification(args.unit, args.root, args.qualification_run, args.observation_run, args.checkpoint,
+                              lr_scale=args.lr_scale, warmup_updates=args.warmup_updates)
 
 
 if __name__ == '__main__':

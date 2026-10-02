@@ -31,13 +31,42 @@ FULL_LABEL_DECODER = dict(backend='vllm',version='0.29.0+cu129',generation_confi
     score_order='neutral_processing_greedy_argmax',loss_scores='HF_replay',outcomes='native_vllm_greedy')
 
 
-def full_label_recipe(checkpoint, manifest_sha256, training_path, training_sha256):
-    return dict(mode=FULL_LABEL_MODE,checkpoint=str(checkpoint),manifest_sha256=manifest_sha256,
+def validate_lr_profile(profile):
+    import math
+    assert type(profile) is dict and set(profile)=={'lr_scale','warmup_updates'}, 'unknown LR profile fields'
+    assert type(profile['lr_scale']) in (int,float) and math.isfinite(profile['lr_scale']) and profile['lr_scale']>0, 'invalid LR scale'
+    assert type(profile['warmup_updates']) is int and 0<=profile['warmup_updates']<=16, 'invalid warmup horizon'
+
+
+def full_label_learning_rates(profile, global_update):
+    assert type(global_update) is int and 1<=global_update<=16, 'invalid global LR update'
+    if profile is None:return [1e-5,5e-6]
+    validate_lr_profile(profile)
+    warmup=profile['warmup_updates']
+    factor=profile['lr_scale']*(min(global_update/warmup,1) if warmup else 1)
+    return [1e-5*factor,5e-6*factor]
+
+
+def optimizer_step(optimizer, global_update, correction=None):
+    if correction is not None and 'lr_profile' in correction:
+        assert correction.get('owner_region')==OWNER_REGION, 'LR profiles require full label region fitting'
+        validate_lr_profile(correction['lr_profile'])
+        rates=full_label_learning_rates(correction['lr_profile'],global_update)
+        assert len(optimizer.param_groups)==2, 'LR group drift'
+        for group,rate in zip(optimizer.param_groups,rates):group['lr']=rate
+    optimizer.step()
+
+
+def full_label_recipe(checkpoint, manifest_sha256, training_path, training_sha256, lr_profile=None):
+    if lr_profile is not None:validate_lr_profile(lr_profile)
+    recipe=dict(mode=FULL_LABEL_MODE,checkpoint=str(checkpoint),manifest_sha256=manifest_sha256,
         training_path=str(training_path),training_sha256=training_sha256,owner_region=dict(OWNER_REGION),
         arms={'treatment':1},updates=[2,16],completion={'treatment':RESTORED_M_COMPLETION},
         completion_weighting=RESTORED_M_WEIGHTING,event=IDENTITY_SELECTION,event_normalization=IDENTITY_NORMALIZATION,
         objective='positive_row_region_plus_description_divergence_softplus_1',execution_bounds=dict(FULL_LABEL_BOUNDS),decoder=dict(FULL_LABEL_DECODER),
         optimizer=dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711))
+    if lr_profile is not None:recipe['optimizer']['lr_profile']=dict(lr_profile)
+    return recipe
 
 
 def owner_box(image, row):
@@ -1280,7 +1309,9 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         assert arm=='treatment' and weight==1 and geometry_weight==.1
         assert not any(k in qual for k in ('bridge','geometry','preservation','witness','evaluator_sha256'))
         assert checkpoint is not None and str(checkpoint)==spec['checkpoint']
-        assert spec==full_label_recipe(checkpoint,spec['manifest_sha256'],spec['training_path'],spec['training_sha256']), 'full label recipe drift'
+        profile=spec['optimizer'].get('lr_profile')
+        if 'lr_profile' in spec['optimizer']:validate_lr_profile(profile)
+        assert spec==full_label_recipe(checkpoint,spec['manifest_sha256'],spec['training_path'],spec['training_sha256'],profile), 'full label recipe drift'
         assert recipe_sha256==identity(spec) and qual['rollout_backend']=='vllm' and qual['schema_geometry'] is True
         manifest=qual['input_manifest'];path=Path(spec['training_path'])
         assert p.digest(manifest['path'])==manifest['sha256'] and p.digest(path)==spec['training_sha256']
@@ -1295,7 +1326,8 @@ def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sh
         return dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),
             manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm',
             completion_arm=arm,completion_weighting=RESTORED_M_WEIGHTING,redirect_selection=IDENTITY_SELECTION,
-            owner_region=dict(OWNER_REGION),training_path=spec['training_path'],training_sha256=spec['training_sha256'])
+            owner_region=dict(OWNER_REGION),training_path=spec['training_path'],training_sha256=spec['training_sha256'],
+            **({'lr_profile':dict(profile)} if profile is not None else {}))
     if arm is None:
         assert spec is None and weight==0, 'explicit correction arm required'
         return None
@@ -1477,6 +1509,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
             if 'completion_weighting' in correction:producer['completion_weighting']=correction['completion_weighting']
             if full_label_region:producer.update(owner_region=correction['owner_region'],training_sha256=correction['training_sha256'])
+            if 'lr_profile' in correction:producer['lr_profile']=dict(correction['lr_profile'])
         if correction is not None and 'completion_arm' in correction:producer['completion_arm']=correction_arm
         if correction is not None and 'redirect_selection' in correction:producer['redirect_selection']=correction['redirect_selection']
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
@@ -1557,7 +1590,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         assert all(v is not None and math.isfinite(v) for v in norms.values())
         assert all(any(v>0 for n,v in norms.items() if tag in n) for tag in ('lora_','embed_tokens.shared_embed_delta','lm_head.shared_embed_delta'))
         synced=[None]*8;dist.all_gather_object(synced,identity(norms));assert len(set(synced))==1
-        total=float(torch.nn.utils.clip_grad_norm_(params,1,error_if_nonfinite=True));optimizer.step()
+        total=float(torch.nn.utils.clip_grad_norm_(params,1,error_if_nonfinite=True));optimizer_step(optimizer,version+1,correction)
         assert all(torch.isfinite(x).all() for x in params)
         states=sorted({int(state['step']) for state in optimizer.state.values()});assert states==[version+1]
         p.write(out/f'update-{version+1}.json',dict(update=version+1,producer=producer,forwards=evidence,gradient_norms=norms,
@@ -1654,7 +1687,10 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
         for step in range(1,updates+1):
             evidence=p.load(directory/f'update-{step}.json')
             assert evidence['optimizer_steps']==[step] and evidence['optimizer_state_count']==590
-            assert evidence['lrs']==[1e-5,5e-6]
+            if full_label_region and 'lr_profile' in correction:
+                assert evidence['update']==step, 'global LR update drift'
+                assert evidence['lrs']==full_label_learning_rates(correction.get('lr_profile'),step), 'global LR profile drift'
+            else:assert evidence['lrs']==[1e-5,5e-6]
             assert len(set(evidence['synchronized_norms']))==1
             assert sum(x['sync'] for x in evidence['forwards'])==1 and evidence['forwards'][-1]['sync']
             assert all(x['image_weight']==8/18 for x in evidence['forwards'])
@@ -1735,6 +1771,8 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert producer.get('redirect_selection')==correction.get('redirect_selection')
             assert producer.get('completion_weighting')==correction.get('completion_weighting')
             assert producer.get('owner_region')==correction.get('owner_region') and producer.get('training_sha256')==correction.get('training_sha256'), 'full label producer binding drift'
+            if full_label_region:
+                assert ('lr_profile' in producer)==('lr_profile' in correction) and producer.get('lr_profile')==correction.get('lr_profile'), 'LR producer binding drift'
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']

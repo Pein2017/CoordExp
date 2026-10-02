@@ -13,3 +13,7 @@ Resolved ownership boundary: the preexisting `tests/qwen/test_vllm_dora_model.py
 ## Native completion
 
 The separate2-update qualification and fresh16 observation are now lead-accepted as technically valid evidence. Current scientific outcome, raw/acceptance identities, budget-policy change and optimizer follow-up boundary are owned by [results.md](results.md) and [state.json](state.json). The original CPU-only acceptance above remains historical.
+
+## Learning-rate-profile CPU acceptance
+
+The lead accepted the opt-in scalar profile revision after exact source/argv/recipe review and 15 fresh CPU tests; the eight preserved legacy checks also passed with verified source/log identities. One focused read-only pass found no blocker in global-step delivery or re-signed readback rejection. Default recipe identity is unchanged. The candidate and acceptance receipts under optimizer-lr-shape-01/cpu-01 own hashes, commands, RED/GREEN evidence and exact three-arm argv. Native profile behavior still requires the finite real runs; no source or model-quality equivalence is inferred from CPU tests.

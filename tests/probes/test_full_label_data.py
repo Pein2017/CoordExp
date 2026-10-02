@@ -9,6 +9,8 @@ from probes import full_label_self_rollout as f
 from probes import iterative_positive as p
 from probes import rollout_row_credit as r
 
+HISTORICAL_RECIPE_SHA256 = 'a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141'
+
 
 class FullLabelDataTest(unittest.TestCase):
     @classmethod
@@ -16,6 +18,16 @@ class FullLabelDataTest(unittest.TestCase):
         cls.images, cls.manifest = f.verify_inputs()
         cls.retained = p.load(r.ROOT / 'cpu-04/retained-10.json')
         cls.capture = p.load(f.INPUTS)
+
+    def _run_qualification_cli(self, root, *profile_args):
+        checkpoint = Path('/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload')
+        argv = ['full_label_self_rollout', 'qualify', '--unit', str(f.UNIT), '--root', str(root),
+                '--qualification-run', str(root / 'run-2'), '--observation-run', str(root / 'run-16'),
+                '--checkpoint', str(checkpoint), *profile_args]
+        with patch('sys.argv', argv), patch(
+                'src.artifacts.git_identity.capture_source_identity', return_value={'schema': 'test-source-identity'}):
+            f.main()
+        return checkpoint, json.loads((root / 'qualification.json').read_text())
 
     def test_manifest_and_role_stripping(self):
         self.assertEqual((18, 570), (len(self.images), sum(len(x['objects']) for x in self.images)))
@@ -54,17 +66,15 @@ class FullLabelDataTest(unittest.TestCase):
     def test_qualification_roundtrip_matches_runtime_consumer(self):
         from probes import online_row_credit as o
 
-        checkpoint = Path('/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload')
-        fake_source = {'schema': 'test-source-identity'}
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            with patch('src.artifacts.git_identity.capture_source_identity', return_value=fake_source):
-                output = f.prepare_qualification(f.UNIT, root, root / 'run-2', root / 'run-16', checkpoint)
-            qual = json.loads(output.read_text())
+            checkpoint, qual = self._run_qualification_cli(root)
             manifest = f.UNIT / 'inputs/manifest.json'
             training = f.UNIT / 'inputs/full-labels.json'
             self.assertEqual(o.full_label_recipe(checkpoint, f.sha(checkpoint / 'inference_payload_manifest.json'),
                                                   training, f.sha(training)), qual['correction'])
+            self.assertEqual(HISTORICAL_RECIPE_SHA256, o.identity(qual['correction']))
+            self.assertNotIn('lr_profile', qual['correction']['optimizer'])
             self.assertEqual({'path': str(manifest), 'sha256': f.sha(manifest)}, qual['input_manifest'])
             self.assertEqual({str(x) for x in (o.INPUTS, training, o.p.POLICY, manifest)}, set(qual['sha256']))
             self.assertEqual({'profiles': [{'arm': 'treatment', 'microbatch': 1, 'activation_checkpointing': False}]},
@@ -80,6 +90,48 @@ class FullLabelDataTest(unittest.TestCase):
                 binding = o.correction_binding(root, 'treatment', 1, checkpoint, .1,
                                                o.identity(qual['correction']), full_label_region=True)
             self.assertEqual(str(checkpoint), binding['checkpoint'])
+
+    def test_cli_lr_profiles_bind_all_three_requested_shapes(self):
+        from probes import online_row_credit as o
+
+        profiles = ((1.0, 0), (1.0, 4), (0.90625, 0))
+        for scale, warmup_updates in profiles:
+            with self.subTest(lr_scale=scale, warmup_updates=warmup_updates), \
+                    tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                checkpoint, qual = self._run_qualification_cli(
+                    root, '--lr-scale', str(scale), '--warmup-updates', str(warmup_updates))
+                training = f.UNIT / 'inputs/full-labels.json'
+                expected_profile = {'lr_scale': scale, 'warmup_updates': warmup_updates}
+                expected = o.full_label_recipe(checkpoint,
+                    f.sha(checkpoint / 'inference_payload_manifest.json'), training, f.sha(training),
+                    lr_profile=expected_profile)
+                self.assertEqual(expected, qual['correction'])
+                self.assertEqual(expected_profile, qual['correction']['optimizer']['lr_profile'])
+                with patch('src.artifacts.git_identity.verify_source_identity'):
+                    binding = o.correction_binding(root, 'treatment', 1, checkpoint, .1,
+                                                   o.identity(qual['correction']), full_label_region=True)
+                self.assertEqual(expected_profile, binding['lr_profile'])
+                self.assertEqual(o.identity(expected), binding['recipe_sha256'])
+
+    def test_cli_rejects_missing_or_malformed_lr_profile_before_source_capture(self):
+        checkpoint = Path('/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload')
+        base = ['full_label_self_rollout', 'qualify', '--unit', str(f.UNIT)]
+        with patch('src.artifacts.git_identity.capture_source_identity') as capture_source:
+            for partial_pair in (('--lr-scale', '1'), ('--warmup-updates', '4')):
+                with self.subTest(partial_pair=partial_pair), patch('sys.argv', base + [
+                        '--root', str(Path('/cpu/lr-profile-test') / 'missing-profile'), '--qualification-run', str(Path('/cpu/lr-profile-test') / 'run-2'),
+                        '--observation-run', str(Path('/cpu/lr-profile-test') / 'run-16'), '--checkpoint', str(checkpoint), *partial_pair]):
+                    with self.assertRaises(SystemExit):
+                        f.main()
+                capture_source.assert_not_called()
+
+            with patch('sys.argv', base + ['--root', str(Path('/cpu/lr-profile-test') / 'malformed-profile'),
+                    '--qualification-run', str(Path('/cpu/lr-profile-test') / 'run-2'), '--observation-run', str(Path('/cpu/lr-profile-test') / 'run-16'),
+                    '--checkpoint', str(checkpoint), '--lr-scale', 'nan', '--warmup-updates', '0']):
+                with self.assertRaisesRegex(AssertionError, 'invalid LR scale'):
+                    f.main()
+            capture_source.assert_not_called()
 
     def test_annotation_metrics_and_recovery_tie(self):
         target_image = next(image for image in self.images if image['image_id'] == 4134)

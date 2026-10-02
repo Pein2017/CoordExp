@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-02-full-label-self-rollout-fit",
-  "lifecycle": "planned",
-  "status": "OBSERVATION_16_ACCEPTED_OPTIMIZER_FOLLOWUP_PLANNED",
+  "lifecycle": "ready",
+  "status": "OPTIMIZER_PROFILE_CPU_ACCEPTED_NATIVE_PENDING",
   "evidence": "accepted",
   "scientific_status": "finite_fit_not_achieved_mixed_coverage_and_regressing_burden",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
@@ -320,7 +320,7 @@
     "accounting_receipt_sha256": "ea76f52049e1536e000062e07a2a648ae09a75cb4a8e20bc286b6d61b2814a9c",
     "operational_bounds": "finite invocation wall/work/identity/failure supervision is specified by each exact release"
   },
-  "job_state": "All native jobs terminal and exact owner/descendant identities absent; optimizer follow-up CPU work is next",
+  "job_state": "LR profile CPU candidate accepted; worker idle; clean commit and exact finite three-arm native releases pending",
   "native_released": false,
   "lead_accepted": true,
   "user_scientific_acceptance": false,
@@ -1130,7 +1130,7 @@
     }
   },
   "optimizer_followup": {
-    "status": "CPU_IMPLEMENTATION_PLANNED_NOT_NATIVE_RELEASED",
+    "status": "LEAD_CPU_ACCEPTED_NATIVE_PENDING",
     "question": "From the same anchor and full570 labels, does a4-global-update learning-rate ramp improve native owner coverage/preservation and output debt versus constant rates and a nominal-sum-matched lower constant rate?",
     "source_reference": "a00cd21550f6824c6bd4edb94d497af67d59202c",
     "updates": 16,
@@ -1167,6 +1167,27 @@
     "stop": "Each invocation exactly16updates; existing operational guards; no quality gate/rollback/retry/automatic extension",
     "native_released": false,
     "missing_label_proxies": false,
-    "output_parent": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01"
+    "output_parent": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01",
+    "cpu_acceptance": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/cpu-01/lead-cpu-acceptance-01.json",
+      "sha256": "d2a9210cd813d818cd82cb77de8f4258a5528ddf8969759e32d018ea8f91c474"
+    },
+    "runtime_packet": {
+      "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01/cpu-01/lr-profile-candidate-01.json",
+      "sha256": "3bca9a586a1f7976bf888604059ba6961bc208c86c99db5fdca15a8912311bac",
+      "arm_field": "proposed_arms",
+      "root_verified": "All nine stage argv arrays match the accepted old16 arrays except per-arm paths and bound recipe; all three exact recipe/profile identities checked."
+    },
+    "execution_order": [
+      "constant",
+      "warmup4",
+      "constant_dose"
+    ],
+    "release_rule": "Each exact16 independent invocation, no overlap; stop bundle on operational failure; quality does not stop or select. All native results require lead acceptance."
+  },
+  "loss_coverage_diagnostic": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/loss-coverage-diagnostic-01.json",
+    "sha256": "2afed9ea4717cc33c2bd0dfe1bd43b2ec10658986f91f650ea84620aa402f73a",
+    "scope": "Existing frozen plans and source only; no model/logit/gradient evidence; sampling/loss changes remain discussion and are not part of LR-profile contrast."
   }
 }

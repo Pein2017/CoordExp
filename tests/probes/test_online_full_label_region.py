@@ -1,5 +1,7 @@
 """CPU falsifiers for the opt-in owner-region correction route."""
+import ast
 import copy
+import inspect
 import importlib
 import tempfile
 import unittest
@@ -37,7 +39,7 @@ class FullLabelRegionTest(unittest.TestCase):
         producer = self.region_producer(**producer_fields)
         return image, o.seal(record, producer)
 
-    def persisted_full_label_fixture(self, root):
+    def persisted_full_label_fixture(self, root, lr_profile=None):
         helper = self.helper()
 
         def rewrite(path, value):
@@ -69,7 +71,7 @@ class FullLabelRegionTest(unittest.TestCase):
         o.p.write(manifest, dict(training=str(training)))
         manifest_sha = o.p.digest(checkpoint / 'inference_payload_manifest.json')
         training_sha = o.p.digest(training)
-        recipe = o.full_label_recipe(checkpoint, manifest_sha, training, training_sha)
+        recipe = o.full_label_recipe(checkpoint, manifest_sha, training, training_sha, lr_profile=lr_profile)
         from probes import full_label_self_rollout
         qual = dict(correction=recipe,
                     decoder_runtime_identity=full_label_self_rollout.decoder_runtime_identity(),
@@ -91,6 +93,7 @@ class FullLabelRegionTest(unittest.TestCase):
             initial = o.p.load(output / 'rank-0' / f'producer-{version}.json')
             producer = dict(initial['producer'], recipe_sha256=o.identity(recipe),
                             owner_region=dict(o.OWNER_REGION), training_sha256=training_sha)
+            if lr_profile is not None:producer['lr_profile'] = dict(lr_profile)
             for rank in range(8):
                 directory = output / f'rank-{rank}'
                 bound = o.p.load(directory / f'producer-{version}.json')
@@ -123,6 +126,10 @@ class FullLabelRegionTest(unittest.TestCase):
                 update_path = directory / f'update-{version + 1}.json'
                 update = o.p.load(update_path)
                 update['producer'] = producer
+                if lr_profile is not None:
+                    update['update'] = version+1
+                    factor=lr_profile['lr_scale']*min((version+1)/lr_profile['warmup_updates'],1) if lr_profile['warmup_updates'] else lr_profile['lr_scale']
+                    update['lrs'] = [1e-5*factor,5e-6*factor]
                 for row in update['forwards']:
                     image_id = row['image_id']
                     image, record, plan = images[image_id], records[image_id], plans[image_id]
@@ -200,6 +207,110 @@ class FullLabelRegionTest(unittest.TestCase):
             rewrite(complete_path, complete)
         return output, root, training, images, inputs, qual
 
+    def test_production_global_optimizer_call_reaches_adamw_with_frozen_lr_profiles(self):
+        # Execute the actual run-loop step statement on CPU AdamW; changing the caller
+        # back to optimizer.step() must fail the ramp and dose expectations.
+        function = ast.parse(inspect.getsource(o.run)).body[0]
+        calls = [node for node in ast.walk(function) if isinstance(node, ast.Expr)
+                 and isinstance(node.value, ast.Call)
+                 and ((isinstance(node.value.func, ast.Name) and node.value.func.id == 'optimizer_step')
+                      or (isinstance(node.value.func, ast.Attribute) and node.value.func.attr == 'step'
+                          and isinstance(node.value.func.value, ast.Name)
+                          and node.value.func.value.id == 'optimizer'))]
+        self.assertEqual(len(calls), 1)
+        statement = compile(ast.Module(body=calls, type_ignores=[]), '<production run optimizer step>', 'exec')
+        original_step = torch.optim.AdamW.step
+        arms = [(None, [1.] * 16, 16.),
+                (dict(lr_scale=1., warmup_updates=0), [1.] * 16, 16.),
+                (dict(lr_scale=1., warmup_updates=4), [.25, .5, .75, 1.] + [1.] * 12, 14.5),
+                (dict(lr_scale=.90625, warmup_updates=0), [.90625] * 16, 14.5)]
+        for profile, factors, nominal_sum in arms:
+            with self.subTest(profile=profile):
+                params = [torch.nn.Parameter(torch.tensor([x], dtype=torch.float64)) for x in [1., 2., 3.]]
+                expected = [torch.nn.Parameter(x.detach().clone()) for x in params]
+                optimizer = torch.optim.AdamW([dict(params=params[:1], lr=1e-5),
+                                               dict(params=params[1:], lr=5e-6)], weight_decay=0)
+                reference = torch.optim.AdamW([dict(params=expected[:1], lr=1e-5),
+                                               dict(params=expected[1:], lr=5e-6)], weight_decay=0)
+                correction = dict(owner_region=dict(o.OWNER_REGION))
+                if profile is not None:correction['lr_profile'] = profile
+                observed = []
+                def step(opt, *args, **kwargs):
+                    observed.append([g['lr'] for g in opt.param_groups])
+                    return original_step(opt, *args, **kwargs)
+                scope = dict(o.__dict__, optimizer=optimizer, correction=correction)
+                for version, factor in enumerate(factors):
+                    scope['version'] = version
+                    for i, (actual, wanted) in enumerate(zip(params, expected)):
+                        actual.grad = torch.tensor([(i+1) * (version+1)], dtype=torch.float64)
+                        wanted.grad = actual.grad.clone()
+                    with patch.object(torch.optim.AdamW, 'step', new=step):
+                        exec(statement, scope)
+                    for group, base in zip(reference.param_groups, [1e-5, 5e-6]):group['lr'] = base*factor
+                    original_step(reference)
+                    self.assertEqual(observed[-1], [1e-5*factor, 5e-6*factor])
+                self.assertEqual(len(observed), 16)
+                self.assertEqual(sum(factors), nominal_sum)
+                self.assertAlmostEqual(sum(row[0]/1e-5 for row in observed), nominal_sum, places=12)
+                self.assertEqual({int(state['step']) for state in optimizer.state.values()}, {16})
+                for actual, wanted in zip(params, expected):torch.testing.assert_close(actual, wanted, rtol=0, atol=0)
+
+    def test_lr_profile_trust_boundary_and_historical_default_identity(self):
+        from probes.full_label_self_rollout import UNIT
+        historical = o.p.load(UNIT / 'state.json')['recipe']
+        default = o.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
+                                      Path(historical['training_path']), historical['training_sha256'])
+        self.assertEqual(o.identity(default), 'a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141')
+        self.assertNotIn('lr_profile', default['optimizer'])
+        profiles = [dict(lr_scale=1.,warmup_updates=0), dict(lr_scale=1.,warmup_updates=4),
+                    dict(lr_scale=.90625,warmup_updates=0)]
+        identities = {o.identity(o.full_label_recipe(Path(historical['checkpoint']), historical['manifest_sha256'],
+                      Path(historical['training_path']), historical['training_sha256'], lr_profile=p)) for p in profiles}
+        self.assertEqual(len(identities),3)
+        self.assertNotIn(o.identity(default),identities)
+        invalid = [None, {}, dict(lr_scale=1), dict(lr_scale=1,warmup_updates=0,unknown=True),
+                   dict(lr_scale=True,warmup_updates=0), dict(lr_scale='1',warmup_updates=0),
+                   dict(lr_scale=0,warmup_updates=0), dict(lr_scale=-1,warmup_updates=0),
+                   dict(lr_scale=float('inf'),warmup_updates=0), dict(lr_scale=float('nan'),warmup_updates=0),
+                   dict(lr_scale=1,warmup_updates=True),dict(lr_scale=1,warmup_updates=4.),
+                   dict(lr_scale=1,warmup_updates=-1),dict(lr_scale=1,warmup_updates=17)]
+        for profile in invalid:
+            with self.subTest(profile=profile), self.assertRaises(AssertionError):o.validate_lr_profile(profile)
+        for update in [0,17,True,1.,'1']:
+            with self.subTest(update=update), self.assertRaises(AssertionError):o.full_label_learning_rates(profiles[1],update)
+
+    def test_profiled_persisted_readback_rejects_resigned_lr_update_and_profile_drift(self):
+        profile = dict(lr_scale=1.,warmup_updates=4)
+        with tempfile.TemporaryDirectory() as tmp:
+            output, root, training, images, inputs, qual = self.persisted_full_label_fixture(Path(tmp),profile)
+            original_load=o.p.load
+            def load(path):
+                if Path(path)==o.INPUTS:return inputs
+                return original_load(path)
+            kwargs=dict(geometry_weight=.1,start_checkpoint=root/'anchor',recipe_sha256=o.identity(qual['correction']),
+                        correction_arm='treatment',duplicate_weight=1,rollout_backend='vllm',schema_geometry=True,
+                        activation_checkpointing=False,full_label_region=True)
+            with patch.object(o.p,'load',side_effect=load),patch.object(o.r,'frontend',return_value=self.q), \
+                 patch('probes.full_label_self_rollout.verify_inputs'),patch('src.artifacts.git_identity.verify_source_identity'), \
+                 patch.object(o,'verify_start_export'):
+                o.readback(output,root,2,**kwargs)
+                self.assertEqual(original_load(output/'readback.json')[0]['producer']['lr_profile'],profile)
+                update_path=output/'rank-0/update-1.json';complete_path=output/'rank-0/complete.json'
+                original_update=update_path.read_bytes();original_complete=complete_path.read_bytes()
+                for mutation in ['wrong-rate','wrong-update','wrong-profile']:
+                    with self.subTest(mutation=mutation):
+                        update=original_load(update_path)
+                        if mutation=='wrong-rate':update['lrs']=[1e-5,5e-6]
+                        elif mutation=='wrong-update':update['update']=2
+                        else:update['producer']['lr_profile']=dict(lr_scale=.90625,warmup_updates=0)
+                        update_path.write_text(o.p.canonical(update)+'\n')
+                        complete=original_load(complete_path);complete['artifacts']['update-1.json']=o.p.digest(update_path)
+                        complete_path.write_text(o.p.canonical(complete)+'\n')
+                        (output/'readback.json').unlink(missing_ok=True)
+                        with self.assertRaises(AssertionError):o.readback(output,root,2,**kwargs)
+                        self.assertFalse((output/'readback.json').exists())
+                        update_path.write_bytes(original_update);complete_path.write_bytes(original_complete)
+
     def test_recipe_binding_source_closure_and_cli_delivery(self):
         checkpoint, training = Path('/cpu/anchor'), Path('/cpu/training.json')
         recipe = o.full_label_recipe(checkpoint, 'manifest-sha', training, 'training-sha')
@@ -244,6 +355,18 @@ class FullLabelRegionTest(unittest.TestCase):
                 with patch.object(o.p, 'load', return_value=mixed), self.assertRaises(AssertionError):
                     o.correction_binding(root, 'treatment', 1, checkpoint, .1,
                                          o.identity(recipe), full_label_region=enabled)
+            for profile in (None, {}, dict(lr_scale=1, warmup_updates=17),
+                            dict(lr_scale=1, warmup_updates=0, scheduler='cosine')):
+                malformed = copy.deepcopy(qual)
+                malformed['correction']['optimizer']['lr_profile'] = profile
+                with patch.object(o.p, 'load', return_value=malformed), self.assertRaises(AssertionError):
+                    o.correction_binding(root, 'treatment', 1, checkpoint, .1,
+                                         o.identity(malformed['correction']), full_label_region=True)
+            malformed = copy.deepcopy(qual)
+            malformed['correction']['optimizer']['scheduler'] = 'cosine'
+            with patch.object(o.p, 'load', return_value=malformed), self.assertRaises(AssertionError):
+                o.correction_binding(root, 'treatment', 1, checkpoint, .1,
+                                     o.identity(malformed['correction']), full_label_region=True)
 
         argv = ['--root', str(root), '--output', '/cpu/out', '--updates', '2',
                 '--geometry-weight', '.1', '--start-checkpoint', str(checkpoint),
