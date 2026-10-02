@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-completed-row-crossover",
-  "lifecycle": "terminal_candidate",
-  "status": "NATIVE_TERMINAL_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
-  "evidence": "Six released native requests, same-release readback and cleanup; worker candidate only",
-  "scientific_status": "measured_selected_conditional_candidate",
+  "lifecycle": "closed",
+  "status": "NATIVE_LEAD_ACCEPTED",
+  "evidence": "accepted",
+  "scientific_status": "x1_72_not_necessary_for_selected_fresh_completed_row_owner_exchange",
   "protocol": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -14,7 +14,7 @@
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03",
   "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "not_authorized": [
     "worker scheduling a separate research unit",
@@ -23,7 +23,7 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "Released invocation and same-release readback exited0; all declared native processes absent, clean execution source unchanged. No live job, extra request or retry; terminal candidate awaits separate lead acceptance.",
+  "job_state": "Bounded round03 package closed as completed_as_released after separate native lead acceptance. Released invocation/readback terminal, owned processes absent; no live job, retries, further worker execution or next-unit scheduling.",
   "boundary": "Autonomous round03 tests three fixed completed-row histories with equal input length and two planned repeats. Primary comparisons are selected conditional observations, not natural greedy or physical recovery. Native release follows lead CPU acceptance.",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-candidate-01.json",
   "cpu_contract": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-01/contract.json",
@@ -73,5 +73,12 @@
     "C-B",
     "C-H"
   ],
-  "next_unit_scheduled": false
+  "next_unit_scheduled": false,
+  "native_lead_accepted": true,
+  "technical_status": "completed_as_released",
+  "scientific_ruling": "research/experiments/2026-10-03-completed-row-crossover/lead-ruling-02.md",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/lead-acceptance-01.json",
+    "sha256": "ec559aac3ed02be82513bd98ed7fa4f21861a7c9879ea01cabef6e942feb0d26"
+  }
 }

@@ -55,7 +55,7 @@ semantic instability changes eligible claims while retaining the fixed schedule.
 No native release, scientific acceptance, promotion or next-unit scheduling is
 asserted by this CPU candidate.
 
-## Released native terminal candidate
+## Released native evidence
 
 Exactly one native invocation used clean execution commit `5ce39ccca78edf5be0714c40ab07c9221ae62d5a`
 in `/data/CoordExp/.worktrees/greedy-prefix-native-01`. The released contract SHA256 was
@@ -149,10 +149,24 @@ sampled per-process trace. Native-01 payload including readback/logs is1,469,064
 GPU driver total peak memory, energy and sampled per-process host RSS were
 not measured; no estimate substitutes for them.
 
-This is a worker terminal candidate requiring separate lead acceptance.
+The worker terminal candidate is now separately lead-accepted as completed as released.
 Fresh B/H share observed category-owner sets and reach EOS, while their lengths
 and burdens differ. These are selected completed-row conditional observations,
 with assisted credit, incumbent losses and altered historical continuations.
 They establish no physical recovery, natural empty-history/global efficacy or
 internal mechanism. Lead owns scientific interpretation and further scheduling;
 the worker scheduled no next unit and has no live native job.
+
+## Lead acceptance and closure
+
+The bounded package is **closed**, with accepted evidence and technical status
+`completed_as_released`. The separate immutable lead receipt is
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/lead-acceptance-01.json`,
+SHA256 `ec559aac3ed02be82513bd98ed7fa4f21861a7c9879ea01cabef6e942feb0d26`.
+It accepts the unchanged worker candidate at SHA256
+`b98c35e54bb6fa97e32afb0264e00b278c200c6d552e5c3c4c232eb508821c8b`.
+Sealed candidate/raw/readback fields and identities remain unchanged; acceptance
+is recorded separately in this record and state. User scientific acceptance
+remains false. The [lead ruling](lead-ruling-02.md) owns interpretation and learning
+implications. The worker scheduled no next unit; no live job or further execution
+is authorized by this closed package.
