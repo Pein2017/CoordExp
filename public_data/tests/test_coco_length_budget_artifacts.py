@@ -2,18 +2,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
 from PIL import Image
 
 from public_data.scripts.build_coco_length_budget_artifacts import (
+    CompactFullTokenBudgetEstimator,
     CocoLengthBudgetBuilder,
     CoordTripletConverter,
     ProvenanceManifestWriter,
     TokenBudgetBreakdown,
     _coord_record_to_norm,
+    parse_args,
 )
+from public_data.scripts.convert_to_coord_tokens import (
+    int_to_token,
+    is_coord_token,
+    token_to_int,
+)
+from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +63,103 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+class _FakeTokenizer:
+    def convert_tokens_to_ids(self, token: str) -> int:
+        assert token == "<|image_pad|>"
+        return 99
+
+    def apply_chat_template(self, messages: list[dict[str, Any]], **kwargs: Any) -> list[int]:
+        self.messages = messages
+        assert kwargs == {
+            "tokenize": True,
+            "add_generation_prompt": False,
+            "return_tensors": None,
+        }
+        return [10, 99, 11, 12]
+
+    def __call__(self, text: str, *, add_special_tokens: bool) -> dict[str, list[int]]:
+        assert add_special_tokens is False
+        self.assistant_text = text
+        return {"input_ids": [1, 2, 3]}
+
+
+def test_compact_full_estimator_uses_current_renderer_and_image_plan() -> None:
+    tokenizer = _FakeTokenizer()
+    estimator = CompactFullTokenBudgetEstimator(
+        tokenizer=tokenizer,
+        processor=SimpleNamespace(
+            image_processor=SimpleNamespace(
+                patch_size=16,
+                merge_size=2,
+                temporal_patch_size=2,
+            )
+        ),
+        template_config=TemplateConfig(
+            object_field_order="desc_first",
+            object_ordering="source_order",
+            assistant_format="object_box_closed",
+            prompt=TemplatePromptConfig(system="system", user="objects"),
+        ),
+        processor_config=ProcessorConfig(
+            do_resize=False,
+            max_raw_pixels=4096,
+            max_merged_visual_tokens=4,
+        ),
+    )
+
+    measured = estimator.measure(
+        {
+            "image_id": 7,
+            "images": ["images/train2017/000000000007.jpg"],
+            "width": 64,
+            "height": 64,
+            "objects": [
+                {"desc": "cat", "bbox_2d": ["<|coord_1|>", 2, 3, 4]}
+            ],
+        }
+    )
+
+    assert measured == TokenBudgetBreakdown(
+        total_tokens=7,
+        text_tokens_without_image_placeholders=3,
+        image_patch_tokens=4,
+        image_placeholders=1,
+        assistant_tokens=3,
+        object_count=1,
+    )
+    assert tokenizer.messages[0] == {
+        "role": "system",
+        "content": [{"type": "text", "text": "system"}],
+    }
+    assert tokenizer.messages[1]["content"][1] == {
+        "type": "text",
+        "text": "objects",
+    }
+    assert tokenizer.assistant_text == (
+        "<|object_ref_start|>cat<|object_ref_end|><|box_start|>"
+        "<|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>"
+    )
+
+
+def test_length_budget_cli_requires_explicit_training_config() -> None:
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_coord_token_codec_preserves_norm1000_boundaries() -> None:
+    assert int_to_token(0) == "<|coord_0|>"
+    assert int_to_token(999) == "<|coord_999|>"
+    assert is_coord_token("<|coord_1000|>")
+    assert token_to_int("<|coord_0|>") == 0
+    assert token_to_int("<|coord_999|>") == 999
+    with pytest.raises(ValueError, match="out of range 0..999"):
+        token_to_int("<|coord_1000|>")
+    with pytest.raises(ValueError, match="Malformed coord token"):
+        token_to_int("<|coord_-1|>")
+    with pytest.raises(ValueError, match="out of range 0..999"):
+        int_to_token(1000)
 
 
 def test_coco_length_budget_builder_filters_aligned_triplets(tmp_path: Path) -> None:
@@ -119,7 +225,7 @@ def test_coco_length_budget_builder_filters_aligned_triplets(tmp_path: Path) -> 
     assert str(coord_rows[0]["objects"][0]["bbox_2d"][0]).startswith("<|coord_")
 
 
-def test_coord_record_to_norm_preserves_proxy_metadata() -> None:
+def test_coord_record_to_norm_preserves_additional_object_fields() -> None:
     record = {
         "images": ["../base/images/train2017/000000000001.jpg"],
         "objects": [
@@ -131,8 +237,8 @@ def test_coord_record_to_norm_preserves_proxy_metadata() -> None:
                     "<|coord_4|>",
                 ],
                 "desc": "clock",
-                "proxy_source": "lvis",
-                "lvis_ann_id": 99,
+                "review_label": "clock-face",
+                "review_annotation_id": 99,
             }
         ],
         "width": 64,
@@ -145,8 +251,8 @@ def test_coord_record_to_norm_preserves_proxy_metadata() -> None:
     norm = _coord_record_to_norm(record)
 
     assert norm["objects"][0]["bbox_2d"] == [1, 2, 3, 4]
-    assert norm["objects"][0]["proxy_source"] == "lvis"
-    assert norm["objects"][0]["lvis_ann_id"] == 99
+    assert norm["objects"][0]["review_label"] == "clock-face"
+    assert norm["objects"][0]["review_annotation_id"] == 99
 
 
 def test_provenance_manifest_writer_emits_schema_valid_processed_manifest(

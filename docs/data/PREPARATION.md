@@ -45,7 +45,6 @@ public_data/coco/images/res-1024/
 public_data/coco/views/coco80/full/
 public_data/coco/views/coco80/len-12000/
 public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
 ```
 
 Canonical view JSONLs under `public_data/coco/views/**` use:
@@ -192,30 +191,29 @@ budget instead of object count. The 12k COCO view budget counts:
 - post-merge Qwen3-VL image patch tokens;
 - system/user chat-template tokens;
 - the rendered compact-full assistant detection sequence;
-- all rendered assistant object rows present after optional LVIS-proxy
-  augmentation.
+- all rendered assistant object rows in the base COCO view.
 
-Use the same tokenizer as the target compact-full checkpoint:
+Pass the exact schema-version-1 training config used for the target model and
+template. The builder reads its `model.base_model`; `--model-path` is an
+optional override.
 
 ```bash
-PYTHONPATH=. python public_data/scripts/build_coco_length_budget_artifacts.py \
-  --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
+PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
+  --config "${TOKEN_BUDGET_CONFIG:?set the exact schema_version: 1 training config}" \
   --source-preset public_data/coco/rescale_32_1024_bbox \
   --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \
-  --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 \
-  --projection-root temp/coco_lvis_projection_length_budget \
-  --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv \
   --max-total-tokens 12000 \
   --splits train val \
-  --build-lvis-proxy \
   --force
 ```
 
-The legacy length-budget roots above are derived JSONL/meta-only artifacts.
-Phase 1 canonical views write the same policy under
-`public_data/coco/views/{coco80,coco80-lvis-proxy}/len-12000/` and resolve
-`images[]` through `public_data/coco/images/res-1024/`. Do not copy images into
-each annotation view.
+The legacy COCO length-budget root above is a derived JSONL/meta-only artifact.
+The v1-backed LVIS-proxy rebuild recipe and corresponding proxy view have been
+retired together with the v1 processed directory. Existing v2/hard outputs and
+historical provenance receipts remain unchanged.
+Phase 1 canonical views resolve `images[]` through
+`public_data/coco/images/res-1024/`; do not copy images into each annotation
+view.
 
 ---
 

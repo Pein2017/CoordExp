@@ -31,7 +31,6 @@ from public_data.view_contracts import (
     COORDINATE_SPACE_NORM1000,
     COORDINATE_STORAGE_INTEGER,
     IMAGE_PATH_SEMANTICS_IMAGE_STORE_RELATIVE,
-    PROXY_ANNOTATION_POLICY_ALL_PROXY,
     SCHEMA_VERSION_V1,
     write_image_store_metadata,
     write_view_metadata,
@@ -39,10 +38,6 @@ from public_data.view_contracts import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG = Path(
-    "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
-)
-DEFAULT_MODEL = Path("model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp")
 DEFAULT_SOURCE_PRESET = Path("public_data/coco/rescale_32_1024_bbox")
 DEFAULT_IMAGE_STORE_ROOT = Path("public_data/coco/images/res-1024")
 DEFAULT_VIEWS_ROOT = Path("public_data/coco/views")
@@ -50,12 +45,10 @@ DEFAULT_LEGACY_LENGTH_BUDGET_SOURCE = Path(
     "public_data/coco/rescale_32_1024_bbox_len12000"
 )
 DEFAULT_LEGACY_MAX_OBJECTS_SOURCE = Path("public_data/coco/rescale_32_1024_bbox_max60")
-DEFAULT_PROXY_SOURCE = Path("public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000")
 DEFAULT_VIEWS = (
     "coco80/full",
     "coco80/len-12000",
     "coco80/max-60",
-    "coco80-lvis-proxy/len-12000",
 )
 SUPPORTED_IMAGE_STORE_MODES = frozenset(
     {"copy", "hardlink", "reflink", "reuse-existing"}
@@ -74,7 +67,6 @@ class CocoViewFactoryConfig:
     :param views_root: Canonical COCO views root.
     :param legacy_length_budget_source: Historical length-budget source root.
     :param legacy_max_objects_source: Historical max-60 source root.
-    :param proxy_source: Existing all-proxy source root for the research view.
     :param splits: Dataset splits to build.
     :param views: View names to build.
     :param max_total_tokens: Length budget used by ``len-*`` views.
@@ -82,8 +74,8 @@ class CocoViewFactoryConfig:
     :param reuse_existing_image_store: Whether a non-empty target is reusable.
     :param dry_run: Whether to validate and report without artifact writes.
     :param dry_run_report: Optional dry-run report path.
-    :param config_path: Latest compact detection config for real estimator use.
-    :param model_path: Local Qwen tokenizer/processor path for real estimator use.
+    :param config_path: Explicit V1 training config for real estimator use.
+    :param model_path: Optional tokenizer/processor override for real estimator use.
     """
 
     repo_root: Path
@@ -92,7 +84,6 @@ class CocoViewFactoryConfig:
     views_root: Path
     legacy_length_budget_source: Path | None
     legacy_max_objects_source: Path | None
-    proxy_source: Path | None
     splits: tuple[str, ...]
     views: tuple[str, ...]
     max_total_tokens: int
@@ -534,142 +525,6 @@ class LegacyMaxObjectsViewBuilder:
         )
 
 
-class AllProxyResearchViewBuilder:
-    """Builder for the Phase 1 all-proxy research view."""
-
-    def __init__(
-        self,
-        *,
-        config: CocoViewFactoryConfig,
-        estimator: LengthEstimator,
-        stats_writer: "ViewStatsWriter",
-        manifest_builder: "ViewManifestPayloadBuilder",
-    ) -> None:
-        self._config = config
-        self._estimator = estimator
-        self._stats_writer = stats_writer
-        self._manifest_builder = manifest_builder
-
-    def build(self, *, view_name: str, max_total_tokens: int) -> dict[str, Any]:
-        """Build the all-proxy view and filter after annotation policy."""
-
-        # resolving proxy source files
-        if self._config.proxy_source is None:
-            raise ValueError("proxy_source is required for all-proxy views")
-        source_suffix = _source_suffix_for_root(self._config.proxy_source)
-        view_root = self._config.view_root(view_name)
-
-        # filtering proxy-annotated rows
-        primary_jsonl: dict[str, str] = {}
-        length_stats: dict[str, Mapping[str, str]] = {}
-        summary = _empty_summary()
-        for split in self._config.splits:
-            split_summary, stats_ref = self._build_split(
-                source_jsonl=self._config.proxy_source / f"{split}{source_suffix}",
-                output_jsonl=view_root / f"{split}.jsonl",
-                split=split,
-                max_total_tokens=max_total_tokens,
-            )
-            primary_jsonl[split] = f"{split}.jsonl"
-            length_stats[split] = stats_ref
-            _merge_summary(summary, split_summary)
-
-        # writing proxy view metadata
-        if not self._config.dry_run:
-            metadata = self._manifest_builder.build_view_metadata(
-                view_name=view_name,
-                primary_jsonl=primary_jsonl,
-                summary=summary,
-                sample_policy={
-                    **_length_budget_sample_policy(max_total_tokens),
-                    "applied_after_annotation_policy": True,
-                },
-                length_budget_scope=_length_budget_scope(),
-                length_budget_template_id="compact-detection-v1",
-                length_stats=length_stats,
-                annotation_policy=PROXY_ANNOTATION_POLICY_ALL_PROXY,
-                parent_view="coco80/full",
-                proxy_policy={
-                    "source_artifacts": [
-                        {
-                            "kind": "legacy_all_proxy_jsonl",
-                            "path": _safe_artifact_reference_path(
-                                self._config.proxy_source,
-                                repo_root=self._config.repo_root,
-                            ),
-                        }
-                    ]
-                },
-            )
-            write_view_metadata(view_root / "meta.json", metadata)
-
-        return summary
-
-    def _build_split(
-        self,
-        *,
-        source_jsonl: Path,
-        output_jsonl: Path,
-        split: str,
-        max_total_tokens: int,
-    ) -> tuple[dict[str, Any], Mapping[str, str]]:
-        """Build one proxy split."""
-
-        if not source_jsonl.is_file():
-            raise FileNotFoundError(f"proxy source JSONL does not exist: {source_jsonl}")
-
-        if not self._config.dry_run:
-            output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        stats = SplitLengthStats(
-            split=split,
-            source_jsonl=_safe_artifact_reference_path(
-                source_jsonl,
-                repo_root=self._config.repo_root,
-            ),
-        )
-        summary = _empty_summary()
-        output_handle = None
-        try:
-            if not self._config.dry_run:
-                output_handle = output_jsonl.open("w", encoding="utf-8")
-            with source_jsonl.open("r", encoding="utf-8") as source:
-                for line in source:
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    row = normalize_view_record(
-                        json.loads(stripped),
-                        split=split,
-                        source_image_dir=self._config.source_image_dir,
-                        assume_normalized=True,
-                    )
-                    row = attach_object_supervision(row)
-                    breakdown = self._estimator.measure(row)
-                    stats.observe(row, breakdown)
-                    if breakdown.total_tokens > max_total_tokens:
-                        stats.drop(row, breakdown)
-                        continue
-                    if output_handle is not None:
-                        _write_jsonl_record(output_handle, row)
-                    stats.keep(row, breakdown)
-                    _observe_written_row(summary, row)
-        finally:
-            if output_handle is not None:
-                output_handle.close()
-
-        stats_ref = self._stats_writer.write_length_stats(
-            view_root=output_jsonl.parent,
-            split=split,
-            stats=stats.as_dict(
-                output_jsonl=_safe_artifact_reference_path(
-                    output_jsonl,
-                    repo_root=self._config.repo_root,
-                )
-            ),
-            dry_run=self._config.dry_run,
-        )
-        return summary, stats_ref
-
 
 class DryRunViewPlanner:
     """Planner for annotation views that are not materialized in dry-run mode."""
@@ -903,15 +758,6 @@ class SourceComparisonWriter:
             return SourceComparisonSource(
                 root=self._config.legacy_max_objects_source,
                 suffix=_source_suffix_for_root(self._config.legacy_max_objects_source),
-                mode="exact_membership",
-            )
-
-        if view_name == "coco80-lvis-proxy/len-12000":
-            if self._config.proxy_source is None:
-                raise ValueError("proxy_source is required for all-proxy views")
-            return SourceComparisonSource(
-                root=self._config.proxy_source,
-                suffix=_source_suffix_for_root(self._config.proxy_source),
                 mode="exact_membership",
             )
 
@@ -1471,40 +1317,20 @@ def normalize_view_record(
     return normalized
 
 
-def attach_object_supervision(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a row with object supervision keyed by object id."""
-
-    # copying and locating metadata containers
-    out = copy.deepcopy(dict(record))
-    metadata = out.setdefault("metadata", {})
-    if not isinstance(metadata, dict):
-        metadata = {}
-        out["metadata"] = metadata
-    supervision = metadata.setdefault("supervision", {})
-    if not isinstance(supervision, dict):
-        supervision = {}
-        metadata["supervision"] = supervision
-
-    # constructing object-level supervision snapshots
-    object_supervision: dict[str, dict[str, Any]] = {}
-    for obj in out.get("objects") or []:
-        if not isinstance(obj, dict):
-            continue
-        object_id = obj.get("object_id")
-        if not isinstance(object_id, str) or object_id == "":
-            continue
-        snapshot = _object_supervision_snapshot(obj)
-        object_supervision[object_id] = snapshot
-    supervision["object_supervision"] = object_supervision
-    return out
-
-
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the COCO view factory."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Explicit schema_version: 1 config required for real length-budget builds.",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        help="Optional tokenizer/processor override; defaults to config.model.base_model.",
+    )
     parser.add_argument("--source-preset", type=Path, default=DEFAULT_SOURCE_PRESET)
     parser.add_argument("--image-store-root", type=Path, default=DEFAULT_IMAGE_STORE_ROOT)
     parser.add_argument("--views-root", type=Path, default=DEFAULT_VIEWS_ROOT)
@@ -1518,7 +1344,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_LEGACY_MAX_OBJECTS_SOURCE,
     )
-    parser.add_argument("--proxy-source", type=Path, default=DEFAULT_PROXY_SOURCE)
     parser.add_argument("--splits", nargs="+", default=["train", "val"])
     parser.add_argument("--views", nargs="+", default=list(DEFAULT_VIEWS))
     parser.add_argument("--max-total-tokens", type=int, default=12000)
@@ -1551,6 +1376,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.image_store_mode = "reuse-existing"
         else:
             parser.error("--image-store-mode is required unless --comparison-only is set")
+    if (
+        args.config is None
+        and not args.comparison_only
+        and not args.dry_run
+        and any("len-" in view for view in args.views)
+    ):
+        parser.error("--config is required when building length-budget views")
     return args
 
 
@@ -1569,9 +1401,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         legacy_max_objects_source=_resolve_repo_path(args.legacy_max_objects_source)
         if args.legacy_max_objects_source is not None
         else None,
-        proxy_source=_resolve_repo_path(args.proxy_source)
-        if args.proxy_source is not None
-        else None,
         splits=tuple(str(split) for split in args.splits),
         views=tuple(str(view) for view in args.views),
         max_total_tokens=int(args.max_total_tokens),
@@ -1579,8 +1408,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         reuse_existing_image_store=bool(args.reuse_existing_image_store),
         dry_run=bool(args.dry_run),
         dry_run_report=args.dry_run_report,
-        config_path=_resolve_repo_path(args.config),
-        model_path=_resolve_repo_path(args.model_path),
+        config_path=_resolve_repo_path(args.config) if args.config is not None else None,
+        model_path=_resolve_repo_path(args.model_path)
+        if args.model_path is not None
+        else None,
     )
 
     # optionally attaching comparison artifacts to already materialized views
@@ -1605,7 +1436,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     estimator: LengthEstimator | None = None
     if not config.dry_run and any("len-" in view for view in config.views):
         assert config.config_path is not None
-        assert config.model_path is not None
         estimator = CompactFullTokenBudgetEstimator.from_config(
             config.config_path,
             config.model_path,
@@ -1647,29 +1477,6 @@ def main(argv: Sequence[str] | None = None) -> None:
                 config=config,
                 writer=writer,
             ).build(view_name=view, max_objects=60)
-        elif view == "coco80-lvis-proxy/len-12000":
-            if config.dry_run:
-                if config.proxy_source is None:
-                    raise ValueError("proxy_source is required for all-proxy views")
-                summary[view] = dry_run_planner.plan_view(
-                    source_root=config.proxy_source,
-                    view_name=view,
-                    source_suffix=_source_suffix_for_root(config.proxy_source),
-                    parent_view="coco80/full",
-                    sample_policy={
-                        **_length_budget_sample_policy(config.max_total_tokens),
-                        "applied_after_annotation_policy": True,
-                    },
-                )
-                continue
-            if estimator is None:
-                raise RuntimeError("length estimator was not initialized")
-            summary[view] = AllProxyResearchViewBuilder(
-                config=config,
-                estimator=estimator,
-                stats_writer=stats_writer,
-                manifest_builder=manifest_builder,
-            ).build(view_name=view, max_total_tokens=config.max_total_tokens)
         else:
             raise ValueError(f"unsupported Phase 1 view: {view}")
 
@@ -1750,44 +1557,6 @@ def _ensure_object_ids(record: dict[str, Any]) -> None:
         object_id = obj.get("object_id")
         if not isinstance(object_id, str) or object_id == "":
             obj["object_id"] = f"{image_key}:{index}"
-
-
-def _object_supervision_snapshot(obj: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the supervision sidecar snapshot for one rendered object."""
-
-    source_role = obj.get("source_role") or obj.get("role")
-    if not isinstance(source_role, str) or source_role == "":
-        source_role = (
-            "lvis_proxy_candidate"
-            if _has_lvis_proxy_evidence(obj)
-            else "coco_ground_truth"
-        )
-
-    snapshot: dict[str, Any] = {"source_role": source_role}
-    for key in (
-        "relation",
-        "source",
-        "proxy_source",
-        "category_id",
-        "category_name",
-        "lvis_ann_id",
-        "lvis_category_id",
-        "lvis_category_name",
-        "coco_category_id",
-        "coco_category_name",
-        "coordinate_weight",
-        "regression_weight",
-        "hard_bbox_supervision",
-    ):
-        if key in obj:
-            snapshot[key] = copy.deepcopy(obj[key])
-
-    # defaulting direct bbox supervision off for inferred proxy candidates
-    if source_role == "lvis_proxy_candidate":
-        snapshot.setdefault("coordinate_weight", 0.0)
-        snapshot.setdefault("regression_weight", 0.0)
-        snapshot.setdefault("hard_bbox_supervision", False)
-    return snapshot
 
 
 def _has_lvis_proxy_evidence(obj: Mapping[str, Any]) -> bool:

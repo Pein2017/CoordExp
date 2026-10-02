@@ -68,7 +68,6 @@ public_data/coco/images/res-1024/
 public_data/coco/views/coco80/full/
 public_data/coco/views/coco80/len-12000/
 public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
 ```
 
 View JSONLs are model/eval annotation surfaces. Their `images[]` entries are

@@ -8,7 +8,7 @@ Outputs live under:
 - `public_data/coco/raw/` (downloaded artifacts + converted JSONL)
 - `public_data/coco/<preset>/` (shared unified pipeline artifacts via `public_data/run.sh`)
 - `public_data/coco/images/res-1024/` (Phase 1 shared 1024 image store)
-- `public_data/coco/views/{coco80,coco80-lvis-proxy}/...` (Phase 1 canonical annotation views)
+- `public_data/coco/views/coco80/...` (canonical base annotation views)
 
 ## What you get
 - Raw COCO 2017 download (images + `instances_{train,val}2017.json`)
@@ -114,7 +114,6 @@ public_data/coco/images/res-1024/
 public_data/coco/views/coco80/full/
 public_data/coco/views/coco80/len-12000/
 public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
 ```
 
 Canonical view JSONLs under `views/**` store:
@@ -122,16 +121,17 @@ Canonical view JSONLs under `views/**` store:
 - `images[]` paths relative to `public_data/coco/images/res-1024/`, such as
   `images/train2017/000000123456.jpg`;
 - strict-JSON norm1000 integer coordinates in `bbox_2d` / `poly`;
-- COCO80 or COCO80+LVIS-proxy annotation rows according to the view path and
+- COCO80 annotation rows according to the view path and
   local `meta.json`;
 - assistant coordinate rendering as Qwen `<|coord_k|>` tokens at training or
   inspection time, not as the stored view format.
 
 For `len-12000` views, the budget includes Qwen image patch tokens,
 system/user chat-template tokens, and the rendered assistant object sequence.
-For proxy views, the budget is applied after LVIS-proxy augmentation so the
-final rendered object sequence fits the 12k scope. Support sidecars that are
-not rendered into the assistant response are not part of that budget.
+The v1 LVIS-proxy data and its construction routes are retired. Historical
+provenance manifests describe the earlier data; they are not reconstruction
+commands supported by the current builder. Token-budget builds require an
+explicit current training config.
 
 `max-60` remains a legacy object-count-filtered view for historical
 comparison. Treat `max_objects` as deprecated runtime policy; prefer a prepared

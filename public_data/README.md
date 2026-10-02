@@ -25,10 +25,12 @@ IoU/coverage denominators and COCO crowd exclusion are preserved.
 
 Interpretation of the finite audit and the later weighted/hard v2 export lives
 in the canonical Research Probes `research/questions/physical-evaluation.md`.
-The storage migration did not alter the existing v2 exporter, tests or datasets.
+The v1-backed proxy rebuild path and v1 processed directory were retired under
+the 2026-10-02 user ruling. Existing v2/hard outputs and historical receipts
+remain unchanged.
 Source/report rollback and old-to-new asset identities are recorded in
 `openspec/changes/route-owned-outputs-and-migrate-legacy/` at root main. Remaining
-loose one-off output-directory generators are historical HOLDs, not supported
+loose one-off output-directory generators were retired; they are not supported
 entrypoints; do not launch them to recreate the old root-output layout.
 
 ## Scope & Prereqs
@@ -81,7 +83,6 @@ public_data/coco/images/res-1024/
 public_data/coco/views/coco80/full/
 public_data/coco/views/coco80/len-12000/
 public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
 ```
 
 The canonical view JSONLs under `public_data/coco/views/**` differ from legacy
@@ -204,21 +205,18 @@ compact-full training should not rely on runtime `max_objects` filtering.
 ## Length-Budget Filtering (`len{N}`)
 
 For compact-full Stage-1 datasets, prefer a total-token budget over an object
-count cap. The 12k COCO budget includes image patch tokens, system/user
-chat-template tokens, and the rendered assistant object sequence after any
-LVIS-proxy augmentation:
+count cap. The 12k base COCO budget includes image patch tokens, system/user
+chat-template tokens, and the rendered assistant object sequence. The builder
+requires an explicit schema-version-1 training config and uses its template,
+processor limits, and `model.base_model`; `--model-path` is an optional override.
 
 ```bash
 PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py \
-  --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp \
+  --config "${TOKEN_BUDGET_CONFIG:?set the exact schema_version: 1 training config}" \
   --source-preset public_data/coco/rescale_32_1024_bbox \
   --coco-output public_data/coco/rescale_32_1024_bbox_len12000 \
-  --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 \
-  --projection-root temp/coco_lvis_projection_length_budget \
-  --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv \
   --max-total-tokens 12000 \
   --splits train val \
-  --build-lvis-proxy \
   --force
 ```
 
@@ -229,11 +227,9 @@ image-store-relative `images[]` paths; they do not copy or hardlink an
 
 Current legacy 12k outputs:
 - `public_data/coco/rescale_32_1024_bbox_len12000/`
-- `public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000/`
 
 Phase 1 canonical 12k view paths:
 - `public_data/coco/views/coco80/len-12000/`
-- `public_data/coco/views/coco80-lvis-proxy/len-12000/`
 
 Legacy `build_coco_length_budget_artifacts.py` roots write
 `*.length_budget_stats.json` split sidecars and `pipeline_manifest.json`.

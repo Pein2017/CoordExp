@@ -43,8 +43,8 @@ manifests/public_data_provenance/
 Mirror the `public_data/` path below that directory. Example:
 
 ```text
-public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy/
-manifests/public_data_provenance/coco/rescale_32_1024_bbox_max60_lvis_proxy.json
+public_data/coco/rescale_32_1024_bbox_len12000/
+manifests/public_data_provenance/coco/rescale_32_1024_bbox_len12000.json
 ```
 
 The provenance record should answer:

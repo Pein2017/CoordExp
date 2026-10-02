@@ -13,7 +13,6 @@ from public_data.scripts.build_coco_length_budget_artifacts import (
     _model_facing_objects,
 )
 from public_data.scripts.build_coco_views import (
-    AllProxyResearchViewBuilder,
     CocoViewFactoryConfig,
     ImageStoreAdopter,
     LegacyMaxObjectsViewBuilder,
@@ -175,131 +174,6 @@ def test_coco80_max60_preserves_historical_membership_from_norm1000_source(
         "max_objects": 60,
         "membership_source": "public_data/coco/rescale_32_1024_bbox_max60",
     }
-
-
-def test_coco80_lvis_proxy_len12000_records_object_supervision_by_object_id(
-    tmp_path: Path,
-) -> None:
-    proxy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy"
-    _write_jsonl(
-        proxy_root / "train.norm.jsonl",
-        [
-            _norm_row(
-                image_id=20,
-                fake_total_tokens=12000,
-                objects=[
-                    {
-                        "object_id": "coco:20:0",
-                        "desc": "dog",
-                        "bbox_2d": [10, 10, 100, 100],
-                        "source_role": "coco_ground_truth",
-                    },
-                    {
-                        "object_id": "lvis:20:1",
-                        "desc": "leash",
-                        "bbox_2d": [20, 20, 110, 110],
-                        "source_role": "lvis_proxy_candidate",
-                        "coordinate_weight": 0.0,
-                        "regression_weight": 0.0,
-                    },
-                ],
-            )
-        ],
-    )
-    config = _config(tmp_path, proxy_source=proxy_root, splits=("train",))
-
-    builder = AllProxyResearchViewBuilder(
-        config=config,
-        estimator=FakeEstimator(),
-        stats_writer=ViewStatsWriter(),
-        manifest_builder=ViewManifestPayloadBuilder(config),
-    )
-    summary = builder.build(view_name="coco80-lvis-proxy/len-12000", max_total_tokens=12000)
-
-    row = _read_jsonl(config.view_root("coco80-lvis-proxy/len-12000") / "train.jsonl")[0]
-    stats = json.loads(
-        (
-            config.view_root("coco80-lvis-proxy/len-12000")
-            / "train.length_stats.json"
-        ).read_text()
-    )
-    object_supervision = row["metadata"]["supervision"]["object_supervision"]
-    meta = load_view_metadata(config.view_root("coco80-lvis-proxy/len-12000") / "meta.json")
-    assert str(tmp_path) not in json.dumps(stats)
-    assert stats["source_jsonl"] == (
-        "public_data/coco/rescale_32_1024_bbox_lvis_proxy/train.norm.jsonl"
-    )
-    assert stats["output_jsonl"] == (
-        "public_data/coco/views/coco80-lvis-proxy/len-12000/train.jsonl"
-    )
-    assert set(object_supervision) == {"coco:20:0", "lvis:20:1"}
-    assert object_supervision["lvis:20:1"]["source_role"] == "lvis_proxy_candidate"
-    assert object_supervision["lvis:20:1"]["coordinate_weight"] == 0.0
-    assert summary["object_supervision_count"] == 2
-    assert meta.annotation_policy == "all_proxy"
-    assert meta.parent_view == "coco80/full"
-
-
-def test_coco80_lvis_proxy_len12000_infers_proxy_supervision_from_lvis_evidence(
-    tmp_path: Path,
-) -> None:
-    proxy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy"
-    _write_jsonl(
-        proxy_root / "train.norm.jsonl",
-        [
-            _norm_row(
-                image_id=21,
-                fake_total_tokens=12000,
-                objects=[
-                    {
-                        "object_id": "coco:21:0",
-                        "desc": "dog",
-                        "bbox_2d": [10, 10, 100, 100],
-                    },
-                    {
-                        "object_id": "lvis:21:1",
-                        "desc": "muzzle",
-                        "bbox_2d": [20, 20, 110, 110],
-                        "source": "lvis",
-                        "proxy_source": "lvis",
-                        "lvis_ann_id": 987,
-                        "lvis_category_id": 4321,
-                        "lvis_category_name": "muzzle",
-                        "coco_category_id": 18,
-                    },
-                ],
-            )
-        ],
-    )
-    config = _config(tmp_path, proxy_source=proxy_root, splits=("train",))
-
-    builder = AllProxyResearchViewBuilder(
-        config=config,
-        estimator=FakeEstimator(),
-        stats_writer=ViewStatsWriter(),
-        manifest_builder=ViewManifestPayloadBuilder(config),
-    )
-    summary = builder.build(view_name="coco80-lvis-proxy/len-12000", max_total_tokens=12000)
-
-    row = _read_jsonl(config.view_root("coco80-lvis-proxy/len-12000") / "train.jsonl")[0]
-    lvis_object = row["objects"][1]
-    object_supervision = row["metadata"]["supervision"]["object_supervision"]
-    lvis_supervision = object_supervision["lvis:21:1"]
-    assert lvis_supervision["source_role"] == "lvis_proxy_candidate"
-    assert lvis_supervision["coordinate_weight"] == 0.0
-    assert lvis_supervision["regression_weight"] == 0.0
-    assert lvis_supervision["hard_bbox_supervision"] is False
-    assert lvis_supervision["source"] == "lvis"
-    assert lvis_supervision["proxy_source"] == "lvis"
-    assert lvis_supervision["lvis_ann_id"] == 987
-    assert lvis_supervision["lvis_category_id"] == 4321
-    assert lvis_supervision["lvis_category_name"] == "muzzle"
-    assert lvis_supervision["coco_category_id"] == 18
-    assert "coordinate_weight" not in lvis_object
-    assert "regression_weight" not in lvis_object
-    assert "hard_bbox_supervision" not in lvis_object
-    assert summary["object_supervision_count"] == 2
-    assert summary["rendered_proxy_candidate_count"] == 1
 
 
 def test_source_comparison_records_expected_length_budget_subset(
@@ -532,9 +406,6 @@ def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
 ) -> None:
     source_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox"
     legacy_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_max60"
-    proxy_root = (
-        tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_lvis_proxy_len12000"
-    )
     image_store_root = tmp_path / "public_data" / "coco" / "images" / "res-1024"
     views_root = tmp_path / "public_data" / "coco" / "views"
     report_path = tmp_path / "dry-run-report.json"
@@ -542,7 +413,6 @@ def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
     _write_image(source_image)
     _write_jsonl(source_root / "train.jsonl", [_raw_row(image_id=1)])
     _write_jsonl(legacy_root / "train.norm.jsonl", [_norm_row(image_id=1)])
-    _write_jsonl(proxy_root / "train.norm.jsonl", [_norm_row(image_id=1)])
 
     def fail_if_estimator_loads(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("dry-run should not load the real length estimator")
@@ -563,8 +433,6 @@ def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
             str(views_root),
             "--legacy-max-objects-source",
             str(legacy_root),
-            "--proxy-source",
-            str(proxy_root),
             "--splits",
             "train",
             "--image-store-mode",
@@ -585,7 +453,6 @@ def test_cli_dry_run_default_views_plans_without_materialized_artifacts(
         "coco80/full",
         "coco80/len-12000",
         "coco80/max-60",
-        "coco80-lvis-proxy/len-12000",
     }
     assert summary["coco80/len-12000"]["dry_run"] is True
     assert report["source_image_count"] == 1
@@ -745,9 +612,23 @@ def test_cli_rejects_phase1_move_image_store_mode() -> None:
 
 
 def test_cli_accepts_phase1_hardlink_image_store_mode() -> None:
-    args = parse_args(["--image-store-mode", "hardlink"])
+    args = parse_args(
+        ["--image-store-mode", "hardlink", "--views", "coco80/full"]
+    )
 
     assert args.image_store_mode == "hardlink"
+
+
+def test_cli_requires_explicit_config_for_real_length_budget_view() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(
+            ["--image-store-mode", "copy", "--views", "coco80/len-12000"]
+        )
+
+    args = parse_args(
+        ["--image-store-mode", "copy", "--views", "coco80/len-12000", "--dry-run"]
+    )
+    assert args.config is None
 
 
 def test_compact_full_estimator_model_view_renders_norm1000_ints_as_coord_tokens() -> None:
@@ -782,7 +663,6 @@ def _config(
     source_preset: Path | None = None,
     legacy_length_budget_source: Path | None = None,
     legacy_max_objects_source: Path | None = None,
-    proxy_source: Path | None = None,
     splits: tuple[str, ...] = ("train",),
     image_store_mode: str = "copy",
     dry_run: bool = False,
@@ -798,7 +678,6 @@ def _config(
         legacy_length_budget_source=legacy_length_budget_source
         or repo_root / "public_data" / "coco" / "rescale_32_1024_bbox_len12000",
         legacy_max_objects_source=legacy_max_objects_source,
-        proxy_source=proxy_source,
         splits=splits,
         views=("coco80/full",),
         max_total_tokens=12000,

@@ -34,13 +34,40 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Any, Iterable, List, Sequence
 
-from src.coord_tokens.codec import int_to_token, is_coord_token, token_to_int
 from public_data.converters.sorting import canonicalize_poly, sort_objects_tlbr
 
 MAX_VALUE = 999
+COORD_TOKEN_PATTERN = re.compile(r"^<\|coord_(\d{1,4})\|>$")
+
+
+def is_coord_token(value: Any) -> bool:
+    """Return whether ``value`` uses the strict CoordTok surface."""
+
+    return isinstance(value, str) and bool(COORD_TOKEN_PATTERN.match(value))
+
+
+def token_to_int(token: str) -> int:
+    """Decode a CoordTok value on the norm1000 lattice."""
+
+    match = COORD_TOKEN_PATTERN.match(token)
+    if not match:
+        raise ValueError(f"Malformed coord token: {token!r}")
+    value = int(match.group(1))
+    if not 0 <= value <= MAX_VALUE:
+        raise ValueError(f"Coord token value {value} out of range 0..999")
+    return value
+
+
+def int_to_token(value: int) -> str:
+    """Encode a norm1000 integer as a CoordTok value."""
+
+    if not 0 <= value <= MAX_VALUE:
+        raise ValueError(f"Coord value {value} out of range 0..999")
+    return f"<|coord_{int(value)}|>"
 
 
 def _scale_pixel_to_bin(value: float, denom: float) -> int:
