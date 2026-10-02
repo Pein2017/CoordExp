@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-matched-coordinate-branches",
-  "lifecycle": "planned",
-  "status": "NATIVE_TERMINAL_CANDIDATE_PENDING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
-  "scientific_status": "repeatable_selected_supplied_prefix_owner_exchange_pending_lead_acceptance",
+  "lifecycle": "closed",
+  "status": "NATIVE_LEAD_ACCEPTED_COMPLETED_AS_RELEASED",
+  "evidence": "accepted",
+  "scientific_status": "selected_conditional_owner_exchange_and_burden_relief",
   "protocol": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "state_source": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -23,8 +23,8 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "Native/readback exits0/0; all24 requests complete. Owned observed processes absent; no live job or retry.",
-  "boundary": "Released native package is technically terminal; all8 selected contrasts repeat-stable. Annotation-owner exchange and burdens only, no physical/population/empty-history efficacy or promotion claim. Lead owns final acceptance and next-unit scheduling; worker has no further execution grant.",
+  "job_state": "Lead-accepted terminal package. Native/readback exits0/0; no live job, restart or further worker execution.",
+  "boundary": "Lead-accepted repeated selected conditional owner exchange and burden/stopping relief only. No physical recovery, natural empty-history efficacy, population rate, mechanism identification or policy promotion. Sealed candidates/raw/readback retain original flags and hashes. Package closed; lead owns round03 continuation.",
   "worker_settings_verified": true,
   "result": "research/experiments/2026-10-03-matched-coordinate-branches/results.md",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-candidate-01.json",
@@ -61,7 +61,7 @@
     "optimizer_steps": 0
   },
   "cpu_lead_accepted": true,
-  "native_lead_accepted": false,
+  "native_lead_accepted": true,
   "execution_source_commit": "51cae37b2754104cdbb99f06e51bb13c5ff56f40",
   "execution_output_root": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02",
   "release_contract": {
@@ -104,5 +104,11 @@
     "unstable_comparisons": 0
   },
   "worker_package_closed": true,
-  "native_release_consumed": true
+  "native_release_consumed": true,
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/lead-acceptance-01.json",
+    "sha256": "5ded25c857e723fdcdf1d0fc1f3a66e222617a5bc150c9ac67e0e4eaf7bbceb6"
+  },
+  "accepted_scope": "Repeated matched supplied-coordinate outcomes only; no physical recovery, natural empty-history efficacy, population rate or mechanism identification",
+  "technical_status": "completed_as_released"
 }

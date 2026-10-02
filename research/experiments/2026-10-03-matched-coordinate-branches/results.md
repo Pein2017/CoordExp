@@ -1,9 +1,9 @@
-# Native terminal candidate: stable matched continuations
+# Lead-accepted matched supplied-coordinate continuations
 
 Native and maintained readback exited0/0. All24 requests completed; all12
 condition pairs agreed on the primary semantic vector and exact tokens/stop.
 All8 C-A/C-B contrasts are eligible within the frozen supplied-prefix scope.
-Final native acceptance remains with the lead. The351017-31 B condition gained
+The lead accepted the package as completed_as_released. The351017-31 B condition gained
 3 known annotation owners and lost1, with EOS at663 total tokens; it did not
 preserve every incumbent. Other alternatives produced structural repair or
 owner loss without new known owners.
@@ -216,5 +216,24 @@ All are measured counters/receipts; no estimate substitutes for a measurement.
 
 The released package is terminal and consumed. No live native job, retries,
 source changes, next-unit scheduling or further execution is authorized to this
-worker without a new lead assignment. Native evidence remains candidate pending
-lead acceptance; no user scientific acceptance is asserted.
+worker without a new lead assignment. Native evidence is lead-accepted within the selected conditional scope; no user
+scientific acceptance is asserted.
+
+## Lead acceptance and closure
+
+The immutable lead receipt is
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/lead-acceptance-01.json`,
+SHA256 `5ded25c857e723fdcdf1d0fc1f3a66e222617a5bc150c9ac67e0e4eaf7bbceb6`.
+It accepts terminal candidate02 at SHA256
+`d464ca98cc10cccc32a3ac5c03d2fb72a6dae6e968cc1a655139b6d99be36196`
+as **completed_as_released**, including exact clean source, native/readback
+bindings,12 exact repeats,8 eligible contrasts, the351017-31 owner exchange and
+EOS663, and absent declared processes. Sealed candidate flags and raw/readback
+artifacts remain unchanged; acceptance is recorded separately here and in state.
+
+Accepted scientific scope is repeated selected conditional owner exchange and
+burden/stopping relief. It establishes no physical recovery, natural empty-history
+efficacy, population rate or internal mechanism. Assisted/inherited credit,
+incumbent loss, neutral annotation-unmatched output and nonadditive subsets retain
+the limitations above. The package is closed with no live job or further execution.
+The lead owns the [round03 continuation](../2026-10-03-completed-row-crossover/unit.md).
