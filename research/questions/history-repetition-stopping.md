@@ -46,6 +46,10 @@ interval includes zero. This is a frozen-sample structural effect, not a verifie
 population physical-recall gain. Earlier selected-panel successes are separate.
 Evidence: catalog:2026-09-17-readout-norm-fresh128.
 
+The later fixed-checkpoint full-label comparison (catalog:2026-10-02-full-label-self-rollout-fit) is mixed: median norm removes the complete-repeat burst on image351017, while image7511 remains capped and its strict-valid repeats increase. Across the panel, complete repeats fall 497→257 but valid repeats rise 84→200; 30 owners are gained and 24 lost against fresh OFF. This is heterogeneous symptom relief, not an identified repetition cause, a universally improved decoder, or evidence that identical invalid boxes were converted into valid duplicates. [Current results](../experiments/2026-10-02-full-label-self-rollout-fit/results.md) retain the fresh-control/reference distinction and all per-image ledgers.
+
+Objective coverage at repetition-producing decisions remains an unresolved hypothesis. Owner-region and geometry constraints admit compatible solutions. Order gate can locally favor legal coordinates outside the owner region, but that mathematical possibility has not established harmful conflict in the recorded training. At a coapplied, exactly replayed strict greedy-error site, region loss and Gmax both suppress the illegal maximum; shared-parameter interference across different prefixes remains unmeasured. A decline in invalid rows or a raw component-loss magnitude cannot settle that mechanism. See the [current computation](../experiments/2026-10-02-full-label-self-rollout-fit/unit.md#computation-and-unchanged-reductions).
+
 Untied models still recur. Strict coordinate legality gives86/86 valid rows but
 38/43 and40/43 literal repeats in two main cases. Tying and invalid boxes are not
 necessary conditions. Norm, sign and common-row component interventions redirect
@@ -193,7 +197,7 @@ alter logits. Reopen with independently supported physical semantics, a predicti
 separating plausible explanations and a declared full-native outcome at the right
 evidence level. A changed adjudication of the unique pilot stripe would require
 re-reading the necessary clause, not retroactively calling today's NONPASS a pass.
-No research unit/model run is currently open in this distilled state.
+The current full-label unit is paused; no model job is live or newly authorized in this distilled state.
 
 ## Provenance
 
