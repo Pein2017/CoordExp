@@ -16,13 +16,14 @@ from probes import online_row_credit_owner as owner
 
 
 CWD = Path(__file__).resolve().parents[2]
-EVIDENCE = CWD / 'outputs/research/hidden-human-annotation-recovery/2026-09-30/recall-with-error-floor-01/owner-cpu-01'
+EVIDENCE = CWD / 'outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01'
 
 
 class Boundary:
     """Fixtures replace dependencies, never the owner's deadline computation."""
     def __init__(self, root, case='success'):
         self.root, self.case, self.clock = root, case, 0.0
+        self.mode, self.updates, self.total, self.cutoff = 'paired1', None, 2700, 2670
         self.waits, self.launches, self.signals = [], [], []
         self.pids = {1000: dict(ppid=999, state='S')}
         self.child_waits = 0
@@ -59,7 +60,7 @@ class Boundary:
     def check_output(self, argv, **kwargs):
         self.timed('guard', kwargs.get('timeout'))
         if self.case == 'guard_expiry':
-            self.clock = 2670
+            self.clock = self.cutoff
         return 'fixture-source' if argv[-1] == 'HEAD' else b''
 
     def kill(self, pid, sig):
@@ -72,9 +73,9 @@ class Boundary:
         pid = 2000+len(self.launches)
         self.pids[pid] = dict(ppid=1000, state='S')
         if self.case == 'stale_wait':
-            self.clock = 2669
+            self.clock = self.cutoff-1
         if self.case == 'post_launch_expiry':
-            self.clock = 2670
+            self.clock = self.cutoff
         boundary = self
 
         class Child:
@@ -83,7 +84,7 @@ class Boundary:
             def wait(self, timeout):
                 boundary.child_waits += 1
                 advance = 0
-                if boundary.case in ('expiry', 'reap_timeout', 'unresolved','cleanup_edge'):
+                if boundary.case in ('expiry', 'reap_timeout', 'unresolved','cleanup_edge','full_expiry'):
                     if boundary.child_waits == 1:
                         advance = timeout
                     elif boundary.case in ('reap_timeout','cleanup_edge') and boundary.child_waits == 2:
@@ -97,12 +98,12 @@ class Boundary:
                     advance = min(1, timeout)
                 boundary.timed('child', timeout, advance)
                 if boundary.case == 'cleanup_edge' and boundary.child_waits == 1:
-                    boundary.clock = 2699
+                    boundary.clock = boundary.total-1
                 if self.returncode is None:
                     raise subprocess.TimeoutExpired(argv, timeout)
                 boundary.pids[pid]['state'] = 'Z' if boundary.case != 'survivor' else 'S'
                 if boundary.case == 'overrun':
-                    boundary.clock = 2701
+                    boundary.clock = boundary.total+1
                 return self.returncode
 
         child = Child()
@@ -115,7 +116,7 @@ class Boundary:
         class Thread:
             def start(self):
                 if boundary.case == 'watch':
-                    boundary.clock = 2669
+                    boundary.clock = boundary.cutoff-1
                     target()
 
             def join(self, timeout):
@@ -155,6 +156,53 @@ class Boundary:
                 records.append(dict(update=version, requests=18, frozen_sha256=self.digest(d/'frozen.json')))
             self.dump(directory/'readback.json', records)
 
+    def install_full_gate(self):
+        self.run_output.mkdir(exist_ok=True)
+        records=[]
+        for update in range(self.updates+1):
+            d=self.run_output/f'rollout-{update}';d.mkdir(exist_ok=True)
+            self.dump(d/'frozen.json',dict(CPU_fixture=True,update=update))
+            records.append(dict(update=update,requests=18,frozen_sha256=self.digest(d/'frozen.json')))
+        self.dump(self.run_output/'readback.json',records)
+        request=self.run_output/'rollout-0/rank-0';request.mkdir(parents=True,exist_ok=True)
+        self.dump(request/'1.json',dict(generated_tokens=17))
+        rank=self.run_output/'rank-0';rank.mkdir(exist_ok=True)
+        self.dump(rank/'update-0.json',dict(forwards=[dict(tokens=5032,visual_tokens=1024)]))
+
+    def full_label(self, updates=2):
+        self.mode,self.updates='full-label',updates
+        self.total=900 if updates==2 else 2700;self.cutoff=self.total-30
+        state=json.loads((CWD/'research/experiments/2026-10-02-full-label-self-rollout-fit/state.json').read_text())
+        prefix=self.root.name
+        self.run_output=self.root.parent/f'{prefix}-native-qualification-{updates:02d}'
+        qdir=self.root.parent/f'{prefix}-qualification';qdir.mkdir()
+        self.canonical_qual=qdir/'qualification.json'
+        self.qual=dict(schema='full-label-self-rollout-qualification-v1',
+            runs={'qualification':str(self.run_output),'observation':str(self.run_output)},
+            correction=state['recipe'],source=dict(files=[]),sha256={},
+            decoder_runtime_identity=dict(distribution='vllm',version='fixture-vllm',source_sha256={}),
+            pairs={str(updates):{'treatment':str(self.run_output)}})
+        self.canonical_qual.write_text(json.dumps(self.qual,sort_keys=True,separators=(',',':'))+'\n')
+        (self.root/'qualification.json').write_bytes(self.canonical_qual.read_bytes())
+        self.commands=[]
+        for stage in ('run','readback','offline'):
+            command=list(state['argv'][str(updates)][stage])
+            for flag,value in (('--output',str(self.run_output)),('--root',str(qdir))):
+                command[command.index(flag)+1]=value
+            self.commands.append(dict(arm='treatment',stage=stage,argv=command))
+        self.dump(self.root/'argv.json',self.commands)
+        tests={'tests/probes/test_online_row_credit_owner.py':self.digest(Path(__file__))}
+        self.release=dict(mode='full-label',updates=updates,total_wall_ceiling_seconds=self.total,
+            source_commit='fixture-source',lead_thread='fixture-lead',worker_thread='fixture-worker',
+            owner_root=str(self.root.resolve()),run_output=str(self.run_output.resolve()),
+            qualification_path=str(self.canonical_qual.resolve()),
+            argv_sha256=self.digest(self.root/'argv.json'),qualification_sha256=self.digest(self.root/'qualification.json'),
+            recipe_sha256=hashlib.sha256(json.dumps(self.qual['correction'],sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()).hexdigest(),
+            runtime={k:'fixture-'+k for k in ('torch','transformers','vllm')},test_source_sha256=tests,
+            bindings={'probes/online_row_credit_owner.py':self.digest(Path(owner.__file__))})
+        self.dump(self.root/'lead-release.json',self.release)
+        self.release_sha=self.digest(self.root/'lead-release.json')
+
     def run(self):
         original_open = Path.open
         boundary = self
@@ -169,13 +217,17 @@ class Boundary:
 
         def fixture_open(path, *args, **kwargs):
             if path.name.startswith('evaluator-gate') and boundary.case == 'stale_launch':
-                boundary.clock = 2670
+                boundary.clock = boundary.cutoff
             if path.name == 'terminal.json' and boundary.case == 'finalization_overrun':
-                boundary.clock = 2702
+                boundary.clock = boundary.total+2
             return original_open(path, *args, **kwargs)
 
         def fixture_popen(argv, **kwargs):
-            if len(boundary.launches) == 3:
+            if boundary.mode=='full-label':
+                row=boundary.commands[len(boundary.launches)]
+                if row['stage']=='run':boundary.run_output.mkdir()
+                if row['stage']=='readback':boundary.install_full_gate()
+            elif len(boundary.launches) == 3:
                 boundary.install_gate()
             return boundary.popen(argv, **kwargs)
 
@@ -186,14 +238,19 @@ class Boundary:
                 (owner.signal, 'signal', lambda *a: None), (owner.ctypes, 'CDLL', lambda *a: type('Lib', (), {'prctl': lambda *a: 0})()),
                 (owner.shutil, 'which', lambda *a: owner.sys.executable), (owner.time, 'monotonic', lambda: self.clock),
                 (owner.subprocess, 'check_output', self.check_output), (owner.subprocess, 'Popen', fixture_popen),
+                (owner, 'version', lambda name:'fixture-'+name),
                 (owner.threading, 'Thread', self.thread), (owner.threading, 'Event', self.event), (Path, 'open', fixture_open),
             ]:
                 stack.enter_context(patch.object(obj, name, replacement))
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                code = owner.run(self.root, self.release_sha)
+                code = owner.run(self.root, self.release_sha,self.mode,self.updates)
         terminal = json.loads((self.root/'terminal.json').read_text())
         final = [json.loads(line) for line in output.getvalue().splitlines() if line.startswith('{')][-1]
+        self.owner_receipt=json.loads((self.root/'owner.json').read_text())
+        self.gate_receipt=json.loads((self.root/'evaluator-gate-2.json').read_text()) if (self.root/'evaluator-gate-2.json').exists() else None
+        self.cost_receipt=json.loads((self.root/'stage-2-treatment-offline-cost.json').read_text()) if (self.root/'stage-2-treatment-offline-cost.json').exists() else None
+        self.no_control_output=not (self.root/'control').exists()
         return code, terminal, final
 
 
@@ -232,9 +289,10 @@ class Proc:
 
 
 class OwnerTest(unittest.TestCase):
-    def exercise(self, case):
+    def exercise(self, case, full_updates=None):
         with tempfile.TemporaryDirectory(dir=EVIDENCE) as directory:
             boundary = Boundary(Path(directory), case)
+            if full_updates is not None:boundary.full_label(full_updates)
             code, terminal, final = boundary.run()
             if os.environ.get('OWNER_CPU_EVIDENCE'):
                 evidence = dict(case=case,code=code,terminal=terminal,final=final,waits=boundary.waits,
@@ -246,9 +304,70 @@ class OwnerTest(unittest.TestCase):
     def bounded(self, boundary):
         for wait in boundary.waits:
             self.assertIsNotNone(wait['timeout'], wait)
-            ceiling = 2670 if wait['kind'] == 'guard' or wait['kind']=='child' and wait['at']<2670 else 2700
+            ceiling = boundary.cutoff if wait['kind'] == 'guard' or wait['kind']=='child' and wait['at']<boundary.cutoff else boundary.total
             self.assertGreaterEqual(wait['timeout'], 0, wait)
             self.assertLessEqual(wait['timeout'], max(0, ceiling-wait['at']), wait)
+
+    def test_full_label_two_and_sixteen_complete_one_treatment_only(self):
+        for updates in (2,16):
+            with self.subTest(updates=updates):
+                b,code,terminal,final=self.exercise('success',full_updates=updates)
+                self.bounded(b)
+                self.assertEqual(code,0,terminal)
+                self.assertEqual([(x['arm'],x['stage']) for x in terminal['issued_stages']],
+                                 [('treatment','run'),('treatment','readback'),('treatment','offline')])
+                self.assertEqual([x['argv'] for x in terminal['issued_stages']], [x['argv'] for x in b.commands])
+                self.assertEqual(b.owner_receipt['deadline_wall_seconds'],900 if updates==2 else 2700)
+                self.assertEqual(b.owner_receipt['execution_cutoff_seconds'],870 if updates==2 else 2670)
+                self.assertEqual(b.owner_receipt['mode'],'full-label')
+                self.assertEqual(b.owner_receipt['updates'],updates)
+                self.assertEqual(b.gate_receipt['arms'].keys(),{'treatment'})
+                self.assertEqual(sorted(map(int,b.gate_receipt['arms']['treatment']['freezes'])),list(range(updates+1)))
+                self.assertEqual(b.cost_receipt,dict(requests=1,generated_tokens=17,HF_forwards=1,HF_input_tokens=5032,HF_visual_tokens=1024))
+                self.assertTrue(b.no_control_output)
+                self.assertEqual(final['gpu_hours'],final['elapsed']*8/3600)
+
+    def test_full_label_first_failure_skips_remaining_treatment_stages(self):
+        b,code,terminal,_=self.exercise('nonzero',full_updates=2)
+        self.assertEqual(code,1)
+        self.assertEqual([(x['arm'],x['stage']) for x in terminal['issued_stages']],[('treatment','run')])
+        self.assertEqual([(x['arm'],x['stage']) for x in terminal['skipped_stages']],
+                         [('treatment','readback'),('treatment','offline')])
+
+    def test_full_label_two_update_cleanup_deadline_and_finalization_charge(self):
+        b,code,terminal,final=self.exercise('full_expiry',full_updates=2)
+        self.bounded(b)
+        self.assertEqual(code,1)
+        self.assertEqual(next(x['timeout'] for x in b.waits if x['kind']=='child'),870)
+        self.assertEqual(terminal['issued_stages'][0]['exit_code'],-9)
+        self.assertEqual(len(terminal['skipped_stages']),2)
+        self.assertLessEqual(final['elapsed'],900)
+        self.assertEqual(final['gpu_hours'],final['elapsed']*8/3600)
+        b,code,_,final=self.exercise('finalization_overrun',full_updates=2)
+        self.assertEqual(code,1)
+        self.assertGreater(final['elapsed'],900)
+        self.assertGreater(final['gpu_hours'],2)
+        self.assertEqual(final['gpu_hours'],final['elapsed']*8/3600)
+        self.assertLess(final['cleanup_completion_elapsed'],900)
+        self.assertGreater(final['receipt_finalization_seconds'],0)
+
+    def test_full_label_release_mode_updates_and_argv_paths_reject_before_launch(self):
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as directory:
+            b=Boundary(Path(directory));b.full_label(2);b.updates=16
+            with self.assertRaises(AssertionError):b.run()
+            self.assertEqual(b.launches,[])
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as directory:
+            b=Boundary(Path(directory));b.full_label(2);b.mode='paired1';b.updates=None
+            with self.assertRaises(AssertionError):b.run()
+            self.assertEqual(b.launches,[])
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as directory:
+            b=Boundary(Path(directory));b.full_label(2)
+            command=b.commands[0]['argv'];command[command.index('--output')+1]=str(b.root/'drifted-run')
+            b.dump(b.root/'argv.json',b.commands)
+            b.release['argv_sha256']=b.digest(b.root/'argv.json')
+            b.dump(b.root/'lead-release.json',b.release);b.release_sha=b.digest(b.root/'lead-release.json')
+            with self.assertRaises(AssertionError):b.run()
+            self.assertEqual(b.launches,[])
 
     def test_expiry_and_delayed_reap_bound_every_wait(self):
         for case in ('expiry', 'reap_timeout','cleanup_edge'):

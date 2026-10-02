@@ -1,0 +1,1121 @@
+{
+  "unit_id": "2026-10-02-full-label-self-rollout-fit",
+  "lifecycle": "ready",
+  "status": "LEAD_CPU_ACCEPTED_NATIVE_PENDING",
+  "evidence": "partial",
+  "scientific_status": "not_started",
+  "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
+  "worker_thread": "01a0fb72-f08e-76b0-9c82-32b0cacc80e0",
+  "worker_name": "102-worker",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "worker_creation_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-create-01.json",
+  "sole_writer_transfer": "lead user-message: 102-WORKER SOLE IMPLEMENTATION OWNER ROOT TRANSFER CONFIRMED; 930 terminal stopped and helper no writes/livejobs",
+  "protocol": "research/experiments/2026-10-02-full-label-self-rollout-fit/unit.md",
+  "input_manifest": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-10-02-full-label-self-rollout-fit/inputs/manifest.json",
+  "full_label_snapshot_sha256": "1cfdeb3bba14bb26034dd5dc4245a5c10ab240e1e780acdfc1edbdf6c32d4792",
+  "recipe": {
+    "mode": "full-label-region-v1",
+    "checkpoint": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+    "manifest_sha256": "1fdd43eb9e94f21379b1494ca6ee51f65046b68f718787970ac8a5ce3ce420a1",
+    "training_path": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-10-02-full-label-self-rollout-fit/inputs/full-labels.json",
+    "training_sha256": "1cfdeb3bba14bb26034dd5dc4245a5c10ab240e1e780acdfc1edbdf6c32d4792",
+    "owner_region": {
+      "kind": "owner_region_max_hinge_v1",
+      "tau": 0.5,
+      "margin": 0.2,
+      "coefficient": 1,
+      "prefix": "actual_first_violation",
+      "coordinate_ce": "replaced",
+      "coordinate_redirect_margin": "included_in_row_region",
+      "auxiliary": "existing_type_and_actual_prefix_order_geometry"
+    },
+    "arms": {
+      "treatment": 1
+    },
+    "updates": [
+      2,
+      16
+    ],
+    "completion": {
+      "treatment": "CHAIN_ALL_M_relocated_1_over_m_plus_B_1_over_m_plus_k"
+    },
+    "completion_weighting": "restored_M_mass",
+    "event": "first_eligible_literal_duplicate_per_identity_round",
+    "event_normalization": "complete_positive_plus_margin_mean_1_over_K_per_image",
+    "objective": "positive_row_region_plus_description_divergence_softplus_1",
+    "execution_bounds": {
+      "vocabulary": 152670,
+      "trace": [
+        4456,
+        3084
+      ],
+      "bridge": [
+        5032,
+        628
+      ],
+      "redirect": [
+        4467,
+        11
+      ]
+    },
+    "decoder": {
+      "backend": "vllm",
+      "version": "0.29.0+cu129",
+      "generation_config": "vllm",
+      "logprobs_mode": "raw_logprobs",
+      "temperature": 0,
+      "top_p": 1,
+      "top_k": -1,
+      "repetition_penalty": 1,
+      "min_tokens": 0,
+      "custom_processor": false,
+      "score_order": "neutral_processing_greedy_argmax",
+      "loss_scores": "HF_replay",
+      "outcomes": "native_vllm_greedy"
+    },
+    "optimizer": {
+      "kind": "fresh_continuous_AdamW",
+      "language_lr": 1e-05,
+      "delta_lr": 5e-06,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "eps": 1e-08,
+      "weight_decay": 0,
+      "clip": 1,
+      "seed": 92711
+    }
+  },
+  "recipe_sha256": "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+  "argv": {
+    "qualify": [
+      "python",
+      "-m",
+      "probes.full_label_self_rollout",
+      "qualify",
+      "--unit",
+      "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-10-02-full-label-self-rollout-fit",
+      "--root",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+      "--qualification-run",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+      "--observation-run",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+      "--checkpoint",
+      "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload"
+    ],
+    "2": {
+      "run": [
+        "python",
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc-per-node=8",
+        "--module",
+        "probes.online_row_credit",
+        "run",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+        "--updates",
+        "2",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ],
+      "readback": [
+        "python",
+        "-m",
+        "probes.online_row_credit",
+        "readback",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+        "--updates",
+        "2",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ],
+      "offline": [
+        "python",
+        "-m",
+        "probes.online_row_credit",
+        "offline",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+        "--updates",
+        "2",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ]
+    },
+    "16": {
+      "run": [
+        "python",
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc-per-node=8",
+        "--module",
+        "probes.online_row_credit",
+        "run",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+        "--updates",
+        "16",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ],
+      "readback": [
+        "python",
+        "-m",
+        "probes.online_row_credit",
+        "readback",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+        "--updates",
+        "16",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ],
+      "offline": [
+        "python",
+        "-m",
+        "probes.online_row_credit",
+        "offline",
+        "--output",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+        "--updates",
+        "16",
+        "--root",
+        "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+        "--geometry-weight",
+        ".1",
+        "--start-checkpoint",
+        "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+        "--recipe-sha256",
+        "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+        "--schema-geometry",
+        "--microbatch",
+        "1",
+        "--activation-checkpointing",
+        "off",
+        "--rollout-backend",
+        "vllm",
+        "--correction-arm",
+        "treatment",
+        "--duplicate-weight",
+        "1",
+        "--full-label-region"
+      ]
+    }
+  },
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01",
+  "cpu_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01",
+  "storage_ownership": {
+    "maintained_source_and_tests": "probes/ and tests/probes/",
+    "durable_contract_config_bindings_candidate_results_acceptance": "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-10-02-full-label-self-rollout-fit",
+    "large_runtime_payloads_logs_receipts": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01",
+    "disposable_transport": "/data/CoordExp/.worktrees/research-probes/.local/scratch/full-label-self-rollout-fit-20261002"
+  },
+  "budget": {
+    "overall_gpu_hours": 64,
+    "reported_used_gpu_hours": 2.1972533333333333,
+    "reported_remaining_gpu_hours": 61.802746666666664,
+    "worker_used_gpu_hours": 0,
+    "reserved_gpu_hours": 0,
+    "proposed_qualification_gpu_hours_max": 2,
+    "proposed_observation_gpu_hours_max": 6,
+    "proposed_combined_gpu_hours_max": 8,
+    "max_gpu_slots": 8,
+    "qualification_owner_wall_seconds_max": 900,
+    "observation_owner_wall_seconds_max": 2700,
+    "charge": "8 slots times measured whole-owner wall including load, failure, readback, finalization and confirmed cleanup; no uncapped accounting substitution"
+  },
+  "job_state": "CPU checks terminal; 102-worker idle; no native invocation or reservation",
+  "native_released": false,
+  "lead_accepted": true,
+  "user_scientific_acceptance": false,
+  "technical_runtime_holds": [
+    "accepted owned implementation requires its clean source commit; prior unrelated anchor-path change was user-approved and committed separately as cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08",
+    "fresh canonical qualification, exact lead runtime release and resource reservation required",
+    "actual 2-update native qualification still pending; no CPU claim about GPU/DDP/vLLM behavior"
+  ],
+  "operational_stops": [
+    "verified wall/resource cap",
+    "nonfinite loss, gradients or parameters",
+    "real OOM, distributed or process failure",
+    "source/input/producer identity or artifact corruption",
+    "native context or declared work bound exceeded",
+    "global no supervision before optimizer action or zero/nonfinite gradient signal"
+  ],
+  "quality_gates": [],
+  "deferred": [
+    "missing-label proxies",
+    "fixed-weight same-owner valid-coordinate-prefix robustness diagnostic",
+    "held-out generalization and memorization controls"
+  ],
+  "decoder_runtime_identity": {
+    "distribution": "vllm",
+    "version": "0.29.0+cu129",
+    "source_sha256": {
+      "/root/miniconda3/envs/ms/lib/python3.12/site-packages/vllm/v1/sample/sampler.py": "f95805b2c6d06218c724826aa5f881a606e8d0a534a566aee7c85948520dd216",
+      "/root/miniconda3/envs/ms/lib/python3.12/site-packages/vllm/sampling_params.py": "2aba9ebd1c3921d601dcf94ac6a1f726e5172fe991e313cd5a69d3eaa02013fa"
+    }
+  },
+  "structural_bounds_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/structural-bounds.json",
+  "structural_bounds_sha256": "46ac7caf8c73ef8d08012c4ff2fe0c139686984d6ccd6232c5516a499b91aa03",
+  "evidence_scope": "CPU_only",
+  "boundary": "CPU implementation and runtime packet lead-accepted; native clean-source qualification and exact release still pending",
+  "not_authorized": [
+    "worker GPU/model/owner invocation until exact root release",
+    "checkpoint selection or sampling/sweep",
+    "missing-label proxy construction",
+    "hard quality gates, rollback, automatic retry or extension",
+    "worker commit/push or source edits outside a new assignment",
+    "changes to old scientific owners or frozen outputs"
+  ],
+  "state_source": "research/experiments/2026-10-02-full-label-self-rollout-fit/unit.md",
+  "worker_transfer_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-transfer-01.json",
+  "lead_ruling_receipts": {
+    "objective-containment-ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-objective-containment-ruling-01.json",
+    "metric-ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-metric-ruling-01.json",
+    "score-ordering-ruling": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-score-ordering-ruling-01.json"
+  },
+  "worker_receipt_sha256": {
+    "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-create-01.json": "2a666867ed653e96d30d47792e891cddb988d7c55a5246677e2ffc577acf0bf8",
+    "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-transfer-01.json": "a079b1ef5e28eb7590845d23a122433ba78364c9dbf2ab6b66b2f22e1e25a06d",
+    "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-objective-containment-ruling-01.json": "4dcfa2d87140eac42622862f4a9fa53ee0b2b3835dfed73cdfff6279087551e6",
+    "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-metric-ruling-01.json": "2512deda3df3501432394728c56bae19a21e890ad67dbda3e8f938bde73da827",
+    "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-score-ordering-ruling-01.json": "3c1a0f260581a45b0d7094c489c3370edea5b282da1fb6b0c5ab02e220bd6360"
+  },
+  "source_candidate": {
+    "base_commit": "97491fbff6164abeacad0f7f008720284bc7420f",
+    "clean": false,
+    "purpose": "CPU candidate identities only; not an executable source qualification",
+    "files": [
+      {
+        "path": "probes/full_label_self_rollout.py",
+        "sha256": "9537a25816452a898cb0ef43525e19307fa6b70ed0ec2dc3b02a451e3f7d342c"
+      },
+      {
+        "path": "probes/owner_region_ranking.py",
+        "sha256": "b5cee23bb0af8d8189f8d243f6082de921051c73fd384163b71087001c88324c"
+      },
+      {
+        "path": "probes/online_row_credit.py",
+        "sha256": "5b2b68db7098885dcac622d169f024bb21e3440d2c568da35365103bf4a6f903"
+      },
+      {
+        "path": "probes/rollout_row_credit.py",
+        "sha256": "cb5b3114df52ba0c706d62e47a87718e620720492af87f9bcff88c7c752675c9"
+      },
+      {
+        "path": "probes/iterative_positive.py",
+        "sha256": "48c2cfe8b3ca5357829f128535981b5452a4e566c2216af64dbf351db94a25bb"
+      },
+      {
+        "path": "probes/hidden_human_recovery.py",
+        "sha256": "c610a8b60b7c13f0c783d98436c189b295013b157b72922b038067961cddbd8e"
+      },
+      {
+        "path": "src/__init__.py",
+        "sha256": "ec030cf34e3e412074d445d4938ff246676ef75f953ba3d1ef91a23d76cf9ea4"
+      },
+      {
+        "path": "src/adapters/__init__.py",
+        "sha256": "b0f1b9b12a83b7ff4f3979cf4a5e64143df9462e77cdc438a05616c076aaff56"
+      },
+      {
+        "path": "src/adapters/dora.py",
+        "sha256": "c7c3c6c88bd79e53e83456c2745b7346ac72364d81e6a0d20f167231aee4c040"
+      },
+      {
+        "path": "src/adapters/source_gates.py",
+        "sha256": "4107363342a10ed44007fb5b2c4f6fc571f2430da3595d0621f05500a01f4356"
+      },
+      {
+        "path": "src/artifacts/__init__.py",
+        "sha256": "29cc24f305f2049e27827052bbe48460abf6985b53fc58b75e53dd347acb39ca"
+      },
+      {
+        "path": "src/artifacts/checkpoints.py",
+        "sha256": "cc832cb61a2918c7092779978c48218f3637c6a54f0502daf62800465f3ee856"
+      },
+      {
+        "path": "src/artifacts/evidence_journal.py",
+        "sha256": "e6d740f8784f73dc0152d3205363baf3f11307747d5fdad37f1e257bce95e04b"
+      },
+      {
+        "path": "src/artifacts/git_identity.py",
+        "sha256": "055e469b46d0f72328467f97acf60cad6d95a994cf875626afb33122ebf0b083"
+      },
+      {
+        "path": "src/artifacts/json_values.py",
+        "sha256": "e05baa06cb0652f5d5113ccfc7e9f8229673e14e4ead7ed67146f9a98a83dce6"
+      },
+      {
+        "path": "src/artifacts/model_card.py",
+        "sha256": "59c9b412b4813e3450b9e138acd9a01c64bf655d21c23cd71cb2e5526cdde9fb"
+      },
+      {
+        "path": "src/artifacts/output_layout.py",
+        "sha256": "3f75d2b5733321763ecf8deff56d89ac521e9f6504b05cafa09ce721a59ff4ca"
+      },
+      {
+        "path": "src/artifacts/research_probe_admission.py",
+        "sha256": "96ccf515aa700644bc70da18ebbae501e6ef74ac09ee26c1f0ca4c2269ef525b"
+      },
+      {
+        "path": "src/artifacts/run_writer.py",
+        "sha256": "d5f732281ef68048ea9450b5513659a4fb8348dadd290cf10770ccad977405c9"
+      },
+      {
+        "path": "src/augmentation/__init__.py",
+        "sha256": "73c1171028a6eaf4309f179735e25f0522fd393f1089120e3243711bda62c89d"
+      },
+      {
+        "path": "src/augmentation/factory.py",
+        "sha256": "e2ca0274268302b7a06b2bf036685d347f926f0c6ebab44c54c1adba30c51019"
+      },
+      {
+        "path": "src/augmentation/geometry.py",
+        "sha256": "908429a4df9ef0b712d43e9f5b2cac6a77627938b5a02e4b3c7cd2b43646cc54"
+      },
+      {
+        "path": "src/augmentation/processor.py",
+        "sha256": "3dff7026e52914df398590643d01a336c8c1df722a4931041dda8be44e7316f0"
+      },
+      {
+        "path": "src/common/__init__.py",
+        "sha256": "b1c9e39a645314224f15d5d7736f27366dff35e65633a1603ca05336de918845"
+      },
+      {
+        "path": "src/common/errors.py",
+        "sha256": "badc48306f64532ba9641865bcb91406990363217884c626a4d38eaac8cd1362"
+      },
+      {
+        "path": "src/common/qwen_aliases.py",
+        "sha256": "aa8ae2053662499780726f8ad7036a794cce285b051e5f8f89a6fcc9bf068792"
+      },
+      {
+        "path": "src/config/__init__.py",
+        "sha256": "1ade5584e52814c42397f747e67f254d5ba2409fc38f3609a0bbbcd35dd2d9d6"
+      },
+      {
+        "path": "src/config/fingerprint.py",
+        "sha256": "005abc45067dce90a0fef3ca09b8fff8cec830fe6afdd0aa41d93fe96dfd3979"
+      },
+      {
+        "path": "src/config/inference.py",
+        "sha256": "4286e287c70242183f3631284e143d2ca5362c48191b0e87b7d172e17a729979"
+      },
+      {
+        "path": "src/config/loader.py",
+        "sha256": "b03c4365ba6b8979b29d84ee19b92aff4fe4025a28bbe5550084a7862de6f148"
+      },
+      {
+        "path": "src/config/models.py",
+        "sha256": "792f78ae897f19d37958362f2809358116096ecf7e3ee4be4c1ea0193b3d540a"
+      },
+      {
+        "path": "src/config/paths.py",
+        "sha256": "05aa0574791ae0ccd771e742c9e8c2553be726c1d21dab2cab94dc5d481b0a23"
+      },
+      {
+        "path": "src/config/resolve.py",
+        "sha256": "3daa417f756b942d9036c7b35a86a6451a080508c6e0c31bf410befcc577a0ec"
+      },
+      {
+        "path": "src/config/writer.py",
+        "sha256": "6b6146badaaeed8fd419f584b51d1dbd646a5131b42d4ccb1852ca4bdb081a6c"
+      },
+      {
+        "path": "src/coordinate_targets.py",
+        "sha256": "3ce1773fdb602bc15ee7c045948c7b78b6cfbd1d18534921d7840f00b8b496ba"
+      },
+      {
+        "path": "src/data/__init__.py",
+        "sha256": "b5e323ff7242b3a3c2c1a2ff63192a3798f011579fadef10a68287937aa87ac1"
+      },
+      {
+        "path": "src/data/examples.py",
+        "sha256": "48a8026e1d9e4fe0f3765e64822d916bb14a64f5ce603a34050c7cf62bf2b3be"
+      },
+      {
+        "path": "src/data/geometry.py",
+        "sha256": "222480db3eaaae46b38bc7f0817bcec7d831d302d222ec2e4f97213357e1aca1"
+      },
+      {
+        "path": "src/data/images.py",
+        "sha256": "60d4a428cc43f7a44e41226becf8f5462b1111a6e3a668408dce2080946c46f8"
+      },
+      {
+        "path": "src/data/jsonl.py",
+        "sha256": "3e42089c057bd846a0b89a36d3c120c1c59ca09e647b77a3768edd66c9f3bc4a"
+      },
+      {
+        "path": "src/eval/__init__.py",
+        "sha256": "2834408e28dc6008dfab4005b48e67d49a05bea2e70acbf9daf7f5bf56038e2c"
+      },
+      {
+        "path": "src/eval/assignment.py",
+        "sha256": "68f8d82e7eac346a2ba7de32ab916cacdf66296334fa668be29ddac8e4da1766"
+      },
+      {
+        "path": "src/eval/detection_categories.py",
+        "sha256": "92a01c2a6866cfe2e71597d2a66d32b592c21ae446658687f57c84f11846c75a"
+      },
+      {
+        "path": "src/eval/detection_consumer.py",
+        "sha256": "2a4998624835b8e25cbdbbd1784d6ce554d03f80b8831cbdb5718d4c49a30afc"
+      },
+      {
+        "path": "src/eval/forward.py",
+        "sha256": "b26a9ebcff4aa42b688aa1df63e3ccc68272a52755e87e6b3365641bc0c26f77"
+      },
+      {
+        "path": "src/eval/native_rows.py",
+        "sha256": "a89513f0a0c60b0748ef249bdb847f94117f65e9eb3a4ddb1cc0e46b3a6c6a46"
+      },
+      {
+        "path": "src/eval/saved_rows.py",
+        "sha256": "7fc59a96abbea0f6ac9eb1cc5328ba77adbddc3f52b8ce5751a6b9a83ca17db1"
+      },
+      {
+        "path": "src/infer.py",
+        "sha256": "9aff16e3fbd41da8a97350fe02f833b8119271c19c74f44572e17a9728a55d4e"
+      },
+      {
+        "path": "src/inference/__init__.py",
+        "sha256": "4b9792d78b04c00446cbf94cf80d4943630a08b050be921cbd7235242db7a8d6"
+      },
+      {
+        "path": "src/inference/artifacts.py",
+        "sha256": "50681a1cbd8bcff1c42faae111c4f5913ed5ea9bb164d7b6e05033b0f1370e63"
+      },
+      {
+        "path": "src/inference/backend.py",
+        "sha256": "d3cd3b4d6c643fa3ffe4b1b57fbb7da377a4738a615103ac996b6b57f1ea4b36"
+      },
+      {
+        "path": "src/inference/backend_parity.py",
+        "sha256": "2c68d7863515533c465c6e6b1f7c59cb084a1966a382c9355cd1ae2a60c48dd2"
+      },
+      {
+        "path": "src/inference/bound_requests.py",
+        "sha256": "6063e2dde09c0dccf686a165813ebe284c6123047ca23d2bbc98a598800d7be9"
+      },
+      {
+        "path": "src/inference/data_parallel.py",
+        "sha256": "1c236c13a8d4d09eec1125a1eb3444422bc0ef643f149a91032b3eee10c89fa5"
+      },
+      {
+        "path": "src/inference/execution_context.py",
+        "sha256": "54deac24ddcaf04d73a69cd7babadc568845246da6cf185fc3703ac142e16d5f"
+      },
+      {
+        "path": "src/inference/execution_model.py",
+        "sha256": "2c74c4854fdc4e72d6c475261db96073605e6de826671ca69b04741f5d79526c"
+      },
+      {
+        "path": "src/inference/execution_model_composition.py",
+        "sha256": "6fdc14e7385cb521a15ce51aeafddc35800521941c2080fff6e1cf6470f670e6"
+      },
+      {
+        "path": "src/inference/hf_backend.py",
+        "sha256": "45445801de7de542b3f971ae1913bd505d8f2d84c8148492cb71b9c449dc82b1"
+      },
+      {
+        "path": "src/inference/image_plan.py",
+        "sha256": "7e1f5058cbc92e331afadd9718cfb039f7922f9b7e0dcb2b58578d25fb892917"
+      },
+      {
+        "path": "src/inference/input_materialization.py",
+        "sha256": "6853436bf7c63c64524ec6c70cdff457d8e007c46c7b9ff69fa755e7f1d31aa4"
+      },
+      {
+        "path": "src/inference/inputs.py",
+        "sha256": "4bff5a706164ea517c5b5f4bbe20fd641393a4c0aee635a662f52669f8533cfa"
+      },
+      {
+        "path": "src/inference/merge.py",
+        "sha256": "ac898ba536e7f4b015644f67f58349db2e584b720f93596410f0b6a5ec86ea53"
+      },
+      {
+        "path": "src/inference/model_assets.py",
+        "sha256": "380657562b84f7a031ea2422543bd871a2b51032c5f145a8018d070e341e7bf7"
+      },
+      {
+        "path": "src/inference/parsing.py",
+        "sha256": "de0070c5d408bc4acc262cd8011d318c41d1a067bdab0825ee327343b5890d39"
+      },
+      {
+        "path": "src/inference/pipeline.py",
+        "sha256": "15ceb9ed7b5583a719bee45f999700de1850687287e45bab7ef51c42c0197133"
+      },
+      {
+        "path": "src/inference/prompt.py",
+        "sha256": "21281207b62420b24ca2594dfdf0bedc0e9af7bf7cdddc8969cffeb6dfe13192"
+      },
+      {
+        "path": "src/inference/runtime.py",
+        "sha256": "f529cd0a4e57352608d6122e5cfbd2c16c823d9dbf60a6c057036ee0be5239c3"
+      },
+      {
+        "path": "src/inference/scoring.py",
+        "sha256": "cc83b014bdd8073ef1ab9a3035d56882622b1b9a0c64c2ab1c5ed63c638f8cb3"
+      },
+      {
+        "path": "src/inference/token_text.py",
+        "sha256": "4a9963216da58edbe7af4d7aa1fe3257dc7ed9196a7053acd362239fe362dc61"
+      },
+      {
+        "path": "src/inference/vllm_backend.py",
+        "sha256": "2b8b0533305ab0dffeb1e86e8cde44642f05084c6eaf05b5f92195d1ca71c39e"
+      },
+      {
+        "path": "src/inference/vllm_forced_replay.py",
+        "sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
+      },
+      {
+        "path": "src/inference/vllm_qualification.py",
+        "sha256": "fa83783cf59edb1fa9b0f0639c618e1e18e318517636e522714187b3c931ab49"
+      },
+      {
+        "path": "src/inference/worker.py",
+        "sha256": "af8273e341bd288e3207bb4a999d49224787ed798da6d12a530b8f1212754a42"
+      },
+      {
+        "path": "src/losses/__init__.py",
+        "sha256": "f8c237f9352ab83dbc64f7ce266fa9569bdb3e2250d1b172523995a55c14d491"
+      },
+      {
+        "path": "src/losses/base_ce.py",
+        "sha256": "e64ded4e2171ecc599c5e832b2d56af3e0434d3030515ed2b809014e9b68b7e9"
+      },
+      {
+        "path": "src/losses/conditional_order_gate.py",
+        "sha256": "77d1910c1cfd1ddaf9dfc47cfd8de4145a039a4258e54e451241ae77aab8e7bc"
+      },
+      {
+        "path": "src/losses/context.py",
+        "sha256": "8421193872bdb54f6967b9406b4cb310356bc993a9f3bc9063b7f85acb3743b2"
+      },
+      {
+        "path": "src/losses/coord_gaussian_rps.py",
+        "sha256": "375a8d6648a9ae687366ae6a8b78421e7e8439c03715bb2bedab2172d3894442"
+      },
+      {
+        "path": "src/losses/normalizers.py",
+        "sha256": "c2e8f038a66a4e605bb067d88ade11ee27897ea3634def8a814dd71b85c816ce"
+      },
+      {
+        "path": "src/losses/raw_axis_validity_hinge.py",
+        "sha256": "a0a12112e09b3c82772e482e61d7cf63557f3e07d192d44149a5cf3fbf8b94af"
+      },
+      {
+        "path": "src/losses/rollout_calibration.py",
+        "sha256": "5e13c49e78532dc7a9bce6fc4ccf8b1d304239cf9b3a001b8e0ce08f10ef17fe"
+      },
+      {
+        "path": "src/losses/runner.py",
+        "sha256": "55b04a3765faed66a842eda203ab258953d7da06f7f318e61b2fb8daec8eeb60"
+      },
+      {
+        "path": "src/losses/token_scores.py",
+        "sha256": "3e7a74796bdfb3a9eed6707659f24f99ab6f8e6dc89e8ea0995d78f825174fc2"
+      },
+      {
+        "path": "src/losses/token_type_gate.py",
+        "sha256": "6852ff24b7814af538c57ac19755ee9bbac85318c4b1e79f1b5d5d04e57e5659"
+      },
+      {
+        "path": "src/losses/vocab.py",
+        "sha256": "c26f771448efac4f16957fa502b5734cbf3ac3834fd4edb93ccf09dfb356fe95"
+      },
+      {
+        "path": "src/optim/__init__.py",
+        "sha256": "7da442e3cb08f48513654bc63c5edd47e6259e044e2f10581067ed3d5bd856fb"
+      },
+      {
+        "path": "src/optim/factory.py",
+        "sha256": "b722fa02d178ba4aa8a995a8a2fd161aaa05dababb118edab8444ff92f3ac4d4"
+      },
+      {
+        "path": "src/optim/parameter_groups.py",
+        "sha256": "692cd0e1d95f8cf9ab4b3b5e09ad912ff783ee0eee42f90ab88244735a73920f"
+      },
+      {
+        "path": "src/optim/trainable_surface.py",
+        "sha256": "de976042232c7faf481305cf19a98e90820603ddbe476df98b6e18a6a8ad4f5e"
+      },
+      {
+        "path": "src/packing/__init__.py",
+        "sha256": "c7db1281f5d58b8c5c6b7924e816e0652ba084397fbcc99d2cfbee8c7f45ba61"
+      },
+      {
+        "path": "src/packing/planner.py",
+        "sha256": "8e8759f683f6d9c1f2ad9cf2b544e8310679465b7672f55872abee1d1b445746"
+      },
+      {
+        "path": "src/packing/supervision.py",
+        "sha256": "8a3b8753a577558f2e4a6c6879b62352229631d7ea2fdcc1ed583104a0da8400"
+      },
+      {
+        "path": "src/qwen/__init__.py",
+        "sha256": "5cb0bb0393650356e35c125d9d803e01c930b668c3046779779aba5c3a2cf652"
+      },
+      {
+        "path": "src/qwen/checkpointing.py",
+        "sha256": "124bc17e84e6be44f1d99a17d2fb7b898ddb900f9b7ca8c9ca78aefdcaf1c131"
+      },
+      {
+        "path": "src/qwen/coordinate_codebook.py",
+        "sha256": "521cd290a40f8430fea394beff5dba4685dee943336fb2b0d854278dd99c5346"
+      },
+      {
+        "path": "src/qwen/encoding.py",
+        "sha256": "e68079d74843b1ddcbf9939c4ff8fba795bb2151f41357df35f24e9e7f020bac"
+      },
+      {
+        "path": "src/qwen/fa2.py",
+        "sha256": "68808ca79069d6379342422fbcafd06f45c10a95643971485d2a0c8ad6836e53"
+      },
+      {
+        "path": "src/qwen/forward.py",
+        "sha256": "0994e51989104a2d86370b3949106cf423af9abd5e9471c24e9a71336c55c860"
+      },
+      {
+        "path": "src/qwen/generation.py",
+        "sha256": "f134dd308cfebdb2c2c559f1730a8724802252ba5d6e336ff8374dc0fa468f55"
+      },
+      {
+        "path": "src/qwen/images.py",
+        "sha256": "4a9205efc56469427d49dc8593828cb041dfd5e72983c53d0fa573cbbbce19c9"
+      },
+      {
+        "path": "src/qwen/input_identity.py",
+        "sha256": "7a721ab00f3f066cfc0515f7fb22a889f41197eea8eb36bd3cba015b02151508"
+      },
+      {
+        "path": "src/qwen/inspection.py",
+        "sha256": "e06e4ec7e6166eb3d48d3459ce592bcdbfeae2748dade75ffacd16b6444d5636"
+      },
+      {
+        "path": "src/qwen/loading.py",
+        "sha256": "7fda5151814b7ef08207172d3d8ff0a10f2d8937613228f2bbbe4a2fe1be2e93"
+      },
+      {
+        "path": "src/qwen/native.py",
+        "sha256": "901f16bff398782916ee0a91dde4195a3d0e9a547e6f2f7700c2071291961c6a"
+      },
+      {
+        "path": "src/qwen/patches.py",
+        "sha256": "925e9a8d88b6df7baf41db9c22eeec26186aa9629612fe223615069691cf9fa4"
+      },
+      {
+        "path": "src/qwen/positions.py",
+        "sha256": "b39b22df5c09548c355b971d126121dbe00aa247fbb2d29222d698142d394efa"
+      },
+      {
+        "path": "src/qwen/runtime_loading.py",
+        "sha256": "b762895d7aec196bf4d855e7933c38efa80d02483dad6115bb793ada2b34e705"
+      },
+      {
+        "path": "src/qwen/special_token_embeddings.py",
+        "sha256": "4531f7c6ce5b74abca16ff7c713ba7b299698f7439fbc74bb2e5d868b4ee7d75"
+      },
+      {
+        "path": "src/qwen/tokens.py",
+        "sha256": "ed53ad6887119918968fd41389ae9d3bac18d852f82288dc176f917ed303d662"
+      },
+      {
+        "path": "src/qwen/untied_embeddings.py",
+        "sha256": "b283d22486e9fef91193de3dfbd295abc07f1292a9165a966d1525735140bb08"
+      },
+      {
+        "path": "src/qwen/vllm_dora_model.py",
+        "sha256": "cf7f8e1b0b1bb429cd3676bfdd758b5a83ea83529128c6dfb7dbaee5be3b3e2c"
+      },
+      {
+        "path": "src/qwen/vllm_rollout.py",
+        "sha256": "73f26f540d99c6845ddfdde7cf1906ff98a283d55c26f158c9155ec671d5af7a"
+      },
+      {
+        "path": "src/rollout_calibration/__init__.py",
+        "sha256": "84c6da93efd1493bd02af86624e7c873f6e115858154a5dfc398ea652cbc1f74"
+      },
+      {
+        "path": "src/rollout_calibration/planning.py",
+        "sha256": "ab148e00128afe102b6d34ab33fd399ecd1f00bd8e97e9f56aeb3a35afcf5e97"
+      },
+      {
+        "path": "src/rollout_calibration/replay.py",
+        "sha256": "0f89ea47a2089df9d0d5d74809d3cf89ac49dc92a148f6ef32e5f570d6d37169"
+      },
+      {
+        "path": "src/rollout_calibration/state_bank.py",
+        "sha256": "19f194b0db92aa62caf51a05d419df700e35882da15f5fd44a97fe3d19b2e592"
+      },
+      {
+        "path": "src/runtime/__init__.py",
+        "sha256": "d491e08fd1e9b874bde4cb75dc348f6ab570bab2698b537ee510b7a25303c8bf"
+      },
+      {
+        "path": "src/runtime/distributed.py",
+        "sha256": "e7959ce11581f02c70ab5e1326f27b81978dfbbedff65e1e0f80636d6e0918c1"
+      },
+      {
+        "path": "src/runtime/finite_gates.py",
+        "sha256": "36da4fcfc1ddb277c0f98313d8f2053e85989e3bb5a7281530f259d76fa54aab"
+      },
+      {
+        "path": "src/runtime/model_state.py",
+        "sha256": "64ac0199376988d5c4e7a9b3d2f09d6e10a8873820f394f7701021dbfd52e81f"
+      },
+      {
+        "path": "src/runtime/owned_process.py",
+        "sha256": "20b0e5514a1512ec9210b2c21a4264fc90ee3aeacad53392c64b747d7aaa19ae"
+      },
+      {
+        "path": "src/runtime/process_completion.py",
+        "sha256": "a6ba9d6c0264c004546d3102c7bd58ce13d26120f716911b730455c98e0ab064"
+      },
+      {
+        "path": "src/runtime/seeding.py",
+        "sha256": "85ca615715500dfef277c28d601c6c6d07b2b144c0d74aef501f5be1585d9f12"
+      },
+      {
+        "path": "src/runtime/train_runtime.py",
+        "sha256": "af9d7557765d6f62fe3358aceb751ce59c8d3bc5f1bbe7346cbd2d834b514523"
+      },
+      {
+        "path": "src/supervision/__init__.py",
+        "sha256": "49025648aa6eded5a9f879e06fde4559e389f4e5344fb119c0bd247b4758faed"
+      },
+      {
+        "path": "src/supervision/tokens.py",
+        "sha256": "e0dd15b625f795f66236183c3cd2533ae4f49f6d726d58d1689e1aa3d57c650e"
+      },
+      {
+        "path": "src/templates/__init__.py",
+        "sha256": "f8e21b85906d675f268ec78339fc077a9e0321b55f147f2c57ad8c0da30bbb65"
+      },
+      {
+        "path": "src/templates/renderer.py",
+        "sha256": "1183e9d257e0db0e6122db208c2350d632fc7ce13a7f241cf1d726798c390570"
+      },
+      {
+        "path": "src/templates/snapshot.py",
+        "sha256": "806e13440c865d03248c57b5fb54a5e11cb57a3f225379cc097585ec4877b3c8"
+      },
+      {
+        "path": "src/templates/spans.py",
+        "sha256": "e4885fcfe183287422ec9feede735cd87cc54fb3540b3568f89f1add9910857d"
+      },
+      {
+        "path": "src/train.py",
+        "sha256": "9c328c9a64e351b8877be19618c5a1f25cec1128c525251b6a007fb6443f100b"
+      },
+      {
+        "path": "src/training/__init__.py",
+        "sha256": "ac92766d9f47707eb106109c681f5d3a9b38c80be0ee280020e3f4cdbf7ed66c"
+      },
+      {
+        "path": "src/training/pack_cache.py",
+        "sha256": "b465d447038b027fa8400c47ba1cb792ce91fdc8e47c545d476cfa5634231d63"
+      },
+      {
+        "path": "src/training/pipeline.py",
+        "sha256": "9389c0eb3d1e1284136c28a7ed2efb25e8ea8438533f86ab38440168f1d1b8c0"
+      },
+      {
+        "path": "src/training/resume.py",
+        "sha256": "b1f09fdbbe3cc3f5e05bc4c13773ef4323e8b8b559be460495af4f800ce02a07"
+      },
+      {
+        "path": "src/training/rollout_calibration.py",
+        "sha256": "76f29b1817606ecf85044d17da82c3e27a2518301882e40ab33d557fd571c245"
+      },
+      {
+        "path": "src/training/schedule.py",
+        "sha256": "38006c3d3fd307f6afbab3215286656270d1f535826b1f0ae203f8d63bdb8f23"
+      },
+      {
+        "path": "src/training/supervised_trainer.py",
+        "sha256": "3b5e6c89382de2031ca80b7b1643568345eae0adc8b1958d490afbbb11c2202e"
+      },
+      {
+        "path": "src/vis/__init__.py",
+        "sha256": "9c185496ccf470b9a36fe1f94ab0e4624a2ff4b85241352b984b56022e9097ce"
+      },
+      {
+        "path": "src/vis/api.py",
+        "sha256": "b238b5318cb71c5739ee0a7b0b3693b642323541f9ab1c16be8957e2f4e386f1"
+      },
+      {
+        "path": "src/vis/matching.py",
+        "sha256": "31b91d69098182b4cfc6de039a5762dbf342bb5fffdef3d881b4f4a42d41b463"
+      },
+      {
+        "path": "src/vis/normalization.py",
+        "sha256": "05e72bc2bec1560a9287184ae25de2ba0c8045a71fcc57d9664c64b1bc2767f5"
+      },
+      {
+        "path": "src/vis/rendering.py",
+        "sha256": "1b852a582db03b86b65910236b0a95e99c30e485ba1c192b4f426a1c2b99ac8e"
+      }
+    ],
+    "closure_sha256": "95ecb724c1c60d185ed3a6605e0af48cf79c51614967c5a7c4aae67a77501110"
+  },
+  "candidate_test_files": {
+    "tests/probes/test_owner_region_ranking.py": "bf92a81db0c977d16c1574b0ca247cd8fb9f2cfddf725a92d77367dd0734b861",
+    "tests/probes/test_full_label_data.py": "f2ba8b1f2d1eb13001b66e7c0a1c364c333df54dada5868a43233ff24d052080",
+    "tests/probes/test_online_full_label_region.py": "7af3da6fb18ddf4445dde3c52138a6ea96a4c34191a0d268947fb02ba1ce60f8"
+  },
+  "cpu_checks": [
+    {
+      "name": "region geometry and ranking",
+      "command": "python -m unittest discover -s tests/probes -p test_owner_region_ranking.py -v",
+      "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/helper-tests-final.log",
+      "log_sha256": "9fe70a8a23a79a2d1d0ecf95fa5d6e6b03694a97f1c948667c50b4c14a22fa53",
+      "exit_code": 0,
+      "test_count": 5
+    },
+    {
+      "name": "data, metric and qualification consumer",
+      "command": "python -m unittest discover -s tests/probes -p test_full_label_data.py -v",
+      "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/data-tests-final.log",
+      "log_sha256": "23062c598bbbe1db0f889699f0926a637d5f62fd694a0402c1e9c3c5670361a3",
+      "exit_code": 0,
+      "test_count": 5
+    },
+    {
+      "name": "owner caller, entry binding and persisted two-update readback",
+      "command": "python -m unittest discover -s tests/probes -p test_online_full_label_region.py -v",
+      "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/route-tests-final-02.log",
+      "log_sha256": "1879501309a3ff3d58637f2c39a83cb438e3e0311ca73551de417647b17b6127",
+      "exit_code": 0,
+      "test_count": 5
+    },
+    {
+      "name": "restored-M v4/default consumers",
+      "command": "python stdin unittest TestSuite(test_online_row_credit.OnlineCreditTest): all names containing restored_m plus test_correction_native_forward_exact_atoms_margin_and_unknown_masks, test_recall_actual_entries_and_six_cli_dispatches, test_identity_nearest_plan_jobs_multiple_exact_identities",
+      "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/existing-route-tests-final.log",
+      "log_sha256": "14d1325609e99f4fb396b8d22728ae8b431a6a249f0e1d108d2022e0b569a693",
+      "exit_code": 0,
+      "test_count": 8
+    },
+    {
+      "name": "global no-supervision stop before optimizer",
+      "command": "python stdin unittest TestSuite([OnlineCreditTest('test_bridge_terminal_cap_invalid_and_empty_global')])",
+      "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/no-supervision-test-final.log",
+      "log_sha256": "379a3ad46b02665ecede9a918b68a40e9fd0657f3898bb0b9ca4cdc0738ab6f7",
+      "exit_code": 0,
+      "test_count": 1
+    }
+  ],
+  "falsification_evidence": [
+    "tinygrid all36 strictGT boxes and all prefixes matched exhaustive suffix existence",
+    "nonmax acceptable mass cannot hide a forbidden maximum; noncoordinate vocabulary competitor is included",
+    "fractional/bool/out-of-range/invalid GT rejected",
+    "exact owner loss identity replaces every coordinate CE atom and preserves lexical/type/order denominators",
+    "first violation receives owner loss; later impossible-prefix owner contribution is zero",
+    "sampled box and unrelated same-category owner do not substitute for selected annotation GT",
+    "coordinate redirect exact-point margin has zero value and gradient; description margin remains",
+    "mixed/absent route/data/producer bindings rejected",
+    "persisted two-update raw/readback accepted with CPU fixtures; re-signed missing owner metadata rejected",
+    "trace-only bounded replay witness prefix mutation rejected; mismatching HF argmax remains descriptive",
+    "data identity mutation and duplicate/invalid GT rejected; adjacent recovery sequence and duplicate denominator checked",
+    "real dirty qualification rejected before publication; no qualifier/native run directories created"
+  ],
+  "qualification_attempt": {
+    "command": [
+      "python",
+      "-m",
+      "probes.full_label_self_rollout",
+      "qualify",
+      "--unit",
+      "/data/CoordExp/.worktrees/research-probes/research/experiments/2026-10-02-full-label-self-rollout-fit",
+      "--root",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/qualification",
+      "--qualification-run",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+      "--observation-run",
+      "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+      "--checkpoint",
+      "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload"
+    ],
+    "exit_code": 1,
+    "status": "expected HOLD: clean source required",
+    "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/qualification-hold.log",
+    "log_sha256": "38139ec8e6f9e9bfddded60e3ee72281819062deab3f7a2b3cd113b3b953d3e0"
+  },
+  "remaining_semantic_issues": [],
+  "cpu_tests_passed": 24,
+  "record_validation": {
+    "command": "python -m scripts.check_research_knowledge check",
+    "status": "pass",
+    "catalog_entries": 330,
+    "current_units": 6,
+    "claim_references": 165,
+    "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/research-check-04.log"
+  },
+  "ownership_check": "User approved preserving and separately committing the preexisting Qwen anchor-path migration: cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08. Lead owns the separate accepted implementation/unit/catalog batch. No push or native invocation.",
+  "worker_model_at_creation": "gpt-6.1-sol",
+  "worker_effort_at_creation": "high",
+  "worker_model_change_observation": {
+    "source": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/candidate-return-01.json",
+    "sha256": "299574601a7a570115b7944e2d351e91f22a04d7eba2e253dcca0a5e29c8e18a",
+    "meaning": "Final transport reports gpt-6-astra/ultra after creation gpt-6.1-sol/high; no worker-issued reconfiguration. Source and tests are unchanged."
+  },
+  "candidate_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/candidate-return-01.json",
+  "lead_acceptance_scope": "CPU only",
+  "worker_model_restoration": {
+    "user_instruction": "2026-10-02T08:44:30Z: user restored worker to 6.1; continue assignments",
+    "verified_model": "gpt-6.1-sol",
+    "verified_effort": "high",
+    "dispatch_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-native-preparation-dispatch-01.json",
+    "dispatch_receipt_sha256": "3c7ff9667f930651989bb8c41162a733d019d136a1f3dda7341208f8e708759b"
+  },
+  "lead_cpu_acceptance": {
+    "report": "research/experiments/2026-10-02-full-label-self-rollout-fit/acceptance.md",
+    "source_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lead-cpu-accepted-source-01.json",
+    "source_receipt_sha256": "43361e59246a82fe82b1672359d6e37ed41bfe3da40c8c9d7ff103ff5fc6c126",
+    "closure_sha256": "1dc7ebdbe0dc5441b003c25298144e79067ce5f28beee8cd3726f75681f371f0",
+    "checks": [
+      {
+        "command": "Original candidate: exact 24-test bounded unittest suite in lead log",
+        "test_count": 24,
+        "exit_code": 0,
+        "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lead-tests-01.log",
+        "sha256": "5f4618658403051edf6acf37e14db7f6f7fdd610836541ced5f28612aee73241"
+      },
+      {
+        "command": "python -m pytest -q tests/probes/test_online_full_label_region.py tests/probes/test_online_row_credit_owner.py",
+        "test_count": 19,
+        "exit_code": 0,
+        "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lead-component-owner-tests-01.log",
+        "sha256": "771baf6b8ff5aab314e7909be8b9b0dc2831fce8043c1540ff884d46b38e3d36"
+      },
+      {
+        "command": "Final reporting revision: preserved 8 restored-M/default tests; child log independently inspected",
+        "test_count": 8,
+        "exit_code": 0,
+        "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/restored-m-after-owner-components-retry-01.log",
+        "sha256": "bdc8a78d37cdb2d370e0868af410561432b3426848855cc802cdeda22f3b7139"
+      }
+    ],
+    "runtime_packet": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/runtime-packet-candidate-01.json",
+    "runtime_packet_sha256": "ce718db3f1771bef46d08dd323c11999dab847e70cf6b29ad31cce5d7dedac5b",
+    "final_source_sha256": {
+      "probes/full_label_self_rollout.py": "9537a25816452a898cb0ef43525e19307fa6b70ed0ec2dc3b02a451e3f7d342c",
+      "probes/online_row_credit.py": "eb86003d92d0b77cbdf844cc4e32a69ca23c6a20160fa668e16d0ce02c4aa733",
+      "probes/online_row_credit_owner.py": "94fd8667c90bfa525a7e447212e3d16a57a18c9a22149bdc5264fb6ab866a066",
+      "probes/owner_region_ranking.py": "b5cee23bb0af8d8189f8d243f6082de921051c73fd384163b71087001c88324c",
+      "tests/probes/test_full_label_data.py": "f2ba8b1f2d1eb13001b66e7c0a1c364c333df54dada5868a43233ff24d052080",
+      "tests/probes/test_online_full_label_region.py": "9d49681bf7a7c0e3e342017b995184ee4dbcc898aa351454c0592ad15df4a6a9",
+      "tests/probes/test_online_row_credit_owner.py": "4000f9cef43e5f4ade1b7f3e04525c32d06eb2270191d1a201e8924ae515df41",
+      "tests/probes/test_owner_region_ranking.py": "bf92a81db0c977d16c1574b0ca247cd8fb9f2cfddf725a92d77367dd0734b861"
+    },
+    "provisional_execution_identity": true
+  },
+  "unrelated_path_resolution": {
+    "path": "tests/qwen/test_vllm_dora_model.py",
+    "user_answer": "可以，原样单独提交",
+    "commit": "cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08",
+    "test_log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lead-anchor-path-test-01.log",
+    "test_count": 1,
+    "status": "passed_and_committed_unchanged"
+  }
+}

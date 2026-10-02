@@ -42,6 +42,12 @@ Common correction, geometry and containment stay fixed; v3 remains unchanged.
 All three `probes.online_row_credit` stages bind the qualified recipe through
 `--recipe-sha256`; a separate lead release is required for native execution.
 
+The opt-in `--full-label-region` route uses the existing online runner with
+570 known labels and owner-region coordinate ranking. CPU snapshot/qualification
+preparation is `python -m probes.full_label_self_rollout --help`; exact data,
+loss, metric, bounds and proposed argv belong to the
+[full-label unit](../research/experiments/2026-10-02-full-label-self-rollout-fit/unit.md).
+
 The former finite-panel producers, model-specific convenience loaders, stage
 controllers and repair/closeout chains are no longer maintained. Their useful
 results and exact historical recovery points are in the existing catalog.

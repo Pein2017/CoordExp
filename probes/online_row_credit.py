@@ -21,6 +21,93 @@ IDENTITY_SELECTION = 'first_eligible_literal_duplicate_per_identity_round'
 IDENTITY_NORMALIZATION = 'complete_positive_plus_margin_mean_1_over_K_per_image'
 RESTORED_M_WEIGHTING = 'restored_M_mass'
 RESTORED_M_COMPLETION = 'CHAIN_ALL_M_relocated_1_over_m_plus_B_1_over_m_plus_k'
+FULL_LABEL_MODE = 'full-label-region-v1'
+OWNER_REGION = dict(kind='owner_region_max_hinge_v1',tau=.5,margin=.2,coefficient=1,
+    prefix='actual_first_violation',coordinate_ce='replaced',coordinate_redirect_margin='included_in_row_region',
+    auxiliary='existing_type_and_actual_prefix_order_geometry')
+FULL_LABEL_BOUNDS = dict(vocabulary=152670,trace=[4456,3084],bridge=[5032,628],redirect=[4467,11])
+FULL_LABEL_DECODER = dict(backend='vllm',version='0.29.0+cu129',generation_config='vllm',logprobs_mode='raw_logprobs',
+    temperature=0,top_p=1,top_k=-1,repetition_penalty=1,min_tokens=0,custom_processor=False,
+    score_order='neutral_processing_greedy_argmax',loss_scores='HF_replay',outcomes='native_vllm_greedy')
+
+
+def full_label_recipe(checkpoint, manifest_sha256, training_path, training_sha256):
+    return dict(mode=FULL_LABEL_MODE,checkpoint=str(checkpoint),manifest_sha256=manifest_sha256,
+        training_path=str(training_path),training_sha256=training_sha256,owner_region=dict(OWNER_REGION),
+        arms={'treatment':1},updates=[2,16],completion={'treatment':RESTORED_M_COMPLETION},
+        completion_weighting=RESTORED_M_WEIGHTING,event=IDENTITY_SELECTION,event_normalization=IDENTITY_NORMALIZATION,
+        objective='positive_row_region_plus_description_divergence_softplus_1',execution_bounds=dict(FULL_LABEL_BOUNDS),decoder=dict(FULL_LABEL_DECODER),
+        optimizer=dict(kind='fresh_continuous_AdamW',language_lr=1e-5,delta_lr=5e-6,betas=[.9,.999],eps=1e-8,weight_decay=0,clip=1,seed=92711))
+
+
+def owner_box(image, row):
+    owners=[o for o in image['objects'] if o['coco_ann_id']==row['annotation_id']]
+    assert len(owners)==1 and owners[0]['desc']==row['description'], 'owner identity or description drift'
+    from probes.owner_region_ranking import acceptable_bins
+    bbox=owners[0]['bbox_2d'];acceptable_bins(bbox,[])
+    return bbox
+
+
+def region_row_evidence(sequence, row, image, vocab, region):
+    from probes.owner_region_ranking import owner_slots
+    assert region==OWNER_REGION, 'owner region recipe drift'
+    atoms=[a for a in sequence.atoms if a.token_type=='coordinate']
+    assert len(atoms)==4 and [a.coordinate_target.slot_index for a in atoms]==list(range(4))
+    bins={token:i for i,token in enumerate(vocab.coordinate)}
+    actual=[bins[sequence.input_ids[a.target_position]] for a in atoms]
+    gt=owner_box(image,row);slots,allowed,failure=owner_slots(gt,actual,region['tau'])
+    return dict(annotation_id=row['annotation_id'],gt=gt,actual=actual,first_failure=failure,
+        eligible=len(slots),skipped=4-len(slots),sites=[dict(slot=s,position=atoms[s].causal_logits_position,
+            acceptable_count=len(a),acceptable_sha256=identity(list(a))) for s,a in zip(slots,allowed)],
+        auxiliary=dict(token_type_coefficient=.1,order_coefficient=.01,order_prefix='actual_supplied_bins',
+            atom_denominator=len(sequence.atoms),coordinate_point_ce=False,coordinate_pair_margin=False))
+
+
+def owner_row_loss(logits, sequence, vocab, positions, row, image, region=None, components=None):
+    if region is None:return p.image_loss(logits,sequence,vocab,positions)[0]
+    import torch
+    from probes.owner_region_ranking import owner_slots, region_margin
+    from src.losses.context import LossContext
+    from src.losses.base_ce import BaseTokenCE
+    from src.losses.token_type_gate import TokenTypeGateLoss
+    from src.losses.conditional_order_gate import ConditionalOrderGateLoss
+    evidence=region_row_evidence(sequence,row,image,vocab,region)
+    slots,allowed,_=owner_slots(evidence['gt'],evidence['actual'],region['tau'])
+    sites=dict(zip(slots,allowed));lookup={pos:j for j,pos in enumerate(positions)}
+    context=LossContext(logits,sequence,vocab,tuple(positions))
+    ce=BaseTokenCE().per_atom_loss(context)
+    values=[];lexical=[];coordinates=[]
+    for j,atom in enumerate(sequence.atoms):
+        if atom.token_type!='coordinate':
+            values.append(ce[j]);lexical.append(ce[j]);continue
+        slot=atom.coordinate_target.slot_index
+        z=logits[0,lookup[atom.causal_logits_position]]
+        value=region_margin(z,[vocab.coordinate[b] for b in sites[slot]],region['margin']) if slot in sites else z.sum()*0
+        values.append(value);coordinates.append(value)
+    # Keep the original row atom denominator and broad type/order auxiliaries.
+    gate=TokenTypeGateLoss().per_atom_loss(context).mean()
+    order=ConditionalOrderGateLoss().per_segment_loss(context).segment_losses.mean()
+    core=torch.stack(values).mean();type_gate=.1*gate;conditional_order=.01*order
+    loss=core+.1*gate+.01*order
+    if components is not None:
+        denominator=len(values)
+        components.update(row_loss=loss,
+            lexical_schema_ce=torch.stack(lexical).sum()/denominator if lexical else ce.new_zeros(()),
+            coordinate_region_hinge=torch.stack(coordinates).sum()/denominator if coordinates else ce.new_zeros(()),
+            type_gate_weighted=type_gate,conditional_order_weighted=conditional_order)
+    return loss
+
+
+def owner_loss_component_receipt(components, reduction_weight):
+    import math
+    names=('lexical_schema_ce','coordinate_region_hinge','type_gate_weighted','conditional_order_weighted')
+    weight=float(reduction_weight);row_loss=float(components['row_loss'].detach())
+    values={name:float(components[name].detach()) for name in names}
+    assert math.isfinite(weight) and 0<weight<=1
+    assert math.isfinite(row_loss) and row_loss>=0
+    assert all(math.isfinite(value) and value>=0 for value in values.values())
+    assert math.isclose(sum(values.values()),row_loss,rel_tol=1e-5,abs_tol=1e-6), 'owner loss component sum drift'
+    return dict(reduction_weight=weight,row_loss=row_loss,**values)
 
 
 def identity(value):
@@ -268,6 +355,9 @@ def completion_credit(image, record, tokenizer, producer, arm, identity_events=F
     original=credit(image,record,tokenizer,producer,all_events=True,identity_events=identity_events)
     assert original['M']==plan['M']
     plan.update(redirect=original['redirect'],redirect_events=original['redirect_events'],completion_arm=arm)
+    if producer.get('owner_region') is not None:
+        assert producer['owner_region']==OWNER_REGION and arm=='treatment' and completion_weighting==RESTORED_M_WEIGHTING
+        plan.update(owner_region=dict(OWNER_REGION),training_sha256=producer['training_sha256'])
     if completion_weighting is not None:plan['completion_weighting']=completion_weighting
     if identity_events:plan.update(redirect_selection=IDENTITY_SELECTION,redirects=original['redirects'])
     if arm=='treatment' and plan['k']:
@@ -282,6 +372,8 @@ def completion_credit(image, record, tokenizer, producer, arm, identity_events=F
 
 
 def correction_plan(image, record, tokenizer, correction):
+    assert record['producer'].get('owner_region')==correction.get('owner_region'), 'owner region producer drift'
+    assert record['producer'].get('training_sha256')==correction.get('training_sha256'), 'training producer drift'
     if 'completion_arm' in correction:
         weighting=correction.get('completion_weighting')
         if weighting is not None:assert record['producer'].get('completion_weighting')==weighting, 'completion producer weighting drift'
@@ -350,7 +442,7 @@ def bridge_trace_plan(plan, arm):
     return dict(plan,M=[x for x in plan['M'] if not plan['k'] or (arm=='local' and x['order'] not in successors)])
 
 
-def bridge_objective(logits, positions, sequences, plan, arm, vocab, branch_index=None):
+def bridge_objective(logits, positions, sequences, plan, arm, vocab, branch_index=None, image=None, record=None, component_rows=None):
     import torch
     weighting=plan.get('completion_weighting')
     assert weighting in (None,RESTORED_M_WEIGHTING) and plan['producer'].get('completion_weighting')==weighting, 'completion plan weighting drift'
@@ -367,7 +459,17 @@ def bridge_objective(logits, positions, sequences, plan, arm, vocab, branch_inde
     assert len(sequences)==len(weights)
     expected=tuple(sorted({a.causal_logits_position for seq in sequences for a in seq.atoms}))
     assert tuple(positions)==expected
-    values=[p.image_loss(logits,seq,vocab,positions)[0]*weight for seq,weight in zip(sequences,weights)]
+    region=plan.get('owner_region')
+    if region is not None:
+        assert image is not None and record is not None
+        _,rows,_,_=bridge_rows(record,plan,branch_index)
+    else:rows=[None]*len(sequences)
+    values=[]
+    for seq,weight,row in zip(sequences,weights,rows):
+        components={} if component_rows is not None else None
+        value=owner_row_loss(logits,seq,vocab,positions,row,image,region,components)
+        values.append(value*weight)
+        if component_rows is not None:component_rows.append(components)
     terms={'B':torch.stack(values[:nb]).sum(),'M_relocated':torch.stack(values[nb:]).sum() if len(values)>nb else logits.sum()*0}
     return sum(terms.values()),terms
 
@@ -379,10 +481,13 @@ def bridge_metadata(plan, arm, branch, branch_index=None):
         selected_M_orders=[x['order'] for x in bridge_trace_plan(plan,arm)['M']] if branch=='trace' else [])
 
 
-def bridge_row_evidence(record,plan,sequences,branch_index):
+def bridge_row_evidence(record,plan,sequences,branch_index,image=None,vocab=None):
     _,rows,weights,nb=bridge_rows(record,plan,branch_index)
-    return [dict(kind='B' if j<nb else 'M',annotation_id=row['annotation_id'],weight=weight,atoms=[a.to_artifact_dict() for a in seq.atoms])
+    result=[dict(kind='B' if j<nb else 'M',annotation_id=row['annotation_id'],weight=weight,atoms=[a.to_artifact_dict() for a in seq.atoms])
         for j,(row,seq,weight) in enumerate(zip(rows,sequences,weights))]
+    if plan.get('owner_region') is not None:
+        for value,row,seq in zip(result,rows,sequences):value['owner_region']=region_row_evidence(seq,row,image,vocab,plan['owner_region'])
+    return result
 
 
 def verify_bridge_forward(evidence, image, record, plan, tokenizer, arm):
@@ -536,13 +641,18 @@ def greedy_geometry_objective(logits, positions, rows, prompt_length, coordinate
     return torch.stack(values).mean() if values else logits.sum()*0
 
 
-def trace_objective(logits, positions, plan, record, image, tokenizer, vocab, geometry_weight=0, matched_denominator=None):
+def trace_objective(logits, positions, plan, record, image, tokenizer, vocab, geometry_weight=0, matched_denominator=None, component_rows=None):
     import torch
     if 'schema_geometry' in plan:
         assert plan['schema_geometry']==schema_geometry_errors(record,tokenizer,plan['observations']), 'schema causal bounds drift'
     assert tuple(positions)==trace_positions(plan,record), 'wrong causal positions'
     assert plan['raw_identity']==record['raw_identity'] and plan['producer']==record['producer']
-    values = [p.image_loss(logits,r.positive_sequence(image,record,row,tokenizer),vocab,positions)[0] for row in plan['M']]
+    values=[]
+    for row in plan['M']:
+        components={} if component_rows is not None else None
+        value=owner_row_loss(logits,r.positive_sequence(image,record,row,tokenizer),vocab,positions,row,image,plan.get('owner_region'),components)
+        values.append(value)
+        if component_rows is not None:component_rows.append(components)
     m = (torch.stack(values).sum()/matched_denominator if matched_denominator is not None else torch.stack(values).mean()) if values else logits.sum()*0
     legal = legal_objective(logits,positions,plan['observations'],len(record['prompt_token_ids']),vocab.coordinate)
     assert geometry_weight in (0,.1)
@@ -552,7 +662,7 @@ def trace_objective(logits, positions, plan, record, image, tokenizer, vocab, ge
     return m+legal, dict(M=m,legal=legal)
 
 
-def redirect_objective(logits, positions, sequence, target, prompt_length, vocab):
+def redirect_objective(logits, positions, sequence, target, prompt_length, vocab, image=None, region=None, components=None):
     import torch.nn.functional as F
     assert tuple(positions)==tuple(a.causal_logits_position for a in sequence.atoms)
     d = target['site']['offset']; pos = prompt_length+target['prefix_cut']+d-1
@@ -561,8 +671,9 @@ def redirect_objective(logits, positions, sequence, target, prompt_length, vocab
     atom = sequence.atoms[d]
     assert atom.token_type in ('desc_text','coordinate') and atom.causal_logits_position==pos
     z = logits[0,positions.index(pos)].float()
-    margin = F.softplus(1+z[target['site']['bad']]-z[target['site']['good']])
-    positive,_ = p.image_loss(logits,sequence,vocab,positions)
+    margin = (z.sum()*0 if region is not None and atom.token_type=='coordinate'
+              else F.softplus(1+z[target['site']['bad']]-z[target['site']['good']]))
+    positive = owner_row_loss(logits,sequence,vocab,positions,target,image,region,components)
     weight=target.get('event_weight',1)
     assert 0<weight<=1
     return weight*(positive+margin), dict(redirect_positive=weight*positive,redirect_margin=weight*margin)
@@ -897,24 +1008,48 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         assert branch=='trace'
         full = record['prompt_token_ids']+record['token_ids']; positions = trace_positions(plan,record)
     assert len(full)<=p.MAX_LENGTH
+    if plan.get('owner_region') is not None:
+        context_bound,selected_bound=FULL_LABEL_BOUNDS[branch]
+        assert len(full)<=context_bound and len(positions)<=selected_bound and len(q.tokenizer)==FULL_LABEL_BOUNDS['vocabulary'], 'full label execution bound exceeded'
     kwargs = exact_history_inputs(q.model,batch.inputs,[full],pad_token_id=q.tokenizer.pad_token_id)
     kwargs['logits_to_keep'] = torch.tensor(positions,device='cuda')
     with torch.autocast('cuda',dtype=torch.bfloat16): logits = model(**kwargs).logits
     if branch=='bridge':
-        loss,terms=bridge_objective(logits,positions,sequences,plan,'chain' if completion else insertion_policy,vocab,branch_index)
-        rows=bridge_row_evidence(record,plan,sequences,branch_index)
+        component_rows=[] if plan.get('owner_region') is not None else None
+        loss,terms=bridge_objective(logits,positions,sequences,plan,'chain' if completion else insertion_policy,vocab,branch_index,image,record,component_rows)
+        rows=bridge_row_evidence(record,plan,sequences,branch_index,image,vocab)
+        if component_rows is not None:
+            assert len(component_rows)==len(rows)
+            for value,parts in zip(rows,component_rows):value['loss_components']=owner_loss_component_receipt(parts,value['weight'])
     elif branch=='P0':
         loss,terms=preservation_objective(logits,positions,sequences,vocab,preservation_weight)
         rows=[dict(order=row['order'],atoms=len(seq.atoms)) for row,seq in zip(preservation['rows'],sequences)]
     elif branch=='R':
         loss,terms,rows = retained_credit(logits,sequence,row_ids,vocab,positions)
     elif branch=='redirect':
-        loss,terms = redirect_objective(logits,positions,sequence,target,len(record['prompt_token_ids']),vocab)
+        components={} if plan.get('owner_region') is not None else None
+        loss,terms = redirect_objective(logits,positions,sequence,target,len(record['prompt_token_ids']),vocab,image,plan.get('owner_region'),components)
         rows = []
     else:
-        loss,terms = trace_objective(logits,positions,plan,record,image,q.tokenizer,vocab,geometry_weight,original_plan['n'] if insertion_policy is not None else None); rows = []
+        component_rows=[] if plan.get('owner_region') is not None else None
+        loss,terms = trace_objective(logits,positions,plan,record,image,q.tokenizer,vocab,geometry_weight,original_plan['n'] if insertion_policy is not None else None,component_rows); rows = []
     comparison = []
-    if branch=='trace' and record.get('raw_logprobs'):
+    ordering=None
+    if branch=='trace' and plan.get('owner_region') is not None:
+        n=len(record['prompt_token_ids']);lookup={pos:j for j,pos in enumerate(positions)}
+        eligible=sorted({j for row in plan['observations'] for j in row['coordinate_positions']})
+        selected=[j for j in eligible if n+j-1 in lookup]
+        for index in selected[:4]:
+            pos=n+index-1;z=logits[0,lookup[pos]].detach().float();emitted=record['token_ids'][index]
+            value=dict(index=index,causal_position=pos,emitted_token=emitted,hf_argmax_token=int(z.argmax()),
+                max_minus_emitted=float(z.max()-z[emitted]),prefix_sha256=identity(record['prompt_token_ids']+record['token_ids'][:index]))
+            if record.get('raw_logprobs'):
+                lp=float(z.log_softmax(-1)[emitted])
+                value.update(cached_logp=record['raw_logprobs'][index],replay_logp=lp,difference=lp-record['raw_logprobs'][index])
+            comparison.append(value)
+        ordering=dict(scope='first_four_selected_original_trace_coordinate_positions',eligible=len(eligible),
+            eligible_in_selected=len(selected),checked=len(comparison),interpretation='descriptive_HF_replay_vs_native_emitted_token_not_deployment_argmax_certificate')
+    elif branch=='trace' and record.get('raw_logprobs'):
         n = len(record['prompt_token_ids'])
         for j,pos in enumerate(positions):
             index = pos+1-n
@@ -929,6 +1064,7 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         input_sha256=identity(list(full)),positions=list(positions),loss=float(loss.detach()),
         terms={k:float(v.detach()) for k,v in terms.items()},logit_derivatives=diagnostics(terms,logits),
         row_losses=rows,cached_replay=comparison,logits_sha256=p.tensor_hash(logits))
+    if ordering is not None:evidence['replay_ordering']=ordering
     if insertion_policy is not None:
         if branch=='trace':
             evidence['row_losses']=[dict(order=row['order'],atoms=[a.to_artifact_dict() for a in r.positive_sequence(image,record,row,q.tokenizer).atoms]) for row in plan['M']]
@@ -943,8 +1079,23 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         if branch!='bridge':
             sequences=[r.positive_sequence(image,record,row,q.tokenizer) for row in plan['M']] if branch=='trace' else [sequence]
             evidence['row_losses']=[dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences]
+            if plan.get('owner_region') is not None:
+                owners=plan['M'] if branch=='trace' else [target]
+                for value,seq,row in zip(evidence['row_losses'],sequences,owners):
+                    value['owner_region']=region_row_evidence(seq,row,image,vocab,plan['owner_region'])
+                if branch=='trace':
+                    reduction_weight=1/(original_plan['n'] if insertion_policy is not None else len(sequences)) if sequences else 0
+                    assert component_rows is not None and len(component_rows)==len(sequences)
+                    for value,parts in zip(evidence['row_losses'],component_rows):
+                        value['loss_components']=owner_loss_component_receipt(parts,reduction_weight)
+                else:
+                    assert components is not None
+                    value=evidence['row_losses'][0]
+                    value['loss_components']=owner_loss_component_receipt(components,target.get('event_weight',1))
         if completion:evidence['completion_arm']=completion
         if 'completion_weighting' in original_plan:evidence['completion_weighting']=original_plan['completion_weighting']
+        if 'owner_region' in original_plan:
+            evidence.update(owner_region=original_plan['owner_region'],training_sha256=original_plan['training_sha256'])
         if branch=='redirect':
             d=target['site']['offset'];site=target['site'];z=logits[0,d].float()
             g,=torch.autograd.grad(terms['redirect_margin'],logits,retain_graph=True)
@@ -971,6 +1122,7 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
         completion=plan.get('completion_arm')
         assert row.get('completion_arm')==completion
         assert row.get('completion_weighting')==plan.get('completion_weighting')
+        assert row.get('owner_region')==plan.get('owner_region') and row.get('training_sha256')==plan.get('training_sha256'), 'region evidence binding drift'
         selected=bridge_trace_plan(plan,'chain') if completion=='treatment' else plan
         if job['branch']=='trace':
             full=record['prompt_token_ids']+record['token_ids'];positions=trace_positions(selected,record)
@@ -1002,13 +1154,67 @@ def verify_correction_forwards(forwards, image_ids, rank, plans, records, images
             ceiling=float(torch.tensor(event_weight,dtype=dtype))
             assert 0<=detail['bad_derivative']<=ceiling and detail['good_derivative']==-detail['bad_derivative']
             margin=event_weight*float(F.softplus(torch.tensor(1+detail['bad_logit']-detail['good_logit'])))
+            if plan.get('owner_region') is not None and detail['site_kind']=='coordinate':
+                margin=0
+                assert detail['good_derivative']==detail['bad_derivative']==0, 'point coordinate margin remains active'
             assert math.isclose(row['terms']['redirect_margin'],margin,rel_tol=1e-5,abs_tol=1e-6)
         assert row['tokens']==len(full) and row['input_sha256']==identity(list(full)) and row['positions']==list(positions)
+        if plan.get('owner_region') is not None:
+            context_bound,selected_bound=FULL_LABEL_BOUNDS[job['branch']]
+            assert len(full)<=context_bound and len(positions)<=selected_bound and len(tokenizer)==FULL_LABEL_BOUNDS['vocabulary'], 'full label execution bound exceeded'
+            if job['branch']=='trace':
+                n=len(record['prompt_token_ids'])
+                eligible=sorted({j for x in selected['observations'] for j in x['coordinate_positions']})
+                checked=[j for j in eligible if n+j-1 in positions]
+                assert row['replay_ordering']==dict(scope='first_four_selected_original_trace_coordinate_positions',eligible=len(eligible),
+                    eligible_in_selected=len(checked),checked=min(4,len(checked)),interpretation='descriptive_HF_replay_vs_native_emitted_token_not_deployment_argmax_certificate')
+                assert len(row['cached_replay'])==min(4,len(checked))
+                for item,index in zip(row['cached_replay'],checked[:4]):
+                    assert item['index']==index and item['causal_position']==n+index-1 and item['emitted_token']==record['token_ids'][index]
+                    assert item['prefix_sha256']==identity(record['prompt_token_ids']+record['token_ids'][:index])
+                    assert type(item['hf_argmax_token']) is int and 0<=item['hf_argmax_token']<len(tokenizer)
+                    assert math.isfinite(item['max_minus_emitted']) and item['max_minus_emitted']>=0
+            else:assert 'replay_ordering' not in row and not row['cached_replay']
         assert row['logits_shape']==[1,len(positions),len(tokenizer)]
         assert row['visual_tokens']==__import__('math').prod(record['image_grid_thw'])//4
-        expected_rows=(bridge_row_evidence(record,plan,sequences,None) if job['branch']=='bridge' else
+        from types import SimpleNamespace
+        vocab=(SimpleNamespace(coordinate=tuple(tokenizer.convert_tokens_to_ids(f'<|coord_{j}|>') for j in range(1000)))
+               if plan.get('owner_region') is not None else None)
+        expected_rows=(bridge_row_evidence(record,plan,sequences,None,images[i],vocab) if job['branch']=='bridge' else
                        [dict(atoms=[a.to_artifact_dict() for a in seq.atoms]) for seq in sequences])
-        assert row['row_losses']==expected_rows
+        if plan.get('owner_region') is not None and job['branch']!='bridge':
+            owners=selected['M'] if job['branch']=='trace' else [target]
+            for value,seq,owner in zip(expected_rows,sequences,owners):
+                value['owner_region']=region_row_evidence(seq,owner,images[i],vocab,plan['owner_region'])
+        if plan.get('owner_region') is not None:
+            assert len(row['row_losses'])==len(expected_rows)
+            component_names=('lexical_schema_ce','coordinate_region_hinge','type_gate_weighted','conditional_order_weighted')
+            weighted_total=0.0
+            for index,(saved,expected_row) in enumerate(zip(row['row_losses'],expected_rows)):
+                assert {k:v for k,v in saved.items() if k!='loss_components'}==expected_row
+                components=saved.get('loss_components')
+                assert isinstance(components,dict) and set(components)=={'reduction_weight','row_loss',*component_names}
+                if job['branch']=='trace':expected_weight=1/len(expected_rows) if expected_rows else 0
+                elif job['branch']=='bridge':expected_weight=expected_row['weight']
+                else:expected_weight=target.get('event_weight',1)
+                coefficient=components['reduction_weight'];row_loss=components['row_loss']
+                assert math.isfinite(coefficient) and 0<coefficient<=1 and math.isclose(coefficient,expected_weight,rel_tol=1e-12,abs_tol=1e-12)
+                assert math.isfinite(row_loss) and row_loss>=0
+                values=[components[name] for name in component_names]
+                assert all(math.isfinite(value) and value>=0 for value in values)
+                assert math.isclose(sum(values),row_loss,rel_tol=1e-5,abs_tol=1e-6), 'owner loss components do not sum to row loss'
+                weighted_total+=coefficient*sum(values)
+            owner_term={'trace':'M','redirect':'redirect_positive'}.get(job['branch'])
+            if job['branch']=='bridge':
+                for kind,name in (('B','B'),('M','M_relocated')):
+                    subtotal=sum(saved['loss_components']['reduction_weight']*sum(saved['loss_components'][field] for field in component_names)
+                                 for saved,expected_row in zip(row['row_losses'],expected_rows) if expected_row['kind']==kind)
+                    assert math.isclose(subtotal,row['terms'][name],rel_tol=1e-5,abs_tol=1e-6), f'{kind} owner components disagree with branch loss'
+            else:assert math.isclose(weighted_total,row['terms'][owner_term],rel_tol=1e-5,abs_tol=1e-6), 'owner components disagree with branch loss'
+            optimized_terms=[value for name,value in row['terms'].items() if name!='Gmax_unweighted']
+            assert math.isclose(row['loss'],sum(optimized_terms),rel_tol=1e-5,abs_tol=1e-6), 'reported components must not change optimized scalar'
+        else:
+            assert row['row_losses']==expected_rows
         assert math.isfinite(row['loss']) and all(math.isfinite(x) and x>=0 for x in row['terms'].values())
         assert set(row['logit_derivatives'])==set(row['terms'])
         for key,detail in row['logit_derivatives'].items():
@@ -1020,8 +1226,8 @@ def parameter_identity(model):
     return {name:p.tensor_hash(value) for name,value in model.named_parameters() if value.requires_grad}
 
 
-def source_paths():
-    return ['probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
+def source_paths(full_label_region=False):
+    return (['probes/full_label_self_rollout.py','probes/owner_region_ranking.py'] if full_label_region else [])+['probes/online_row_credit.py','probes/rollout_row_credit.py','probes/iterative_positive.py','probes/hidden_human_recovery.py',
             *sorted(str(x) for x in Path('src').rglob('*.py'))]
 
 
@@ -1031,14 +1237,17 @@ def start(output, root):
     for path,sha in p.load(root/'qualification.json')['sha256'].items(): assert p.digest(path)==sha,path
     assert int(os.environ['WORLD_SIZE'])==8
     rank = int(os.environ['RANK']);torch.cuda.set_device(int(os.environ['LOCAL_RANK']));torch.manual_seed(92711)
-    sources = source_paths()
+    sources = source_paths(p.load(root/'qualification.json').get('correction',{}).get('mode')==FULL_LABEL_MODE)
     source = capture_source_identity(sources)
     out = output/f'rank-{rank}';out.mkdir(parents=True,exist_ok=False)
     p.write(out/'entry.json',dict(pid=os.getpid(),rank=rank,start=time.time(),source=source))
     return rank,out,sources,source
 
 
-def export_steps(updates):
+def export_steps(updates, full_label_region=False):
+    if full_label_region:
+        assert updates in (2,16)
+        return tuple(range(updates+1))
     assert updates in (1,2,8,16,64)
     return tuple(x for x in (0,1,2,4,8,16,32,64) if x<=updates)
 
@@ -1064,8 +1273,29 @@ def verify_anchor_payload(checkpoint, manifest_sha256):
             assert path.stat().st_size==item['size_bytes'] and p.digest(path)==item['sha256']
 
 
-def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sha256):
+def correction_binding(root, arm, weight, checkpoint, geometry_weight, recipe_sha256, full_label_region=False):
     qual=p.load(root/'qualification.json');spec=qual.get('correction')
+    assert full_label_region==(spec is not None and spec.get('mode')==FULL_LABEL_MODE), 'explicit full label region binding required'
+    if full_label_region:
+        assert arm=='treatment' and weight==1 and geometry_weight==.1
+        assert not any(k in qual for k in ('bridge','geometry','preservation','witness','evaluator_sha256'))
+        assert checkpoint is not None and str(checkpoint)==spec['checkpoint']
+        assert spec==full_label_recipe(checkpoint,spec['manifest_sha256'],spec['training_path'],spec['training_sha256']), 'full label recipe drift'
+        assert recipe_sha256==identity(spec) and qual['rollout_backend']=='vllm' and qual['schema_geometry'] is True
+        manifest=qual['input_manifest'];path=Path(spec['training_path'])
+        assert p.digest(manifest['path'])==manifest['sha256'] and p.digest(path)==spec['training_sha256']
+        from probes.full_label_self_rollout import verify_inputs, decoder_runtime_identity
+        verify_inputs(path.parent.parent)
+        assert qual['decoder_runtime_identity']==decoder_runtime_identity(), 'decoder runtime/source drift'
+        assert set(qual['sha256'])=={str(x) for x in (INPUTS,path,p.POLICY,Path(manifest['path']))}, 'full label input whitelist drift'
+        for name,sha in qual['sha256'].items():assert p.digest(name)==sha,name
+        from src.artifacts.git_identity import verify_source_identity
+        verify_source_identity(qual['source'],required_paths=source_paths(True))
+        verify_anchor_payload(checkpoint,spec['manifest_sha256'])
+        return dict(arm=arm,duplicate_weight=weight,recipe_sha256=recipe_sha256,checkpoint=str(checkpoint),
+            manifest_sha256=spec['manifest_sha256'],weight=.1,schema_geometry=True,rollout_backend='vllm',
+            completion_arm=arm,completion_weighting=RESTORED_M_WEIGHTING,redirect_selection=IDENTITY_SELECTION,
+            owner_region=dict(OWNER_REGION),training_path=spec['training_path'],training_sha256=spec['training_sha256'])
     if arm is None:
         assert spec is None and weight==0, 'explicit correction arm required'
         return None
@@ -1160,7 +1390,7 @@ def vllm_requests(q, inputs, local):
 
 
 def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256=None,
-        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0):
+        geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0, full_label_region=False):
     import os,time,math,torch
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel
@@ -1168,14 +1398,14 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     from src.losses.vocab import build_token_vocabulary_groups
     from src.artifacts.git_identity import verify_source_identity
     rollout_binding(root,rollout_backend)
-    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256,full_label_region)
     if correction is not None:
         assert p.load(root/'qualification.json')['pairs'][str(updates)][correction_arm]==str(output)
-        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert updates in ((2,16) if full_label_region else (1,8)) and insertion_policy is None and preservation_weight==witness_weight==0
         assert preservation_bank_sha256 is witness_bank_sha256 is None
         assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
     else:assert updates!=8
-    scheduled=export_steps(updates)
+    scheduled=export_steps(updates,full_label_region)
     schema_geometry_binding(root,schema_geometry,correction_arm or insertion_policy)
     execution=execution_binding(root,correction_arm or insertion_policy,microbatch,activation_checkpointing)
     geometry=correction if correction is not None else (bridge_binding(root,start_checkpoint,geometry_weight,recipe_sha256,insertion_policy) if insertion_policy is not None else geometry_binding(root,start_checkpoint,geometry_weight,recipe_sha256))
@@ -1193,7 +1423,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
     if binding is not None:p.write(out/'preservation.json',binding)
     if geometry is not None:p.write(out/'geometry.json',geometry)
     if witness is not None:p.write(out/'witness.json',witness)
-    images={x['image_id']:x for x in p.load(RETAINED)}
+    images={x['image_id']:x for x in p.load(correction['training_path'] if full_label_region else RETAINED)}
     inputs={x['image_id']:x for x in p.load(INPUTS)}
     encodings={i:None for i in images} if insertion_policy is not None or correction is not None else {x['image_id']:x for x in p.load(ENCODINGS)}
     assert set(images)==set(inputs)==set(encodings) and len(images)==18
@@ -1246,6 +1476,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if correction is not None:
             producer.update(correction_arm=correction_arm,duplicate_weight=duplicate_weight,recipe_sha256=recipe_sha256)
             if 'completion_weighting' in correction:producer['completion_weighting']=correction['completion_weighting']
+            if full_label_region:producer.update(owner_region=correction['owner_region'],training_sha256=correction['training_sha256'])
         if correction is not None and 'completion_arm' in correction:producer['completion_arm']=correction_arm
         if correction is not None and 'redirect_selection' in correction:producer['redirect_selection']=correction['redirect_selection']
         p.write(out/f'producer-{version}.json',dict(producer=producer,parameters=fingerprint))
@@ -1294,8 +1525,9 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
             all_plans={x['image_id']:bridge_credit(images[x['image_id']],x,q.tokenizer,producer,insertion_policy,schema_geometry) for x in all_records}
             plans={x['image_id']:all_plans[x['image_id']] for x in records}
         else:
-            plans={x['image_id']:(correction_plan(images[x['image_id']],x,q.tokenizer,correction) if correction is not None else
-                                credit(images[x['image_id']],x,q.tokenizer,producer)) for x in records}
+            all_plans={x['image_id']:(correction_plan(images[x['image_id']],x,q.tokenizer,correction) if correction is not None else
+                                credit(images[x['image_id']],x,q.tokenizer,producer)) for x in (all_records if full_label_region else records)}
+            plans={x['image_id']:all_plans[x['image_id']] for x in records}
         p.write(out/f'credit-{version}.json',list(plans.values()))
         metrics=r.assess_outputs([images[i] for i in local],[],records)
         if previous_metrics is not None:
@@ -1309,7 +1541,7 @@ def run(output, root, updates=1, preservation_weight=0, preservation_bank_sha256
         if witnesses is not None and version in (0,1,4,8,16):
             p.write(out/f'witness-diagnostic-{version}.json',witness_diagnostics(q,batches,witnesses,vocab,producer))
         if version==updates:break
-        if insertion_policy is not None:require_bridge_supervision(all_plans,out,version)
+        if insertion_policy is not None or full_label_region:require_bridge_supervision(all_plans,out,version)
         by={x['image_id']:x for x in records};q.model.train();optimizer.zero_grad(set_to_none=True)
         if insertion_policy is not None:
             evidence=r.accumulate_family_step(model,physical_jobs(jobs(list(images),rank,plans,insertion_policy=insertion_policy),microbatch),
@@ -1361,13 +1593,13 @@ def frozen_records(root, image_ids, freeze=False):
 
 
 def readback(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
-             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0):
+             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', correction_arm=None, duplicate_weight=0, full_label_region=False):
     """Fresh process, frozen raw shard readback; no model or evaluator truth."""
     rollout_binding(root,rollout_backend)
-    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256,full_label_region)
     if correction is not None:
         assert p.load(root/'qualification.json')['pairs'][str(updates)][correction_arm]==str(output)
-        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert updates in ((2,16) if full_label_region else (1,8)) and insertion_policy is None and preservation_weight==witness_weight==0
         assert preservation_bank_sha256 is witness_bank_sha256 is None
         assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
     else:assert updates!=8
@@ -1391,7 +1623,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert entry['rank']==rank and entry['pid']==row['request']['parent']['pid'], 'trainer device owner drift'
             assert p.load(directory/'vllm-devices.json')==devices, 'rank device evidence drift'
     if insertion_policy is not None or correction is not None:
-        tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(RETAINED)}
+        tokenizer=r.frontend().tokenizer;images={x['image_id']:x for x in p.load(correction['training_path'] if full_label_region else RETAINED)}
     for rank in range(8):
         directory=output/f'rank-{rank}';receipt=p.load(directory/'complete.json');assert receipt['status']=='complete' and receipt['updates']==updates
         if correction is not None:
@@ -1485,7 +1717,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
                     assert row['input_sha256']==entry['input_sha256'] and row['positions']==[entry['causal_position']]
                     assert row['producer']==bound['producer'] and row['source_producer']==entry['record']['producer']
                     assert row['source_raw_identity']==entry['record']['raw_identity']
-    scheduled=export_steps(updates)
+    scheduled=export_steps(updates,full_label_region)
     checkpoints={output/f'checkpoint-{step}' for step in scheduled}
     assert set(output.glob('checkpoint-*'))==checkpoints, 'missing or unexpected scheduled export'
     for checkpoint in sorted(checkpoints):
@@ -1502,6 +1734,7 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
             assert producer.get('completion_arm')==correction.get('completion_arm')
             assert producer.get('redirect_selection')==correction.get('redirect_selection')
             assert producer.get('completion_weighting')==correction.get('completion_weighting')
+            assert producer.get('owner_region')==correction.get('owner_region') and producer.get('training_sha256')==correction.get('training_sha256'), 'full label producer binding drift'
         for rank in range(8):
             bound=p.load(output/f'rank-{rank}'/f'producer-{version}.json')
             assert bound['producer']==producer and identity(bound['parameters'])==producer['parameter_sha256']
@@ -1525,12 +1758,17 @@ def readback(output, root, updates, preservation_weight=0, preservation_bank_sha
 
 def offline(output, root, updates, preservation_weight=0, preservation_bank_sha256=None,
             geometry_weight=0, start_checkpoint=None, recipe_sha256=None, witness_weight=0, witness_bank_sha256=None, insertion_policy=None,
-            correction_arm=None, duplicate_weight=0, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf'):
+            correction_arm=None, duplicate_weight=0, microbatch=1, activation_checkpointing=True, schema_geometry=False, rollout_backend='hf', full_label_region=False):
     """Only this separate process opens evaluator truth, after all raw outputs freeze."""
     for path,sha in p.load(root/'qualification.json')['sha256'].items():assert p.digest(path)==sha,path
-    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256)
-    if correction is not None:
-        assert updates in (1,8) and insertion_policy is None and preservation_weight==witness_weight==0
+    correction=correction_binding(root,correction_arm,duplicate_weight,start_checkpoint,geometry_weight,recipe_sha256,full_label_region)
+    if full_label_region:
+        assert updates in (2,16) and insertion_policy is None and preservation_weight==witness_weight==0
+        assert preservation_bank_sha256 is witness_bank_sha256 is None
+        assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
+        assert p.load(root/'qualification.json')['pairs'][str(updates)]=={'treatment':str(output)}
+    if correction is not None and not full_label_region:
+        assert updates in ((2,16) if full_label_region else (1,8)) and insertion_policy is None and preservation_weight==witness_weight==0
         assert preservation_bank_sha256 is witness_bank_sha256 is None
         assert schema_geometry and rollout_backend=='vllm' and microbatch==1 and not activation_checkpointing
         pair=p.load(root/'qualification.json')['pairs'][str(updates)]
@@ -1554,6 +1792,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
                 assert producer.get('completion_arm')==expected.get('completion_arm')
                 assert producer.get('redirect_selection')==expected.get('redirect_selection')
                 assert producer.get('completion_weighting')==correction.get('completion_weighting')
+                assert producer.get('owner_region')==correction.get('owner_region') and producer.get('training_sha256')==correction.get('training_sha256'), 'full label producer binding drift'
                 directory=path/f"rollout-{row['update']}"
                 records=frozen_records(directory,ids,freeze=True);verify_producer(records,producer,ids)
                 assert p.digest(directory/'frozen.json')==row['frozen_sha256']
@@ -1578,7 +1817,7 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
     if insertion_policy is not None:assert updates in (1,2,64) and witness_weight==0 and witness_bank_sha256 is None
     read=p.load(output/'readback.json')
     assert [x['update'] for x in read]==list(range(updates+1))
-    images=p.load(RETAINED);frozen={}
+    images=p.load(correction['training_path'] if full_label_region else RETAINED);frozen={}
     for row in read:
         directory=output/f"rollout-{row['update']}"
         records=frozen_records(directory,[x['image_id'] for x in images],freeze=True)
@@ -1650,6 +1889,18 @@ def offline(output, root, updates, preservation_weight=0, preservation_bank_sha2
             supply.append(dict(version=version,update_follows=version<updates,images=rows,cumulative_insertion_events=events,
                 distinct_inserted_ids=sorted(distinct),distinct_supervised_ids=sorted(supervised)))
         p.write(output/'insertion-supply.json',supply)
+    if full_label_region:
+        from probes.full_label_self_rollout import evaluate_versions
+        execution=execution_binding(root,correction_arm,microbatch,activation_checkpointing)
+        for row in read:
+            assert row['correction']==correction and row['execution']==execution and row['requests']==18
+            producer=row['producer']
+            assert producer['source']==p.load(root/'qualification.json')['source']['commit']
+            assert producer['recipe_sha256']==recipe_sha256 and producer['owner_region']==OWNER_REGION
+            assert producer['training_sha256']==correction['training_sha256']
+            verify_producer(frozen['zero' if row['update']==0 else str(row['update'])],producer,[x['image_id'] for x in images])
+        p.write(output/'offline-results.json',evaluate_versions(images,frozen))
+        return
     evaluator=p.load(root/'evaluator-binding.json')['sha256'] if correction is not None else p.load(root/'qualification.json')['evaluator_sha256']
     for path,sha in evaluator.items():assert p.digest(path)==sha,path
     partitions=p.load(r.ROOT/'cpu-03/evaluator-partitions.json')
@@ -1909,9 +2160,11 @@ def main():
     parser.add_argument('--microbatch',type=int,choices=(1,4),default=1)
     parser.add_argument('--activation-checkpointing',choices=('on','off'),default='on')
     parser.add_argument('--rollout-backend',choices=('hf','vllm'),default='hf')
+    parser.add_argument('--full-label-region',action='store_true')
     parser.add_argument('--correction-arm',choices=('control','treatment'))
     parser.add_argument('--duplicate-weight',type=float,choices=(0,1),default=0)
     a=parser.parse_args()
+    assert not a.full_label_region or (a.command in ('run','readback','offline') and a.correction_arm=='treatment'), 'full label entry requires treatment correction'
     if a.command in ('replay-benchmark','replay-benchmark-readback'):
         assert a.correction_arm is None and a.duplicate_weight==0
         assert a.rollout_backend=='hf'
@@ -1922,6 +2175,7 @@ def main():
     if a.correction_arm is not None:
         assert a.command in ('run','readback','offline')
         extra.update(correction_arm=a.correction_arm,duplicate_weight=a.duplicate_weight)
+        if a.full_label_region:extra['full_label_region']=True
     else:assert a.duplicate_weight==0
     if a.command in ('run','readback') or a.correction_arm is not None:extra.update(microbatch=a.microbatch,activation_checkpointing=a.activation_checkpointing=='on',schema_geometry=a.schema_geometry,rollout_backend=a.rollout_backend)
     else:assert not a.schema_geometry and a.microbatch==1 and a.activation_checkpointing=='on' and a.rollout_backend=='hf'
