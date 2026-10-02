@@ -50,11 +50,13 @@ coordexp-infras on `main`.
   proposal material is preserved and routed to [history/](history/README.md)
   when migration is safe.
 - [progress/](../progress/README.md) is a deprecated historical evidence route;
-  [research/](../research/index.md) is the active research interpretation route.
+  the root [research index](../research/index.md) identifies its retained source
+  scope and links to the current research owner.
 
-## Read-order rule
+## Task-local read order
 
-For current behavior, read `PROJECT_CONTEXT.md`, then the Swift guide, system
-overview, implementation map, relevant domain router, and only then the exact
-stable spec needed for compatibility-sensitive semantics. Do not use an older
-plan, proposal, worktree, or progress note as a current source of truth.
+Start from the evidence named by the task. If its owner is unclear, follow the
+task-local routes in [AGENT_INDEX.md](AGENT_INDEX.md), then read only the
+selected owner and the contracts or evidence that task needs. Use
+[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) when repository-wide authority or
+routing needs clarification; no fixed document chain is required.

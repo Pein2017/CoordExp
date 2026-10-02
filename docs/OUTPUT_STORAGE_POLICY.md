@@ -144,7 +144,9 @@ Run the read-only checker with explicit physical roots:
 ```sh
 python -B -m src.artifacts.output_layout \
   --root /data/CoordExp/outputs \
-  --root /data/CoordExp/.worktrees/research-probes/outputs
+  --root /data/CoordExp/.worktrees/coordexp-infras/outputs \
+  --root /data/CoordExp/.worktrees/research-probes/outputs \
+  --root /data/CoordExp/.worktrees/research-probes-web-codex/outputs
 ```
 
 Add `--details` to list findings. Missing/unreadable roots fail, and directory

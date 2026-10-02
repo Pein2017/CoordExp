@@ -4,32 +4,28 @@ layer: docs
 doc_type: standard
 status: canonical
 domain: artifacts
-summary: Standard ownership split for output backup, public data provenance, and model cache recovery.
-updated: 2026-08-09
+summary: Standard ownership split for local outputs, public data provenance, and model cache recovery.
+updated: 2026-10-02
 ---
 
-# Output Sync And Data Provenance
+# Output Ownership And Data Provenance
 
-CoordExp treats large non-code assets by whether they are externally
-recoverable, reproducible, or experiment-specific.
+CoordExp places non-code assets with their physical owner and records how
+derived data was produced.
 
 ## Ownership Rules
 
-- `model_cache/` is not a Baidu Netdisk sync surface. It contains upstream
-  pretrained assets and local cache state; each machine prepares it locally.
-- raw `public_data/` is not a Baidu Netdisk sync surface. Each machine fetches
-  raw datasets from the original source or a local mirror.
-- processed `public_data/` directories are not mirrored by default. Their
-  generation provenance is tracked in git under
-  `manifests/public_data_provenance/`.
-- `outputs/` is the Baidu Netdisk sync surface. It contains experiment artifacts
-  that may be difficult or impossible to regenerate exactly.
+- `model_cache/` contains upstream pretrained assets and machine-local cache
+  state; each machine prepares it locally.
+- raw `public_data/` datasets are fetched from their original source or a local
+  mirror.
+- processed `public_data/` directories are derived data; their generation
+  provenance is tracked in git under `manifests/public_data_provenance/`.
+- `outputs/` holds artifacts for its owning physical worktree. The repository
+  root's `outputs/` is a selected shared-asset store, not a default run
+  destination; see [the output storage policy](../OUTPUT_STORAGE_POLICY.md).
 
-The canonical remote layout is:
-
-```text
-outputs/... -> /CoordExp/outputs/...
-```
+This document does not define a remote backup target or namespace.
 
 Use repo-relative paths when describing artifacts. Avoid machine-specific
 absolute paths in durable records unless they are explicitly labeled as local
@@ -60,60 +56,21 @@ The provenance record should answer:
 - which key parameters materially affect the output
 - which code state the record is tied to, when known
 
-These files are small and belong in git. They are not backed up through Baidu
-Netdisk as the primary truth source.
+These files are small and belong in git as the provenance source.
 
-## Outputs Backup
+## Output placement
 
-Back up `outputs/` inclusively. This includes:
+Keep a branch's runs under its physical worktree owner. Copy an artifact into
+the root shared-asset store only when it has an explicit cross-worktree use, as
+described by [the output storage policy](../OUTPUT_STORAGE_POLICY.md). This
+standard does not configure or imply external synchronization.
 
-- training run directories
-- adapter checkpoints and adapter metadata
-- inference artifacts under `outputs/infer/**`
-- evaluation outputs, metrics, summaries, and JSONL records
-- empty files or interrupted files if they are present on disk
-
-Do not apply automatic ignore rules to `outputs/` by default. Clean up the local
-directory manually when something should not be preserved.
-
-When a node still has active training writing to `output_remote/`, do not rename
-or delete that tree in place. Instead, absorb it into `outputs/` with a
-no-overwrite copy:
-
-```bash
-python scripts/absorb_output_remote_into_outputs.py --apply
-```
-
-This keeps `output_remote/` intact for the active writer while making
-`outputs/` the canonical sync surface for Baidu Netdisk.
-
-For long transfers, use `tmux` and BaiduPCS-Go. On offline nodes that can only
-egress through the local proxy, export:
-
-```bash
-export http_proxy=http://127.0.0.1:9090
-export https_proxy=http://127.0.0.1:9090
-export HTTP_PROXY=http://127.0.0.1:9090
-export HTTPS_PROXY=http://127.0.0.1:9090
-```
-
-The former `.codex/skills/baidu-netdisk-transfer` wrapper is retired. For a
-user-authorized transfer, inspect the installed BaiduPCS-Go client, list the
-exact local and remote roots first, and apply this standard's conflict-first
-policy directly. Do not infer overwrite, deletion, or broad-tree scope from an
-old skill or historical plan.
-
-## Duplicate Policy
-
-The steady-state rule is conflict-first:
-
-- a remote path that already exists should be treated as an error
-- overwrite is allowed only when the operator explicitly requests it for a
-  migration or repair
-
-This prevents two isolated A100 nodes from silently replacing one another's
-artifacts. The first cleanup or migration pass may be run with explicit
-overwrite because older remote state predates this standard.
+The existing [`absorb_output_remote_into_outputs.py`](../../scripts/absorb_output_remote_into_outputs.py)
+helper performs a local copy. Its source, destination, and report paths default
+relative to the current working directory. For a scoped migration, run it from
+the physical worktree that owns the artifacts, set its report under task-owned
+`.local/scratch/`, and choose the destination under the storage policy. It does
+not define a remote backup path.
 
 ## Quick Checks
 
@@ -121,12 +78,6 @@ Before relying on a processed data directory:
 
 ```bash
 test -f manifests/public_data_provenance/<dataset>/<processed-dir>.json
-```
-
-Before relying on a remote outputs backup:
-
-```bash
-./baidupcsgo/BaiduPCS-Go-v4.0.1-linux-amd64/BaiduPCS-Go ls /CoordExp/outputs
 ```
 
 Use targeted directory listings for the exact run path instead of full-tree

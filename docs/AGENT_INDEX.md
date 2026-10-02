@@ -37,7 +37,7 @@ Do not read the catalog or this index's targets wholesale.
   proposal/design/tasks/apply/verify/archive lifecycle. Delta `specs/` belong
   there only when a stable compatibility-sensitive contract changes; internal
   refactors do not require invented normative deltas.
-- `research/` contains active research interpretation.
+- [The root research index](../research/index.md) routes retained source records and the canonical Research Probes owner of current interpretation.
 - `docs/history/` contains non-normative provenance for superseded plans and old
   implementation history.
 - `progress/` is a legacy evidence archive. Do not use it for current behavior

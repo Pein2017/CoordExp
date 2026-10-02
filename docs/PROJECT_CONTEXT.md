@@ -4,7 +4,7 @@ layer: docs
 doc_type: root-context
 status: canonical
 domain: repo
-summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
+summary: Defines documentation ownership, contract authority, and task-local routing for CoordExp.
 tags: [precedence, docs, agents]
 updated: 2026-07-11
 ---
@@ -39,7 +39,7 @@ owns:
 | Current operator docs | `docs/` | Current routes, workflows, ownership, and recommended practice | Normative contract details that belong in stable specs |
 | Stable compatibility contracts | `openspec/specs/` | Supported config/schema, training/eval semantics, artifacts, cache identity, and normative metrics | General roadmap or historical explanation |
 | Active code-change workspace | `openspec/changes/<change>/` | The sole local workspace for bounded code/config/docs work that benefits from durable proposal/design/tasks/apply/verify/archive lifecycle, including architectural refactors and internal implementation changes | Accepted current behavior before the change is implemented and verified; delta specs are conditional on a stable compatibility-sensitive contract change |
-| Active research knowledge | `research/` | Current interpretation, investigations, and durable empirical reasoning | Operator instructions or implementation authority |
+| Active research knowledge | Canonical Research Probes `research/`, routed by [the root index](../research/index.md) | Current interpretation, investigations, and durable empirical reasoning | Operator instructions or implementation authority |
 | Historical provenance | `docs/history/` | Superseded plans, migrations, old architecture reasoning, and provenance | Current behavior |
 | Legacy evidence archive | `progress/` | Dated diagnostics, benchmarks, failed directions, and historical derivations | New canonical docs or current implementation claims |
 

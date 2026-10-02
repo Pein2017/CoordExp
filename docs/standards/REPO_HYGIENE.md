@@ -4,17 +4,17 @@ layer: docs
 doc_type: standard
 status: canonical
 domain: standards
-summary: Repo layout, promotion rules, and reproducibility hygiene.
-updated: 2026-05-20
+summary: Source layout, promotion rules, and reproducibility hygiene.
+updated: 2026-10-02
 ---
 
 # Repo Hygiene Constitution (CoordExp)
 
-This document defines **where things go**, **what gets tracked**, and **how one-shot work gets promoted** so the repo stays reproducible and paper-ready.
+This document defines maintained source layout, config conventions, and utility promotion. Physical output ownership and scratch placement are owned by [the output storage policy](../OUTPUT_STORAGE_POLICY.md); current research ownership is routed from [the research index](../../research/index.md).
 
-## 1) Folder roles (authoritative)
+## 1) Folder roles
 
-Tracked, reviewable:
+Maintained source:
 - `src/`: importable library code (training/infer/eval). No ad-hoc experiments here.
 - `configs/`: YAML-first experiments. Any result worth keeping must be reproducible from a config.
 - `scripts/`: stable entrypoints + small maintained utilities (thin wrappers, minimal logic).
@@ -22,19 +22,15 @@ Tracked, reviewable:
 - `docs/`: runbooks and user-facing documentation.
 - `public_data/`: dataset tooling and public artifacts (builders, validators, exporters).
 - `openspec/`: design/contract governance (treat as source-of-truth for behavior changes).
-- `progress/`: short research notes / decision logs (keep concise; link to `docs/` when something becomes stable).
 
-Not tracked (workspace artifacts; safe to delete):
-- `outputs/`: training/infer/eval outputs (checkpoints, reports, JSONL
-  artifacts). **Do not delete automatically**; treat as valuable experiment
-  artifacts and the canonical Baidu Netdisk sync surface.
-- `output/`, `output_remote/`: legacy or transitional output roots. Do not
-  create new canonical workflows here. `output_remote/` may exist during local
-  migrations, but should not be part of durable repo structure.
-- `tb/`: TensorBoard event files.
-- `vis_out/`: visualization outputs.
-- `temp/`, `tmp/`: one-off scratch work.
-- `model_cache/`: local cached models (large; delete only when you accept re-download/rebuild).
+Workspace artifacts and disposable scratch are ignored, but their physical
+owner and location are defined only by [the output storage policy](../OUTPUT_STORAGE_POLICY.md).
+Do not infer a backup destination or retention rule from `.gitignore`.
+
+**Legacy and local state:**
+
+- `progress/`: legacy historical evidence; do not add new records.
+- `model_cache/`: machine-local cached models.
 - `external/`, `.worktrees/`: local checkouts and worktrees, not vendored
   project source.
 - `.codex/` except `.codex/skills/`: local agent runtime state. Memories,
@@ -53,8 +49,8 @@ If it changes model behavior or evaluation, it must be expressible via `configs/
 
 ## 3) One-shot script lifecycle
 
-### Stage A: scratch (allowed, untracked)
-Put exploratory scripts in `temp/YYYY-MM-DD_<topic>/` and assume they can be deleted.
+### Stage A: disposable work
+Use the task owner's scratch location as defined by the [output storage policy](../OUTPUT_STORAGE_POLICY.md).
 
 ### Stage B: promoted utility (maintained)
 If you use it **twice**, promote it into:
@@ -64,31 +60,17 @@ If you use it **twice**, promote it into:
 Requirements to promote:
 - Deterministic defaults (explicit seeds when sampling).
 - Clear IO contract (`--input`, `--output`, or well-documented env vars).
-- Writes outputs under `output/` or `vis_out/` (never beside code).
+- Route generated files through the [output storage policy](../OUTPUT_STORAGE_POLICY.md), never beside maintained code.
 
 ### Stage C: library (stable API)
 If it becomes part of training/infer/eval, move logic into `src/` and add tests.
 
-## 4) Research asset lifecycle
+## 4) Research and evidence
 
-Use four asset classes:
-
-- **Core asset**: current library code, schema, config, docs, tests, and small
-  provenance manifests. Keep tracked and routed from `docs/` or
-  `docs/catalog.yaml`.
-- **Historical reference**: dated design notes, audits, benchmark summaries,
-  and failure analysis. Keep under `progress/` with a router entry when it is
-  worth rediscovering.
-- **Artifact**: checkpoints, rollout dumps, eval JSONL, large per-image tables,
-  visual galleries, TensorBoard, and raw run logs. Keep under `outputs/` or a
-  documented external artifact location; do not track by default.
-- **Scratch**: one-off probes, temporary scripts, local staging data, copied
-  logs, and debugging residue. Keep under `temp/` and delete after use.
-
-`progress/diagnostics/artifacts/` may contain small curated evidence copies, but
-avoid tracking large images, full per-image eval tables, launch logs, or copied
-run directories there. Prefer a short `README.md`, metrics summaries, and links
-or repo-relative pointers to the artifact root under `outputs/`.
+The root `research/` tree preserves earlier OKF-style source material and routes
+current maintained research to its owner. See [its index](../../research/index.md).
+`progress/` is a legacy historical archive; do not add new records there.
+Physical artifact ownership remains defined by the [output storage policy](../OUTPUT_STORAGE_POLICY.md).
 
 ## 5) Config lifecycle
 
@@ -104,7 +86,7 @@ Keep configs in lifecycle folders:
 
 When a config stops being useful:
 
-1. Move its conclusion into `progress/`.
+1. Move any useful conclusion to its existing research or documentation owner.
 2. Remove the config if no current docs/tests reference it.
 3. Keep a `negative/` config only when a test or preflight uses it to enforce a
    failure contract.
@@ -134,10 +116,6 @@ For any run you might cite:
 - Encode hypothesis in `training.run_name` (dataset, base ckpt, decode, key knobs, seed).
 - Log the exact git SHA and config used.
 - Keep evaluation scripts deterministic and versioned.
-
-Retention note:
-- `outputs/` is considered a persistent workspace artifact root
-  (checkpoints + logs). Do not delete it via cleanup scripts.
 
 ## 9) Contract guardrails (do not violate)
 
