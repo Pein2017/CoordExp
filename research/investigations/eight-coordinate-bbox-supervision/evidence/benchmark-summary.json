@@ -1,0 +1,20 @@
+{
+  "metric": "COCO AP@[0.50:0.95] on val-200",
+  "operator_benchmark": {
+    "source_image_sha256": "95020fd03f9a0a703e7adadd473509952ed92e85cc767d0b42a48506c4c73f3f",
+    "old_four_coordinate_step_917_y_then_x": 0.411179,
+    "old_four_coordinate_step_4887_y_then_x": 0.415552,
+    "eight_coordinate_step_5529_x_then_y": 0.430679,
+    "new_four_coordinate_step_2444_x_then_y": 0.434394
+  },
+  "exact_local_artifacts": {
+    "old_four_coordinate_step_917_legacy_metrics_value": 0.4149439522409111,
+    "old_four_coordinate_step_4887_metrics_value": 0.41555155029667995,
+    "eight_coordinate_step_5529_metrics_value": 0.4306792782457875,
+    "new_four_coordinate_step_2444_metrics_value": 0.4343940743325054
+  },
+  "unresolved": [
+    "The operator benchmark gives 0.411179 for step 917 while the retained local legacy metrics artifact gives 0.4149439522409111; evaluator or filtering identity was not recovered."
+  ],
+  "claim_boundary": "Directional evidence favors x-then-y ordering and does not establish a strict one-variable causal effect because training recipes differ."
+}

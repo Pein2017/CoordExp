@@ -77,13 +77,19 @@ make the increase `0.019450` rather than `0.023215`.
 
 ## Durable evidence
 
-The compact source snapshots, completed checkpoints, resolved configs,
-inference outputs, scored JSONL, metrics, data manifests, benchmark image, and
-representative visualizations were moved out of the retired worktree to:
+The retained comparison contains the two scored JSONLs, metrics, inference
+receipts and data provenance at:
 
 ```text
-/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout
+/data/CoordExp/.worktrees/coordexp-infras/outputs/research/eight-coordinate-val200-comparison/2026-08-05
 ```
+
+The two original resolved configs are Git-managed in `frozen-configs/`; the
+rectangle census, benchmark summary and operator benchmark image are in
+`evidence/` beside this report. The selected four-coordinate model is at
+`/data/CoordExp/outputs/shared/checkpoints/four-coordinate-xy-step2444/payload`.
+These are frozen evidence, not current launch configurations. Obsolete source
+copies, traces, shards, logs, galleries and checkpoint pointers were retired.
 
 Important content identities:
 
@@ -102,9 +108,11 @@ Important content identities:
 - locally retained old step-917 metrics SHA-256:
   `70421fd5188680e5cb1b7c73cc9b331cc22f4ce39c375ffcee658103667f6fe9`.
 
-The evidence root contains a final `SHA256SUMS` manifest. The processed data
-roots remain under `/data/CoordExp/public_data/coco/`; deleting the experiment
-worktree does not delete those shared datasets.
+The evidence root preserves the original whole-bundle `SHA256SUMS` as historical
+identity evidence; it also names files that have since been retired. The exact
+15-file retention map is in the infrastructure maintenance packet's
+`eight-coordinate-minimum-retention.json`. All retained bytes match their
+original hashes. The processed data remains under `public_data/coco/`.
 
 ## Next discriminator
 

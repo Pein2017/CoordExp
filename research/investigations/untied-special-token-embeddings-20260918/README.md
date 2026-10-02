@@ -61,7 +61,7 @@ would therefore not constitute the requested copy initialization.
 The authority is the archived **resolved configuration**, not the old YAML
 filename (which mentions EBS64) or old preparation notes:
 
-`/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/resolved_config.json`
+`/data/CoordExp/.worktrees/coordexp-infras/research/investigations/eight-coordinate-bbox-supervision/frozen-configs/four-coordinate-xy.resolved_config.json`
 
 Its completed run used world size 8 and reached step 2444. The requested new run
 starts from the pretrained base, not from this trained checkpoint.

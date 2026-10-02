@@ -1,0 +1,34 @@
+{
+  "source_scored_jsonl_sha256": "afb855fa6a65a1e02d79fb0ecc330daeb8295b2dda835157b3b4c2e7411c685a",
+  "quad_prediction_count": 1407,
+  "exact_axis_aligned_rectangle_count": 1405,
+  "noncanonical_count": 2,
+  "noncanonical": [
+    {
+      "coord_bins": [
+        72,
+        698,
+        113,
+        697,
+        113,
+        921,
+        72,
+        921
+      ],
+      "max_repeated_edge_delta_bins": 1
+    },
+    {
+      "coord_bins": [
+        906,
+        890,
+        998,
+        889,
+        998,
+        999,
+        906,
+        999
+      ],
+      "max_repeated_edge_delta_bins": 1
+    }
+  ]
+}
