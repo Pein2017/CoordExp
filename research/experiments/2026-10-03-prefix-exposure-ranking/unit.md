@@ -157,8 +157,13 @@ new native tokens total. Context4456 binds the maximum processed prompt1372
 contexts. Reuse2GiB KV if qualified. Each of three
 native phases and two training phases has1800s plus30s cleanup, at most9000s
 active package time. Measure wall/RSS/CUDA allocation and artifact bytes; retain
-explicit unmeasured resource fields. No parallel engine duplication or hidden
-qualification/warmup calls outside these counters.
+explicit unmeasured resource fields. The counters cover explicit HF training
+and diagnostic forwards and native observation requests. Native engine startup
+and graph capture retain the maintained defaults; their internal forward count
+is unmeasured and their costs belong in phase wall/resource totals. No parallel
+engine duplication or extra caller-generated qualification/warmup requests are
+authorized. These request counters do not claim to count all physical forwards
+inside the native engine.
 
 Canonical preparation/transport outputs:
 `outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/`;
