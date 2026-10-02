@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-matched-coordinate-branches",
   "lifecycle": "planned",
-  "status": "CPU_PREPARATION_AUTHORIZED",
-  "evidence": "none",
-  "scientific_status": "unmeasured",
+  "status": "CPU_CANDIDATE_PENDING_LEAD_ACCEPTANCE",
+  "evidence": "unreviewed",
+  "scientific_status": "matched_supplied_continuation_unmeasured",
   "protocol": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "state_source": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -23,7 +23,41 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "CPU preparation active; no model/native invocation.",
-  "boundary": "Autonomous lead-selected round02. Same four prefixes and frozen native-ranked alternatives; equal supplied-prefix request path and two planned repeats per condition. Round01 HOLD remains immutable. Native release follows lead CPU acceptance without another user approval.",
-  "worker_settings_verified": true
+  "job_state": "CPU preparation/checks complete, exits0. No GPU/model invocation. Native release absent.",
+  "boundary": "Frozen CPU package candidate. Finalized round01 acceptance bound without changing historical identities. Lead owns source isolation, native release and scientific acceptance. No live native job or next-unit scheduling.",
+  "worker_settings_verified": true,
+  "result": "research/experiments/2026-10-03-matched-coordinate-branches/results.md",
+  "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-candidate-01.json",
+  "cpu_contract": "outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-02/contract.json",
+  "cpu_checks": {
+    "command": "python -m pytest -q tests/probes/test_matched_coordinate_branches.py",
+    "exit_code": 0,
+    "passed": 6,
+    "seconds": 31.24,
+    "log": "outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/cpu-tests-02.log"
+  },
+  "predecessor_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/lead-acceptance-01.json",
+    "sha256": "cea0da67d3bf7f1469035af39d6522e734f7d4ac027c76dc2569311e0fa0d6ab"
+  },
+  "clean_source_qualification": {
+    "status": "pending_lead_selected_execution_checkout",
+    "source": null,
+    "worker_created_worktree": false
+  },
+  "native_bounds": {
+    "gpus": 1,
+    "ranks": 1,
+    "concurrent_sequences": 1,
+    "requests": 24,
+    "score_requests": 0,
+    "new_native_tokens": 59790,
+    "supplied_tokens": 24,
+    "context": 4446,
+    "kv_cache_bytes": 2147483648,
+    "whole_wall_seconds": 1200,
+    "cleanup_seconds": 30,
+    "HF_forwards": 0,
+    "optimizer_steps": 0
+  }
 }
