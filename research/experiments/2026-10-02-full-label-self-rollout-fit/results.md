@@ -1,6 +1,35 @@
 # Full-label self-rollout: accepted finite observations
 
-## Rollout balancing technical acceptance
+## Lower-LR balanced pair (current)
+
+Both independent fresh 16-update runs are technically complete and lead-accepted on source `b8d4d8cbb0dffbb70adee691c795fb36ffc8ce44`. Only LR scale differs: original language DoRA/delta rates 1e-5/5e-6 versus 0.1 times both; warmup0, objectives, modules, full18/570 labels, anchor and greedy decoder remain fixed. Both use `previous_rollout_tokens_lpt_v1`, taking scheduling history only from their own previous rollout. Independently acquired baselines happen to match at TP237 and the same 237 annotation IDs; old unbalanced TP247 trajectories remain separate evidence.
+
+| Fixed endpoint16 | Original LR | 0.1 × LR |
+|---|---:|---:|
+| TP / FN | 265 / 305 | 241 / 329 |
+| Baseline owners retained / lost | 206 / 31 | 215 / 22 |
+| New owners vs baseline | 59 | 26 |
+| Valid predictions / annotation FP | 648 / 383 | 399 / 158 |
+| F1 | 0.435140 | 0.497420 |
+| Complete literal repeats (valid subset) | 497 (80) | 20 (20) |
+| Geometry-invalid / malformed rows | 436 / 2 | 0 / 31 |
+| Capped requests | 2 | 0 |
+
+Observation: lower LR retains 9 more baseline owners but gains 33 fewer new ones and ends with 24 fewer TP. It does learn 26 new owners, so zero learning is false; reduced learning remains a strong alternative to improved stability. No full-label fit, stable owner preservation, replicated winner, or causal mechanism is established. F1 includes duplicate strict-valid rows and does not count invalid/malformed rows; annotation-unmatched is not verified physical FP.
+
+The full trajectories separate symptoms: original-LR TP grows mainly from update8 onward, then complete repeats jump to398/498/497 at updates14/15/16. Lower-LR TP fluctuates231–245 after the baseline, new-owner gains remain20–27, and malformed counts return to127/137/137/130/138 at updates1/3/6/9/11. Lowering LR therefore does not suppress all output failures. Both arms lose the named image4134/annotation294005 baseline owner at endpoint16. These are descriptive single-run observations, without post-hoc checkpoint selection.
+
+Across all17 versions, baseline owners continuously retained are168 at original LR versus185 at lower LR;69 versus52 are lost at least once. Ever-gained nonbaseline owners are99 versus66, with59 versus26 present at endpoint;40 ever-gained owners per arm are absent at endpoint. Adjacent loss events total291 versus301, so the smaller LR does not remove owner churn. These quantities describe label coverage and do not distinguish disappearance from category/geometry threshold changes. Original-LR endpoint497 complete repeats occur entirely in images7511 and351017; those two account for434/436 invalid rows. Lower-LR endpoint31 malformed rows and earlier malformed spikes are all image351017. [Bound owner-trajectory analysis](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/owner-trajectory-analysis-01.json), SHA256 `111c41a2bc262f03007d5ac8612772f54f56e32afcb116b141b6b96cf569226a`. Matching endpoint TP and gain totals cannot test endpoint preservation because retained=TP−gains; conditioning on these post-treatment quantities does not identify the LR mechanism.
+
+[All-version figure](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/figures/lower-lr-trajectories.png) · [All 34 observations as CSV](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/figures/lower-lr-trajectories.csv).
+
+The lead reused each arm's accepted runtime/identity/update/export evidence and checked the final metric consumers, receipt bindings and sequential accounting. Independent maintained recomputation exactly matched both complete parsed offline JSON objects: 570 denominator IDs, 306 image-version rows per arm, all owner transitions and the named tie. All six run/readback/offline stages exited0; 612 requests, 34 exports, 256 rank-update receipts and 1346 finite HF forwards completed; all56 exact owner/descendant identities are absent. [Lead pair acceptance](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/lead-pair-acceptance-02.json), SHA256 `e99a3625eaa1797ecde4a5dafdf7bb91fd3fc3a7719a441a903aaaf9283c5058`, links the core and metric evidence. The initial CPU preparation incorrectly reported record validation passing; the enum failure and false claim were corrected before release, with original evidence retained.
+
+External owner time is1669.165141440928seconds (constant992.304222, lower676.860919), charged at eight slots:3.709255869868729 informational GPU-hours. Including the inter-arm CPU gap, first issue to last finish is1744.381117seconds. [Final accounting](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/lower-lr-balanced-01/lower-lr-accounting-02.json) records cumulative16.193740099274315 and unit13.996486765940984 GPU-hours, zero reservation and no cumulative cap. These timings do not isolate an inference-balancing speedup; trajectories and generated work differ.
+
+The user requested a pause for joint analysis after this pair. No live native job or further release remains. The next decision is which failure to explain first: loss of previously covered owners, or failure to eliminate certified invalid/repeated continuations. Same-prefix before/after scoring is a proposed discriminator between an uncorrected trained event and a new error reached through a changed prefix; it has not been run or authorized by this record. Further LR sweeps, layer freezing, per-occurrence supervision, sampling and missing-label proxies remain proposals, not scheduled experiments.
+
+## Rollout balancing technical acceptance (historical qualification)
 
 The `probes.full_label_fit` package and `previous_rollout_tokens_lpt_v1` inference assignment are technically accepted on source `7a51e091477cb714a20b5d6aef5dc035662557a6`. Custom DoRA vLLM performs acquisition; HF performs learning, then refreshes vLLM from the next same-version parameter snapshot. Assignment changes inference ownership only; the original sorted-stride learner/storage partition, 8/18 weights and final-job synchronization remain intact.
 
@@ -16,7 +45,7 @@ These are qualification observations, not evidence of quality improvement. Endpo
 
 [Lead native acceptance](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01/lead-native-acceptance-02.json), SHA256 `cc67cde8296bcb5e771b146187af581935ca61f091ccc8acb35b6a13c24a348e`. [Terminal report](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01/native-terminal-candidate-02.json) binds per-image/annotation transitions, burdens, timing, resources and all receipts. Cost is 0.5049542844 informational GPU-hours; cumulative usage is 12.4844842294, with no reservation or live job. The 144-site HF/native witness has 23 argmax mismatches and maximum HF gap 0.25; this remains bounded replay evidence. RSS is sampled process aggregate and allocator peaks are separate process high-water marks. No new 16-update research trajectory is released.
 
-## Completed learning-rate-profile comparison
+## Completed learning-rate-profile comparison (earlier unbalanced runs)
 
 All three independent fresh 16-update runs are technically complete and lead-accepted. None achieves full-label fitting or stable preservation on these 18 images / 570 annotations. Each independently measured baseline is TP 247, FN 323, valid rows 391 and F1=0.514048. All 17 versions per arm remain evidence; no quality stop, rollback, checkpoint selection or extension occurred.
 
