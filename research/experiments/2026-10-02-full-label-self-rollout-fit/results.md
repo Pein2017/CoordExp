@@ -1,5 +1,21 @@
 # Full-label self-rollout: accepted finite observations
 
+## Rollout balancing technical acceptance
+
+The `probes.full_label_fit` package and `previous_rollout_tokens_lpt_v1` inference assignment are technically accepted on source `7a51e091477cb714a20b5d6aef5dc035662557a6`. Custom DoRA vLLM performs acquisition; HF performs learning, then refreshes vLLM from the next same-version parameter snapshot. Assignment changes inference ownership only; the original sorted-stride learner/storage partition, 8/18 weights and final-job synchronization remain intact.
+
+One fresh invocation with 8 ranks and 2 updates completed run/readback/offline with exits 0/0/0 in 227.229428 seconds, within the 900-second bound. The lead verified 301 bound files, 54 raw requests, exports 0..2, 16 rank-update receipts, three consistent/distinct parameter versions, 24 generate batches and 16 refreshes. Independent reconstruction matched all three schedules and 24 rank copies; 46/54 requests were generated on a different rank from their fixed learner rank. Actual work was 13143 generated tokens (maximum 1966/request) and 89 finite singleton HF forwards, maximum context 3725. All 28 exact owner/descendant identities are absent.
+
+| Version | TP | FP annotation | FN | Valid rows | F1 | Baseline owners lost |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 | 237 | 153 | 333 | 390 | 0.493750 | 0 |
+| 1 | 239 | 138 | 331 | 377 | 0.504752 | 17 |
+| 2 | 237 | 105 | 333 | 342 | 0.519737 | 24 |
+
+These are qualification observations, not evidence of quality improvement. Endpoint 24 gains exchange with 24 baseline losses; the image 4134 / annotation 294005 tie is lost at version 2. F1 includes all strict-valid rows and excludes invalid/malformed rows, whose counts remain in the report. The fresh baseline TP 237 differs from the earlier unbalanced baseline TP 247: changed batching can change greedy trajectories, so old runs are not equivalent controls. This run has no matched wall-time control and establishes no measured speedup. The fixed-trace CPU projection remains a separate work proxy.
+
+[Lead native acceptance](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01/lead-native-acceptance-02.json), SHA256 `cc67cde8296bcb5e771b146187af581935ca61f091ccc8acb35b6a13c24a348e`. [Terminal report](/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/rollout-balance-01/native-terminal-candidate-02.json) binds per-image/annotation transitions, burdens, timing, resources and all receipts. Cost is 0.5049542844 informational GPU-hours; cumulative usage is 12.4844842294, with no reservation or live job. The 144-site HF/native witness has 23 argmax mismatches and maximum HF gap 0.25; this remains bounded replay evidence. RSS is sampled process aggregate and allocator peaks are separate process high-water marks. No new 16-update research trajectory is released.
+
 ## Completed learning-rate-profile comparison
 
 All three independent fresh 16-update runs are technically complete and lead-accepted. None achieves full-label fitting or stable preservation on these 18 images / 570 annotations. Each independently measured baseline is TP 247, FN 323, valid rows 391 and F1=0.514048. All 17 versions per arm remain evidence; no quality stop, rollback, checkpoint selection or extension occurred.
