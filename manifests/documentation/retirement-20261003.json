@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "sealed",
+  "source_commit": "c129be609201078066f132a7b38bfb15954a5b44",
+  "source_docs_tree": "2cfb30a4695c14cdb7d7c2af71e7b6b727e16db6",
+  "git_file_count": 8,
+  "untracked_file_count": 0,
+  "replacement_routes": {
+    "docs/contracts/train.md": "docs/contracts/INVARIANTS.md",
+    "docs/contracts/data.md": "docs/contracts/INVARIANTS.md",
+    "docs/contracts/artifacts.md": "docs/contracts/INVARIANTS.md",
+    "docs/contracts/infer-eval.md": "docs/contracts/INVARIANTS.md",
+    "docs/contracts/operations.md": "docs/contracts/INVARIANTS.md"
+  },
+  "boundary": "Closed documentation retirement. Source decisions and original evidence are preserved; no new model qualification, scientific efficacy or external backup is claimed. Do not append new records here.",
+  "live_docs_at_retirement": [
+    "docs/AGENT_INDEX.md",
+    "docs/OUTPUT_STORAGE_POLICY.md",
+    "docs/README.md",
+    "docs/RETENTION.md",
+    "docs/contracts/INVARIANTS.md"
+  ]
+}

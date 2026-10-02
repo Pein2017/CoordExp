@@ -443,7 +443,7 @@ def _token_indices_for_char_range(
     # Must stay a full linear scan, not a bisect/binary search: zero-width
     # special-token offsets (e.g. (0, 0)) can appear non-monotonically inside
     # offset_mapping, which would silently break a sorted-search shortcut.
-    # The active configuration contract is docs/contracts/train.md. See
+    # The following focused test preserves this encoding invariant. See
     # test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect
     # for the concrete counterexample.
     indices: list[int] = []

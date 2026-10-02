@@ -1,13 +1,13 @@
-# Output storage
+# Infrastructure output ownership
 
-This checkout owns infrastructure runs under
-`/data/CoordExp/.worktrees/coordexp-infras/outputs/`. Maintained code, configs and
-research records use their existing Git-managed source/document owners.
+Infrastructure runs use this physical checkout's `outputs/`, at
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/`. Root outputs is reserved
+for selected shared assets, not infrastructure execution. The cross-checkout
+policy is `/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`.
 
-The shared-asset boundary and usefulness/retirement rules are owned by
-`/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`; the four retained checkouts are
-listed in `/data/CoordExp/docs/BRANCH_AND_WORKTREE_POLICY.md`. Root outputs is
-not a run destination, and this worktree is not a generic legacy store.
-The start-loss benchmark source was integrated here; its retained evidence must
-have a specific reproduction or evaluation purpose. Integration and storage
-migration do not authorize a new GPU run.
+Maintained implementation belongs to its source owner, scientific interpretation
+to its research owner, and raw receipts/logs/results to the run owner. Copying
+or integrating source does not qualify a new model launch. Preserve original
+producer/config/data identity and verified bytes when an asset is promoted.
+Historical docs use [closed Git recovery](RETENTION.md), not this worktree as
+a generic legacy store.

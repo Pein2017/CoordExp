@@ -1,5 +1,5 @@
 # Production-shaped four-update smoke. Launch with eight processes and the
-# strict replay environment documented in docs/contracts/operations.md.
+# strict replay environment defined by the current training/acceptance contract.
 schema_version: 1
 extends: ../train/production.yaml
 
