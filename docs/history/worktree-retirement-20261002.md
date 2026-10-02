@@ -84,3 +84,64 @@ notes; absence of a process holder alone was not treated as deletion proof.
 The unheld cypress/dist trees contained zero files; seven empty directories
 were removed without an unlink operation. Active Gate A serves its maintained
 src/coco_refinement/static directory, unaffected by this cleanup.
+
+
+## Follow-up: qualify and retire the remaining legacy run payloads
+
+The four root probe directories `research-probe-infras-validation-gHpGim`,
+`research-probe-infras-final-smoke-flykAS`, `research-probe-infras` and
+`research-probe-forks` were removed. Their duplicate smokes, closed mechanical
+checks and obsolete agent panels have no current raw consumer. The shared
+FlashAttention 2.8.4 wheel remains the selected reusable native package, with
+its unchanged identity in `manifests/runtime_assets/`.
+
+Root `outputs/research` now contains only the two files of the existing port8766
+annotation review page (1,267,082 bytes). Annotation relocation remains explicitly
+user-deferred: this service, Gate A and pending retired Label Studio drafts were
+preserved. The other root research run payloads, invalidated `outputs/archive`
+results and obsolete `outputs/runtime-optimization` attempts were removed.
+No generic legacy collection or old-path compatibility symlink was created.
+
+Required Human13/Refined5 inputs and current physical-FN fixtures belong to
+Research Probes' physical output tree. The seven evaluator-private truth/partition
+files were moved opaquely with their original inodes; this maintenance did not
+open or hash their contents. Root duplicates and the older redundant worktree
+copy were retired only after fresh manifest, byte/hash, independent-copy and
+live-holder checks. The sealed original copy manifest remains unchanged.
+
+Only named high-confidence18, protected-null sentinel and vLLM smoke evidence
+was retained under Research Probes' scoped outputs. Small acceptance/readback
+records are Git-managed in its `research/evidence`, with links from the existing
+question and runtime documentation. Eight-coordinate val200 scored rows and
+provenance belong to coordexp-infras' scoped output directory; its frozen configs,
+comparison summary, census and small figure are Git-managed by the existing
+investigation (commit `c129be609`). Frozen producer fields and scientific claims
+were not rewritten. Remaining old paths inside frozen receipts are provenance,
+not supported current filesystem inputs.
+
+Current input/checkpoint readers were migrated in Research Probes `97491fbff`
+and Web `3b86e757b`. The compose path rebases only the selected checkpoint's
+payload paths and retains the original SHA checks; a wrong SHA is rejected
+before model loading. Each checkout passed13 focused CPU checks, including
+real retained-bank reads and the wrong-hash rejection. The research knowledge
+check passed (329 catalog entries, 165 claim references, zero errors). No GPU
+run or new research qualification was performed.
+
+Native tmux pipe management closed13 confirmed dead-pane log waiters and routed
+three idle live-shell log pipes to the Research Probes runtime owner. Shells,
+panes, sessions and the existing review service were preserved; no research
+command or model job was restarted.
+
+This follow-up retired33,741 entries /16,617,545,089 logical bytes, including
+1,142,352,474 bytes from the redundant worktree copy. This is a sum of retired
+file sizes, not measured filesystem free space, and does not include the earlier
+cleanup totals in this record. Eight per-file retirement receipts and the exact
+retention mappings are in the existing finite maintenance packet:
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/`.
+The packet's `legacy-output-placement-final.json` records the final checks and
+receipt identities. This packet contains audit evidence, not a source/model backup.
+
+Only the four intended local branches/worktrees remain. Unrelated dirty files
+retain their preflight hashes. The partial OpenSpec migration bundle is updated
+but remains uncommitted and unarchived; global tasks4.2/4.4 remain open for the
+explicit annotation deferral and remaining package-metadata qualification.
