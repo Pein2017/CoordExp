@@ -184,12 +184,12 @@ docs:
       type: contract
       status: canonical
     - path: docs/eval/WORKFLOW.md
-      title: Evaluation Workflow
-      type: runbook
-      status: canonical
+      title: Evaluation Workflow Route
+      type: router
+      status: canonical-router
     - path: docs/eval/COCO_TEST_SUBMISSION.md
-      title: COCO Test-Dev Submission
-      type: runbook
+      title: COCO Test-Dev Submission Route
+      type: router
       status: historical-reference
     - path: docs/eval/drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
       title: Unmatched Proposal Verifier Study

@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Contract for CoordExp inference and detection-evaluation artifacts.
 tags: [eval, contract, jsonl]
-updated: 2026-07-11
+updated: 2026-09-30
 ---
 
 # Evaluation Contract
@@ -155,6 +155,6 @@ coordexp-infras rebuilt inference rows use the narrower fields `row_id`,
 
 ## Read Next
 
-- [WORKFLOW.md](WORKFLOW.md)
+- the `coordexp-infer-eval-workflow` Skill for current operation
 - [../ARTIFACTS.md](../ARTIFACTS.md)
 - [../training/METRICS.md](../training/METRICS.md)

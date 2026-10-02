@@ -64,6 +64,10 @@ relevant section of the selected checkout's `docs/eval/INTERPRETATION.md`
 For model forward/replay implementation, use `qwen3-vl-execution`; a routine run
 does not require that additional technical investigation.
 
+For exact current commands, artifact locations, and output-root selection, read [references/current-workflow.md](references/current-workflow.md). Load it when the user needs a concrete inference, evaluation, or row-review command; contracts and source remain authoritative for behavior.
+
+For an explicitly requested legacy COCO test-dev reproduction, read [references/historical-coco-testdev.md](references/historical-coco-testdev.md). Verify current support first; this reference does not authorize a run or official upload.
+
 ## Repair
 
 When a stage fails, preserve the exact failure identity, classify whether the

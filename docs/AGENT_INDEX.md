@@ -91,9 +91,11 @@ pre-promotion spec path to make a link look normative.
 
 ## Query routing
 
+- Output ownership, source/report placement and selected shared assets: [OUTPUT_STORAGE_POLICY.md](OUTPUT_STORAGE_POLICY.md); main-owned execution checkout lifecycle: [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md).
+
 - Current architecture or source ownership: [coordexp_infras.md](coordexp_infras.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 - Data and preprocessing: [docs/data/README.md](data/README.md), [docs/data/CONTRACT.md](data/CONTRACT.md), [docs/data/PREPARATION.md](data/PREPARATION.md), [docs/data/PACKING.md](data/PACKING.md)
-- Current inference/evaluation: [docs/eval/README.md](eval/README.md), [docs/eval/WORKFLOW.md](eval/WORKFLOW.md), [ARTIFACTS.md](ARTIFACTS.md)
+- Current inference/evaluation: [docs/eval/README.md](eval/README.md), the `coordexp-infer-eval-workflow` Skill, [ARTIFACTS.md](ARTIFACTS.md)
 - Training-history interpretation: [docs/training/README.md](training/README.md), marked as a legacy router for old MS-Swift/mainline runs
 - Standards: [docs/standards/README.md](standards/README.md)
 - Accepted architecture: [docs/architecture/README.md](architecture/README.md)
