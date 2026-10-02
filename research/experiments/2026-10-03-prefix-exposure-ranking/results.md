@@ -1,3 +1,19 @@
+# Accepted round04: selected conditional repair with natural preservation cost
+
+Current status: **closed; lead-accepted** (2026-10-02T23:07:37.841487+00:00). Technical status is `completed_as_released`; scientific status is `selected_conditional_repair_with_natural_preservation_cost`. User scientific acceptance remains false.
+
+Scientific authority: [lead-ruling-02.md](lead-ruling-02.md), committed at `804bf41cd5ff8eb37116f62cce5ccabc5cf76f6d`. Immutable [lead acceptance](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/lead-acceptance-01.json) SHA256 `c93f0863496fde0f14404ca4af8daa2733f7c88f37bc405553131b4b21cba931`.
+
+Both arms repaired6/6 baseline-illegal contexts and retained4/4 baseline-legal contexts, including held-out2/2 repair and2/2 retention. The original repair denominator is1. Multiple-prefix exposure demonstrated no additional legality benefit at this saturated fixed dose.
+
+Natural category-owner gain/loss counts were31/29 for R-single and24/30 for R-multiple. Both reduced geometry-invalid rows and complete literal repeats, with near-repeat and category-disagreement costs and known-owner losses. Unknown unmatched rows remain neutral. This result establishes neither physical recovery nor ranking-over-mass superiority; the ruling retains the full claim boundary.
+
+The raw candidate, readback, sealed receipts and pre-acceptance reports remain unchanged. No remaining model or experiment authority belongs to this package; no next unit is scheduled by this worker.
+
+---
+
+Historical preparation and execution evidence below was recorded on2026-10-02 before lead acceptance. Its status wording is preserved as dated evidence; the current acceptance above governs closure.
+
 # CPU candidate: prefix exposure ranking
 
 Lifecycle remains planned. Scientific outcomes are unmeasured; native release and lead acceptance remain false. Worker live App inspection confirmed `gpt-6.1-sol/high`, thread `01a0fe93-c919-72b0-b99b-f252464dbcbf`, at the canonical research checkout. Direct reports go to lead thread `01a0fdd8-26b6-7240-ab56-f021c05f3445` using the state-recorded `worker_turn.py --to lead` route.

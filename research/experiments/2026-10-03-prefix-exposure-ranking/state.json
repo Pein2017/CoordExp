@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-prefix-exposure-ranking",
-  "lifecycle": "ready",
-  "status": "NATIVE_TERMINAL_CANDIDATE",
-  "evidence": "unreviewed",
-  "scientific_status": "measured_fixed_contrast_unreviewed",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "selected_conditional_repair_with_natural_preservation_cost",
   "protocol": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -14,7 +14,7 @@
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04",
   "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "not_authorized": [
     "worker scheduling another research unit",
@@ -58,5 +58,12 @@
   "package_exit": 0,
   "readback_exit": 0,
   "cleanup_verified": true,
-  "next_unit_scheduled": false
+  "next_unit_scheduled": false,
+  "technical_status": "completed_as_released",
+  "lead_ruling": "research/experiments/2026-10-03-prefix-exposure-ranking/lead-ruling-02.md",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/lead-acceptance-01.json",
+    "sha256": "c93f0863496fde0f14404ca4af8daa2733f7c88f37bc405553131b4b21cba931"
+  },
+  "closed_at": "2026-10-02T23:10:35.519053+00:00"
 }
