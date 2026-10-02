@@ -123,6 +123,7 @@
 .codex/vendor_imports/
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
+.codex/skills/synced/
 
 # Shared agent skills are tracked; local markers and bytecode stay ignored
 !.agents/
