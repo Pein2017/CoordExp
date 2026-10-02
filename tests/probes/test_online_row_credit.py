@@ -199,7 +199,7 @@ class OnlineCreditTest(unittest.TestCase):
                     return dict(kind='live_online',update=version,parameter_sha256=o.identity(params)),params
                 def load(path):
                     if path==output/'qualification.json':return {'sha256':{}}
-                    if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+                    if path==o.INPUTS:return [{'image_id':i,'prompt_token_ids':[1]} for i in range(18)]
                     if path.name=='complete.json':return dict(status='complete',updates=updates,artifacts={},source={'files':[]})
                     if path.name.startswith('update-'):
                         step=int(path.stem.split('-')[1])
@@ -375,7 +375,7 @@ class OnlineCreditTest(unittest.TestCase):
         def load(path):
             if path==root/'qualification.json':return qualifier
             if path=='bank':return bank
-            if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+            if path==o.INPUTS:return [{'image_id':i,'prompt_token_ids':[1]} for i in range(18)]
             if path.name=='complete.json':return dict(status='complete',updates=1)
             if path.name=='preservation.json':return dict(weight=.25,bank_sha256='expected',bank_path='bank')
             self.fail(str(path))
@@ -559,7 +559,7 @@ class OnlineCreditTest(unittest.TestCase):
         root=o.ROOT/'test-witness';output=root/'run'
         def load(path):
             if path==root/'qualification.json':return {'sha256':{}}
-            if path==o.INPUTS:return [{'image_id':i} for i in range(18)]
+            if path==o.INPUTS:return [{'image_id':i,'prompt_token_ids':[1]} for i in range(18)]
             if path.name=='complete.json':return dict(status='complete',updates=1)
             if path.name=='geometry.json':return {'weight':.1}
             if path.name=='witness.json':return {'weight':0}
@@ -932,7 +932,8 @@ class OnlineCreditTest(unittest.TestCase):
         root=Path('/cpu');output=Path('/run');expected=dict(arm='local',microbatch=4,activation_checkpointing=False)
         def load(path):
             if path==root/'qualification.json':return {'sha256':{}}
-            if path==o.INPUTS:return [{'image_id':x['image_id']} for x in self.images]
+            if path==o.INPUTS:return [{'image_id':x['image_id'],'prompt_token_ids':r['prompt_token_ids']}
+                                     for x,r in zip(self.images,self.records)]
             if path==o.RETAINED:return self.images
             if path==output/'rank-0/complete.json':return dict(status='complete',updates=1)
             if path==output/'rank-0/execution.json':return dict(expected,microbatch=1)
