@@ -1,0 +1,1107 @@
+{
+  "schema": "bounded-output-migration-v1",
+  "started_at": "2026-09-30T11:53:38.303594+00:00",
+  "producer_rule": "Destination checkout pin is storage identity, not historical producer identity. No unknown source commit is inferred.",
+  "preflight_conflicts": [],
+  "transfers": [
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard-1.png",
+      "bytes": 1959384,
+      "sha256": "400c2d31112cb4de505f6122c490c414d368d4347c9112d9a570255dcb9a659f",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard-2.png",
+      "bytes": 1916711,
+      "sha256": "8f1012b5f24a530c86533812164651fa77ecb7fb73492e3522d1a7c9d95bbe52",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/computer_keyboard.labels.jsonl",
+      "bytes": 5086,
+      "sha256": "ce19aabbc8240afbfae247c898c3aa86caf1b8be4e1d45bf1228f93c13c63b8b",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/contract.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/contract.json",
+      "bytes": 2324,
+      "sha256": "b74753ba0fff1af9c50be6fdc9e18ee39fc87d123f7c914221f469468accb652",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/faucet-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/faucet-1.png",
+      "bytes": 1495663,
+      "sha256": "9d1699434b6777a6eae4363e5f4f4e64ec16c4a84a652743f16170e68e8abf9f",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/faucet-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/faucet-2.png",
+      "bytes": 1567139,
+      "sha256": "c421fb94c83cd9ee3efa8d8b0ca394a3a509c1d879aa0fd6ba4bb26a2b2b3a48",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/faucet.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/faucet.labels.jsonl",
+      "bytes": 5083,
+      "sha256": "473a54036d783fcba3cf6c16ce2e6559a24eb7c8877d9bf4cec0e8bea12209f6",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/keyboard_coco_coannotated_examples.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/keyboard_coco_coannotated_examples.png",
+      "bytes": 1177651,
+      "sha256": "b49c685279ce244b60f22febbe4b0b574219ad5bc5abf19e62a6a248a5929c69",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/keyboard_coco_style.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/keyboard_coco_style.json",
+      "bytes": 631,
+      "sha256": "89431d688f1ee9068b530f9c787e517373fbaf5d00e20c74c9bdd6c3e85fc14d",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate-1.png",
+      "bytes": 2012428,
+      "sha256": "ca9841220e6140e8a07979ba50258057f0519114de87cab4077ec6875a081a3f",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate-2.png",
+      "bytes": 1891192,
+      "sha256": "dd4e1ed6370ca1524b04d45af51d088ffe530e7c52015717622b21e4cf102272",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/license_plate.labels.jsonl",
+      "bytes": 4790,
+      "sha256": "ee483ddc82466fee2686935d818fb7831212dcbf0ed6c12bbc773c1b4f0c6961",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/results.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/results.json",
+      "bytes": 4806,
+      "sha256": "fe8ea3df2279dc6713aeaae1ce067dd3e65ce42eaff48351d4a10b1d23aaac4b",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/sample.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/sample.jsonl",
+      "bytes": 47284,
+      "sha256": "7c7fe50464d6be2fb803102756553cdd944c10f165e8bb068391782f87ef35fa",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole-1.png",
+      "bytes": 1865866,
+      "sha256": "0624aa6693c0f8f8582d581752a06b17a6323adf7ced91ffb616ad5679ad5f62",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole-2.png",
+      "bytes": 1584583,
+      "sha256": "4d616a926205eff7fc20b4741b32fda852c22543d37bae0c77b0f88abf353998",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/ski_pole.labels.jsonl",
+      "bytes": 5376,
+      "sha256": "464fb369f36ef727da6db5391c2e021018f38ed65858eb061adfdc94644d0bc3",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/soap-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/soap-1.png",
+      "bytes": 1493694,
+      "sha256": "1f3eb64b8b1f8975a551d259298c19a07776ddfef8c5b245a9796dfec165772b",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/soap-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/soap-2.png",
+      "bytes": 1638550,
+      "sha256": "e13732db681b3da8c547e60f66c748e00e6f51b11b3fed1ec4a91bc8ad747619",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/soap.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/soap.labels.jsonl",
+      "bytes": 5166,
+      "sha256": "b45220331b62f111212eb65b6be59bb88bfe5582cfd1452b215ef275e32b8d96",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth-1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth-1.png",
+      "bytes": 1990663,
+      "sha256": "1308e23bd19400a0c54ee2aec313e2597d6b02a52bd1dd2bbeff14f32c0260de",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth-2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth-2.png",
+      "bytes": 1860078,
+      "sha256": "29e3fade23d4a5e144efa882c90f35cbe40f902f26063f4ac110d8346ad31561",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth.inference.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth.inference.jsonl",
+      "bytes": 4454,
+      "sha256": "c68e690a24e2eaf79e7426b092129a770711499a6e817196d230b1bfbf94e1e7",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth.labels.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/audit-20260927-v1/tablecloth.labels.jsonl",
+      "bytes": 5839,
+      "sha256": "0598eb4626a38d69827f3346c7b6e353f813adafabbe1dd82a8dc5253a39d270",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_candidate_1.png",
+      "bytes": 1101777,
+      "sha256": "d7c5fd225acb4b0d8f5853670282c61ba6d4a0efd789b034fc8814ddf0244578",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_candidate_2.png",
+      "bytes": 1112425,
+      "sha256": "c641ab1a0fd5ffd1395cfbfe187d6c088424d519719e5fc1911a1f8f595b4cb0",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_crop_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_crop_1.png",
+      "bytes": 771854,
+      "sha256": "32d9eebf1b5da8830b5d3b3743c4c5cb3930422b37ae1013203b6c3c39a13808",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_crop_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/armchair_crop_2.png",
+      "bytes": 841527,
+      "sha256": "e365a658f3136fa7b70ac45a13960c508982a75a797ce652498db49cd37190af",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_candidate_1.png",
+      "bytes": 1027920,
+      "sha256": "42ed9d460ca0464a0818334c8d8b1a56f4f485601da0db8ce59e0675ea5da86a",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_candidate_2.png",
+      "bytes": 1248119,
+      "sha256": "513da3c755a9820ad2c34cf2617e10ba6adc761cb0a1c88ea3ab6fd25ef042a3",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_crop_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_crop_1.png",
+      "bytes": 734930,
+      "sha256": "1c4f7842b6562ea228595fad5660fa73e002c3690bf370f529f1be8c6b143a93",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_crop_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/car_(automobile)_crop_2.png",
+      "bytes": 940013,
+      "sha256": "91ae6e9be79ffd0e52c5a145f36bbc1ec6bcb4d37b3551af8ce0ef6372f0a33b",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_analysis_manifest.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_analysis_manifest.json",
+      "bytes": 1401,
+      "sha256": "c3d953155365dd0f3550a254b3aa72d98fd7536563c885981a744ad9fece49d8",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_coco_pair_catalog.csv",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_coco_pair_catalog.csv",
+      "bytes": 5510507,
+      "sha256": "959255147a8b9188852ca093524fcb5fde77694c95da4c125e9875428c337e7a",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/dress_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/dress_candidate_1.png",
+      "bytes": 1078127,
+      "sha256": "041230d9b798dc334302973a81c1cbce3eae4de33e27229d24625005ba4eba77",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/dress_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/dress_candidate_2.png",
+      "bytes": 1224988,
+      "sha256": "fb898a2288a954926f97b73ea1fa53b940121596dddecf263b96d999f1d431fd",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_pair_population.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_pair_population.json",
+      "bytes": 1204,
+      "sha256": "693729d446a6b2160a939c89e7f3eb87c63727f8a33898070ad44890fbcb4eb6",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_pair_sample.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_pair_sample.jsonl",
+      "bytes": 28603,
+      "sha256": "2c463f6336c522c2445a5dd68ca1edd4ee48008eeb33e494189a19d1de674852",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_visual_review.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/expanded_visual_review.jsonl",
+      "bytes": 7822,
+      "sha256": "d8a785b523d8b980a53bbd208ce2a1c02f6e8a6147ecb4030dc8a916cdea95bc",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/hat_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/hat_candidate_1.png",
+      "bytes": 1149414,
+      "sha256": "a24771604a709e41ec1596847dff8acbecf36c44b3d5a1b81d69cdd3e6bc43f7",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/hat_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/hat_candidate_2.png",
+      "bytes": 1222765,
+      "sha256": "92808149589d436121b65aebabf0d8f6dcf7e809846c0f0c09318fc961285575",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/kitchen_sink_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/kitchen_sink_candidate_1.png",
+      "bytes": 1129299,
+      "sha256": "850d1461b5de1a5c2757006fe78b5edac13b921cff22a0ea3b47ff16ac421cc8",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/kitchen_sink_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/kitchen_sink_candidate_2.png",
+      "bytes": 807754,
+      "sha256": "d4eda4c38374fe180626cdcc1b22e6603fc5570831d636a0cf0779f06e4cac9e",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_candidate_1.png",
+      "bytes": 1141988,
+      "sha256": "3ef9687f0e4de3f3e580c87511dcb8da519d8eb6a96dee9c18b80885b11f08bd",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_candidate_2.png",
+      "bytes": 1123721,
+      "sha256": "f64e3d60becc8ff55d4bad269225e4861d3985d74875e3b49df1240fe7ec8f92",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_crop_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_crop_1.png",
+      "bytes": 841785,
+      "sha256": "e20ad5dc823217d64cd3d4278d9399c675da1bce66b687c9e1505f3205b84710",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_crop_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/minivan_crop_2.png",
+      "bytes": 792747,
+      "sha256": "f26f2cf4d3c95bdb0b884787ecb13a6d795bf7404565a65bbe44f05a411fafe3",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_absent_crops.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_absent_crops.png",
+      "bytes": 739288,
+      "sha256": "47e06f6c9e5eecf188e8d2f98f7107946ced4ca9c944e6eb5e938e630fcffe80",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_absent_visual_review.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_absent_visual_review.jsonl",
+      "bytes": 885,
+      "sha256": "d505a9231b421d39d60f06c9002c554eabea46b46fd1de1500e9a2b1b38c49f9",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_geometry.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_geometry.json",
+      "bytes": 905,
+      "sha256": "fed40d8fe54c3d9a4d63d6fb7acf8c9b529aafa50d31e3193f1b602670b80bda",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_geometry_rows.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_geometry_rows.jsonl",
+      "bytes": 619327,
+      "sha256": "3019bde2fcdcd4799a9cabcebbab6b5e83a02525e1979066ab3951c7c2da23d4",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_1.png",
+      "bytes": 1520943,
+      "sha256": "a3796dee7d717a14ecfb9ab4d3dedd96bc0c3dbf564e16c8ad9b45497c037209",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_2.png",
+      "bytes": 1605874,
+      "sha256": "c5c75964eac6ce945954c263b382efa30c86a14f3581224067e9cdd90d214de0",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_3.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_3.png",
+      "bytes": 1650855,
+      "sha256": "c1a622470a8a4751e555f3a8520787a0a3274c03000e0030a31b7f54c539fe81",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_sample.jsonl",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/person_proxy_review_sample.jsonl",
+      "bytes": 13918,
+      "sha256": "a1585accfc1dd1d7f85754bb12a2823c5efd707af9a866e7019a83d4a2a44ce4",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_candidate_1.png",
+      "bytes": 1145882,
+      "sha256": "6e2692ad7055a3795a6b591bd24bd4443dd6e0520a92403a5359102f0fadf3ff",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_candidate_2.png",
+      "bytes": 1138082,
+      "sha256": "3a3addcc8e029ca7e4f5dc80d6dac25ee90fbeee583bf4a272cd4a97245e81d1",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_crop_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_crop_1.png",
+      "bytes": 885237,
+      "sha256": "6144a260cdb4fb00562a7cd949563621f8b2649c5ddc1245feaefe55d9db3b7d",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_crop_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/pickup_truck_crop_2.png",
+      "bytes": 969109,
+      "sha256": "67f8f16fcdab15701ca2d014f51c2addc108c30d9f63d38601280d4ff0f03391",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/polar_bear_candidate_1.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/polar_bear_candidate_1.png",
+      "bytes": 725986,
+      "sha256": "9aee0869d917440bdb26795c0373063aa3411cfaa300ad0790b75250069978f4",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/polar_bear_candidate_2.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/polar_bear_candidate_2.png",
+      "bytes": 3987,
+      "sha256": "d64bf934906df4dfda0de5c955db64fe184a59bcffe0359aa891c996efc473ef",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/receipt.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/receipt.json",
+      "bytes": 1490,
+      "sha256": "c0f5d52946b08f8e93bda17825718d48c51fe77cdc6ef1ffe1a7fa8f8e20c652",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/armchair_target_absent.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/armchair_target_absent.png",
+      "bytes": 1083159,
+      "sha256": "fb1cccbe21f6cafcd48e7dc946f833f16ee6f78db95c8d180e41d940d564d58c",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/armchair_target_present.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/armchair_target_present.png",
+      "bytes": 2160754,
+      "sha256": "6a2558f98da438515b29923682d7cd821099a6ec44e4935fb2cdce00dd8b1fa9",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/car_(automobile)_target_absent.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/car_(automobile)_target_absent.png",
+      "bytes": 2203045,
+      "sha256": "3db92ca312acff644c17ec0b4763c9e6871db7af9845363eef0c5b7cf40ed35f",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/car_(automobile)_target_present.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/car_(automobile)_target_present.png",
+      "bytes": 2331775,
+      "sha256": "170cced33edb6d9ddd14f55660fe3626ec7ba1870bcfa0f8037fb33dfb632036",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/person_large_candidate_sample.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/person_large_candidate_sample.json",
+      "bytes": 1108,
+      "sha256": "3eb823933db0d2c8a419d6897cb81fdcaa20e89dd2d55f033e06dc01be370725",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/person_large_candidate_sample.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/person_large_candidate_sample.png",
+      "bytes": 2418601,
+      "sha256": "9b3a92286aaa9482117886615ef9e137c646fef6e601238ab147952e6f0c6516",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/person_retained_sample.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/person_retained_sample.json",
+      "bytes": 1112,
+      "sha256": "57f88c3959e7f50b8bb603212146e62142fc49a7ee09d811bc93e88de160fa48",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/person_retained_sample.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/person_retained_sample.png",
+      "bytes": 2359724,
+      "sha256": "7895c4533bf73bc45d89eb86c0a91dfb023f08b3bd2c3893384a55e07d68d39a",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/pickup_truck_target_absent.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/pickup_truck_target_absent.png",
+      "bytes": 1791630,
+      "sha256": "f724d348e14723f548377039d58aad6ee1d13efc77e522ef51dcde4cca2fe337",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/pickup_truck_target_present.png",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/pickup_truck_target_present.png",
+      "bytes": 2535763,
+      "sha256": "878934e933a109ad784a72c5e378fb03ebd7a89a6ccaa24375b4afd668ac1962",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/review_sample.json",
+      "destination": "/data/CoordExp/.worktrees/main-runs/outputs/coco-lvis-proxy-exploration/v2-export-20260927/review_sample.json",
+      "bytes": 57937,
+      "sha256": "678ddd71d1b41e91682ca0da715fe93a713f0046778139aaa84d2e0127831a08",
+      "owner": "main",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/focused-tests.log",
+      "destination": "/data/CoordExp/.worktrees/research-probes/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/focused-tests.log",
+      "bytes": 636,
+      "sha256": "9ebe31ad2d7e02e34ef88b35ae40e230d3504679a2597233e33a0d44782c147f",
+      "owner": "research-probes",
+      "action": "copy_hold_original",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "research-hf-compat"
+    },
+    {
+      "source": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/probe.log",
+      "destination": "/data/CoordExp/.worktrees/research-probes/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/probe.log",
+      "bytes": 2451,
+      "sha256": "86ab62ba9ef3c2b00a7769340e7fe8b653cc963b50872a8e727bb0294a3ecf98",
+      "owner": "research-probes",
+      "action": "copy_hold_original",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "research-hf-compat"
+    },
+    {
+      "source": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/result.json",
+      "destination": "/data/CoordExp/.worktrees/research-probes/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/result.json",
+      "bytes": 1592,
+      "sha256": "91ed7f696ba58b628cd455b21c3b6dfb9f26fd875b6503493a642d01728f16da",
+      "owner": "research-probes",
+      "action": "copy_hold_original",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "research-hf-compat"
+    },
+    {
+      "source": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/tests.log",
+      "destination": "/data/CoordExp/.worktrees/research-probes/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/tests.log",
+      "bytes": 3325,
+      "sha256": "0f288bf18295ef6d170ee34ed51671693e23a001ef3a0af2708390326f529e61",
+      "owner": "research-probes",
+      "action": "copy_hold_original",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "research-hf-compat"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_lvis_audit_aggregate.py",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_lvis_audit_aggregate.py",
+      "bytes": 2987,
+      "sha256": "720f66fa464c2570fc7c6e3682dea3b6f9f35058962d6982b644c0cac6581a9b",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_pair_stats.py",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_pair_stats.py",
+      "bytes": 3793,
+      "sha256": "4486ff3038555786516688ad75e9150114e2bee1062571eca77da4caca9733ed",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/findings.md",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/findings.md",
+      "bytes": 5727,
+      "sha256": "f517145bd3337787f55dad34db0e81c751f172277be4515598528c22d3b67c98",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/review_protocol.md",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/review_protocol.md",
+      "bytes": 2557,
+      "sha256": "06f32986a1e05399761c9c2af18ef0db7a03eb9b3e014fa66d54843db2862e62",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/findings.md",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/findings.md",
+      "bytes": 5755,
+      "sha256": "626cb96fae70849509b0832b4e4a12e2dd8ce1b41941a79d5e40a6f34a95a9d5",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/findings.md",
+      "destination": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/findings.md",
+      "bytes": 4595,
+      "sha256": "af5776c25b1c8354c81a600c7171d323bae02d00a6294a46398f354fe7906214",
+      "owner": "task-local rollback",
+      "action": "move_verified",
+      "status": "moved_verified_original_retired",
+      "producer_ref": "main-coco-lvis-review"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/adapter/README.md",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/README.md",
+      "bytes": 5294,
+      "sha256": "2860abd12bc4395ca0cb2fd2af9582eb6c46a7e8e8525d0f6871b56a831af4bd",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "historical_copy_verified_destination_now_absent",
+      "producer_ref": "start-loss-selected-checkpoint",
+      "historical_status": "copied_verified_source_retained",
+      "destination_current_state": "absent",
+      "destination_absence_verified_at_utc": "2026-09-30T20:41:54+00:00"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/adapter/adapter_config.json",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/adapter_config.json",
+      "bytes": 1119,
+      "sha256": "ece9d7c78d76468bfd55e4e962453d102410d534a384ed4cf2ac403316a26cd1",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/adapter/adapter_model.safetensors",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/adapter/adapter_model.safetensors",
+      "bytes": 72111984,
+      "sha256": "a60a7271cd3ed5da7f4ecd9df230b402b467dd644e25642534f84c16a2460003",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/inference_payload_manifest.json",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/inference_payload_manifest.json",
+      "bytes": 136464,
+      "sha256": "1fdd43eb9e94f21379b1494ca6ee51f65046b68f718787970ac8a5ce3ce420a1",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/special_token_embeddings/special_token_embeddings.json",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/special_token_embeddings/special_token_embeddings.json",
+      "bytes": 33548,
+      "sha256": "66e8cabc12bef41e0677be6d9613a6321cd8b5158c4dac55081647109c16dfa9",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256/special_token_embeddings/special_token_embeddings.safetensors",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload/special_token_embeddings/special_token_embeddings.safetensors",
+      "bytes": 16449720,
+      "sha256": "5bb713ae7e575508822ca2ef6e0a58b12e94e3b311fb0d1d683d539a6821499d",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/run.json",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/provenance/run.json",
+      "bytes": 67527,
+      "sha256": "3fe8770137e03ec5aa318e52f1af5c95db40877f14bbf4c1f560fd91c77ae68d",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    },
+    {
+      "source": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/resolved_config.json",
+      "destination": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/provenance/resolved_config.json",
+      "bytes": 6625,
+      "sha256": "503f23b9eb77bdab11c9ed85bad77543b17b03d1c175446448373b5e87179775",
+      "owner": "shared selected checkpoint",
+      "action": "copy_shared_selected",
+      "status": "copied_verified_source_retained",
+      "producer_ref": "start-loss-selected-checkpoint"
+    }
+  ],
+  "extractions": [
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_lvis_audit_aggregate.py",
+      "original_sha256": "720f66fa464c2570fc7c6e3682dea3b6f9f35058962d6982b644c0cac6581a9b",
+      "retained_owner": "/data/CoordExp/public_data/scripts/audit_coco_lvis_proxy.py",
+      "retained_sha256": "e31f050b1ad71659cb4837e36e061824b0fd7045dbf2076a09f1184278d02b3a",
+      "disposition": "retained_parameterized_read_only_operator",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_lvis_audit_aggregate.py",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_pair_stats.py",
+      "original_sha256": "4486ff3038555786516688ad75e9150114e2bee1062571eca77da4caca9733ed",
+      "retained_owner": "/data/CoordExp/public_data/scripts/coco_lvis_pair_stats.py",
+      "retained_sha256": "e9b8eea7dda2332a8bd192a819d1508d960d5ae4630037b7c9766bbb5c9a56ca",
+      "disposition": "retained_parameterized_pair_statistics",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_lvis_pair_stats.py",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/findings.md",
+      "original_sha256": "f517145bd3337787f55dad34db0e81c751f172277be4515598528c22d3b67c98",
+      "retained_owner": "/data/CoordExp/.worktrees/research-probes/research/questions/physical-evaluation.md",
+      "retained_sha256": "a69d7ce7087425bd707bdf4e7bada65a6d3e0f576f8ba83078e3130630147f89",
+      "disposition": "distilled_into_existing_question",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/findings.md",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/review_protocol.md",
+      "original_sha256": "06f32986a1e05399761c9c2af18ef0db7a03eb9b3e014fa66d54843db2862e62",
+      "retained_owner": "/data/CoordExp/.worktrees/research-probes/research/questions/physical-evaluation.md",
+      "retained_sha256": "a69d7ce7087425bd707bdf4e7bada65a6d3e0f576f8ba83078e3130630147f89",
+      "disposition": "distilled_into_existing_question",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/review_protocol.md",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/findings.md",
+      "original_sha256": "626cb96fae70849509b0832b4e4a12e2dd8ce1b41941a79d5e40a6f34a95a9d5",
+      "retained_owner": "/data/CoordExp/.worktrees/research-probes/research/questions/physical-evaluation.md",
+      "retained_sha256": "a69d7ce7087425bd707bdf4e7bada65a6d3e0f576f8ba83078e3130630147f89",
+      "disposition": "distilled_into_existing_question",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/findings.md",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/findings.md",
+      "original_sha256": "af5776c25b1c8354c81a600c7171d323bae02d00a6294a46398f354fe7906214",
+      "retained_owner": "/data/CoordExp/.worktrees/research-probes/research/questions/physical-evaluation.md",
+      "retained_sha256": "a69d7ce7087425bd707bdf4e7bada65a6d3e0f576f8ba83078e3130630147f89",
+      "disposition": "distilled_into_existing_question",
+      "rollback": "/data/CoordExp/.local/scratch/route-owned-outputs-and-migrate-legacy/originals/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/findings.md",
+      "recovery_scope": "same-host task rollback, not independent backup or committed Git recovery"
+    },
+    {
+      "original": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/probe.py",
+      "original_sha256": "cd6e17f504552f90d19e205b146031d987de0dff2e9dadf4fb459fb54ed9bf0b",
+      "retained_owner": "/data/CoordExp/.worktrees/research-probes/probes/runtime_compat.py",
+      "retained_sha256": "84aa875f1e2ee4b8efc7c99e48f36fb78126aa2188ef9f379347159acc8ee762",
+      "disposition": "extracted_scope_bound_operator_original_HOLD",
+      "rollback": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat/probe.py"
+    }
+  ],
+  "holds": [
+    {
+      "path": "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat",
+      "reason": "Immutable final-acceptance.json binds old result/log absolute paths and SHA-256. Owner copies are verified, but old files and loose source remain until receipt consumers are resolved."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_keyboard_style_check.py",
+      "reason": "One-off full raw-data/gallery generator with old output-root/import context; not a maintained entry. Full dependency/recovery closure is not established. Historical inspection only; current entrypoints are the retained public_data audit operators."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/audit-20260927-v1/coordexp_lvis_audit_sample.py",
+      "reason": "One-off full raw-data/gallery generator with old output-root/import context; not a maintained entry. Full dependency/recovery closure is not established. Historical inspection only; current entrypoints are the retained public_data audit operators."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_expanded_pair_crops.py",
+      "reason": "One-off full raw-data/gallery generator with old output-root/import context; not a maintained entry. Full dependency/recovery closure is not established. Historical inspection only; current entrypoints are the retained public_data audit operators."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_expanded_pairs_sample.py",
+      "reason": "One-off full raw-data/gallery generator with old output-root/import context; not a maintained entry. Full dependency/recovery closure is not established. Historical inspection only; current entrypoints are the retained public_data audit operators."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration/person-and-stable-mappings-20260927/coordexp_person_proxy_audit.py",
+      "reason": "One-off full raw-data/gallery generator with old output-root/import context; not a maintained entry. Full dependency/recovery closure is not established. Historical inspection only; current entrypoints are the retained public_data audit operators."
+    },
+    {
+      "path": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256",
+      "reason": "Verified shared leaf retained, but current benchmark/research consumers still bind original checkpoint paths. Keep original run; no whole-run promotion."
+    }
+  ],
+  "shared_selection": {
+    "path": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256",
+    "producer": {
+      "checkout": "/data/CoordExp/.worktrees/start-loss-benchmark",
+      "repository_provenance": {
+        "commit": {
+          "status": "available",
+          "value": "01941e687d7ea197df0667701bad5e8e40235652"
+        },
+        "execution_relevant_changes": {
+          "count": 0,
+          "path_classes": {},
+          "truncated": false
+        },
+        "execution_relevant_digest": {
+          "status": "available",
+          "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "state": "dirty",
+        "tracked_changes_present": true,
+        "untracked_changes_present": false
+      },
+      "run_id": "instance_margin-order17-5f0261c80fc7",
+      "run_json_sha256": "3fe8770137e03ec5aa318e52f1af5c95db40877f14bbf4c1f560fd91c77ae68d",
+      "resolved_config_sha256": "503f23b9eb77bdab11c9ed85bad77543b17b03d1c175446448373b5e87179775",
+      "original_checkpoint": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256"
+    },
+    "payload_manifest_verified": true,
+    "provenance_sha256": "44b5b0985c9ef5163ffba315ad5d83100fc3f83bba8e84a1cd06d919a1e1db45"
+  },
+  "execution_notes": [
+    "Initial checkpoint preflight stopped on an assumed component key before creating any shared checkpoint directory. Earlier 83 verified transfers remained recorded. Retried only the shared leaf using the actual special_token_embedding_delta.relative_root schema. No checkpoint bytes or receipts were edited."
+  ],
+  "finished_at": "2026-09-30T11:55:31.452552+00:00",
+  "producer_contexts": {
+    "main-coco-lvis-review": {
+      "session": "01a0e2e2-ef29-7291-9045-f631930359c1",
+      "checkout": "/data/CoordExp",
+      "commit": null,
+      "commit_status": "not established for these untracked original scripts; captured source hashes retained",
+      "run": "coco-lvis-proxy-exploration/20260927",
+      "data_and_config": "Unchanged contract.json, analysis/pipeline manifests and validation receipts in selected artifact families; raw data paths stay in place."
+    },
+    "research-hf-compat": {
+      "session": "01a0eec2-93f9-7242-b1bd-8e2a92cf584b",
+      "checkout": "/data/CoordExp/.worktrees/research-probes",
+      "commit": null,
+      "commit_status": "see immutable final-acceptance.json for distinct contextual/runtime commits; no commit inferred for the loose script",
+      "run": "2026-09-29-vllm-dora/hf-compat",
+      "config_and_data": "Explicit historical checkpoint and policy/row-bank paths preserved in source/result and validation input hashes."
+    },
+    "start-loss-selected-checkpoint": {
+      "checkout": "/data/CoordExp/.worktrees/start-loss-benchmark",
+      "repository_provenance": {
+        "commit": {
+          "status": "available",
+          "value": "01941e687d7ea197df0667701bad5e8e40235652"
+        },
+        "execution_relevant_changes": {
+          "count": 0,
+          "path_classes": {},
+          "truncated": false
+        },
+        "execution_relevant_digest": {
+          "status": "available",
+          "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "state": "dirty",
+        "tracked_changes_present": true,
+        "untracked_changes_present": false
+      },
+      "run_id": "instance_margin-order17-5f0261c80fc7",
+      "run_json_sha256": "3fe8770137e03ec5aa318e52f1af5c95db40877f14bbf4c1f560fd91c77ae68d",
+      "resolved_config_sha256": "503f23b9eb77bdab11c9ed85bad77543b17b03d1c175446448373b5e87179775",
+      "original_checkpoint": "/data/CoordExp/outputs/infra_base/start-loss-benchmark-20260928/train/instance_margin-order17/checkpoints/step-256"
+    }
+  },
+  "storage_worktrees": [
+    {
+      "owner": "main",
+      "path": "/data/CoordExp/.worktrees/main-runs",
+      "head": "73822b0030934d28784b72a8a5325387b2f5cd41",
+      "mode": "detached, locked, ignored local outputs",
+      "qualification": "storage verified; no model/data/environment or launch qualification"
+    },
+    {
+      "owner": "research-probes",
+      "path": "/data/CoordExp/.worktrees/research-probes",
+      "head": "19af7b15db17a861ae73310b377b9002d889e0df",
+      "qualification": "canonical research source owner; current task edits uncommitted"
+    }
+  ]
+}

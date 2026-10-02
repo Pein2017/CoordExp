@@ -55,6 +55,9 @@
 
 ## Runtime
 
+- Before choosing run or report paths, read `docs/OUTPUT_STORAGE_POLICY.md`.
+  Root `outputs/` is shared retention, not a branch-owned launch destination.
+
 - Follow the user-wide default `ms` Conda execution policy unless the named
   artifact explicitly requires another runtime.
 - Shared GPU activity and dirty changes are expected; adapt only after a

@@ -1,0 +1,16 @@
+{
+  "/data/CoordExp/outputs/research/coco-lvis-proxy-exploration": {
+    "bounded_metadata_matches": [],
+    "outside_selected_family": [],
+    "scan_scope": "Root outputs JSON/YAML up to 2 MiB; large traces are immutable evidence, not assumed live consumers."
+  },
+  "/data/CoordExp/outputs/runtime-optimization/2026-09-29-vllm-dora/hf-compat": {
+    "bounded_metadata_matches": [
+      "outputs/runtime-optimization/2026-09-29-vllm-dora/final-acceptance.json"
+    ],
+    "outside_selected_family": [
+      "outputs/runtime-optimization/2026-09-29-vllm-dora/final-acceptance.json"
+    ],
+    "scan_scope": "Root outputs JSON/YAML up to 2 MiB; large traces are immutable evidence, not assumed live consumers."
+  }
+}
