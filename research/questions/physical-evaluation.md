@@ -110,8 +110,9 @@ counterexamples; soap-to-bottle and embedded-laptop keyboard proxies were remove
 No object-count cap was introduced. Recorded train/val hard-view counts are
 884,035/37,430 objects, including 34,088/1,095 proxies; recorded weighted counts
 are 938,123/40,500 objects. These are export counts, not calibrated physical truth
-or an observed training gain. Dataset payloads and the pre-existing v2 exporter
-were not changed by the output migration.
+or an observed training gain. On 2026-10-02 the user retired the complete v1
+length-budget, weighted-v2 and hard-v2 dataset payloads and their unused
+constructors. Original [weighted pipeline and validation records](/data/CoordExp/.worktrees/research-probes/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/weighted/pipeline_manifest.json) and [hard export/consumer records](/data/CoordExp/.worktrees/research-probes/outputs/research/coco-lvis-proxy-exploration/v2-export-20260927/hard/pipeline_manifest.json) remain byte-identical at this artifact owner, alongside the separate validation, loader and encoding receipts. Their old absolute paths are historical identities; these records do not provide a complete-export replay or a currently qualified reconstruction route.
 
 Reopen hard-label admission only with versioned evidence on the target-absent
 population, separating independent owner, visible extent, depiction, category
