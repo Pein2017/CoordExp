@@ -12,6 +12,7 @@ from pathlib import Path
 
 from probes.hidden_human_recovery import (CHECKPOINT, load, write, digest, canonical, validate_visible,
                                          native_request, request_plan, candidates, original_coverage)
+from src.artifacts.model_card import package_model_card
 from src.eval.saved_rows import iou_xyxy
 
 ROOT = Path(__file__).resolve().parents[1] / 'outputs/research/physical-fn-recovery/2026-09-27/iterative-positive-01'
@@ -267,6 +268,7 @@ def save_checkpoint(q, delta, output):
     from src.qwen.untied_embeddings import save_special_token_embedding_deltas
     output.mkdir(parents=True,exist_ok=False)
     q.model.save_pretrained(output/'adapter',safe_serialization=True,save_embedding_layers=False)
+    package_model_card(output/'adapter')
     saved=load_file(str(output/'adapter/adapter_model.safetensors'))
     live=get_peft_model_state_dict(q.model,adapter_name='default')
     assert saved.keys()==live.keys()
