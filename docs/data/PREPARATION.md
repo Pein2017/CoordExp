@@ -209,8 +209,10 @@ PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget
 
 The legacy COCO length-budget root above is a derived JSONL/meta-only artifact.
 The v1-backed LVIS-proxy rebuild recipe and corresponding proxy view have been
-retired together with the v1 processed directory. Existing v2/hard outputs and
-historical provenance receipts remain unchanged.
+retired together with the v1 processed directory. Weighted-v2/hard-v2 payloads
+were also retired under the user's separate ruling. Their historical provenance
+and validation/consumer receipts remain unchanged at the Research Probes
+COCO/LVIS artifact owner; they are not current reconstruction commands.
 Phase 1 canonical views resolve `images[]` through
 `public_data/coco/images/res-1024/`; do not copy images into each annotation
 view.

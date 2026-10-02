@@ -26,8 +26,10 @@ IoU/coverage denominators and COCO crowd exclusion are preserved.
 Interpretation of the finite audit and the later weighted/hard v2 export lives
 in the canonical Research Probes `research/questions/physical-evaluation.md`.
 The v1-backed proxy rebuild path and v1 processed directory were retired under
-the 2026-10-02 user ruling. Existing v2/hard outputs and historical receipts
-remain unchanged.
+the 2026-10-02 user ruling. The user also retired the weighted-v2/hard-v2 data.
+Their original pipeline and validation/consumer receipts remain unchanged at
+the existing Research Probes COCO/LVIS artifact owner; complete-export replay
+is no longer supported from those retired files.
 Source/report rollback and old-to-new asset identities are recorded in
 `openspec/changes/route-owned-outputs-and-migrate-legacy/` at root main. Remaining
 loose one-off output-directory generators were retired; they are not supported

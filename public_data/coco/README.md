@@ -128,7 +128,7 @@ Canonical view JSONLs under `views/**` store:
 
 For `len-12000` views, the budget includes Qwen image patch tokens,
 system/user chat-template tokens, and the rendered assistant object sequence.
-The v1 LVIS-proxy data and its construction routes are retired. Historical
+The length-budget v1 LVIS-proxy data and its construction routes are retired. Historical
 provenance manifests describe the earlier data; they are not reconstruction
 commands supported by the current builder. Token-budget builds require an
 explicit current training config.
