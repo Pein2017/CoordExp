@@ -1,7 +1,7 @@
 # Maintained command adapters
 
 Saved detection evaluation and visualization are thin entries over `src.eval`
-and `src.visualization`. Use their `--help` for actual accepted fields; old launch
+and `src.vis`. Use their `--help` for actual accepted fields; old launch
 flags are not compatibility promises.
 
 - `python -m scripts.evaluate_detection --help`

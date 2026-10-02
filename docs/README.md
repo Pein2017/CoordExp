@@ -1,23 +1,24 @@
-# Engineering interfaces
+# Long-lived documentation
 
-For scientific state use [research](../research/index.md); for executable methods
-use [probes](../probes/README.md). This directory owns current engineering contracts,
-not operation diaries or a parallel research status system.
+This directory keeps stable reasoning and a small map, not a second description
+of the source tree. Use the selected checkout's source, CodeGraph, CLI help,
+typed configs and tests for current implementation details.
 
 | Need | Owner |
 |---|---|
-| Architecture and dependencies | [System overview](SYSTEM_OVERVIEW.md) |
-| Agent navigation | [Task entry](AGENT_INDEX.md) |
-| Checkout and integration | [Worktree policy](BRANCH_AND_WORKTREE_POLICY.md) |
-| Core behavior | [Core contract map](coordexp_infras.md) |
-| Input/geometry and packing | [Data](data/README.md) |
-| Evaluation semantics | [Evaluation](eval/README.md) |
-| Training and continuation | [Training](training/README.md) |
-| Artifact and source identity | [Artifacts](ARTIFACTS.md) |
-| Storage boundaries | [Storage](OUTPUT_STORAGE_POLICY.md) |
-| Current adapter qualification | [DoRA](adapters/dora-qualification.md), [selected embeddings](adapters/selected-embedding-qualification.md) |
-| Coding standards | [Standards](standards/README.md) |
+| Documentation admission and historical recovery | [Asset policy](RETENTION.md) |
+| Dependency boundaries | [Overview](SYSTEM_OVERVIEW.md) |
+| Checkout authority | [Worktrees](BRANCH_AND_WORKTREE_POLICY.md) |
+| Source/data/output ownership | [Storage](OUTPUT_STORAGE_POLICY.md) |
+| Geometry and data identity | [Data](data/CONTRACT.md) |
+| Evaluation meaning | [Evaluation](eval/CONTRACT.md) |
+| Engineering design principles | [Style](standards/CODE_STYLE.md) |
 
-Stable behavior belongs in `openspec/specs`. The current bounded cleanup remains
-in the existing change until validated integration; absorbed old changes are in
-Git rather than a second in-tree archive.
+Stable compatibility requirements belong to local `openspec/specs/`.
+Scientific interpretation belongs to the owning research question, not docs.
+[Task navigation](AGENT_INDEX.md) is optional, not a required reading chain.
+
+Current scientific work starts at [research](../research/index.md), executable
+methods at [probes](../probes/README.md). Durable distinctions are retained in
+[metric interpretation](eval/INTERPRETATION.md) and
+[unmatched review](eval/UNMATCHED_REVIEW.md); neither is a run-status ledger.

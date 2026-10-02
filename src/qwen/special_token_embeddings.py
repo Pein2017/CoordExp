@@ -42,7 +42,7 @@ SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
     "coordexp-infras-special-token-embedding-delta-v1"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
-    "docs/adapters/selected-embedding-qualification.md"
+    "manifests/qualification/selected-embedding-source-study.json"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
@@ -1069,15 +1069,22 @@ def _validate_source_gate(
 
 
 def _special_token_embedding_source_study_is_passed(path: Path) -> bool:
-    if not path.exists():
+    """Read a source-study decision; measured roundtrip evidence is separate."""
+    try:
+        decision = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return False
-    text = path.read_text(encoding="utf-8")
-    required_phrases = (
-        "custom Qwen wrapper pair as V1 recommendation",
-        "semantics: additive_delta",
-        "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json",
+    return (
+        isinstance(decision, dict)
+        and type(decision.get("schema_version")) is int
+        and decision["schema_version"] == 1
+        and decision.get("evidence_kind") == "source_study_decision"
+        and decision.get("component") == "selected_embeddings"
+        and decision.get("decision") == "accepted"
+        and decision.get("mechanism") == "custom_qwen_wrapper_pair"
+        and decision.get("roundtrip_receipt_required") is True
+        and decision.get("semantics") == "additive_delta"
     )
-    return all(phrase in text for phrase in required_phrases)
 
 
 def _load_probe_receipt(path: Path) -> Mapping[str, Any]:

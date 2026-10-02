@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "source_study_decision",
+  "component": "selected_embeddings",
+  "decision": "accepted",
+  "mechanism": "custom_qwen_wrapper_pair",
+  "roundtrip_receipt_required": true,
+  "source": {
+    "commit": "3e43341cd10eaf11c38c1eab6645ba8ad603a45d",
+    "path": "docs/adapters/selected-embedding-qualification.md",
+    "sha256": "0b9c973740191321441004faddc9e47ab00e593e721b4901b973b17f91f13945"
+  },
+  "boundary": "Records an existing mechanism decision, not a new model run, measured qualification, or continuation authority. Missing roundtrip evidence remains an error.",
+  "semantics": "additive_delta"
+}

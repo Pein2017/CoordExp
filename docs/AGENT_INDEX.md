@@ -1,24 +1,12 @@
-# Task entry
+# Task-local navigation
 
-Start with the exact registered checkout, branch, HEAD, dirty scope and holders.
-Do not infer filesystem isolation from a named worktree. Preserve unrelated work.
+Start from the exact path, command, artifact or question named by the task.
+Resolve this checkout's physical root, HEAD and dirty scope. For code, use the
+real entrypoint, exact-checkout CodeGraph, source and focused tests; do not read
+a mandatory stack of overview documents before working.
 
-For a research question read `research/index.md`, then one owning question and
-its cited catalog rows. For model/data identity read `research/assets.md`. Recover
-only the needed original record with its full commit/path; do not restore an
-archive to make searches see the old project again.
-
-For code, begin at an actual command or retained consumer. Public mechanics live
-in `src`, the two explicit research operators in `probes`, and command adapters
-in `scripts`. Current tests own contracts, not a reason to preserve dead code.
-See [architecture](SYSTEM_OVERVIEW.md) and [research operators](../probes/README.md).
-
-New decision-bearing runs need clean-Git qualification, explicit inputs/resources
-and independent interpretation. A closed receipt cannot grant new execution.
-Missing source identity fails before continuation effects, not after a model
-launch. No durable memory/handoff file is another current-state authority.
-
-After changes: focused tests, default collection, knowledge check, relevant strict
-OpenSpec validation, exact diff and source/evidence boundary review. CPU tests do
-not certify real-model parity. Commit/push/integration are separate authorized
-operations; canonical adoption requires the [worktree fence](BRANCH_AND_WORKTREE_POLICY.md).
+[Docs](README.md) contains long-lived reasoning, not runtime inventories.
+Stable compatibility semantics use the local `openspec/specs/` owner. Research
+interpretation uses the owning `research/` question and its evidence. Historical
+detail uses [explicit recovery](RETENTION.md), not a second active codebase.
+Preserve unrelated changes. Synthetic tests do not prove real-model behavior.

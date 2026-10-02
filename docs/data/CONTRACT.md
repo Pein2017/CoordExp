@@ -1,174 +1,28 @@
----
-doc_id: docs.data.contract
-layer: docs
-doc_type: contract
-status: canonical
-domain: data
-summary: Authoritative JSONL, geometry, and runtime assumptions for dataset ingestion.
-updated: 2026-05-17
----
+# Data identity and geometry
 
-# Data JSONL Contract (Global)
+Raw dataset records and rendered model text are different objects. Raw JSONL
+remains valid JSON; rendering, tokenization and parsing use the selected
+checkout's template and typed configuration. The executable field schema belongs
+to `src/data/`, `src/templates/` and the relevant local OpenSpec.
 
-This document defines the universal JSONL format consumed by all CoordExp training/eval datasets (public detection/grounding and any legacy sources). Every record MUST adhere to this contract so the shared chat-template pipeline can process all sources.
+Always distinguish pixel coordinates, normalized coordinates and discrete
+coordinate-token IDs. Carry image dimensions and transform identity through
+conversion; never infer a unit from an integer's appearance. Clipping, rounding,
+resizing, object ordering and token mapping can change the learning problem and
+must be explicit, not cosmetic cleanup.
 
-Important separation:
-- This contract is for **raw JSONL files** (`*.jsonl`, `*.norm.jsonl`, `*.coord.jsonl`), which must remain strict JSON.
-- Model-facing assistant text is rendered as **CoordJSON** (`{"objects": [...]}`) and may express geometry either with bare coord tokens or bare norm1000 JSON integers, depending on the authored geometry-expression mode.
+A sample identity, its image bytes and its annotation version are separate
+identities. Missing annotations are not evidence of physical absence. Preserve
+original annotations and derived edits as distinct versions; do not rewrite an
+old run's dataset identity to match newly published labels.
 
-## Top-Level Record
-- **Provenance**: Records are typically produced by dataset-specific converters (e.g., `public_data/scripts/convert_lvis.py`) and then resized/tokenized via `public_data/scripts/rescale_jsonl.py` and `public_data/scripts/convert_to_coord_tokens.py` (see [`PREPARATION.md`](PREPARATION.md)). Regardless of source, they MUST match this contract.
-- `images` (list[str], required): Relative paths to image files. Legacy preset
-  JSONLs resolve these against the JSONL directory. Phase 1 public-data
-  annotation views under `public_data/<dataset>/views/**` resolve them against
-  the view's declared image store, for example
-  `public_data/coco/images/res-1024`.
-- `objects` (list[object], required): Structured annotations (see below).
-- `width` (int, required): Image width in pixels (original or post-resize if applied offline).
-- `height` (int, required): Image height in pixels.
-- `summary` (str, optional): Single-line English summary (if provided by the dataset). When present, it should be built from the raw `desc` strings; identical entries may be merged into `desc xN`. Missing objects or empty `desc` should fail during conversion.
-- `metadata` (object, optional): Free-form metadata for provenance (not automatically injected).
+Resolve paths from their declared source and retain original/derived provenance.
+A checksum establishes identity, not availability or recoverability. A maintained
+input needs a verified copy or a dependency-complete regeneration route; commands
+copied from retired source are not that route. See the checkout's
+[public-data provenance owner](../../manifests/public_data_provenance/README.md)
+and [storage policy](../OUTPUT_STORAGE_POLICY.md).
 
-## Objects
-Each object MUST contain exactly one geometry field plus a non-empty `desc`.
-- `desc` (str, required): Plain English description / class string (no hierarchy or slash prefixes required).
-- One geometry (required, mutually exclusive):
-  - `bbox_2d`: `[x1, y1, x2, y2]` pixel coordinates.
-  - `poly`: flat list `[x1, y1, x2, y2, ...]` (even length, ≥6 values / ≥3 points). Optional `poly_points` (int) should equal `len(poly)/2` when present.
-- No additional geometry fields are allowed on the same object.
-
-Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are rejected.
-
-### Geometry keys and coordinate space (canonical)
-- Accepted geometry keys are **only** `bbox_2d` or `poly` (plus optional `poly_points`). Legacy aliases `bbox` or `polygon` must be converted during preprocessing.
-- **Training coordinate space is pre-normalized norm1000**:
-  - Numeric coords may be bare integers in `0..999`, OR
-  - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
-  Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
-- Keep `custom.coord_tokens.skip_bbox_norm: true` in both geometry-expression modes to prevent double scaling.
-
-### Raw JSONL vs assistant CoordJSON
-- Raw JSONL must stay strict JSON:
-  - coord-token surfaces store quoted token strings (e.g., `"<|coord_123|>"`),
-  - raw-text norm1000 surfaces store bare numeric integers (e.g., `123`).
-- Canonical Phase 1 public-data views store bare norm1000 integer coordinates
-  in JSONL. Assistant targets for Qwen-family compact detection still render
-  those integers as Qwen coord-token literals at template/build time.
-- Assistant dense outputs use top-level `{"objects": [...]}` and either:
-  - bare CoordTok literals in geometry arrays (e.g., `[<|coord_123|>, <|coord_456|>, ...]`), or
-  - bare norm1000 integers (e.g., `[123, 456, 789, 900]`).
-- Parsing boundary for assistant-output-like text is `CoordJSON -> strict JSON` transpilation, then `json.loads`.
-
-### Phase 1 public-data views
-The Phase 1 COCO public-data layout separates reusable image stores from
-annotation views:
-
-```text
-public_data/coco/images/res-1024/
-public_data/coco/views/coco80/full/
-public_data/coco/views/coco80/len-12000/
-public_data/coco/views/coco80/max-60/
-public_data/coco/views/coco80-lvis-proxy/len-12000/
-```
-
-View JSONLs are model/eval annotation surfaces. Their `images[]` entries are
-image-store-relative paths such as `images/train2017/000000123456.jpg`, not
-paths relative to the view directory. Each view root should carry local
-metadata declaring:
-
-- `image_store`: repo-root-relative path to the shared store, e.g.
-  `public_data/coco/images/res-1024`
-- `image_path_semantics: image_store_relative`
-- `coordinate_space: norm1000`
-- `coordinate_storage: integer`
-- `coordinate_chart: xyxy`
-- `assistant_coordinate_rendering: qwen_coord_tokens`
-
-The view JSONL stays strict JSON with integer coordinates; Qwen coord-token
-assistant text is a rendering boundary, not the storage format for these
-canonical views.
-
-### Canonical preset data vs offline-prepared bbox-format branches
-- Canonical raw and preset JSONL remain model-independent `xyxy` surfaces.
-- Runtime training and builder code MUST NOT reinterpret canonical preset
-  `bbox_2d` records into another bbox chart on the fly.
-- Non-canonical model-facing bbox charts are authored offline under
-  sibling preset roots such as
-  `public_data/<dataset>/<preset>_cxcy_logw_logh/` and
-  `public_data/<dataset>/<preset>_cxcywh/`.
-- For `<preset>_cxcy_logw_logh/`:
-  - `<split>.jsonl` stores norm1000 integer `bbox_2d` slots in
-    `[cx, cy, logw, logh]`,
-  - `<split>.norm.jsonl` mirrors the same numeric lattice in preset-compatible
-    layout,
-  - `<split>.coord.jsonl` stores the tokenized form of that same lattice,
-  - branch records must include prepared-bbox provenance metadata,
-  - the first supported branch surface is `bbox_2d`-only and fails fast on
-    `poly` or mixed geometry.
-- For `<preset>_cxcywh/`:
-  - `<split>.jsonl` stores norm1000 integer `bbox_2d` slots in
-    `[cx, cy, w, h]`,
-  - `<split>.norm.jsonl` mirrors the same numeric lattice in preset-compatible
-    layout,
-  - `<split>.coord.jsonl` stores the tokenized form of that same lattice,
-  - branch records must include prepared-bbox provenance metadata,
-  - the first supported branch surface is `bbox_2d`-only and fails fast on
-    `poly` or mixed geometry.
-- Inference, visualization, matching, and emitted evaluation artifacts remain
-  canonical `xyxy`; any non-canonical prediction surface such as
-  `cxcy_logw_logh` or `cxcywh` must be inverted back to canonical `xyxy`
-  before those downstream boundaries.
-
-## Invariants
-- For training, coords MUST be pre-normalized to norm1000 (ints 0..999) or pre-tokenized `<|coord_k|>` values. Width/height must always be present.
-- This raw-data invariant applies to canonical raw JSONL and other
-  model-independent geometry surfaces. Offline-prepared bbox-format branches may
-  encode model-facing bbox slots differently, but they must declare that branch
-  provenance explicitly instead of relying on runtime reinterpretation.
-- Image paths remain relative in JSONL. Legacy preset loaders resolve them from
-  the JSONL directory; Phase 1 view-aware loaders resolve them from the view's
-  declared image store.
-- Geometry is validated; records with multiple geometry fields per object are rejected.
-- Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
-- Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL.
-- `custom.object_ordering: random` is supported for ablation-style dataset-backed training/eval only and means a deterministic per-epoch reshuffle derived from sample identity plus epoch; it does not change per-object field order inside each object payload.
-- Polygon vertices should be canonicalized offline for determinism (recommended; not enforced by the runtime loader/builder):
-  - drop duplicated closing point if present
-  - order vertices clockwise around the centroid (angle sort)
-  - rotate so the top-most (then left-most) vertex is first
-  This matches the public-data converters (e.g., `public_data/scripts/convert_to_coord_tokens.py`) and the prompt spec.
-- Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
-- Geometry-expression modes:
-  - `custom.coord_tokens.enabled: true` => coord-token assistant targets backed by `*.coord.jsonl`
-  - `custom.coord_tokens.enabled: false` => raw-text norm1000 assistant targets backed by `*.norm.jsonl`
-  In both cases keep `custom.coord_tokens.skip_bbox_norm: true`.
-- Phase 1 canonical views are norm1000-integer `*.jsonl` views. Training code
-  may render assistant geometry as Qwen coord tokens while keeping the stored
-  JSONL coordinates as integers.
-
-## Example
-```json
-{
-  "images": ["images/0001.jpg"],
-  "objects": [
-    {"poly": ["<|coord_12|>", "<|coord_34|>", "<|coord_56|>", "<|coord_34|>", "<|coord_56|>", "<|coord_78|>", "<|coord_12|>", "<|coord_78|>"], "poly_points": 4, "desc": "yellow box"},
-    {"bbox_2d": ["<|coord_100|>", "<|coord_120|>", "<|coord_180|>", "<|coord_200|>"], "desc": "tool cabinet"}
-  ],
-  "width": 768,
-  "height": 512
-}
-```
-
-## Source and recovery boundaries
-
-The current [COCO recovery contract](../../manifests/public_data_provenance/README.md)
-provides a dependency-complete path for retained training inputs. Old LVIS, proxy
-and alternate-format exports may still exist externally, but their historical
-identity does not imply a maintained converter or runnable command in HEAD.
-Verify order, geometry, labels and exact content before comparing any version.
-
-New domains must satisfy the current reader/template contracts, including the
-correct geometry representation and image-path origin. Rendering is owned by
-`src/templates/` and `src/qwen/encoding.py`; input planning and its real processor
-fixtures are tested in `tests/inference/test_input_preparation.py`. No retired
-inspection launcher is needed or implicitly supported.
+Packing changes physical layout, not the intended supervision. Preserve causal
+isolation, span alignment, loss selection and normalization. Exact implementation
+and cache identity are owned by local code and tests, not this explanation.

@@ -21,7 +21,7 @@ def test_default_dora_source_gate_loads_real_study_and_contract_receipt(
 ) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     study_relative = Path(
-        "docs/adapters/dora-qualification.md"
+        "manifests/qualification/dora-source-study.json"
     )
     study_path = tmp_path / study_relative
     study_path.parent.mkdir(parents=True)

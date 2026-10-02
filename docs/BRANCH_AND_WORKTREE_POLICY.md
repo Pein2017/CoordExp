@@ -1,27 +1,17 @@
-# Checkout and integration boundary
+# Research checkout boundary
 
-Canonical research: `research-probes` at `/data/CoordExp/.worktrees/research-probes`.
-Named cleanup target: `research-probes-web-codex` at
-`/data/CoordExp/.worktrees/research-probes-web-codex`.
-Production and infrastructure worktrees are outside research cleanup ownership.
-Resolve the registered Project and canonical path before every write phase.
-Branch-owned outputs stay under that physical owner checkout; root shared assets
-and the separate main-owned linked checkout follow `docs/OUTPUT_STORAGE_POLICY.md`.
-A storage move does not change a run's producer or authorize source integration.
+Canonical research is `/data/CoordExp/.worktrees/research-probes`.
+Main and infrastructure are separate versioned checkouts; do not substitute their
+source or docs for this branch's behavior. The cross-checkout owner map is
+`/data/CoordExp/docs/BRANCH_AND_WORKTREE_POLICY.md`.
 
-Preserve all existing dirty work. Do not reset, clean, auto-stash or overwrite
-unrelated changes. A local checkpoint commit preserves owned uncommitted work;
-it is not a validation result. Do not push or rewrite history without explicit
-separate authority. A process can still use a clean checkout; inspect holders.
+Verify the registered Project, physical root, HEAD, dirty scope and active holders
+before effects. Preserve parallel work; no automatic reset, clean, stash,
+worktree creation or broad process stop. Explicitly authorized integration must
+validate the exact descendant and recheck canonical HEAD/dirty state immediately
+before adoption. A clean tree alone does not establish that no consumer is live.
 
-For large integration, use the authorized registered temporary worktree based
-on the exact current canonical HEAD. Resolve scientific document conflicts by
-meaning and provenance, never by wholesale stale-index replacement. Re-run the
-integrated surviving suite and integrity checks. Immediately before adoption,
-canonical must still have that exact HEAD, clean tracked/untracked state and no
-conflicting active consumer. Adopt the validated descendant with `git merge
---ff-only`; never force an unsafe base update.
-
-Temporary integration evidence can remain ignored locally. It is not a new
-permanent research lane. Existing external data/model/output directories and
-remote refs are not cleanup targets.
+[Storage ownership](OUTPUT_STORAGE_POLICY.md) and scientific evidence identity
+are distinct from source integration. Historical records retain their original
+producer and do not authorize a new run or Git publication. Temporary task state
+must not become a permanent second research lane.

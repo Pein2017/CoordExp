@@ -868,7 +868,7 @@ def embedding_source_gate_root(tmp_path: Path) -> Path:
     """
     repo_root = Path(__file__).resolve().parents[2]
     root = tmp_path / "embedding-source-gate"
-    study_relative = Path("docs/adapters/selected-embedding-qualification.md")
+    study_relative = Path("manifests/qualification/selected-embedding-source-study.json")
     target = root / study_relative
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(repo_root / study_relative, target)

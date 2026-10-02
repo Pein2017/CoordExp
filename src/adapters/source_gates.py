@@ -17,7 +17,7 @@ from src.config.models import AdapterConfig
 
 
 DEFAULT_DORA_SOURCE_STUDY_PATH = Path(
-    "docs/adapters/dora-qualification.md"
+    "manifests/qualification/dora-source-study.json"
 )
 DEFAULT_DORA_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/dora_roundtrip/receipt.json"
@@ -414,15 +414,21 @@ def _build_dora_source_gate_receipt(
 
 
 def _dora_source_study_is_passed(path: Path) -> bool:
-    if not path.exists():
+    """Read a source-study decision; measured roundtrip evidence is separate."""
+    try:
+        decision = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return False
-    text = path.read_text(encoding="utf-8")
-    required_phrases = (
-        "public V1 adapter schema uses `adapter.type: dora`",
-        "Wave 1B probe evidence completes task 2.3",
-        "LoraConfig(use_dora=True)",
+    return (
+        isinstance(decision, dict)
+        and type(decision.get("schema_version")) is int
+        and decision["schema_version"] == 1
+        and decision.get("evidence_kind") == "source_study_decision"
+        and decision.get("component") == "dora"
+        and decision.get("decision") == "accepted"
+        and decision.get("mechanism") == "peft.LoraConfig(use_dora=True)"
+        and decision.get("roundtrip_receipt_required") is True
     )
-    return all(phrase in text for phrase in required_phrases)
 
 
 def _validate_requested_target_gate(
