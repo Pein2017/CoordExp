@@ -8,6 +8,10 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The active [full-label self-rollout fitting unit](experiments/2026-10-02-full-label-self-rollout-fit/unit.md) has an accepted fresh16 observation on18images/570labels: native coverage gains coexist with baseline-owner losses and output bursts, so stable full fitting is not achieved. [Results and the optimizer-profile follow-up](experiments/2026-10-02-full-label-self-rollout-fit/results.md) own the current decision. Missing-label proxies remain deferred; no follow-up native job is released.
+
+### Predecessor evidence
+
 The latest same-owner report-quality pilot is closed **NONPASS**. Strong
 coverage-preserving support is absent, not a scientific null. Local attention
 readout interventions are not a general physical-owner routing mechanism.

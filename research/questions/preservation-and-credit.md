@@ -38,6 +38,10 @@ The former standalone specialization decision is integrated here: improving row 
 
 Reopen when a dose-matched comparison can test a particular preservation mechanism without changing the reviewed owner universe. Intermediate optimization may trade off terms; the final gate must state its allowed losses and debt. Do not let unknown loss disappear from the denominator.
 
+## Full-label self-rollout observation
+
+The accepted fresh16 full-label trajectory (catalog:2026-10-02-full-label-self-rollout-fit) is another explicit owner-exchange case:18images/570annotations, TP247→261, but46gains accompany32baseline losses, and annotationF1 falls0.514→0.466 as valid predictions and duplicates increase. All17versions, including transient invalid/malformed bursts, remain in the result. This is not stable full fitting, a causal ranking ablation or evidence of representational impossibility. The [current unit](../experiments/2026-10-02-full-label-self-rollout-fit/results.md) owns the bounded optimizer-profile comparison; hidden-label proxies remain deferred.
+
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

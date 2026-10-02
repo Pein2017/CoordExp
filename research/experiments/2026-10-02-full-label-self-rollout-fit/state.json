@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-02-full-label-self-rollout-fit",
-  "lifecycle": "ready",
-  "status": "LEAD_CPU_ACCEPTED_NATIVE_PENDING",
-  "evidence": "partial",
-  "scientific_status": "not_started",
+  "lifecycle": "planned",
+  "status": "OBSERVATION_16_ACCEPTED_OPTIMIZER_FOLLOWUP_PLANNED",
+  "evidence": "accepted",
+  "scientific_status": "finite_fit_not_achieved_mixed_coverage_and_regressing_burden",
   "lead_thread": "01a0dd7c-0899-7b81-90a2-2f50da3476d1",
   "worker_thread": "01a0fb72-f08e-76b0-9c82-32b0cacc80e0",
   "worker_name": "102-worker",
@@ -308,28 +308,23 @@
     "disposable_transport": "/data/CoordExp/.worktrees/research-probes/.local/scratch/full-label-self-rollout-fit-20261002"
   },
   "budget": {
-    "overall_gpu_hours": 64,
-    "reported_used_gpu_hours": 2.1972533333333333,
-    "reported_remaining_gpu_hours": 61.802746666666664,
-    "worker_used_gpu_hours": 0,
+    "cumulative_gpu_hours_limit": null,
+    "user_limit_removed_utc": "2026-10-02T09:20:46Z",
+    "original_limit_gpu_hours": 64,
+    "original_limit_status": "historical_superseded",
+    "cumulative_used_gpu_hours": 4.54863659661995,
+    "current_unit_used_gpu_hours": 2.351383263286617,
     "reserved_gpu_hours": 0,
-    "proposed_qualification_gpu_hours_max": 2,
-    "proposed_observation_gpu_hours_max": 6,
-    "proposed_combined_gpu_hours_max": 8,
-    "max_gpu_slots": 8,
-    "qualification_owner_wall_seconds_max": 900,
-    "observation_owner_wall_seconds_max": 2700,
-    "charge": "8 slots times measured whole-owner wall including load, failure, readback, finalization and confirmed cleanup; no uncapped accounting substitution"
+    "usage_meaning": "informational, not a stop gate",
+    "accounting_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/observation-accounting-01.json",
+    "accounting_receipt_sha256": "ea76f52049e1536e000062e07a2a648ae09a75cb4a8e20bc286b6d61b2814a9c",
+    "operational_bounds": "finite invocation wall/work/identity/failure supervision is specified by each exact release"
   },
-  "job_state": "CPU checks terminal; 102-worker idle; no native invocation or reservation",
+  "job_state": "All native jobs terminal and exact owner/descendant identities absent; optimizer follow-up CPU work is next",
   "native_released": false,
   "lead_accepted": true,
   "user_scientific_acceptance": false,
-  "technical_runtime_holds": [
-    "accepted owned implementation requires its clean source commit; prior unrelated anchor-path change was user-approved and committed separately as cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08",
-    "fresh canonical qualification, exact lead runtime release and resource reservation required",
-    "actual 2-update native qualification still pending; no CPU claim about GPU/DDP/vLLM behavior"
-  ],
+  "technical_runtime_holds": [],
   "operational_stops": [
     "verified wall/resource cap",
     "nonfinite loss, gradients or parameters",
@@ -354,15 +349,14 @@
   },
   "structural_bounds_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/structural-bounds.json",
   "structural_bounds_sha256": "46ac7caf8c73ef8d08012c4ff2fe0c139686984d6ccd6232c5516a499b91aa03",
-  "evidence_scope": "CPU_only",
-  "boundary": "CPU implementation and runtime packet lead-accepted; native clean-source qualification and exact release still pending",
+  "evidence_scope": "CPU_and_completed_native_8rank_full570_qualification2_and_fresh16",
+  "boundary": "Accepted finite full570 native evidence; current constant16 does not achieve full fitting; optimizer-schedule comparison planned, missing-label proxies deferred",
   "not_authorized": [
-    "worker GPU/model/owner invocation until exact root release",
-    "checkpoint selection or sampling/sweep",
-    "missing-label proxy construction",
-    "hard quality gates, rollback, automatic retry or extension",
-    "worker commit/push or source edits outside a new assignment",
-    "changes to old scientific owners or frozen outputs"
+    "worker GPU/model/owner invocation without exact lead release",
+    "checkpoint selection, quality rollback or automatic extension",
+    "missing-label proxies before full-label fitting assessment",
+    "unfreezing vision/projector or changing objective/data/decoder in the optimizer comparison",
+    "worker source/record/commit edits outside a new bounded assignment"
   ],
   "state_source": "research/experiments/2026-10-02-full-label-self-rollout-fit/unit.md",
   "worker_transfer_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/102-worker-transfer-01.json",
@@ -1051,7 +1045,7 @@
     "claim_references": 165,
     "log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/research-check-04.log"
   },
-  "ownership_check": "User approved preserving and separately committing the preexisting Qwen anchor-path migration: cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08. Lead owns the separate accepted implementation/unit/catalog batch. No push or native invocation.",
+  "ownership_check": "Native runs completed from clean a00cd2155; root owns terminal acceptance, current research records and optimizer comparison scope. Historical frozen receipts remain immutable. No push.",
   "worker_model_at_creation": "gpt-6.1-sol",
   "worker_effort_at_creation": "high",
   "worker_model_change_observation": {
@@ -1060,7 +1054,7 @@
     "meaning": "Final transport reports gpt-6-astra/ultra after creation gpt-6.1-sol/high; no worker-issued reconfiguration. Source and tests are unchanged."
   },
   "candidate_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/candidate-return-01.json",
-  "lead_acceptance_scope": "CPU only",
+  "lead_acceptance_scope": "CPU, completed2-update native qualification and fresh16 native observation; no efficacy/generalization acceptance",
   "worker_model_restoration": {
     "user_instruction": "2026-10-02T08:44:30Z: user restored worker to 6.1; continue assignments",
     "verified_model": "gpt-6.1-sol",
@@ -1117,5 +1111,62 @@
     "test_log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01/lead-anchor-path-test-01.log",
     "test_count": 1,
     "status": "passed_and_committed_unchanged"
+  },
+  "result": "research/experiments/2026-10-02-full-label-self-rollout-fit/results.md",
+  "native_results": {
+    "qualification2": {
+      "run": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02",
+      "worker_report": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02-worker-report.json",
+      "worker_report_sha256": "51321c3f5ad6d342db07725c6600a7c6d41828bb123a3df302461ab23d4e6f68",
+      "acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-qualification-02-owner/lead-terminal-acceptance-01.json",
+      "acceptance_sha256": "977bbcab8d488e8bea03c434b9f9d480bb926d79f5e1332acef616085c9dd814"
+    },
+    "observation16": {
+      "run": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16",
+      "worker_report": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16-worker-report.json",
+      "worker_report_sha256": "e15c03af0cbaae8992b930ba0d3602d3f112b17d59b02a442965d8a4697af4fa",
+      "acceptance": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/native-observation-16-owner/lead-terminal-acceptance-01.json",
+      "acceptance_sha256": "4b5c7b3b78e6625a2245c160ef5a874a22ee531ccb0948960d3757f1da76c0e4"
+    }
+  },
+  "optimizer_followup": {
+    "status": "CPU_IMPLEMENTATION_PLANNED_NOT_NATIVE_RELEASED",
+    "question": "From the same anchor and full570 labels, does a4-global-update learning-rate ramp improve native owner coverage/preservation and output debt versus constant rates and a nominal-sum-matched lower constant rate?",
+    "source_reference": "a00cd21550f6824c6bd4edb94d497af67d59202c",
+    "updates": 16,
+    "arms": {
+      "constant": {
+        "lr_scale": 1.0,
+        "warmup_updates": 0
+      },
+      "warmup4": {
+        "lr_scale": 1.0,
+        "warmup_updates": 4
+      },
+      "constant_dose": {
+        "lr_scale": 0.90625,
+        "warmup_updates": 0
+      }
+    },
+    "factor": "lr_scale * min(global_update/warmup_updates,1) when warmup_updates>0; otherwise lr_scale; set before each optimizer.step",
+    "nominal_lr_factor_sums": {
+      "constant": 16.0,
+      "warmup4": 14.5,
+      "constant_dose": 14.5
+    },
+    "fixed": {
+      "language_lr": 1e-05,
+      "input_delta_lr": 5e-06,
+      "output_delta_lr": 5e-06,
+      "other_recipe": "a2b982a8526ca53efa2ed68ac04bd1fda8df81937122b3bbdb804313b56d8141",
+      "anchor": "/data/CoordExp/outputs/shared/checkpoints/start-loss-instance-margin-order17-step256/payload",
+      "training_sha256": "1cfdeb3bba14bb26034dd5dc4245a5c10ab240e1e780acdfc1edbdf6c32d4792"
+    },
+    "primary_outcomes": "Fixed endpoint16 TP/FN/F1 and baseline owner gains/losses, with every-version invalid/malformed/repeat/near-repeat/EOS/cap burdens; no scalar composite or checkpoint selection",
+    "claim_boundary": "One independent fresh trajectory per arm; equal nominal LR sums do not equal actual adaptive-update or prefix distributions; apparent superiority requires replication",
+    "stop": "Each invocation exactly16updates; existing operational guards; no quality gate/rollback/retry/automatic extension",
+    "native_released": false,
+    "missing_label_proxies": false,
+    "output_parent": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/optimizer-lr-shape-01"
   }
 }

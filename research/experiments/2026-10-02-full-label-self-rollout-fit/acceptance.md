@@ -1,6 +1,6 @@
 # Lead CPU acceptance — 2026-10-02
 
-The lead accepts the full-label CPU implementation and 102 runtime preparation. Native execution and scientific efficacy remain unaccepted. The original 102 candidate identities in `state.json` remain historical; `lead_cpu_acceptance` binds the final source/test hashes and logs.
+The lead accepted the full-label CPU implementation and 102 runtime preparation before native release. The separate 2-update qualification and fresh 16-update observation are now also technically accepted; current scientific conclusions are in [results.md](results.md). The original 102 candidate identities in `state.json` remain historical; `lead_cpu_acceptance` binds the final source/test hashes and logs.
 
 The final reporting revision exposes lexical/schema CE, coordinate-region hinge, weighted type gate and weighted order losses for M/B/redirect rows, with original scalar, gradients and reductions preserved. Persisted readback checks their finite nonnegative components, sums and branch weights. The maintained process owner now has an opt-in full-label route for treatment run/readback/offline: 2 updates with a 900-second total wall ceiling, or separately released 16 updates with 2700 seconds. Existing paired1 behavior remains covered. Release binds source, inputs, exact argv, installed runtime, qualification copy and tests; failure stops remaining stages and cleanup/finalization are charged.
 
@@ -9,3 +9,7 @@ The lead independently ran the original 24 CPU checks, then 19 checks against th
 Next: establish the clean committed checkout, produce the canonical qualifier, reserve/release only the 2-update native qualification, and inspect actual eight-rank updates, exports 0..2, vLLM refresh, raw versions, readback and offline observations. A 16-update fresh continuous-AdamW run requires a separate lead release. There are no quality floors, rollback or automatic extensions.
 
 Resolved ownership boundary: the preexisting `tests/qwen/test_vllm_dora_model.py` change only migrates the anchor fixture path to the already verified shared payload. Its real 588-key anchor parser passed (one CPU test). The user explicitly approved committing the change unchanged and separately; commit `cdb61fe10a6efdf9bcc8b888aff5b6e076b62d08` contains only that path. The source-capture guard requires the entire checkout clean; the accepted implementation commit and fresh qualifier precede any native release or reservation.
+
+## Native completion
+
+The separate2-update qualification and fresh16 observation are now lead-accepted as technically valid evidence. Current scientific outcome, raw/acceptance identities, budget-policy change and optimizer follow-up boundary are owned by [results.md](results.md) and [state.json](state.json). The original CPU-only acceptance above remains historical.
