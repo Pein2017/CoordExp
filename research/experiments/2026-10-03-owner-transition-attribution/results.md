@@ -1,6 +1,12 @@
-# Round05 saved-output attribution candidate
+# Round05 accepted saved-output attribution
 
-All54 saved measurements reproduce the accepted round04 records exactly, including raw/category owner IDs, matches, IoUs, denominator IDs, invalid-row details and burdens. All114 category transition instances reconcile to the accepted ID sets: single31 gains/29 losses; multiple24 gains/30 losses. Coverage remains anchor274, single276, multiple268 on18 images/570 annotations. Status is **candidate pending lead**, with no scientific self-acceptance or next unit scheduled.
+All54 saved measurements reproduce the accepted round04 records exactly, including raw/category owner IDs, matches, IoUs, denominator IDs, invalid-row details and burdens. All114 category transition instances reconcile to the accepted ID sets: single31 gains/29 losses; multiple24 gains/30 losses. Coverage remains anchor274, single276, multiple268 on18 images/570 annotations. The lead has accepted and closed this unit. Technical status is `completed_as_frozen`; scientific status is `descriptive_evaluator_conditions_only`. User scientific acceptance remains false; no next unit is scheduled.
+
+## Current acceptance
+
+The [lead ruling](lead-ruling-01.md) accepts the immutable [lead-acceptance-01.json](../../../outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/lead-acceptance-01.json), SHA256 `c2263d7d57a69d64cb0ba5dcd45b2bff52367a6d9525bd2e99ce8c30341f9ddf`. The lead verified all60 input bindings, source identity and five check logs, reused the worker's54-measurement reconstruction and focused tests, and independently recomputed all114 witness maxima, eligibility, assignment links and classes.
+
+The historical worker candidate at commit `a075e5270dedd46a7c8c1a41f2f71afb3e266e50` was unreviewed and pending lead acceptance. Its [terminal candidate](../../../outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/terminal-candidate-01.json), artifact, check logs and candidate evidence remain unchanged. This closure updates only state/results and runs the research-record consumer; it does not rerun the analysis or tests.
 
 ## Descriptive result
 
@@ -13,6 +19,8 @@ For gains the table describes the uncovered anchor; for losses it describes the 
 | R-multiple gain | 0 | 0 | 19 | 5 | 24 |
 | R-multiple loss | 0 | 0 | 23 | 7 | 30 |
 | Total | 1 | 1 | 90 | 22 | 114 |
+
+The59 losses comprise46 positive same-category overlaps below0.5 and13 no-positive-overlap instances (five absent-description, eight zero-overlap). None has an eligible same-category candidate that lost credit through assignment competition. The55 gains comprise44 below-threshold cases, nine no-positive-overlap cases, one eligible same-category competition case and one other-category-at-threshold case.
 
 All114 uncovered sides are unassigned. Of the22 no-positive-overlap instances,11 lack any valid same-description candidate and11 have valid same-description candidates with zero overlap. The absent/zero splits are single gain3/1, single loss2/4, multiple gain3/2 and multiple loss3/4. Instances can concern the same annotation in both arms;114 is not a count of distinct physical owners.
 
@@ -49,4 +57,4 @@ No inherited evaluator mismatch remains. Token positions map existing parser spa
 
 ## Evidence boundary
 
-These results locate annotation credit changes within eligibility and one-to-one assignment for the frozen saved outputs. They do not establish physical absence, semantic forgetting, causal interference, physical track identity, or a useful training/policy intervention. Incomplete reference truth and alternative assignments remain interpretation limits; no label, threshold, matching rule, generation or acquisition changed. Lead review owns acceptance and the next research decision.
+These results locate annotation credit changes within eligibility and one-to-one assignment for the frozen saved outputs. They do not establish physical absence, semantic forgetting, causal interference, physical track identity, or a useful training/policy intervention. Incomplete reference truth and alternative assignments remain interpretation limits; no label, threshold, matching rule, generation or acquisition changed. The lead owns the next research decision. These annotations provide no training or acquisition feedback; below-threshold overlaps do not establish small movement of the same physical entity.
