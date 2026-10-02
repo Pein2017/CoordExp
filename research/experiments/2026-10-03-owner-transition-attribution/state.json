@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-owner-transition-attribution",
-  "lifecycle": "planned",
-  "status": "CPU_ANALYSIS_PLANNED",
+  "lifecycle": "ready",
+  "status": "CANDIDATE_PENDING_LEAD",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured_saved_output_attribution",
+  "scientific_status": "descriptive_saved_output_eligibility_and_assignment_pending_lead",
   "protocol": "research/experiments/2026-10-03-owner-transition-attribution/unit.md",
   "state_source": "research/experiments/2026-10-03-owner-transition-attribution/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -22,5 +22,38 @@
     "rewriting historical receipts or shared runtime changes",
     "worker scientific acceptance or scheduling another unit"
   ],
-  "boundary": "CPU-only attribution of114 category-owner transition instances from54 accepted natural outputs; unchanged18-image570-annotation evaluator. No model calls, training, threshold changes or new labels."
+  "boundary": "CPU-only attribution of114 category-owner transition instances from54 accepted natural outputs; unchanged18-image570-annotation evaluator. No model calls, training, threshold changes or new labels.",
+  "worker_thread": "01a0fee6-ad51-7813-aa4d-dc36a1593fdf",
+  "direct_return": {
+    "helper": "/data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py",
+    "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+    "entry_receipt": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/entry-return-01.json",
+    "terminal_receipt": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/terminal-return-01.json"
+  },
+  "entry": {
+    "actual_model": "gpt-6.1-sol",
+    "actual_effort": "high",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "source_commit": "9cf94d70269c76576f99ee1da7b7ec5a8376ecec",
+    "git_status": "clean"
+  },
+  "result": "research/experiments/2026-10-03-owner-transition-attribution/results.md",
+  "attribution": {
+    "path": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/attribution.json",
+    "sha256": "dbf575b14f9b18cfa6c7582b74ba488c5c7d2e0941f316934b7746da9ede0b59"
+  },
+  "terminal_candidate": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/terminal-candidate-01.json",
+  "package_checks": {
+    "focused_check_log": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/checks-03.log",
+    "focused_check_exit": 0,
+    "build_log": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/build-03.log",
+    "build_exit": 0
+  },
+  "resources": {
+    "output_bytes": 646466,
+    "peak_rss_bytes": 135716864,
+    "wall_seconds": 4.05458128452301
+  },
+  "all_114_reconciled": true,
+  "all_54_measurements_equal": true
 }
