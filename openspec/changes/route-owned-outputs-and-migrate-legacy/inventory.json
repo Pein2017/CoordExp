@@ -555,7 +555,7 @@
   "storage_rule": "Small maintained summary in Git; exact raw machine receipt retained under the owning worktree outputs. Old runtime paths in the full receipt are historical identities, not current consumer locators.",
   "summarized_at": "2026-10-01T18:08:16.520529+00:00",
   "current_closeout": {
-    "status": "PARTIAL_USEFULNESS_AUDIT_ANNOTATION_RELOCATION_USER_DEFERRED",
+    "status": "SCOPED_SOURCE_AND_METADATA_LEAD_ACCEPTED_ANNOTATION_USER_DEFERRED",
     "discarded_cache_and_training_state_logical_bytes": 31451514094,
     "historical_executable_copies_removed": 108,
     "retained_shared_models": 4,
@@ -842,6 +842,38 @@
           "size_bytes": 10075
         }
       ]
+    },
+    "source_and_metadata_acceptance_20261002": {
+      "status": "lead-accepted",
+      "receipt": "/data/CoordExp/.worktrees/coordexp-infras/outputs/maintenance/output-storage-closeout-20261002/source-and-metadata-closeout.json",
+      "source_commits": [
+        "46cc16c0c",
+        "818fba0b8",
+        "25e8d95d7",
+        "04aa7dbdf",
+        "204b9d959"
+      ],
+      "research_commit": "dd67e331e",
+      "web_commit": "426b7f044",
+      "retired_python_copies": 395,
+      "retired_yaml_copies": 277,
+      "retired_shell_copies": 1,
+      "retired_exclusive_callers_and_tests": 23,
+      "v1_files_retired": 9,
+      "v1_logical_bytes_retired": 695894025,
+      "historical_checkpoint_cards_unchanged": 86,
+      "newer_checkpoint_cards_unchanged": 34,
+      "output_roots_zero_findings": 4,
+      "remaining_boundaries": [
+        "annotation relocation user-deferred",
+        "max60 proxy input outside selected length-budget retirement"
+      ],
+      "global_migration_completed": false,
+      "v2_hard_files_retired": 11,
+      "v2_hard_logical_bytes_retired": 574087074,
+      "v2_hard_provenance_records_retained": 7,
+      "v2_hard_provenance_bytes_retained": 7804,
+      "research_export_retirement_commit": "b20c04ba4"
     }
   }
 }

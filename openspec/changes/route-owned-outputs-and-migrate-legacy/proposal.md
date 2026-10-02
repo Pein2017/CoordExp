@@ -15,6 +15,7 @@ The root ignored output tree mixes branch-owned runs, handwritten reports and ex
 - Retire old Label Studio after exporting its two pending drafts; continue Gate A. The latest user ruling defers annotation relocation to the next public-data migration, so this round preserves its existing root runtime and published views.
 - Qualify legacy content by an actual current consumer or named necessary reproduction before assigning a destination; a generic move into main-runs is not retention acceptance. Retire obsolete payloads after useful meaning is distilled and recorded. Preserve frozen receipt fields as provenance, update current consumers, and remove originals without old-path symlinks or historical binary/source copies.
 - Keep a small Git-managed inventory summary and the exact large per-file machine receipt in the maintenance worktree outputs. Use this finite record, not a new governance registry.
+- Finish the 2026-10-02 closeout against current consumers: retire the obsolete v1 COCO/LVIS proxy and its unsupported reconstruction route, retain the consumed base COCO dataset, reconcile remaining historical source/config copies, and qualify generated checkpoint cards and visual descriptions at their existing owners.
 
 ## Capabilities
 
@@ -24,11 +25,11 @@ None. This is operator routing, bounded maintenance tooling and content migratio
 
 ### Modified Capabilities
 
-None. `skip_specs: true` applies: no training/inference/checkpoint schema, scientific rule, data recovery guarantee or continuation gate is changed. Existing `coordexp-infras-training-artifacts` and Research Probes `research-probe-development` remain their behavioral owners. In particular, historical source bindings stay immutable and dirty/unqualified sources gain no permission to execute. Do not invent an output-governance capability to duplicate the current operator guides.
+None. `skip_specs: true` applies: no training/inference/checkpoint schema, scientific rule, supported base-data recovery guarantee or continuation gate is changed. The user explicitly retires the obsolete v1 proxy and does not require its reconstruction route. Existing `coordexp-infras-training-artifacts` and Research Probes `research-probe-development` remain their behavioral owners. In particular, historical source bindings stay immutable and dirty/unqualified sources gain no permission to execute. Do not invent an output-governance capability to duplicate the current operator guides.
 
 ## Impact
 
-Root main owns the OpenSpec change and global storage/main-worktree policy. The canonical Research Probes checkout owns its local policy, runtime probe and scientific interpretation. Main's public_data owns retained annotation-audit tooling; its existing untracked v2 exporter/tests are not edited. The shared lead-worker skill gets only message-versus-receipt placement guidance.
+Root main owns the OpenSpec change and global storage/main-worktree policy. The canonical Research Probes checkout owns its local policy, runtime probe and scientific interpretation. Main's public_data owns retained annotation-audit tooling and the base COCO builders; the unconsumed v1-dependent v2 constructor and its dedicated test are retired. The user's separate ruling also retires weighted-v2/hard-v2 data while preserving their original small provenance/consumer receipts at the existing research artifact owner. Shared guidance remains with its separately coordinated owner.
 
 The 2026-10-02 user ruling supersedes the earlier permanent legacy-path holds.
 Dataset labels, model tensors, loss/geometry/matching rules and Codex transcripts
@@ -37,6 +38,9 @@ executable archives. New training/inference writers reject root outputs; selecte
 shared assets remain valid inputs. Annotation relocation is explicitly deferred by the latest user ruling;
 Gate A retains its existing live root. Old Label Studio is retired and its two
 drafts are exported without publishing or importing them. Do not stop training jobs or ambiguous external log producers. No GPU
-research, staging/commits/pushes, worktree removal, remote transfer or environment
-change is authorized. Report actual remaining execution blockers; do not accept
+research, pushes, worktree removal, remote transfer or environment
+change is authorized. The later 2026-10-02 user authorization permits the proposed
+bounded source/document/output closeout, proportionate checks and scoped local
+commits; archive only after the remaining acceptance tasks actually pass.
+Report actual remaining execution blockers; do not accept
 old layout as a permanent final form.
