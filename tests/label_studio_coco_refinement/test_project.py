@@ -23,7 +23,10 @@ from src.label_studio_coco_refinement.materialize import (
     ProjectTaskIndexSourceIdentityResolver,
     WorkingCoordMaterializer,
 )
-from src.label_studio_coco_refinement.models import RefinementRuntimeLayout
+from src.label_studio_coco_refinement.models import (
+    RUNTIME_RELATIVE_ROOT,
+    RefinementRuntimeLayout,
+)
 from src.label_studio_coco_refinement.project import (
     BootstrapAction,
     CanonicalJsonArrayFingerprint,
@@ -286,8 +289,16 @@ def test_exact_source_and_runtime_contracts() -> None:
         "a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795"
     )
 
+    expected_runtime_root = Path(
+        ".local/state/label_studio_coco_refinement/rescale_32_1024_bbox_len12000"
+    )
+    assert RUNTIME_ROOT.as_posix() == expected_runtime_root.as_posix()
+    assert RUNTIME_RELATIVE_ROOT == expected_runtime_root
+    assert RefinementRuntimeLayout.under_repository(REPO_ROOT).root == (
+        REPO_ROOT / expected_runtime_root
+    )
     layout = RuntimeLayout.for_repo(REPO_ROOT)
-    assert layout.root == REPO_ROOT / Path(RUNTIME_ROOT)
+    assert layout.root == REPO_ROOT / expected_runtime_root
     assert layout.image_root == REPO_ROOT / Path(SHARED_IMAGE_ROOT)
     assert layout.label_studio_state == layout.root / "label-studio" / "state"
     assert layout.for_split(Split.TRAIN).working_norm_jsonl == (

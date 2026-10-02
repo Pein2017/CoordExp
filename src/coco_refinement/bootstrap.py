@@ -34,7 +34,7 @@ from src.label_studio_coco_refinement.store import (
 )
 
 
-DEFAULT_RUNTIME_RELATIVE = Path("outputs/coco_refinement/gate-a-20260717")
+DEFAULT_RUNTIME_RELATIVE = Path(".local/state/coco_refinement/gate-a")
 _ADAPTER_VERSION = "coco-refinement-native-v1"
 _NO_VENDOR_REVISION = "standalone-no-vendor"
 _NATIVE_LABEL_CONTRACT = "native-norm1000-coco80-v1"

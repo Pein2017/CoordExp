@@ -21,7 +21,7 @@ def test_fixed_gate_a_launcher_reports_stable_direct_endpoint(tmp_path: Path) ->
 
     assert result.stdout.splitlines() == [
         f"repo_root={REPO_ROOT}",
-        f"runtime_root={REPO_ROOT / 'outputs/coco_refinement/gate-a-20260717'}",
+        f"runtime_root={REPO_ROOT / '.local/state/coco_refinement/gate-a'}",
         "bind_url=http://127.0.0.1:53662/",
         "browser_url=http://localhost:53662/",
     ]

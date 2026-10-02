@@ -13,7 +13,7 @@ def _launch_kwargs(tmp_path: Path) -> dict[str, Any]:
     repo_root.mkdir(exist_ok=True)
     return {
         "repo_root": repo_root,
-        "runtime_root": repo_root / "outputs/coco_refinement/gate-a",
+        "runtime_root": repo_root / ".local/state/coco_refinement/gate-a",
         "host": "127.0.0.1",
         "port": 19172,
         "startup_timeout": 11,
@@ -26,7 +26,7 @@ def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
 ) -> None:
     events: list[object] = []
     repo_root = tmp_path / "repo"
-    runtime_root = repo_root / "outputs/coco_refinement/gate-a"
+    runtime_root = repo_root / ".local/state/coco_refinement/gate-a"
     receipt_store = object()
     app = object()
     config = object()
@@ -355,17 +355,20 @@ def test_default_paths_do_not_depend_on_the_callers_working_directory(
     args = launcher._parser().parse_args([])
 
     assert args.repo_root == launcher.REPO_ROOT
+    assert launcher.DEFAULT_RUNTIME_RELATIVE == Path(
+        ".local/state/coco_refinement/gate-a"
+    )
     assert launcher._resolve_runtime_root(args.repo_root, args.runtime_root) == (
-        launcher.REPO_ROOT / launcher.DEFAULT_RUNTIME_RELATIVE
+        launcher.REPO_ROOT / ".local/state/coco_refinement/gate-a"
     ).resolve()
 
 
 def test_relative_runtime_root_is_anchored_below_repo_root(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     assert launcher._resolve_runtime_root(
-        repo_root, Path("outputs/coco_refinement/gate-a")
+        repo_root, Path(".local/state/coco_refinement/gate-a")
     ) == (
-        repo_root / "outputs/coco_refinement/gate-a"
+        repo_root / ".local/state/coco_refinement/gate-a"
     ).resolve()
 
 
@@ -375,17 +378,34 @@ def test_relative_runtime_root_is_anchored_below_repo_root(tmp_path: Path) -> No
         Path("."),
         Path("public_data/coco/rescale_32_1024_bbox_len12000"),
         Path("public_data/coco/rescale_32_1024_bbox/images"),
+        Path("outputs/coco_refinement/gate-a-20260717"),
         Path("outputs/coco_refinement"),
         Path("outputs/label_studio_coco_refinement/state"),
         Path("../outside"),
     ],
 )
-def test_runtime_root_must_stay_in_standalone_output_namespace(
+def test_runtime_root_must_stay_in_standalone_state_namespace(
     tmp_path: Path, value: Path
 ) -> None:
     repo_root = tmp_path / "repo"
-    with pytest.raises(ValueError, match="outputs/coco_refinement"):
+    with pytest.raises(ValueError, match=".local/state/coco_refinement"):
         launcher._resolve_runtime_root(repo_root, value)
+
+
+def test_runtime_root_rejects_symlink_escape_from_state_namespace(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    approved_parent = repo_root / ".local/state/coco_refinement"
+    approved_parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (approved_parent / "escape").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match=".local/state/coco_refinement"):
+        launcher._resolve_runtime_root(
+            repo_root, Path(".local/state/coco_refinement/escape")
+        )
 
 
 def test_programmatic_legacy_port_rejection_precedes_every_factory(

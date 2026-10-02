@@ -15,7 +15,7 @@ from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 
 Split = Literal["train", "val"]
 RUNTIME_RELATIVE_ROOT = Path(
-    "outputs/label_studio_coco_refinement/rescale_32_1024_bbox_len12000"
+    ".local/state/label_studio_coco_refinement/rescale_32_1024_bbox_len12000"
 )
 SHARED_IMAGE_RELATIVE_ROOT = Path("public_data/coco/rescale_32_1024_bbox/images")
 SELECTED_SOURCE_RELATIVE_ROOT = Path(

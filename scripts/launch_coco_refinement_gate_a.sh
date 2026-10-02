@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-RUNTIME_ROOT="${REPO_ROOT}/outputs/coco_refinement/gate-a-20260717"
+RUNTIME_ROOT="${REPO_ROOT}/.local/state/coco_refinement/gate-a"
 HOST="127.0.0.1"
 PORT="53662"
 BIND_URL="http://${HOST}:${PORT}/"

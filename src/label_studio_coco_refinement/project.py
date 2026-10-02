@@ -32,7 +32,7 @@ DATASET_NAME = "rescale_32_1024_bbox_len12000"
 SOURCE_DIRECTORY = PurePosixPath("public_data/coco/rescale_32_1024_bbox_len12000")
 SHARED_IMAGE_ROOT = PurePosixPath("public_data/coco/rescale_32_1024_bbox/images")
 RUNTIME_ROOT = PurePosixPath(
-    "outputs/label_studio_coco_refinement/rescale_32_1024_bbox_len12000"
+    ".local/state/label_studio_coco_refinement/rescale_32_1024_bbox_len12000"
 )
 LOCAL_FILES_URL_PREFIX = "/data/local-files/?d="
 SOURCE_ROW_FIELDS = frozenset(

@@ -213,10 +213,11 @@ def _resolve_runtime_root(repo_root: Path, runtime_root: Path | None) -> Path:
     if not selected.is_absolute():
         selected = repo_root / selected
     resolved = selected.expanduser().resolve()
-    approved_parent = (repo_root / "outputs" / "coco_refinement").resolve()
+    approved_parent = (repo_root / ".local" / "state" / "coco_refinement").resolve()
     if resolved == approved_parent or approved_parent not in resolved.parents:
         raise ValueError(
-            "runtime root must be a child of <repo-root>/outputs/coco_refinement"
+            "runtime root must be a child of "
+            "<repo-root>/.local/state/coco_refinement"
         )
     return resolved
 
