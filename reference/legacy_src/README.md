@@ -1,4 +1,12 @@
-## Overview
+# Historical source notes
+
+The obsolete executable tree was retired on 2026-10-02 after current callers
+were extracted or retired. The remaining Markdown records explain the old
+implementation; they do not describe current behavior. Source recovery is
+available from Git parent `46cc16c0c`, not from a runtime archive or import path.
+Current entrypoints are routed by `docs/README.md` and `public_data/README.md`.
+
+## Historical overview
 
 Modular, YAML-driven pipeline for fine-tuning Qwen3-VL on dense captioning tasks with structured geometry annotations (bbox/poly).
 
