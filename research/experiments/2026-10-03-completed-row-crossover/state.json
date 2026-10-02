@@ -1,13 +1,13 @@
 {
   "unit_id": "2026-10-03-completed-row-crossover",
-  "lifecycle": "planned",
-  "status": "CPU_PREPARATION_AUTHORIZED",
-  "evidence": "none",
+  "lifecycle": "preparing",
+  "status": "CPU_CANDIDATE_AWAITING_LEAD_RELEASE",
+  "evidence": "CPU caller/consumer checks only",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-completed-row-crossover/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
-  "worker_thread": null,
+  "worker_thread": "01a0fe66-3b0a-7082-8122-0319b5163bfa",
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "high",
   "predecessor": "2026-10-03-matched-coordinate-branches",
@@ -23,6 +23,9 @@
     "unreleased native execution",
     "publication or unrelated workload interference"
   ],
-  "job_state": "No model/native invocation; new worker assignment pending.",
-  "boundary": "Autonomous round03 tests three fixed completed-row histories with equal input length and two planned repeats. Primary comparisons are selected conditional observations, not natural greedy or physical recovery. Native release follows lead CPU acceptance."
+  "job_state": "No model/native invocation. CPU preparation and six-request producer/consumer doubles completed; awaiting exact lead source selection/release.",
+  "boundary": "Autonomous round03 tests three fixed completed-row histories with equal input length and two planned repeats. Primary comparisons are selected conditional observations, not natural greedy or physical recovery. Native release follows lead CPU acceptance.",
+  "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-candidate-01.json",
+  "cpu_contract": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/cpu-01/contract.json",
+  "source_qualification": "outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/qualified-contract-01.json"
 }
