@@ -1,13 +1,13 @@
 {
   "unit_id": "2026-10-03-prefix-exposure-ranking",
   "lifecycle": "planned",
-  "status": "CPU_PREPARATION_ASSIGNED",
-  "evidence": "none",
+  "status": "CPU_CANDIDATE_PREPARED",
+  "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-prefix-exposure-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
-  "worker_thread": null,
+  "worker_thread": "01a0fe93-c919-72b0-b99b-f252464dbcbf",
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "high",
   "predecessor": "2026-10-03-completed-row-crossover",
@@ -24,5 +24,15 @@
     "shared runtime changes without lead ruling",
     "publication or unrelated workload interference"
   ],
-  "boundary": "CPU-first preparation of two fixed16-update geometry-only ranking arms with six equal-weight views; frozen30native scores and54natural outputs follow separate exact lead release."
+  "boundary": "CPU-first preparation of two fixed16-update geometry-only ranking arms with six equal-weight views; frozen30native scores and54natural outputs follow separate exact lead release.",
+  "result": "research/experiments/2026-10-03-prefix-exposure-ranking/results.md",
+  "preparation_manifest": "outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/preparation-02/manifest.json",
+  "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/cpu-candidate-01.json",
+  "direct_return_route": {
+    "script": "/data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py",
+    "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+    "worker_thread": "01a0fe93-c919-72b0-b99b-f252464dbcbf",
+    "to": "lead",
+    "cwd": "/data/CoordExp/.worktrees/research-probes"
+  }
 }
