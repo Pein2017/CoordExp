@@ -1,6 +1,6 @@
 {
   "unit_id": "2026-10-02-full-label-self-rollout-fit",
-  "lifecycle": "active",
+  "lifecycle": "ready",
   "status": "PREPARING_LOWER_LR_BALANCED_PAIR_FIT_NOT_ACHIEVED",
   "evidence": "accepted",
   "scientific_status": "full_label_fit_not_achieved_lower_lr_balanced_screening_preparing",
