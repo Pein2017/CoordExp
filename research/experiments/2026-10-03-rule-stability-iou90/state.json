@@ -67,6 +67,19 @@
     "user_gpu_hours_cap": null
   },
   "native_released": false,
+  "cpu_boundary_exception": {
+    "kind": "tiny_cpu_fixture_model_forwards_before_release",
+    "status": "recorded_test_selection_verification_pending",
+    "log": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/cpu-lifecycle-01/combined-01.log",
+    "observed_log_summary": "47 passed, 2 warnings in 8.97s",
+    "reported_exit_code": 0,
+    "affected_tests": [
+      "tests/qwen/test_generation.py::test_real_generation_mixin_mixed_budgets_exact_histories_and_disabled_traces",
+      "tests/qwen/test_generation.py::test_seeded_policy_uses_fresh_config_and_exact_fixed_batch_replay"
+    ],
+    "scope": "Tiny CPU GPT2 fixture; seeded fixture configured up to 5 generated actions per request. Worker reports no research checkpoint load or GPU use. Native authority unchanged.",
+    "record_owner": "research/experiments/2026-10-03-rule-stability-iou90/results.md"
+  },
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "job_state": "worker_cpu_implementation_in_progress_no_native_job",
