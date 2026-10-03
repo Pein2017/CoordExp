@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-dora-input-ablation",
   "lifecycle": "ready",
-  "status": "CPU_CANDIDATE_NATIVE_NOT_RELEASED",
+  "status": "NATIVE_COMPLETED_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "scientific_status": "measured_unaccepted",
   "protocol": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
   "state_source": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-endpoint-block-ablation",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
@@ -41,9 +41,53 @@
     "focused_oracle_exit": 0,
     "knowledge_exit": 0
   },
-  "pending_runtime_seam": "first scheduled A_I new hybrid load",
-  "model_calls": 0,
-  "GPU_calls": 0,
+  "pending_runtime_seam": null,
+  "model_calls": "112 released native inference requests; internal forwards unmeasured",
+  "GPU_calls": "112 released requests through4 fresh serial native engines; internal forwards unmeasured",
   "HF_forwards": 0,
-  "optimizer_steps": 0
+  "optimizer_steps": 0,
+  "technical_status": "completed_as_released",
+  "cpu_lead_accepted": true,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "execution_source_commit": "c36dec2648151408b4fb6080e82c3c6a87d6bb27",
+  "execution_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/released-contract-01.json",
+    "sha256": "15bfa661e11056885dce687202f25029e9e5f4740c7567e8cffca8cb91769945"
+  },
+  "lead_release": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/lead-release-01.json",
+    "sha256": "2afaee0997bf04ec7db8bdb77f86fa976d21956b9c608c2ea0cbdf27db545125"
+  },
+  "native_terminal": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/package-01/complete.json",
+    "sha256": "8f77594229d5cf986d4c82663fdd68a1a37252dd19bbaf0aec4badfd58e17157"
+  },
+  "native_readback": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/package-01/readback.json",
+    "sha256": "2888eac6d905fc64d0aec3f13018e6b5dc560b41dc814288f6332f5c717a4227"
+  },
+  "terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/terminal-candidate-01.json",
+    "sha256": "2b771f8151d90662051b5ac4ef57b328736cc97582118582265d8e6be3b26695"
+  },
+  "terminal_cleanup": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/terminal-cleanup-01.json",
+    "sha256": "900923bd767117ce15030e928b5c237ace8a1b2eec3726c055d0f6e9d2e258ee"
+  },
+  "scheduled_A_I_seam": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/scheduled-A_I-seam-01.json",
+    "sha256": "92ae9c350c19990605aa09d330efcac8b8cde05cbfcc37844eda8efb919107e5"
+  },
+  "counters": {
+    "HF_diagnostics": 0,
+    "continuation_requests": 72,
+    "generated_tokens": 40746,
+    "optimizer_steps": 0,
+    "requests": 112,
+    "score_requests": 40,
+    "training_replays": 0
+  },
+  "successful_readback_repeated": false,
+  "source_edits": false,
+  "next_action": "STOP for lead acceptance; no later unit or automatic layer/token-row subdivision"
 }
