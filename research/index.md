@@ -9,15 +9,18 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [rule-stability IoU90 unit](experiments/2026-10-03-rule-stability-iou90/unit.md)
-has a lead-accepted CPU implementation by the requested GPT-6.1-Sol/xhigh worker. From the mature
+has a lead-accepted native qualification by the requested GPT-6.1-Sol/xhigh worker. From the mature
 axis001 step2444 anchor under fixed median normalization, the finite two-arm16
 study compares full-label positives plus fresh geometry supervision with the same
 objective plus sampled strong-overlap credit on18 images/570 labels. Strict
 class-agnostic IoU>0.9 defines the overlap proxy; coverage and owner changes have
-no fixed acceptance threshold. One 8-GPU, all-18-image B qualification update,
-including a technical suffix diagnostic and fresh checkpoint reload, is
-[released](experiments/2026-10-03-rule-stability-iou90/lead-ruling-02.md).
-Primary arms remain unreleased pending that evidence. [State](experiments/2026-10-03-rule-stability-iou90/state.json)
+no fixed acceptance threshold. The one-update B qualification completed technically,
+but matched owners fell255 to246, duplicates rose5 to119 and geometry-invalid
+rows rose4 to226. Cached/full likelihood differences remain a numerical limit.
+The frozen A-then-B16-update package is
+[released](experiments/2026-10-03-rule-stability-iou90/lead-ruling-03.md), with each
+arm independently restarting the anchor; scientific acceptance remains pending.
+[State](experiments/2026-10-03-rule-stability-iou90/state.json)
 and [technical progress](experiments/2026-10-03-rule-stability-iou90/results.md)
 own continuation; historical closed units below remain closed.
 

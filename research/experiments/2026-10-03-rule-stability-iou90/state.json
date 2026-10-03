@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-rule-stability-iou90",
   "lifecycle": "running",
-  "status": "NATIVE_QUALIFICATION_RELEASED",
-  "evidence": "none",
-  "scientific_status": "unmeasured",
+  "status": "PRIMARY_NATIVE_RELEASED",
+  "evidence": "partial",
+  "scientific_status": "qualification_regressed_primary_pending",
   "protocol": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
   "state_source": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -67,8 +67,8 @@
     "user_gpu_hours_cap": null
   },
   "native_released": true,
-  "native_scope": "qualification_B_one_update_only",
-  "primary_released": false,
+  "native_scope": "primary_A_then_B_16_updates_each",
+  "primary_released": true,
   "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/qualification-B-release.json",
   "native_output": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-qualification-B-01",
   "cpu_boundary_exception": {
@@ -91,13 +91,16 @@
     "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-02.md",
     "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/lead-consumer-check-01.json",
     "blocking_counterexamples": [],
-    "closed_counterexamples": ["Generated PAD retention", "Generated visual actions remain text during replay"]
+    "closed_counterexamples": [
+      "Generated PAD retention",
+      "Generated visual actions remain text during replay"
+    ]
   },
   "cpu_implementation_lead_accepted": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
-  "job_state": "qualification_invocation_owned_by_worker_see_output_receipts_for_live_state",
-  "next_action": "Worker executes the exact qualification-B packet once through fresh reload, terminal verification and cleanup, then returns directly. Lead verifies native evidence and binds the already authorized primary study; no primary launch or retry is released yet.",
+  "job_state": "primary_packet_publication_and_worker_launch_pending",
+  "next_action": "Worker runs exact primary A then B serially from the original anchor with fresh optimizer per arm, keeps tracked records unchanged through both terminal checks, runs one saved-artifact comparison and returns. No retry, quality gate or extension.",
   "ownership": {
     "lead": [
       "unit.md",
@@ -122,5 +125,26 @@
     "shared-asset or historical-evidence mutation, /external mutation, push",
     "worker scheduling another research unit"
   ],
-  "boundary": "Two fresh16-update arms on full18/570: common positive/geometry objective versus added sampled class-agnostic IoU>0.9 rule credit under median norm; coverage is observational and no inference guard is deployed."
+  "boundary": "Two fresh16-update arms on full18/570: common positive/geometry objective versus added sampled class-agnostic IoU>0.9 rule credit under median norm; coverage is observational and no inference guard is deployed.",
+  "native_qualification_lead_accepted": true,
+  "native_qualification_review": {
+    "status": "lead-accepted",
+    "execution_commit": "22ea4e1175b8e11fd16b9d8d062eb49769a6207b",
+    "report_commit": "62be9514622022891249837dc269a9967b6c1e9e",
+    "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-03.md",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/lead-native-consumer-check-01.json",
+    "blocking_counterexamples": [],
+    "numerical_limit": "same intended normalized policy with measured cached/full approximation; no exact-gradient or negligible-bias claim",
+    "scientific_observation": "matched255->246;duplicate5->119;invalid4->226;one B update only"
+  },
+  "primary_release_packets": {
+    "A": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-A-release.json",
+    "B": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-B-release.json"
+  },
+  "primary_outputs": {
+    "A": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-A-01",
+    "B": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01"
+  },
+  "primary_comparison_output": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-comparison-01.json",
+  "primary_operational_observation_seconds_per_arm": 43200
 }
