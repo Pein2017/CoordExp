@@ -216,4 +216,3 @@ frozen predecessor globals remain unchanged. Independent oracle checks all eight
 baseline-error truth combinations, all eight baseline-legal combinations, zero
 error denominators, legal loss, antagonism, ties and signed owner/scalar edges.
 Unchanged predecessor checks were reused, with no broad reruns.
-
