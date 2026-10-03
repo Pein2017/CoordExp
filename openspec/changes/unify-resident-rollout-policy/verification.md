@@ -87,9 +87,66 @@ Evidence: `backend/captured-rows-receipt.json`. Unchanged shared-policy and
 qualification-entry checks were reused rather than repeated. The lead accepts
 the repaired CPU candidate; native acceptance remains pending.
 
-## Remaining boundary
+## Native qualification and lead acceptance
 
-The repaired real two-rank qualification in design.md remains pending. CPU checks do
-not establish native async scheduling, measured acceleration, full-study capacity,
-or scientific equivalence. Final standards/contract acceptance and safe integration
-will use that saved consumer evidence without rerunning unchanged package checks.
+The second release bound commit `b4f9b3b82b46f093ed6e29bd5445664308af2e54`
+and tree `2d46f97f2de175ee37bee7ccd15b22e36faed5f6` through
+`native-release-02.json`. The same failed overall qualification ran once with
+fresh output `qualification-native-02`; command exit was 0. It completed exactly
+21 requests / 1,008 emitted actions, three differentiable replay/backwards /
+96 targets, one logical update, and four rank refreshes. Both ranks had 590 finite
+nonzero gradients with one SUM reduction and global image denominator 3. Their
+updated snapshot identities match, and all three 16-action restoration checks
+match token IDs and both likelihood channels exactly. Final HF bytes retain the
+updated snapshot.
+
+Receipts identify the actual V2 runner and sampler under `vllm.v1.worker.gpu`.
+All 688 resident compact rows correspond to emitted actions. This native workload
+reached its budgets; it observed no discarded prefill, budget overshoot, or
+post-EOS suffix. Those edge branches have CPU counterexamples, not native coverage
+from this workload. Non-coordinate actions exhibit distinct raw and normalized
+likelihoods. Both resident children exited 0 without forced termination, both
+distributed groups were destroyed, and the lead independently confirmed all seven
+observed command/rank/child/helper PIDs plus the supervisor absent.
+
+Measured costs use `max` over ranks of each rank's summed relevant parent calls.
+Generation includes compact trace retrieval. Refresh includes parent copies,
+serialization, GPU acknowledgement, and cache invalidation.
+
+| Work | Emitted actions | Critical-path cost |
+| --- | ---: | ---: |
+| HF v0 greedy plus sampled acquisition | 320 | 21.657 s |
+| Resident vLLM v0 greedy plus sampled acquisition | 320 | 2.014 s |
+| Resident vLLM v1 greedy plus sampled acquisition, including updated refresh | 320 | 2.590 s |
+
+The comparable v0 ratio is **10.75x** for this bounded two-rank workload. Resident
+startup was 37.613 / 39.618 seconds per rank and is excluded from that acquisition
+ratio. Updated refresh took 0.767 / 0.912 seconds. Qualification-only updated
+snapshot hashing and restoration clones took another 0.173 / 0.247 seconds,
+reported separately from core refresh. Do not compare the unfiltered summary's
+HF total (320 actions) against its vLLM total (640 actions across v0 and v1).
+The first failed attempt's six HF requests / 320 actions remain separately
+accounted; its slower HF timing is not used as the comparison baseline.
+
+Across the 96 literal replay targets, HF-versus-vLLM raw/policy log-probability
+maximum absolute gaps are 0.318643 / 0.293440; image-mean absolute gaps are
+0.032281 / 0.031868. These are observations without an added numerical threshold.
+They do not establish exact numerical equivalence or negligible gradient bias.
+Parent HF peak allocated memory was 12.53 / 11.75 GB, with parent peak RSS about
+13.95 GB each; resident allocation evidence is separately retained in RPC
+receipts. This does not qualify eight-rank, long-sequence capacity or throughput.
+
+Evidence under the same output root: `qualification-native-02/receipt.json`,
+its rank receipts, `qualification-native-02-command-exit.json`,
+`qualification-native-02-summary.json`, the full adjacent log, and
+`lead-acceptance.json`. The lead reused unchanged package evidence and checked the
+final action/count, runtime, snapshot, restoration, cost-denominator, and cleanup
+boundaries without additional model queries.
+
+Standards verdict: **PASS within the declared repository-local V2, TP=1/PP=1
+contract**. Research-contract verdict: **technical qualification accepted**;
+scientific efficacy and exact HF/vLLM equivalence are not established. No Conda
+package or canonical source was edited. Canonical integration remains held while
+the original owner runs released B at frozen source `249b9b0`; A has reported
+terminal completion. The implementation is available on isolated branch
+`codex/unify-resident-rollout-policy`.

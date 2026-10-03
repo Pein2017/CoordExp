@@ -7,5 +7,5 @@
 ## 2. Real consumer and qualification
 
 - [x] 2.1 Extend the existing technical runtime probe to exercise median-normalized greedy/sample acquisition, exact HF replay, one optimizer update, refresh, and next-version acquisition; verify CPU entry/receipt checks and source/output routing.
-- [ ] 2.2 Run one bounded real technical qualification after CPU checks, recording end-to-end generation/trace/refresh timings, token counts, numerical differences, resource use, and terminal cleanup; accept only aligned finite traces with current snapshot/cache state.
-- [ ] 2.3 Complete focused cross-module tests, strict OpenSpec validation, standards/contract verdicts, and concise usage/evidence documentation; report measured acceleration with its workload limits and preserve canonical frozen-run source until its holder releases it.
+- [x] 2.2 Run one bounded real technical qualification after CPU checks, recording end-to-end generation/trace/refresh timings, token counts, numerical differences, resource use, and terminal cleanup; accept only aligned finite traces with current snapshot/cache state.
+- [x] 2.3 Complete focused cross-module tests, strict OpenSpec validation, standards/contract verdicts, and concise usage/evidence documentation; report measured acceleration with its workload limits and preserve canonical frozen-run source until its holder releases it.

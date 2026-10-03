@@ -90,6 +90,9 @@ aligned per-request seeds for full-support temperature-one sampling. Request
 `trace=True` for both raw and normalized-policy selected-action likelihoods.
 The returned `ContinuationResult` keeps literal action IDs, including EOS and
 sampled PAD. The two likelihood channels come from the same vLLM acquisition.
+Set `allow_pad_tokens=True` when greedy acquisition must preserve literal PAD too.
+Paired trace capture supports the native V2 sampler with TP=1/PP=1 and ordinary
+single-token decoding; speculative and batch-sharded sampling are rejected.
 
 HF uses `src.qwen.coordinate_policy.MedianPolicy` for the same normalization
 arithmetic and differentiable current factors. Literal multimodal suffix replay
@@ -97,3 +100,6 @@ uses `src.qwen.native.exact_history_inputs(..., prompt_only_media=True)` togethe
 with `prompt_only_placeholder_masks` to keep original image placeholders bound
 to the prompt. These interfaces preserve action identity; they do not promise
 bitwise agreement between HF and vLLM or authorize changing a frozen experiment.
+The bounded native qualification, measured costs, numerical differences, and
+remaining integration boundary are recorded in
+[`verification.md`](../openspec/changes/unify-resident-rollout-policy/verification.md).
