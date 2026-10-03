@@ -8,6 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [rule-stability IoU90 unit](experiments/2026-10-03-rule-stability-iou90/unit.md)
+is open for user-requested GPT-6.1-Sol/xhigh implementation. From the mature
+axis001 step2444 anchor under fixed median normalization, the finite two-arm16
+study compares full-label positives plus fresh geometry supervision with the same
+objective plus sampled strong-overlap credit on18 images/570 labels. Strict
+class-agnostic IoU>0.9 defines the overlap proxy; coverage and owner changes have
+no fixed acceptance threshold. CPU preparation comes first; no new native job is
+released. [State and technical progress](experiments/2026-10-03-rule-stability-iou90/results.md)
+own continuation; historical closed units below remain closed.
+
 The pre-row detection auxiliary unit is [lead-accepted and closed](experiments/2026-10-03-pre-row-detection-aux/results.md). The frozen two-arm16 screen completed technically, but B covered225 of570 annotation owners versus233 for A and247 at the anchor. Geometry invalidity improved while valid repetition increased; both arms had the same2/8 conditional successes. Connected auxiliary gradients and falling training loss did not establish native coverage benefit. This is a bounded negative with mixed burdens, not a physical-FN or general auxiliary-method verdict. All jobs are cleaned up; no further model call, retuning, extension or next unit is scheduled.
 
 Round11 remains closed. The accepted [known-owner visual audit](experiments/2026-10-03-known-owner-visual-audit/lead-ruling-01.md) reviewed all23 saved A_A→D_I credit transitions against ten source images:3 candidate localized additions,3 candidate removals,8 plausibly persistent entities with changed geometry,1 unchanged-candidate assignment exchange and8 unresolved identity cases. These are visual candidate judgments, not GT or a physical-FN score. Unlabeled/both-missed entities and retained-credit representation changes remain outside the panel. All round11 evidence is CPU-only and grants no new model calls.

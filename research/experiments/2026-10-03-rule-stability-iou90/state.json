@@ -1,0 +1,93 @@
+{
+  "unit_id": "2026-10-03-rule-stability-iou90",
+  "lifecycle": "planned",
+  "status": "CPU_IMPLEMENTATION_AUTHORIZED",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
+  "state_source": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
+  "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "worker_thread": null,
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "xhigh",
+  "source_base_commit": "4037c72bf7b9a418bcf01829729d993d5dd216f8",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90",
+  "authority": "User accepted the finite two-arm design and explicitly requested lead-worker implementation with GPT-6.1/xhigh. All570 positives, strict class-agnostic IoU>0.9, no fixed retention threshold, all8 GPUs and no user compute cap. Initial worker scope CPU-only; exact source-bound native packets remain lead-released.",
+  "design": {
+    "arms": [
+      "A_positive_geometry",
+      "B_positive_geometry_plus_sampled_duplicate_credit"
+    ],
+    "updates_per_arm": 16,
+    "images": 18,
+    "labels": 570,
+    "checkpoint": "untied-axis001-step2444",
+    "coordinate_output_norm": "median",
+    "duplicate_iou_threshold": 0.9,
+    "duplicate_comparator": ">",
+    "duplicate_class_agnostic": true,
+    "duplicate_cost": "one_per_later_valid_row",
+    "coverage_acceptance_threshold": null,
+    "greedy_trajectories_per_image_update": 1,
+    "sampled_trajectories_per_image_update": 1,
+    "sample_temperature": 1.0,
+    "max_new_tokens": 3084,
+    "primary_greedy_versions": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "checkpoint_versions": [
+      0,
+      1,
+      4,
+      8,
+      16
+    ],
+    "user_gpu_hours_cap": null
+  },
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "job_state": "worker_dispatch_preparation_no_native_job",
+  "next_action": "Create one requested persistent GPT-6.1-Sol/xhigh worker, verify ENTRY and direct-return route; worker implements and verifies CPU package, then returns a candidate and exact native proposal.",
+  "ownership": {
+    "lead": [
+      "unit.md",
+      "state.json",
+      "research/index.md",
+      "research/experiments/catalog.jsonl",
+      "lead rulings"
+    ],
+    "worker": [
+      "probes/rule_stability/",
+      "tests/probes/test_rule_stability*.py",
+      "narrow necessary maintained helper changes and affected tests",
+      "probes/README.md entry",
+      "results.md technical progress"
+    ]
+  },
+  "not_authorized": [
+    "native/model/GPU invocation before exact lead release",
+    "new research arms/dose extension/retuning or automatic checkpoint selection",
+    "changing IoU, matching, label/proxy meaning or introducing coverage gates",
+    "old M/CHAIN/GT duplicate redirects as hidden common objectives",
+    "shared-asset or historical-evidence mutation, /external mutation, push",
+    "worker scheduling another research unit"
+  ],
+  "boundary": "Two fresh16-update arms on full18/570: common positive/geometry objective versus added sampled class-agnostic IoU>0.9 rule credit under median norm; coverage is observational and no inference guard is deployed."
+}
