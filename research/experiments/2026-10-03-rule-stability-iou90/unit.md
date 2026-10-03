@@ -86,6 +86,17 @@ y2>y1, and proper coordinate-token family. The complement spans the full
 vocabulary, including non-coordinate escape. No-error images contribute zero;
 the outer denominator remains18. Use actual causal positions, and preserve
 emission-versus-replay disagreement rather than silently relabeling the history.
+Certification does not require a completed box or row. After an unambiguous
+literal object description and box-start prefix, score an illegal coordinate-slot
+action that was actually emitted, even if generation later ends or is capped.
+For example, `<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_999|>`
+contains an illegal x1 action and one G site without a box-end token. Later
+malformation does not erase an already certified causal decision. Do not invent
+missing actions, complete or repair the prefix, or guess slots after alignment
+becomes ambiguous; record the unavailable certification. This clarification
+preserves the actual-decision contract; the maintained completed-wrapper helper
+is not its eligibility boundary. Duplicate events still require complete valid
+boxes as defined below.
 If an already-illegal start makes an end-slot legal set empty, record that dead
 end and correct the offending start; do not take a maximum over an empty set or
 invent a repaired history to make the end loss finite.
