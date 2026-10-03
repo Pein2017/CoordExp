@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-short-dose-ranking",
-  "lifecycle": "ready",
-  "status": "NATIVE_TERMINAL_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
-  "scientific_status": "observed_fixed_short_dose_contrast_pending_lead_interpretation",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "one_step_conditional_repair_with_early_and_additional_natural_costs",
   "protocol": "research/experiments/2026-10-03-short-dose-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-short-dose-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,7 +12,7 @@
   "predecessor": "2026-10-03-owner-transition-attribution",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "not_authorized": [
@@ -35,7 +35,7 @@
   "cpu_checks": "outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/cpu-checks-01.json",
   "qualification_owner": "worker_cpu_candidate_only",
   "real_execution_status": "completed_as_released",
-  "next_action": "Lead verifies terminal candidate and decides scientific interpretation/acceptance. Worker execution has stopped after final readback and owned cleanup.",
+  "next_action": "Round06 closed after lead acceptance. No worker continuation or next-unit scheduling; separate future work requires its own unit and authorization.",
   "cpu_lead_accepted": true,
   "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
   "execution_source_commit": "dfff0daf67229269caa5f26e341d630b1c14bdfe",
@@ -79,5 +79,12 @@
     "score_requests": 30,
     "training_replays": 24
   },
-  "source_commit": "dfff0daf67229269caa5f26e341d630b1c14bdfe"
+  "source_commit": "dfff0daf67229269caa5f26e341d630b1c14bdfe",
+  "technical_status": "completed_as_released",
+  "acceptance_ruling": "research/experiments/2026-10-03-short-dose-ranking/lead-ruling-02.md",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/lead-acceptance-01.json",
+    "sha256": "e5b46c940c420af18bfb2bb5ddcb00b77f1d33e06296ad88529834c02d3f2367"
+  },
+  "lead_accepted_at": "2026-10-03T00:20:45.986451+00:00"
 }
