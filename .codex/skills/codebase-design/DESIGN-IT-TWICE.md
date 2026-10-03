@@ -1,50 +1,44 @@
 # Design It Twice
 
-Use this when a chosen seam or interface is consequential enough that the first
-reasonable design should not become the default by momentum.
+When the user wants to explore alternative interfaces for a chosen deepening candidate, use this parallel sub-agent pattern when delegation is authorized; otherwise generate alternatives locally. Based on "Design It Twice" (Ousterhout): your first idea is unlikely to be the best.
 
-## Frame The Problem
+Uses the vocabulary in [SKILL.md](SKILL.md): **module**, **interface**, **seam**, **adapter**, **leverage**.
 
-State:
+## Process
 
-- the concept and current owner;
-- constraints every design must satisfy;
-- dependency categories from [DEEPENING.md](DEEPENING.md);
-- research contracts that must remain visible or unchanged;
-- a small illustrative caller example that grounds the problem without
-  prejudging the answer.
+### 1. Frame the problem space
 
-## Generate Alternatives
+Before spawning sub-agents, write a user-facing explanation of the problem space for the chosen candidate:
 
-Generate at least three meaningfully different interfaces. Use subagents only
-when the user explicitly asks for parallel agent work; otherwise generate them
-locally with independent design constraints:
+- The constraints any new interface would need to satisfy
+- The dependencies it would rely on, and which category they fall into (see [DEEPENING.md](DEEPENING.md))
+- A rough illustrative code sketch to ground the constraints, not a proposal, just a way to make the constraints concrete
 
-- **Minimal interface**: one to three entry points, maximum leverage.
-- **Flexible interface**: supports verified variation without exposing
-  internals.
-- **Common-case interface**: makes the dominant workflow explicit and trivial.
-- **Contract-first interface**: centers the data, geometry, forward, loss,
-  metric, or artifact invariant when it is the dominant risk.
+Show this to the user, then immediately proceed to Step 2. The user reads and thinks while the sub-agents work in parallel.
 
-For each alternative provide:
+### 2. Spawn sub-agents
 
-1. the full interface, including invariants, order, errors, and config;
-2. a caller example;
-3. what becomes hidden;
-4. dependency and adapter strategy;
-5. user-owned semantic decisions;
-6. contract and verification impact;
-7. where depth and locality are gained or lost.
+Spawn 3+ sub-agents in parallel. Each must produce a **radically different** interface for the deepened module.
 
-## Compare And Decide
+Prompt each sub-agent with a separate technical brief (file paths, coupling details, dependency category from [DEEPENING.md](DEEPENING.md), what sits behind the seam). The brief is independent of the user-facing problem-space explanation in Step 1. Give each agent a different design constraint:
 
-Present alternatives separately before comparing them. Contrast depth,
-locality, seam placement, contract visibility, testability, migration cost, and
-the burden placed on the user.
+- Agent 1: "Minimize the interface: aim for 1–3 entry points max. Maximise leverage per entry point."
+- Agent 2: "Maximise flexibility: support many use cases and extension."
+- Agent 3: "Optimise for the most common caller: make the default case trivial."
+- Agent 4 (if applicable): "Design around ports & adapters for cross-seam dependencies."
 
-Give a recommendation. If the choice alters algorithm, forward semantics, data,
-loss, statistics, evaluation meaning, or experiment cost, ask one direct
-decision question. Use `grill-me` only when the user explicitly invokes it.
-Otherwise select the soundest reversible implementation without making the user
-choose code aesthetics.
+Include [SKILL.md](SKILL.md) vocabulary and the project glossary when one is maintained in the brief so each sub-agent names things consistently with the architecture language and the project's domain language.
+
+Each sub-agent outputs:
+
+1. Interface (types, methods, params, plus invariants, ordering, error modes)
+2. Usage example showing how callers use it
+3. What the implementation hides behind the seam
+4. Dependency strategy and adapters (see [DEEPENING.md](DEEPENING.md))
+5. Trade-offs: where leverage is high, where it's thin
+
+### 3. Present and compare
+
+Present designs sequentially so the user can absorb each one, then compare them in prose. Contrast by **depth** (leverage at the interface), **locality** (where change concentrates), and **seam placement**.
+
+After comparing, give your own recommendation: which design you think is strongest and why. If elements from different designs would combine well, propose a hybrid. Be opinionated: the user wants a strong read, not a menu.

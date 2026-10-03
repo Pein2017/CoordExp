@@ -1,4 +1,4 @@
 interface:
   display_name: "Codebase Design"
-  short_description: "Review friction and design deep interfaces"
-  default_prompt: "Use $codebase-design to rank architecture friction or place and compare a research-safe interface for this behavior."
+  short_description: "Vocabulary for deep-module design"
+  default_prompt: "Use $codebase-design to apply the deletion test, rank shallow modules, or compare deep interfaces while preserving research contracts."
