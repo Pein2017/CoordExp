@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-known-owner-visual-audit",
-  "lifecycle": "ready",
-  "status": "CPU_CANDIDATE_PENDING_LEAD_IMAGE_AUDIT",
-  "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "known_owner_credit_changes_mix_candidate_localized_changes_geometry_assignment_and_unresolved_identity",
   "protocol": "research/experiments/2026-10-03-known-owner-visual-audit/unit.md",
   "state_source": "research/experiments/2026-10-03-known-owner-visual-audit/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-dora-input-ablation",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11",
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "model_calls": 0,
@@ -24,7 +24,7 @@
     "source-image, predecessor, checkpoint, shared renderer/evaluator or historical receipt mutation",
     "execution checkout advancement, push or worker next-unit scheduling"
   ],
-  "next_action": "Lead reviews all23 images/cases, records candidate judgments and acceptance, closes round11, then stops for user report/discussion. No round12.",
+  "next_action": "STOP for user report/discussion. No round12 or further research scheduled.",
   "worker_thread": "01a1001a-db84-72f2-8e13-221bf749de6b",
   "technical_status": "CPU_materialization_checked",
   "result": "research/experiments/2026-10-03-known-owner-visual-audit/results.md",
@@ -90,5 +90,32 @@
   "direct_return": {
     "entry_receipt": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/entry-return.json",
     "candidate_receipt": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/candidate-return.json"
-  }
+  },
+  "candidate_history": {
+    "lifecycle": "ready",
+    "status": "CPU_CANDIDATE_PENDING_LEAD_IMAGE_AUDIT",
+    "evidence": "unreviewed",
+    "scientific_status": "unmeasured",
+    "lead_accepted": false
+  },
+  "lead_acceptance": {
+    "path": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/lead-acceptance-01.json",
+    "sha256": "b3dbb82315916b25276cb6f9659b45f4d1f3969165f9930496e391746d817b5c"
+  },
+  "lead_adjudication": {
+    "path": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/lead-adjudication-01.json",
+    "sha256": "ee06ffb7397674912a7d5d160e8694788e5204d2acc55363194bd41047623c8a"
+  },
+  "lead_ruling": "research/experiments/2026-10-03-known-owner-visual-audit/lead-ruling-01.md",
+  "lead_ruling_commit": "c67ce453c208f359ccd4bcef19160ccda7ad5d5c",
+  "cases_reviewed": 23,
+  "images_reviewed": 10,
+  "disposition_counts": {
+    "persistent_entity_geometry": 8,
+    "candidate_localized_addition": 3,
+    "candidate_localized_removal": 3,
+    "unresolved_entity_identity": 8,
+    "assignment_exchange_unchanged_candidate": 1
+  },
+  "closed_at": "2026-10-03T05:26:26.573948+00:00"
 }
