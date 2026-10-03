@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-short-dose-ranking",
   "lifecycle": "ready",
-  "status": "CPU_CANDIDATE_READY_AWAITING_EXACT_LEAD_RELEASE",
+  "status": "NATIVE_TERMINAL_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured_fixed_short_dose_contrast",
+  "scientific_status": "observed_fixed_short_dose_contrast_pending_lead_interpretation",
   "protocol": "research/experiments/2026-10-03-short-dose-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-short-dose-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-owner-transition-attribution",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
@@ -34,6 +34,50 @@
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/candidate-01.json",
   "cpu_checks": "outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/cpu-checks-01.json",
   "qualification_owner": "worker_cpu_candidate_only",
-  "real_execution_status": "not_launched",
-  "next_action": "Lead selects and qualifies execution source, then returns a separate exact immutable release to this same worker."
+  "real_execution_status": "completed_as_released",
+  "next_action": "Lead verifies terminal candidate and decides scientific interpretation/acceptance. Worker execution has stopped after final readback and owned cleanup.",
+  "cpu_lead_accepted": true,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "execution_source_commit": "dfff0daf67229269caa5f26e341d630b1c14bdfe",
+  "released_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/released-contract-01.json",
+    "sha256": "a61d29fc25951e50df483f34dfd41ddd13e1e3c6271ce5bba8e07961b9edccd7"
+  },
+  "lead_release": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/lead-release-01.json",
+    "sha256": "87ecf836bf1c44c27865eaa39cf4aafabaf3fcf498b2aa9882ef49b8f81553d1"
+  },
+  "package_invocation": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/package-invocation-01.json",
+  "package_pid": 1762050,
+  "package_start_ticks": 3712363272,
+  "package_tool_session": 15411,
+  "package_log": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/package-01.log",
+  "actual_package_exit": 0,
+  "execution_output_root": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06",
+  "terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/native-terminal-candidate-01.json",
+    "sha256": "4d9c282e1d01e04ddd3f15f56f275b5f3877340cad8e8ebc239e178f195a337b"
+  },
+  "terminal": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/package-01/complete.json",
+    "sha256": "71de773f6d49e3535ac832de6c4bbd501bc49b56e1d355a312709b267355b780"
+  },
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/package-01/readback.json",
+    "sha256": "7356e4366648277c2c11c956065f0486833b1a7a6df46210ff567a64902bb6d4"
+  },
+  "cleanup": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/cleanup-terminal-01.json",
+    "sha256": "e986825d8ca509f4d463e9feede9c311ddd8010137ef1dd2a63fba43bb8cb704"
+  },
+  "counters": {
+    "HF_diagnostics": 30,
+    "continuation_requests": 54,
+    "generated_tokens": 27949,
+    "optimizer_steps": 4,
+    "requests": 84,
+    "score_requests": 30,
+    "training_replays": 24
+  },
+  "source_commit": "dfff0daf67229269caa5f26e341d630b1c14bdfe"
 }

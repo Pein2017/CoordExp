@@ -1,19 +1,40 @@
-# CPU candidate; real fixed-dose contrast unmeasured
+# Completed fixed readouts; lead acceptance pending
 
-The maintained [caller](../../../probes/short_dose_ranking.py) prepares one four-update R-single trajectory and fixed checkpoints1/4. CPU preparation rederived the ten inherited literal contexts/support and all18 prompt/media assemblies without loading a model. The exact round04 release and acceptance identities remain those in [unit.md](unit.md); the anchor, six equally weighted original-prefix Gmax terms, full complement, trainable surfaces, optimizer hyperparameters, input identities and evaluator are unchanged.
+Both fixed endpoints repair6/6 fresh baseline-illegal contexts and retain4/4 baseline-legal contexts. Natural category-correct known-owner counts are274 at anchor,267 after1 and261 after4. The package and unchanged final readback exited0. These are observations for the frozen [unit](unit.md), not worker scientific acceptance.
 
-The [focused checks](../../../tests/probes/test_short_dose_ranking.py) run the actual training/native callers and final consumer using CPU doubles. One real CPU AdamW instance spans four updates, with step/moment and parameter object/value identities before/after each update and checkpoint/HF publication. Parameters match an independent uninterrupted four-update AdamW reference. Diagnostics occur at anchor/1/4 under no-grad; step1 restores training mode. First model/native calls remain the scheduled production seams after release.
+| Native endpoint | Illegal repaired | Legal retained | Category owners | Geometry owners |
+|---|---:|---:|---:|---:|
+| Fresh anchor | baseline6 | baseline4 |274|275|
+| After1 |6/6|4/4|267|269|
+| After4 |6/6|4/4|261|263|
 
-Meaningful sensitivities reject a destructive Adam state reset during checkpoint1 before update2, exchanged actual endpoint payloads, re-signed endpoint/step/moment/mode records, false counters/source, false conditional/natural credit and false terminal denominators. Package checks confirm train through4 then native anchor/1/4 with1800-second phase waits and reuse the unchanged tested group-cleanup helpers. Old replay/support/cleanup evidence is inherited, not rerun or reinterpreted as a fresh comparator.
+At original offsets,7511-626 has one baseline-illegal emission and is repaired at both endpoints. The fresh351017-1507 original emission is legal bin966 at a zero native-margin tie: its original-error denominator is0 and it is retained at both endpoints. All site/split denominators and literal tie outcomes are preserved; the historical emission never supplies a replacement denominator.
 
-Immutable preparation, candidate, check receipts and logs are under [the unit output root](../../../outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/). `preparation-01/manifest.json` owns the inherited CPU preparation; `candidate-01.json` owns the clean commit/tree/source identity after the scoped commit; `cpu-checks-01.json` owns command exits, evidence paths and hashes. Detailed direct return is `worker-candidate-01.json`, with transport receipt `candidate-return-01.json`. Paths become available upon successful publication; no tracked source is edited after qualification.
+| Transition | Category gained/lost/retained | Geometry gained/lost/retained |
+|---|---|---|
+| Anchor to1 |15 /22 /252|16 /22 /253|
+| Anchor to4 |11 /24 /250|12 /24 /251|
+|1 to4 |14 /20 /247|14 /20 /249|
 
-Proposed package invocation, requiring the lead-selected checkout and exact future contract/hash:
+| Natural burden | Anchor | After1 | After4 |
+|---|---:|---:|---:|
+| Invalid geometry rows |430|193|22|
+| Literal complete repeats |502|284|478|
+| Literal valid repeats |89|100|468|
+| Near-repeat occurrence pairs |92|987|4159|
+| Unmatched rows |377|396|812|
+| Category disagreements |1|2|2|
+| Malformed outputs |2|1|2|
+| Valid rows |652|665|1075|
+| Natural generated tokens |9922|7924|10073|
+| EOS /cap stops |16 /2|17 /1|16 /2|
 
-```bash
-python -m probes.short_dose_ranking package --contract EXACT_RELEASE_CONTRACT --contract-sha256 EXACT_RELEASE_SHA256 --output SELECTED_EXECUTION_OUTPUT/package-01
-```
+[Immutable terminal candidate](../../../../greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/native-terminal-candidate-01.json), SHA256 `4d9c282e1d01e04ddd3f15f56f275b5f3877340cad8e8ebc239e178f195a337b`, binds the exact source/release/command/exits, terminal/readback, checkpoints1/4, phase/group receipts,106 existing raw artifact identities, resources and fresh process cleanup. Full-vocabulary native scores and HF diagnostics remain in phase records; per-image category/geometry owner IDs, all three transitions and saved-token descriptive divergence/visitation remain in `package-01/complete.json`. No raw receipt or frozen execution source was edited.
 
-This expands to `train`, `native --endpoint anchor`, `native --endpoint step1`, `native --endpoint step4`, with identical contract/hash/output arguments. The candidate lists the full four commands. Bounds remain4 updates,24 training forwards,30 HF diagnostics,30 native scores,54 natural continuations,166566 native tokens maximum, one GPU/rank/sequence,context4456,2GiB KV,1800 active plus one30-second cleanup per phase,7200 total active seconds. Native startup/capture defaults remain inherited; internal forward count remains unmeasured. Readback keeps anchor-to1,anchor-to4,1-to4 owner gains/losses/retained sets, all burdens, and saved-token descriptive divergence/visitation.
+The [lead ruling](lead-ruling-01.md) accepted CPU source `dfff0daf67229269caa5f26e341d630b1c14bdfe`. One invocation ran in the lead-qualified clean execution checkout, UTC00:01:57.700962 to00:11:15.069006 on2026-10-03, PID1762050, tool session15411. Package wall time557.368s; phase-reported active time484.301s of7200. Phase active times: train38.485s,anchor155.356s,step1 132.642s,step4 157.817s, each below1800 with the owned30-second cleanup budget. All four phase exits are0 and groups drained. Fresh cleanup found all recorded package/native PIDs absent and no matching invocation/group member. Training phase PID was not separately captured; its group drainage is recorded by the frozen tested package cleanup.
 
-No real model, optimizer, forward, native engine, GPU or warmup was launched. Exact export and first update on the real model, CUDA resources/cleanup, native engine acceptance and real scores/continuations are unmeasured until separate exact lead release. CPU evidence grants no native authority or scientific acceptance. Lead owns source selection, release and acceptance; no next unit is scheduled.
+Counters are exact:4 optimizer steps,24 training replays,30 no-grad HF diagnostics,30 native score requests and54 natural continuations;27949 native tokens of166566 maximum. One GPU/rank/sequence,context4456,2GiB KV and inherited native startup/capture defaults were retained. Training CUDA peaks are20996906496 allocated and22106079232 reserved bytes; native child CUDA allocations/internal startup forwards remain explicitly unmeasured, with initialization cost inside phase resource windows.
+
+The [continuity seam](../../../../greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/production-continuity-seam-01.json) records all590 Adam states advancing1 to2 with unchanged live optimizer/parameter/moment objects across checkpoint1 and its diagnostics, and training mode restored. Final consumer validates the complete four-update trajectory and endpoint bindings. The successful package readback is reused; there was no extra model call, warmup, smoke, CPU suite or successful-request retry.
+
+This is one fresh observation per point on the already-fitted18-image/570-annotation cohort. Conditional repair is separate from natural known-owner preservation. Unmatched rows remain neutral; known-owner losses do not prove physical disappearance. Saved-token divergence/visitation has descriptive use only. No causal, physical-success or ranking-over-mass claim, best-checkpoint selection or next unit is assigned. Scientific meaning and acceptance remain with the lead.
