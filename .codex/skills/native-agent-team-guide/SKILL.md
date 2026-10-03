@@ -33,6 +33,11 @@ retry/relaunch limits, and the boundary requiring a lead or user decision. For
 exploration, name known entry paths or symbols and the uncertainty to resolve.
 Add budgets or other constants only when they affect execution.
 
+For assignments changing process ownership or artifact production, finalization
+or readback behavior, use [full-pipeline-smoke](../full-pipeline-smoke/SKILL.md) for
+the first implementation checkpoint and its CPU/native evidence boundary.
+These are worker-owned technical checks, with no extra lead approval stage.
+
 ## Coordinate and return
 
 Agents may coordinate directly on facts and dependencies inside their ownership.

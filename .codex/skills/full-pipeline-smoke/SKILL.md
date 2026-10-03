@@ -14,8 +14,8 @@ factor under test.
 - **Early risk-retirement slice:** before broad implementation, name the smallest
   set of execution risks that could invalidate the architecture and exercise
   each through the real entry, installed runtime, production-owned wrapper, and
-  minimum representative data. A leaf helper, mock, or in-process shortcut does
-  not close an integration risk.
+  minimum representative data. A leaf helper or shortcut that replaces the
+  seam under test does not close that integration risk.
 - **Final frozen integration smoke:** after implementation is fixed, traverse the
   complete conclusion-bearing production path and bind evidence to that exact
   tree, runtime, and artifact set.
@@ -24,6 +24,21 @@ For the early slice, rank risks by decision impact and cheapest discriminator.
 Stop broad implementation when a top risk fails. If a risk cannot yet be
 exercised, record it as `unproven` with the evidence and authority required to
 proceed; do not silently convert it to passed.
+
+When a change alters process ownership or the path that produces, finalizes,
+or reads back artifacts, make the first implementation checkpoint the smallest actual
+caller-to-terminal-consumer path, before expanding component implementation
+or tests. Bind relevant actors, shared versus process-local writes, and
+finalizer/consumer assumptions in the existing brief. Check reused helpers'
+assumptions in their new calling sequence, including changes to artifact state.
+
+Under CPU-only authorization, that early slice may stub only unavailable
+model/device computation. Exercise the actual entry, process ownership and
+filesystem operations, serialization, finalizer, and downstream consumer.
+Its evidence qualifies only the CPU lifecycle properties exercised; it does
+not establish real distributed collectives, model behavior, or export numerical
+parity. Keep the required native production slice `unproven` until authorized
+and measured.
 
 ## Design
 
