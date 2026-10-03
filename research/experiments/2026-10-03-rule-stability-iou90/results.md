@@ -615,3 +615,247 @@ lengths, full-horizon sampled gradients, parsing, shared contention and memory
 can change. The lead owns native acceptance and exact primary packets. Primary
 remains unreleased; earlier CPU fixture exception and unrelated HF failures remain
 preserved above.
+
+
+## Released finite primary A/B: completed, pending lead acceptance
+
+Both released native commands and the saved comparison exited0. Each arm
+completed16continuous updates, all18images/full570owners at every positive
+update, greedy versions0..16, and checkpoints0/1/4/8/16. Both automatic
+readbacks completed. No quality gate, retry, warmup, extra acquisition,
+qualification diagnostic, primary reload or repeated readback was added.
+B independently restarted the original anchor with fresh AdamW after A's
+terminal/source check and confirmed process settlement.
+
+At endpoint16, B has187fewer strict-IoU>.9 duplicate events and115fewer
+invalid rows than A, with2more matched annotations. Both trajectories worsen
+duplication, category disagreement, censoring and valid-row F1 relative to
+the shared baseline. This is a technically completed training-internal
+contrast, not scientific acceptance, generalization or physical-FN proof.
+Lead ruling03 owns qualification acceptance and primary release; the lead
+still owns acceptance and interpretation of this completed package.
+
+### Exact execution and evidence identity
+
+Execution commit249b9b09762457d2f786ab2fbc0c7de677cb5d3f,
+treed9964f7969cf6d1e790e7260362452d294d5db2e, clean and unchanged through
+both terminal source checks and the comparison. All157bound source contents
+equal qualified implementationcbbce5e588daeb5a9f3bad7422be3abe0e5e9fdc.
+Only this owned report is changed after those boundaries.
+
+Canonical cwd `/data/CoordExp/.worktrees/research-probes`; bare python selected
+ms: Python3.12.11, torch2.13.0+cu129, transformers5.17.0, peft0.21.1,
+safetensors0.8.0, flash-attn2.8.4. Output prefix below is
+`outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/`.
+
+- A packet `primary-release-01/primary-A-release.json`: SHA256
+  dbd986a588137e1af5625c6141ef90564083e38b2bfd8fc5a177abe754d5b146.
+- B packet `primary-release-01/primary-B-release.json`: SHA256
+  cbd73df8565a180d47ada462356a0b75f5022b80de7b447ec7b9acec669647a4.
+- Original full-label JSON: SHA256
+  1cfdeb3bba14bb26034dd5dc4245a5c10ab240e1e780acdfc1edbdf6c32d4792;
+  original input manifest51ad01b2cf599087e4d93b269a0abb9d5c6be83625e9fe9c5f8541731bd962ad.
+- Original anchor `/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444/payload`: aggregate
+  3b168b98f23f5e42b00b6aa7ad8ca5438767bcb8c05f4cc4ce97087d800e0403,
+  manifestffc3ac18edb5d284e8cad905326eddda13fd4506c90e099cb40b5f85fe1353b5.
+- Frozen protocol unit.md SHA256
+  dc5ecdefdbc68be0299c8d8c608d407219ee647db6c982b35a6058b68823976b.
+  Each native entry performed its one11-file base/anchor qualification; no
+  repeated payload hash was performed for reporting.
+- Saved comparison `primary-comparison-01.json`: SHA256
+  80ceff9e627381c9b730006f152b119da6d7703dc788ba419dac13cc287e7d36,
+  exit0,8.564092s, child RSS1,083,940KiB.
+
+Actual maintained commands (each once, serial A then B then compare):
+
+```sh
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-A-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-A-01
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01
+python -m probes.rule_stability compare --a-run outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-A-01 --a-config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-A-release.json --b-run outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01 --b-config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-release-01/primary-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-comparison-01.json
+```
+
+Raw identities and exits: each native directory retains invocation.json,
+process-exit.json, terminal.json, readback.json, metrics.json, ranks.log,
+8rank complete/entry/assignment receipts,16updates per rank and every
+original acquisition/analysis. Adjacent `native-primary-{A,B}-01-owner.log`
+and owner-start/owner-exit/session/launched/cleanup JSON preserve process
+ownership. Each owner/native/torchrun exit0; per-rank complete status is
+retained rather than invented separate per-rank shell exit receipts.
+
+A readback SHA256ea8e888a07b20e97730abd76b285154155bbc38bc512e24021846dc8aa70e526;
+metrics2669d978f9ffb8a0903c6b38bbde18ce59b9300012712b6d61ce4c00d0f85eea.
+B readback77f384ed8bbac29f1818e7694ec55b0997632d13f7e8abe46a00a1e262950139;
+metrics8ddba7e2dfbcf6786cb4daeb73433e9b92ad9c519698b6f5ff198ef84a382a06.
+`primary-worker-summary-01.json` contains structured work, per-version,
+branch, numeric, checkpoint and per-rank resource data.
+`primary-numeric-details-01.json` and `primary-sample-burdens-01.json` retain
+selected numeric cases and all sampled burden totals without new model work.
+
+### Full trajectory and annotation-relative endpoint
+
+All18baseline original action-ID sequences and stop reasons are identical
+between arms. Coverage uses the maintained class-agnostic cardinality-first
+one-to-one IoU>=.5 match followed by exact description; duplicate events
+separately use strict class-agnostic IoU>.9. The denominator remains570.
+Full retained/gained/lost annotation identity pairs, per-image metrics and
+adjacent/own-baseline transitions for every version are retained in each
+metrics.json and the saved comparison. Endpoint16 is prescribed.
+
+| Version | A matched | B matched | A duplicates | B duplicates | A invalid | B invalid | A/B caps |
+|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 0 | 255 | 255 | 5 | 5 | 4 | 4 | 0/0 |
+| 1 | 242 | 236 | 169 | 151 | 168 | 152 | 1/1 |
+| 2 | 226 | 220 | 334 | 216 | 309 | 454 | 2/2 |
+| 3 | 256 | 231 | 439 | 190 | 203 | 530 | 2/2 |
+| 4 | 237 | 236 | 529 | 372 | 176 | 609 | 2/3 |
+| 5 | 266 | 237 | 358 | 481 | 10 | 471 | 1/3 |
+| 6 | 271 | 271 | 353 | 253 | 42 | 193 | 1/2 |
+| 7 | 275 | 264 | 367 | 338 | 7 | 53 | 1/1 |
+| 8 | 282 | 272 | 370 | 355 | 8 | 54 | 1/1 |
+| 9 | 256 | 272 | 574 | 381 | 105 | 54 | 2/1 |
+| 10 | 280 | 240 | 358 | 369 | 3 | 288 | 1/2 |
+| 11 | 287 | 267 | 353 | 402 | 1 | 19 | 1/1 |
+| 12 | 280 | 276 | 347 | 380 | 1 | 23 | 1/1 |
+| 13 | 291 | 282 | 347 | 368 | 0 | 21 | 1/1 |
+| 14 | 284 | 280 | 347 | 588 | 0 | 105 | 1/3 |
+| 15 | 278 | 283 | 428 | 338 | 1 | 8 | 1/1 |
+| 16 | 286 | 288 | 562 | 375 | 125 | 10 | 2/1 |
+
+| Endpoint burden | Shared baseline | A16 | B16 | B minus A |
+|---|---:|---:|---:|---:|
+| Matched | 255 | 286 | 288 | 2 |
+| Annotation FN | 315 | 284 | 282 | -2 |
+| Annotation-relative FP | 98 | 817 | 624 | -193 |
+| Valid-row F1 | 0.552546 | 0.341901 | 0.388664 | 0.046763 |
+| Valid rows | 353 | 1103 | 912 | -191 |
+| Nonduplicate valid rows | 348 | 541 | 537 | -4 |
+| Duplicate row events | 5 | 562 | 375 | -187 |
+| Invalid geometry rows | 4 | 125 | 10 | -115 |
+| Category disagreements | 1 | 6 | 5 | -1 |
+| Malformed outputs | 0 | 2 | 1 | -1 |
+| Actions | 3342 | 11516 | 8788 | -2728 |
+| EOS outputs | 18 | 16 | 17 | 1 |
+| Budget-censored outputs | 0 | 2 | 1 | -1 |
+| Longest duplicate burst | 2 | 153 | 174 | 21 |
+
+Own-baseline matched owners: A retained223/gained63/lost32;
+B retained230/gained58/lost25. A endpoint change is+31matched,
++557duplicate events, +121invalid rows and+8174actions; B is+33matched,
++370duplicate events, +6invalid rows and+5446actions. B's longest duplicate
+burst174 exceeds A's153. Image351017 remains capped at3084 and has only
+1/49matched annotations in both arms; its duplicate events are295A/297B.
+No aggregate improvement is claimed to establish owner identity or physical
+recovery. Endpoint marker/action-family escape counts are zero in both arms;
+all per-version family burdens and empty-end dispositions remain retained
+separately from decoded-text geometry/validity. Across all17greedy versions
+there are390A/1030B empty-legal-end dispositions; these counts are not
+substitutes for invalid-row totals or invented repaired histories.
+
+### Training signal and numeric limitations
+
+Every update contains each of570image/annotation owners exactly once,
+5331positive atoms, and all8rank optimizer step counts agree with1..16.
+A positive/G active image-update gradients:288/37; B positive/G/D:288/60/94.
+All active branches supply language, input-delta and output-delta gradients.
+Unweighted image-average branch losses across the dose: A P1.561316/G.225998;
+B P1.599359/G.386771/D5.356654 (G receives the frozen.1weight).
+Global preclip L2 spans1.061265..4.667797A and2.538250..10.837978B;
+all32updates invoke the prescribed clip1. Role-specific magnitudes are
+retained in the structured summary and raw update receipts.
+
+B's288sample histories contain2duplicate events, versus5187greedy-baseline
+events across training versions0..15. Its72835actual-action advantages
+contain27794positive/183negative/44858zero values;94image-update replays
+are active. Reconstructing inclusive reward-to-go on original completion
+action positions gives exactly the saved FP32 advantages (max difference0),
+including actual EOS, without length normalization. Events occurred at
+rank0/image1584/version3/action143 and rank5/image10707/version13/action195.
+This records signal supply; it does not prove a scientific effect.
+
+B cached-generation versus full replay: mean absolute raw/policy action
+logprob gaps.029025/.029021; image-mean gaps.028373/.028379. Global maxima
+1.609905raw/1.586478policy occur at update6/rank0/image14439/action98,
+token151786, with advantage0. Maximum active policy gap.953699 occurs at
+update11/rank6/image417044/action75/token152641, advantage.011348898.
+All original action identities/likelihood lengths and retained values are
+finite. Holding the saved advantages fixed, the largest behavior-versus-
+native-replay loss scalar difference is-.338759: image351017/update10,
+96.701906behavior versus97.040665replay; mean signed difference across
+288images is-.005955. These scalar observations do not bound gradient
+error or establish negligible bias. The accepted description remains the
+same intended median-normalized policy with numerically approximate replay,
+not exact cached-policy gradients. No new tolerance was introduced.
+
+A/B samples all terminated with actual EOS:288each, no sample cap/empty.
+Their valid rows total7231/7282, invalid rows345/446, malformed outputs17/16,
+duplicate events0/2. Peak sample lengths839/1082 remain below3084: a
+full-horizon sampled differentiable backward is still unmeasured. No extra
+probe was run to fill that gap. The qualification's six-special-ID technical
+diagnostic and fresh checkpoint/optimizer reload remain separate prior
+evidence; neither was repeated or injected into primary trajectories.
+
+### Actual work, costs and settlement
+
+Combined1188requests =612G+576S;454567actual generated actions, below
+the released3663792bound;576P/97Ggeometry/288D replays and10exports.
+Static ranks are unchanged: r0[1584,14439,2685], r1[4134,477415],
+r2[7116,16228], r3[13348,5001], r4[13923,7511], r5[14038,10707],
+r6[309264,417044], r7[351017,6040,2299]. Each three-image rank has99
+generation requests per arm; each two-image rank has66, with image/18
+contributions and FP32 SUM. Rank complete/call receipts retain exact layout.
+
+| Measured cost | A | B |
+|---|---:|---:|
+| Owner wall seconds | 7528.446815 | 7505.694313 |
+| Native terminal seconds | 7516.603007 | 7494.232360 |
+| Torchrun seconds | 7500.628052 | 7478.818489 |
+| Slowest rank seconds | 7480.887927 | 7460.478561 |
+| Rank skew seconds | 316.897749 | 311.125279 |
+| Entry import/source/runtime/payload seconds | 10.762395 | 10.411897 |
+| Rank exit to readback publication seconds | 14.941247 | 14.309208 |
+| Readback to terminal source/stat seconds | 1.036087 | 1.104093 |
+| Maximum RSS KiB | 13619756 | 13615956 |
+| Maximum CUDA allocated bytes | 9161646080 | 9161646080 |
+| Maximum CUDA reserved bytes | 12037652480 | 22884122624 |
+| Artifact files | 1530 | 1530 |
+| Artifact bytes | 1445817097 | 1453133913 |
+
+Total primary owner wall15034.141128s (about4.18hours). Slowest rank7
+for both arms. Rank entry-to-composition publication20.657286..24.995404sA
+and21.949172..26.100310sB includes model/component startup; hash time is
+not isolated from entry import/source/runtime/payload. Summed acquisition
+seconds across parallel ranks: A G14716.037216/S7240.008334;
+B G16643.143272/S7356.693407. Joint replay/loss/backward/gradient sums
+A P314.824605/G31.225784; B P310.605668/G56.185607/D191.031249.
+These parallel sums are not wall time; separate replay/forward/backward,
+optimizer time and finalizer RSS were not retained and were not rerun.
+
+Each checkpoint retains7payload files and590parameter entries:
+588language/1input-delta/1output-delta, with continuous AdamW update
+metadata0/1/4/8/16 and readback schema/optimizer validation. cp0 payload
+88606106bytes; each trained payload266045742bytes. First payload publication
+to seal spans.276024A/.272023B at0 and.660055..672055A/
+.664056..672056B thereafter, excluding prewrite extraction. No primary
+fresh model reload was authorized; qualification supplied that boundary.
+The43200s observation was never treated as a kill/retry/quality gate.
+
+A owner session24275: wrapper3148390/native3148405/torchrun3150648,
+ranks0..7PIDs3151658..3151665. B session58916: wrapper3485472/
+native3485475/torchrun3486418, ranks3486446..3486453. All known owned
+PIDs are absent, no matching native module processes remain, and no signal
+was sent. Comparison session78168/owner3563822/child3563825 exited0.
+Final holder receipt `primary-holder-release-01.json` records settled
+comparison and remaining writers; the worker releases this source holder
+after the report commit and direct return. Lead remains the record and
+integration/retirement decision owner; no next experiment is scheduled here.
+
+Post-run metadata inspection01 exited1 because denominator identities are
+image/annotation pairs rather than scalar IDs; corrected metadata02 exited0
+in5.354033s, without native/consumer repetition. B's initial rank-PID
+inspection similarly excluded the torchrun parent after its missing RANK
+environment caused exit1; corrected inspection exited0. Both raw incidents
+are retained. The historical47-pass tiny CPU GPT2 boundary exception, exact
+wrong exclusions/two affected nodes, selection-control evidence and unrelated
+HF caller failures above remain preserved, with no successful fixture rerun.
+The optional wake skill reported stale daemon heartbeat; no monitor/daemon
+change or separate Codex runner was created.
