@@ -97,6 +97,10 @@ becomes ambiguous; record the unavailable certification. This clarification
 preserves the actual-decision contract; the maintained completed-wrapper helper
 is not its eligibility boundary. Duplicate events still require complete valid
 boxes as defined below.
+An emitted non-coordinate action at a certified coordinate slot is a type-error
+G site even when that action is EOS or a wrapper delimiter. A capped prefix with
+no next action supplies no such site. After a type escape, do not guess further
+coordinate slots until a new unambiguous causal frame is established.
 If an already-illegal start makes an end-slot legal set empty, record that dead
 end and correct the offending start; do not take a maximum over an empty set or
 invent a repaired history to make the end loss finite.
@@ -111,7 +115,22 @@ partners do not multiply that row's cost. No GT matching exemption. Literal and
 other overlap diagnostics are retained separately. Invalid/malformed rows do not
 become duplicate events; geometry/schema burdens remain visible.
 
-Assign an event at the generated token that completes its object row. For each
+Complete/valid here means the maintained decoded-text parser's box definition
+applied to the exact decode of the original action IDs. A literal marker or
+coordinate spelled by ordinary token pieces remains eligible if that parser
+accepts the positive-area box; do not add a special-token-ID eligibility filter.
+Keep marker/action-family dispositions and certified type errors separate from
+decoded-text validity, geometry and coverage. Never retokenize a sampled history
+to manufacture canonical action IDs. A saved-text/full-decode mismatch remains a
+technical failure.
+
+Assign each row event to the earliest original action whose causal decoded prefix
+completes that row's closing marker. The marker may end inside the action's text
+span, as when ordinary `><` finishes a close and begins another opener. Later
+actions must not change the already completed event. Preserve one event per later
+duplicate row even if events share an action index; do not deduplicate by action
+position. An uncertified event mapping is a technical qualification failure, not
+permission to silently drop an eligible row. For each
 generated token position t, let D_sample(i,>=t) and D_greedy(i,>=t) count remaining
 duplicate events in the two trajectories, using the same absolute generated-token
 index and zero beyond the respective end. Define fixed H=3084 and
