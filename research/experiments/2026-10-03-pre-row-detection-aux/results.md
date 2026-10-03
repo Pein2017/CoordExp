@@ -1,8 +1,10 @@
-# CPU preparation accepted: pre-row detection auxiliary
+# Native qualification failed; CPU prefix repair accepted
 
-The lead accepts CPU preparation after repairing and rechecking both consumer blockers. Native execution remains HOLD; no model load, production forward, GPU job, training or new generation was issued. This acceptance covers CPU implementation and preparation only. Native qualification and scientific benefit remain unmeasured.
+The first one-update native qualification failed during anchor conditional evaluation, before either arm trained. Cleanup is complete. The lead accepts the worker's minimal CPU repair: pass unexpanded chat IDs to vLLM while preserving the frozen expanded expected prompt, literal history suffix, and strict full-prefix equality guard. Native qualification and scientific benefit remain unmeasured.
 
-Protocol and scientific authority remain in [unit.md](unit.md). The worker has stopped after the repaired candidate; the lead owns these acceptance records and any later release.
+The user subsequently authorized continuation of this unit. One replacement one-update qualification is being bound under `cpu-07`; the immutable `qualification-candidate-1/lead-release.json` owns its exact launch authority, and owner receipts own subsequent runtime state. Primary16 remains unreleased. Protocol and scientific meaning remain in [unit.md](unit.md). The worker owns package execution, technical checks and ordinary repairs; the lead owns the final consumer/research boundary.
+
+The preparation evidence below remains historical CPU evidence. The final sections record the failed native invocation and accepted repair.
 
 ## Source and implementation
 
@@ -57,11 +59,11 @@ RED/GREEN evidence under `cpu-04/`: `red-consumers-01.log` exit1 (four regressio
 
 Fresh16-update and1-update real-input preparations, immutable-bank readback, compileall, Git diff --check, packet/input/cost/initializer comparison, historical-reader comparison and unreleased owner rejection all exit0. `cpu-04/checks-01.json` records exits and packet hashes; `cpu-04/knowledge-diff-01.json` records the four repair path identities and retained inventory. Both CPU04 packets preserve CPU03 input identities, exact11 stages, runtime, initializer, schedule and budgets. CPU03 packet hashes still match their immutable receipts; CPU01 bank bytes and original lead harness/receipt remain unchanged. No native calls or launches occurred.
 
-## Exact proposed packet and qualification
+## Historical primary16 proposal and qualification bounds
 
-Final16 packet: `cpu-05/native-candidate-16/{qualification.json,argv.json,release-candidate.json}`. The serial owner has11 exact stages: zero evaluate/readback; A run/readback; B run/readback; A evaluate/readback; B evaluate/readback; joint offline. It binds bank, selection, runtime, frozen source, outputs, doses and endpoint counts separately from historical online schedules. Historical paired1/full-label validation, process identity, timeout and cleanup paths remain intact.
+Historical primary16 proposal: `cpu-05/native-candidate-16/{qualification.json,argv.json,release-candidate.json}`. It is unreleased and needs a new source binding after the repaired one-update qualification succeeds. The serial owner has11 exact stages: zero evaluate/readback; A run/readback; B run/readback; A evaluate/readback; B evaluate/readback; joint offline. It binds bank, selection, runtime, frozen source, outputs, doses and endpoint counts separately from historical online schedules. Historical paired1/full-label validation, process identity, timeout and cleanup paths remain intact.
 
-Exact two-arm training commands are below. The existing owner substitutes `LEAD_RELEASE_SHA256` once from its validated immutable release; no lead-release file currently exists.
+Exact two-arm training commands are below. The existing owner substitutes `LEAD_RELEASE_SHA256` once from its validated immutable release; this primary16 proposal has no release.
 
 ```bash
 python -m torch.distributed.run --standalone --nproc-per-node=8 --module probes.pre_row_detection_aux run --bank /data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-01/bank.json --bank-sha256 41ffaf9956187ac33f57ec43a71a29300cbf190f7cf5d05a2439665b5bf5c54f --output /data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/native-candidate-16/A --arm A --updates 16 --release /data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/native-candidate-16/lead-release.json --release-sha256 LEAD_RELEASE_SHA256
@@ -77,7 +79,7 @@ The complete exact evaluation/readback/offline commands are in `argv.json`. Prop
 python -m probes.online_row_credit_owner --root /data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/native-candidate-16 --release-sha256 LEAD_RELEASE_SHA256 --mode pre-row-aux --updates 16
 ```
 
-Proposed separate real-entry qualification: `cpu-05/qualification-candidate-1/argv.json`, both arms one full-bank update on8 ranks, fresh anchor/optimizers, normal endpoint exports/readback, same head-free native evaluation/conditional consumer and existing cleanup. This is a separately bounded qualification proposal, not dose extension or authority to run extra observations. It needs its own exact lead release.
+The original separate real-entry qualification used `cpu-05/qualification-candidate-1/argv.json`, both arms one full-bank update on8 ranks, fresh anchor/optimizers, normal endpoint exports/readback, same head-free native evaluation/conditional consumer and existing cleanup. That released invocation failed as recorded below. The replacement preserves these bounds and requires its own immutable release.
 
 | Bound | Proposed qualification1 | Primary16 |
 |---|---:|---:|
@@ -97,10 +99,22 @@ The lead reproduced the two original failures before repair, then directly reran
 
 The bounded independent trainer review found no blocker: A/B share the base objective; the differentiable opener hook preserves the graph; all48 jobs use the original image coefficient and one final synchronized backward per rank; head SUM/8 plus the18 image denominators implements the frozen auxiliary mean. Optimizer clipping, RNG and head/export separation remain distinct. Real Qwen/NCCL behavior is still unmeasured.
 
-## Remaining HOLD and job state
+## First native qualification failure
 
-The source-qualified CPU05 proposals supersede CPU04 for future release; CPU01/CPU03/CPU04 evidence remains immutable. Both proposals retain `native_released=false` and `native_qualified=false`. Their clean source identity and final artifact hashes are bound by `cpu-05/source-identity.json` and `cpu-05/lead-acceptance.json`. The exact owner release is absent; no native stage is scheduled. The 1800s qualification and 5400s primary ceilings remain proposals, not measured costs or launch authority.
+The CPU05 release bound source `a34d83a5f4168d5bdfbf16356c8c979e98854d17` and release SHA256 `2a8c5eba93d9c43cec1e2346dc72fdc128d8b6d079fa7d021779d172cc70b7eb`. One owner invocation returned exit1; anchor evaluation returned exit1 with `vLLM changed exact prompt tokens: 14038:greedy:0`; ten later stages were skipped. There were zero training forwards, endpoint exports, readbacks and offline results. The 18 persisted ordinary records contain 3,724 generated tokens but no complete-rank receipts; they are incomplete-stage evidence, not a qualified benchmark. Conditional generated tokens were not persisted and remain unmeasured.
 
-Native DDP/uneven-rank synchronization, auxiliary transfer through the real Qwen/PEFT norm, vLLM endpoint reload/conditional exact-history parity, whole-owner RSS/wall/artifact use and numerical export behavior remain unmeasured. Tiny causal/gradient and process fixtures close implementation errors, not native parity or research efficacy. Head learning is not the primary outcome; annotation-relative improvements do not establish physical-FN recovery.
+Owner elapsed time was 72.990874s including cleanup/finalization, or 0.162202 allocated-slot GPU-hours. Sampled descendant aggregate RSS peaked at 37.945988GiB (15s samples, excludes owner; instantaneous peak unmeasured). Root files totaled 764,204 bytes at terminal inspection. External shell/interpreter wall was not separately timed. RSS160GiB/artifacts8GiB remained planning estimates rather than enforced gates. Terminal cleanup reports no owned-live, unconfirmed or unresolved issued stage, and no unfinished watcher; the worker checked all 26 recorded PID/start-tick identities twice without a matching non-zombie process.
 
-Job state: CPU preparation lead-accepted; worker stopped, no model/GPU/native job live or issued. A separate exact release is required for the one-update real-entry qualification; primary16 must remain unreleased until its native execution risks and measured costs are resolved.
+Immutable raw evidence: `cpu-05/qualification-candidate-1/{terminal.json,stage-0-zero-evaluate-issued.json,stage-0-zero-evaluate-start.json,stage-0-zero-evaluate-terminal.json,stage-0-zero-evaluate.log,owner-native-01.log}`. Projected exit/resource/cleanup evidence: `worker-native-terminal-01.json` in that same root. Failed artifacts and historical source receipts remain unchanged.
+
+## CPU repair acceptance and continuation
+
+The caller had supplied already-expanded HF bank prompt IDs as `generate_exact`'s unexpanded chat. vLLM expanded the image placeholder again. The repair only tokenizes the maintained `NativeRequest.chat_text` with `add_special_tokens=False`. Image identity, frozen extension, expected expanded prompt, decoder, targets, losses, branch schedule, optimizer/head/export behavior and costs are unchanged. The shared exact-prefix guard is unchanged.
+
+Worker CPU RED reproduced the same strict-prefix failure through actual `evaluate` and installed placeholder processing; GREEN traversed all eight rank partitions sequentially and actual 18+8 readback with model/device computation stubbed. A corrupted processed token still fails before a completion receipt. The affected package plus two existing shared exact-prefix/score-guard tests passed: **18 tests, exit0, 13.14s**. All eight frozen prefixes also matched in the real-input CPU projection. Evidence: `cpu-06/{checks-01.json,knowledge-diff-01.json,final-check-01.json,exact-prefix-cpu-projection-01.json,red-exact-entry-01.log,green-exact-entry-01.log,affected-tests-01.log}`.
+
+The lead inspected the changed caller and unchanged native guard, obtained a focused independent no-blocker review, and reran only the actual evaluation/readback/corruption regression: **1 passed, exit0, 10.43s**, `lead-exact-prefix-green-01.log`. Unchanged earlier checks are reused; no full-suite rerun or native success is claimed. The accepted source and records are committed together; `cpu-07/source-identity.json` and `cpu-07/lead-acceptance.json` bind the clean repaired source. CPU06 proposals remain immutable.
+
+The replacement `cpu-07/qualification-candidate-1` preserves the eleven-stage two-arm one-update packet: 96 HF forwards, 162,008 HF input tokens, 94,976 visual tokens, 78 evaluation requests capped at 168,072 generated tokens, eight ranks, 1,800s whole-owner ceiling including 30s cleanup reserve. A separate exact release permits one invocation only; no autonomous native retry, extra model readback, warmup, primary16 execution or scientific retuning. The worker retains technical execution/check/repair ownership within that grant.
+
+Native successful exact-prefix evaluation, Qwen/PEFT auxiliary autograd, uneven-rank DDP/head reductions, head-free endpoint export, endpoint inference and final readback/offline remain unqualified. The failure reached none of the training paths. CPU acceptance establishes the tested caller contract, not numerical parity, efficacy or physical-FN recovery.

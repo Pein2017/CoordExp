@@ -3,6 +3,7 @@ import copy
 import contextlib
 import os
 import sys
+import math
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -210,6 +211,62 @@ class RealEntryTinyTest(unittest.TestCase):
 
 
 class ConsumerBoundaryTest(unittest.TestCase):
+    def test_real_conditional_entry_expands_media_once_and_preserves_guard(self):
+        from src.qwen.vllm_rollout import _generate_exact
+        from vllm.multimodal.processing.processor import PromptReplacement, _apply_token_matches_with_placeholders
+        bank_path=b.OUT/'cpu-01/bank.json';bank_sha='41ffaf9956187ac33f57ec43a71a29300cbf190f7cf5d05a2439665b5bf5c54f'
+        selection=b.OUT/'conditional-selection-01.json';selection_sha='3cedbb1dd9ca976c214a998476061d48890004d20b88a3523c78f6c443a3fca6'
+        bank=b.verify_bank(bank_path,bank_sha);cases=b.selection_cases(selection,selection_sha,bank,bank_sha)
+        q=b.o.r.frontend();image_pad=q.tokenizer.convert_tokens_to_ids('<|image_pad|>')
+        eos=q.tokenizer.convert_tokens_to_ids('<|im_end|>');observed=[];corrupt=False
+
+        class CpuRollout:
+            def __init__(self,**kwargs):self.receipts=[]
+            def close(self):pass
+            def generate(self,requests,**kwargs):
+                return [SimpleNamespace(token_ids=[eos],stop_reason='im_end') for request in requests]
+            def generate_exact(self,requests,**kwargs):
+                def generate(prompts,params,**options):
+                    outputs=[]
+                    for request,prompt,param in zip(requests,prompts,params,strict=True):
+                        count=math.prod(request.expected_image_grid)//4
+                        ids,matched,placeholders=_apply_token_matches_with_placeholders(prompt['prompt_token_ids'],
+                            {'image':[[PromptReplacement(modality='image',target=[image_pad],replacement=[image_pad]*count).resolve(0)]]})
+                        self_test.assertEqual(matched,{'image':[0]})
+                        self_test.assertEqual(placeholders['image'][0].length,count)
+                        if corrupt:ids[-1]=(ids[-1]+1)%len(q.tokenizer)
+                        outputs.append(SimpleNamespace(prompt_token_ids=ids,outputs=[SimpleNamespace(token_ids=[1]*param.max_tokens,finish_reason='length')]))
+                        observed.append(dict(request_id=request.request_id,chat=kwargs['chat_token_ids'][0],processed=ids,extension=kwargs['extensions'][0]))
+                    return outputs
+                engine=SimpleNamespace(generate=generate,llm_engine=SimpleNamespace(model_config=SimpleNamespace(get_vocab_size=lambda:len(q.tokenizer))))
+                kwargs.pop('identity')
+                return _generate_exact(engine,requests,full_scores=False,**kwargs)
+
+        self_test=self
+        with tempfile.TemporaryDirectory(dir=b.OUT) as directory,contextlib.ExitStack() as stack:
+            args=SimpleNamespace(bank=bank_path,bank_sha256=bank_sha,selection=selection,selection_sha256=selection_sha,
+                checkpoint=Path(bank['checkpoint']),output=Path(directory)/'valid')
+            stack.enter_context(patch.object(e,'runtime_release',return_value=dict(selection_sha256=selection_sha)))
+            stack.enter_context(patch.object(e,'verify_bank',return_value=bank))
+            stack.enter_context(patch.object(e,'selection_cases',return_value=cases))
+            stack.enter_context(patch('src.artifacts.git_identity.capture_source_identity',return_value={}))
+            stack.enter_context(patch('src.artifacts.git_identity.verify_source_identity'))
+            stack.enter_context(patch.object(b.o,'verify_anchor_payload'))
+            stack.enter_context(patch.object(b.o.r,'frontend',return_value=q))
+            stack.enter_context(patch('src.qwen.vllm_rollout.VllmDoraRollout',CpuRollout))
+            for rank in range(8):
+                with patch.dict(os.environ,WORLD_SIZE='8',RANK=str(rank),LOCAL_RANK=str(rank)):e.evaluate(args)
+            records,conditional=e.evaluation_readback(args.output,bank,bank_sha,cases,selection_sha)
+            self.assertEqual(len(records),18);self.assertEqual(len(conditional),8)
+            for row,result in zip(cases,observed,strict=True):
+                self.assertEqual(result['processed'],row['prefix'])
+                self.assertEqual(result['chat'].count(image_pad),1)
+                self.assertEqual(result['extension'],row['prefix'][len(next(r for r in bank['records'] if r['image_id']==row['image_id'])['prompt_token_ids']):])
+            corrupt=True;args.output=Path(directory)/'corrupt'
+            with patch.dict(os.environ,WORLD_SIZE='8',RANK='0',LOCAL_RANK='0'):
+                with self.assertRaisesRegex(RuntimeError,'changed exact prompt tokens'):e.evaluate(args)
+            self.assertFalse((args.output/'rank-0/complete.json').exists())
+
     def evaluation_fixture(self, path):
         bank=dict(images=[dict(image_id=i) for i in range(18)],regime='CPU fixture')
         cases=[dict(row_id=i) for i in range(8)]

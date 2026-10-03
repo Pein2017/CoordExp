@@ -242,7 +242,8 @@ def evaluate(args):
         conditional=[]
         if selected:
             exact_requests=o.vllm_requests(q,records,[r['image_id'] for r in selected])
-            results=rollout.generate_exact(exact_requests,chat_token_ids=[records[r['image_id']]['prompt_token_ids'] for r in selected],
+            # vLLM expands the chat's single media placeholder; HF bank IDs are already expanded.
+            results=rollout.generate_exact(exact_requests,chat_token_ids=[q.tokenizer.encode(r.chat_text,add_special_tokens=False) for r in exact_requests],
                 extensions=[r['prefix'][len(records[r['image_id']]['prompt_token_ids']):] for r in selected],budgets=[64]*len(selected),
                 eos_token_id=q.tokenizer.convert_tokens_to_ids('<|im_end|>'),pad_token_id=q.tokenizer.pad_token_id,identity=snapshot,vocab_size=len(q.tokenizer))
             for row,result in zip(selected,results,strict=True):

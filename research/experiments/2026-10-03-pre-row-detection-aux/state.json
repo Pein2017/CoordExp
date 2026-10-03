@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-03-pre-row-detection-aux",
   "lifecycle": "ready",
-  "status": "LEAD_ACCEPTED_CPU_PREPARATION_NATIVE_HOLD",
+  "status": "LEAD_ACCEPTED_CPU_REPAIR_NATIVE_REBIND_PENDING",
   "evidence": "accepted",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
@@ -11,13 +11,13 @@
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "high",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12",
-  "authority": "User requested next experiment preparation with lead-worker 6.1-high on 2026-10-03. One unit only; initial CPU-only assignment.",
+  "authority": "User requested this unit preparation and then continuation on 2026-10-03; worker owns ordinary technical repair/checks. Exact immutable lead releases bound each native invocation.",
   "source_base_commit": "9bcdea19736d9faa67f6803740db1e0f34486b5a",
   "native_released": false,
   "lead_accepted": true,
   "user_scientific_acceptance": false,
-  "job_state": "CPU_package_complete_no_model_or_GPU_job",
-  "next_action": "Preparation complete. A separate exact release and measured one-update native qualification are required before any primary16 execution; no job is scheduled.",
+  "job_state": "first_native_qualification_failed_cleanup_complete_CPU_repair_accepted",
+  "next_action": "Bind clean repaired source and issue one separate two-arm one-update qualification release at cpu-07; primary16 remains unreleased.",
   "boundary": "A existing row objective versus B same plus pre-row detection auxiliary on one fixed self-prefix bank; ordinary inference unchanged.",
   "not_authorized": [
     "model loading/forward, GPU work, new generation or training before an exact lead release",
@@ -46,7 +46,7 @@
     "separate_clip": true,
     "native_head_consumed": false
   },
-  "worker_name": "研究执行12｜行前检测辅助监督",
+  "worker_name": "\u7814\u7a76\u6267\u884c12\uff5c\u884c\u524d\u68c0\u6d4b\u8f85\u52a9\u76d1\u7763",
   "worker_creation_receipt": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/transport/create-worker-01.json",
   "worker_model_at_creation": "gpt-6.1-sol",
   "worker_effort_at_creation": "high",
@@ -102,6 +102,43 @@
     "native_qualified": false,
     "scientific_status": "unmeasured"
   },
-  "evidence_note": "CPU04 RED/GREEN and 33 affected checks; 80 unchanged base/region checks reused; lead consumer recheck 3 passed",
-  "result": "research/experiments/2026-10-03-pre-row-detection-aux/results.md"
+  "evidence_note": "Initial CPU preparation accepted; first native qualification failed before training; CPU06 repair accepted after worker RED/GREEN and 18 affected/shared checks plus one lead consumer check. Native success and scientific benefit remain unmeasured.",
+  "result": "research/experiments/2026-10-03-pre-row-detection-aux/results.md",
+  "native_attempts": [
+    {
+      "attempt": 1,
+      "source_commit": "a34d83a5f4168d5bdfbf16356c8c979e98854d17",
+      "release_sha256": "2a8c5eba93d9c43cec1e2346dc72fdc128d8b6d079fa7d021779d172cc70b7eb",
+      "root": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1",
+      "status": "failed",
+      "owner_exit_code": 1,
+      "stage0_exit_code": 1,
+      "issued_stages": 1,
+      "skipped_stages": 10,
+      "training_forwards": 0,
+      "endpoint_exports": 0,
+      "complete_rank_receipts": 0,
+      "failure": "vLLM changed exact prompt tokens: 14038:greedy:0",
+      "cleanup": "verified_no_matching_live_owned_process",
+      "terminal": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1/terminal.json",
+      "measured_resources": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1/worker-native-terminal-01.json"
+    }
+  ],
+  "cpu_repair_acceptance": {
+    "status": "lead-accepted",
+    "source_base_commit": "a34d83a5f4168d5bdfbf16356c8c979e98854d17",
+    "scope": "Unexpanded chat caller repair; frozen expected prompt and extension unchanged",
+    "worker_checks": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-06/checks-01.json",
+    "worker_fresh_tests": 18,
+    "lead_consumer_check": {
+      "passed": 1,
+      "exit_code": 0,
+      "log": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/lead-exact-prefix-green-01.log"
+    },
+    "source_identity": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/source-identity.json",
+    "receipt": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/lead-acceptance.json",
+    "qualification_packet": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/qualification-candidate-1",
+    "native_qualified": false
+  },
+  "native_release_state_note": "This tracked record freezes pre-launch acceptance. The cpu-07 immutable lead-release.json and owner terminal receipts determine subsequent authorization and runtime state; no retry is implied by a failed invocation."
 }
