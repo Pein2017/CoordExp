@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-endpoint-block-ablation",
   "lifecycle": "ready",
-  "status": "CPU_PREPARATION_AUTHORIZED_NATIVE_NOT_RELEASED",
-  "evidence": "none",
+  "status": "QUALIFIED_CPU_CANDIDATE_NATIVE_NOT_RELEASED",
+  "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
   "state_source": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
@@ -23,5 +23,62 @@
     "extra control, repeat, context, threshold or model call",
     "predecessor/shared source or historical receipt mutation",
     "worker scientific self-acceptance or next-unit scheduling"
-  ]
+  ],
+  "worker_thread": "01a0ffaa-25a1-7e51-b3d7-ce7490e951d6",
+  "actual_worker_settings": {
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "verification": "worker_turn live inspect exit 0"
+  },
+  "direct_return": {
+    "script": "/data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py",
+    "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+    "worker_thread": "01a0ffaa-25a1-7e51-b3d7-ce7490e951d6",
+    "target": "lead",
+    "entry_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/entry-return-01.json"
+  },
+  "result_pointer": "research/experiments/2026-10-03-endpoint-block-ablation/results.md",
+  "cpu_preparation": {
+    "manifest": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/preparation-01/manifest.json",
+    "layout": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/preparation-01/cpu-layout.json",
+    "candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/qualified-candidate-01.json",
+    "checks": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/cpu-checks-01.json",
+    "sensitivity": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/cpu-sensitivity-01.json"
+  },
+  "owned_paths": [
+    "probes/endpoint_block_ablation.py",
+    "tests/probes/test_endpoint_block_ablation.py",
+    "research/experiments/2026-10-03-endpoint-block-ablation/state.json",
+    "research/experiments/2026-10-03-endpoint-block-ablation/results.md"
+  ],
+  "execution_checkout": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+    "commit": "913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c",
+    "clean": true,
+    "detached": true,
+    "advanced": false
+  },
+  "pending_real_runtime": [
+    "scheduled A_A exported-anchor load",
+    "scheduled A_M hybrid load"
+  ],
+  "original_anchor_weight_identity": "07ea98e90220a9126042a27b3a76f60e9955320fed4bf77c2a8803ac9d52001a",
+  "exported_anchor_weight_identity": "8dcd444f01ef806b743fd5d0f25518ac305e251f2f1dfdb2609fcc1993b80eb3",
+  "technical_status": "CPU_candidate_pending_lead_acceptance",
+  "clean_source_commit_owner": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/qualified-candidate-01.json#source.commit",
+  "preparation_check_exits": [
+    1,
+    0
+  ],
+  "focused_test_exit": 0,
+  "focused_tests_passed": 6,
+  "source_qualification": {
+    "candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/qualified-candidate-01.json",
+    "validation_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/cpu-candidate-binding-01.json"
+  },
+  "candidate_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/candidate-return-01.json",
+  "evidence_scope": "CPU-only",
+  "result": "research/experiments/2026-10-03-endpoint-block-ablation/results.md",
+  "knowledge_check_exit": 0
 }
