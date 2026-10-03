@@ -12,7 +12,7 @@ conda run -n ms python /data/CoordExp/.agents/skills/codex-usage-ledger/scripts/
   --sessions "$CODEX_HOME/sessions" \
   --since YYYY-MM-DD \
   --until YYYY-MM-DD \
-  --prices /data/CoordExp/codex-usage-ledger/prices-standard-2026-09-25.toml \
+  --prices /data/CoordExp/codex-tools/codex-usage-ledger/prices-standard-2026-09-25.toml \
   --disposition-policy followup_aware \
   --format jsonl \
   --output "$ledger_report_dir/attempts.jsonl" \
@@ -32,7 +32,7 @@ ledger_report_dir=$(mktemp -d)
 conda run -n ms python /data/CoordExp/.agents/skills/codex-usage-ledger/scripts/run_ledger.py \
   --root-thread-id "$SESSION_A_THREAD_ID" \
   --include-root \
-  --prices /data/CoordExp/codex-usage-ledger/prices-standard-2026-09-25.toml \
+  --prices /data/CoordExp/codex-tools/codex-usage-ledger/prices-standard-2026-09-25.toml \
   --disposition-policy followup_aware \
   --format json \
   --summary-out "$ledger_report_dir/session-a-summary.json" \

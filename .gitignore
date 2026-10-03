@@ -12,7 +12,6 @@
 !ops/
 !repo_lifecycle/
 !scripts/
-!codex-usage-ledger/
 !manifests/
 !openspec/
 !reference/
@@ -31,7 +30,6 @@
 !ops/**
 !repo_lifecycle/**
 !scripts/**
-!codex-usage-ledger/**
 !manifests/**
 !openspec/**
 !reference/**
@@ -52,7 +50,9 @@
 # Hard local-only workspace roots. These patterns are intentionally explicit
 # even though the repo uses an allowlist, so future allowlist edits do not
 # accidentally surface runtime state, secrets, checkpoints, or external clones.
-/codex-wake-me-up/
+/codex-tools/
+/codex-harnessdock/
+/codex-harnessdock-dev/
 /output/
 /outputs/
 /output_remote/
@@ -63,9 +63,6 @@
 /model_cache/
 /model_cache_remote/
 /external/
-/codex-usage-ledger/.ruff_cache/
-/codex-usage-ledger/**/__pycache__/
-/codex-usage-ledger/**/.pytest_cache/
 /baidupcsgo/
 /agent_discussion/
 /coco_bbox_*merged/

@@ -11,7 +11,7 @@ from pathlib import Path
 def main() -> int:
     ledger_root = Path(
         os.environ.get(
-            "CODEX_USAGE_LEDGER_ROOT", "/data/CoordExp/codex-usage-ledger"
+            "CODEX_USAGE_LEDGER_ROOT", "/data/CoordExp/codex-tools/codex-usage-ledger"
         )
     ).resolve()
     package_root = ledger_root / "codex_usage_ledger"
