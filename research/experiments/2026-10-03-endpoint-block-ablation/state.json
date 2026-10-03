@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-endpoint-block-ablation",
-  "lifecycle": "ready",
-  "status": "TERMINAL_CANDIDATE_COMPLETED_AS_RELEASED_PENDING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
-  "scientific_status": "measured_pending_lead_interpretation",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "body_increment_retains_repair_with_lower_burden_and_one_additional_known_owner_loss",
   "protocol": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
   "state_source": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,7 +12,7 @@
   "predecessor": "2026-10-03-output-delta-crossover",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "boundary": "CPU-first saved-endpoint block ablation; no model loading before exact separate lead release.",
@@ -76,7 +76,7 @@
     "validation_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/cpu-candidate-binding-01.json"
   },
   "candidate_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/candidate-return-01.json",
-  "evidence_scope": "native measured; lead interpretation pending",
+  "evidence_scope": "lead-accepted native factorial readout",
   "result": "research/experiments/2026-10-03-endpoint-block-ablation/results.md",
   "knowledge_check_exit": 0,
   "cpu_lead_accepted": true,
@@ -127,5 +127,20 @@
     "body_sufficient_required_with_M_output": 3,
     "either_sufficient": 3
   },
-  "terminal_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-return-01.json"
+  "terminal_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-return-01.json",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/lead-acceptance-01.json",
+    "sha256": "8e97a2dd07d6a632673e0e165c9da6bd52a3cc09e648e8eef5b02c3ee6d61f5b"
+  },
+  "lead_ruling": "research/experiments/2026-10-03-endpoint-block-ablation/lead-ruling-02.md",
+  "lead_ruling_commit": "7f482aaa1c79997fab4b4d9dc8db5e79e953b7f9",
+  "accepted_body_to_full_additional_incumbent": [
+    {
+      "gained": [
+        -107
+      ],
+      "image_id": 5001
+    }
+  ],
+  "closure_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/.local/scratch/endpoint-block-ablation-09/closed-return-01.json"
 }

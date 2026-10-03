@@ -1,14 +1,26 @@
-# Round09 executed candidate; lead acceptance pending
+# Round09 lead-accepted and closed
 
 The exactly released single package exited0, including its own successful final
 consumer/readback. Four fresh serial engines A_A,A_M,M_A,M_M completed40 supplied
 scores and72 natural generations:112 requests,46036 generated tokens including40
 scored tokens. There were0 HF/training/optimizer operations, no repeated phase,
 extra model call, source edit, qualification/check rerun or repeated successful
-readback. Technical status is `completed_as_released`; scientific measurements
-remain unreviewed by the lead. User scientific acceptance is false. The
-[lead ruling](lead-ruling-01.md) owns release and the [unit](unit.md) owns meaning,
-bounds and stop rule. No subsequent unit is scheduled.
+readback. Technical status is `completed_as_released`; scientific status is
+`body_increment_retains_repair_with_lower_burden_and_one_additional_known_owner_loss`.
+User scientific acceptance remains false. [Lead ruling02](lead-ruling-02.md) owns
+acceptance, [ruling01](lead-ruling-01.md) owns release, and the [unit](unit.md) owns
+meaning, bounds and stop rule. Lifecycle is closed and evidence is accepted.
+No subsequent unit is scheduled by this worker.
+
+Immutable [lead acceptance](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/lead-acceptance-01.json) SHA256
+`8e97a2dd07d6a632673e0e165c9da6bd52a3cc09e648e8eef5b02c3ee6d61f5b` binds the accepted terminal/readback and scientific disposition.
+The lead directly checked literal classifications/denominators, all five owner/
+scalar effects, source/weight/norm/cleanup and original incumbent image5001
+owner-107, reusing the successful raw consumer evidence. That owner is present in
+A_A and M_M and missing in M_A; the full endpoint preserves an incumbent rather
+than discovering a new owner. Historical candidate receipts remain unchanged.
+No model, test, readback, qualification or runtime was rerun for closure. The
+acceptance ruling is recorded at commit`7f482aaa1c79997fab4b4d9dc8db5e79e953b7f9`.
 
 Fresh A_A has6 illegal and4 legal supplied contexts. M_A and M_M repair all6;
 A_M repairs3, all at literal ties with margin0. The exact truth classes are3
@@ -154,8 +166,8 @@ allocation remain unmeasured:
 | M_A | 28 | 163.330 | 27.929 | 1237628 | 6803352 |
 | M_M | 28 | 186.820 | 27.329 | 1242040 | 6829848 |
 
-Worker finished the frozen factorial readback and stops for lead acceptance.
-Scientific interpretation and any later unit remain lead-owned. No physical
+Worker finished the frozen factorial readback; the lead accepted it and this unit
+is closed. Any later unit remains root-owned. No physical
 false-negative recovery, population generalization, universal output/body
 mechanism or independently trained-block claim is made.
 
