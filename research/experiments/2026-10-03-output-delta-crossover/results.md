@@ -1,11 +1,22 @@
-# Round08 native terminal candidate
+# Round08 accepted and closed
 
 The exactly released package exited0; all four fresh serial arms completed and the
 package's own final readback succeeded. Source remains clean/detached at
 `913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c` in `/data/CoordExp/.worktrees/greedy-prefix-native-01`. No phase/request relaunch,
 extra model call, HF/training forward, optimizer, fresh anchor or repeated readback occurred.
-Worker actual settings remain GPT-6.1-Sol/high. Lead acceptance and scientific
-interpretation remain pending; this record is an unreviewed terminal candidate.
+Worker actual settings remain GPT-6.1-Sol/high. The lead accepted technical status
+`completed_as_released` and scientific status
+`output_block_contributes_to_burden_with_body_dependent_interaction` in
+[lead ruling02](lead-ruling-02.md), root commit
+`a5bfa61eb50a225d1643a9436ffef514ef2965a1`. User scientific acceptance remains false.
+Lifecycle is closed and evidence is accepted.
+
+Immutable [lead acceptance](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/lead-acceptance-01.json)
+SHA256`c96bff203c76a69ae6601688141d4c7d362b686fdf6a68692c024e8aa754a06e`.
+Historical candidate receipts remain unchanged. The lead directly recomputed all
+five owner/scalar transitions and conditional denominators, checked source/weight/
+norm/runtime cleanup, and reused unchanged successful final-consumer evidence.
+No model, test, readback or qualification was rerun for acceptance or closure.
 
 [CPU preparation and its test history](../2026-10-03-output-delta-crossover/state.json)
 remain bound in state and canonical outputs. The [unit](unit.md) and
@@ -16,8 +27,8 @@ Both fixed-body replacements with the M output table increase aggregate invalidi
 and net category/geometry known-owner counts (+1 each). Body contrasts add four net
 known owners at either fixed output. Scene7511 has the opposing invalidity change
 (-1 at both bodies); near-pair and literal-repeat magnitudes disagree across bodies.
-These are measured endpoint differences; their scientific disposition belongs to
-the lead.
+These measured endpoint differences support this particular output-block
+contribution with body-dependent interaction, as accepted in ruling02.
 
 Exact release SHA256`ff1990247c77b2c9b441fa1db2de6f94abd3937f649c8cea5785a597ff5b9707`; qualified execution candidate
 SHA256`e10756535812f1f169ad87eb5e82a338aaa2eba411ea6193a12f7f1d51b43afb`. Full immutable source/release/command,
@@ -115,5 +126,6 @@ This exchange measures the saved output block on these two saved bodies, includi
 later autoregressive history cascades. Metric disagreement and owner gained/lost
 sets constrain interpretation; no universal head mechanism, physical false-negative
 recovery, population generalization or training-replicate estimate is claimed.
-Unmatched predictions remain annotation-relative unknown. Stop here for lead
-acceptance; no subsequent unit is scheduled.
+Unmatched predictions remain annotation-relative unknown. Round08 is CLOSED
+following lead acceptance. No subsequent unit is scheduled by this worker; the root
+owns any later unit.

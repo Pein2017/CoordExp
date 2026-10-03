@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-output-delta-crossover",
-  "lifecycle": "ready",
-  "status": "NATIVE_COMPLETED_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
-  "scientific_status": "unreviewed_fixed_four_arm_observation",
+  "lifecycle": "closed",
+  "status": "CLOSED_LEAD_ACCEPTED",
+  "evidence": "accepted",
+  "scientific_status": "output_block_contributes_to_burden_with_body_dependent_interaction",
   "protocol": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,7 +12,7 @@
   "predecessor": "2026-10-03-mass-versus-ranking",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "not_authorized": [
@@ -104,7 +104,7 @@
     "child_CUDA": "unmeasured"
   },
   "first_hybrid_runtime_boundary": "Scheduled R_M completed successfully; bound first-hybrid-seam-01.json, without an extra call.",
-  "execution_checkout_selection": "lead-owned; greedy-prefix-native-01 retained at 2876f43db0d81569937a4ff1142129039204d038",
+  "execution_checkout_selection": "lead-selected; clean detached /data/CoordExp/.worktrees/greedy-prefix-native-01 at 913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c",
   "proposed_package_command": [
     "python",
     "-m",
@@ -117,7 +117,7 @@
     "--output",
     "SELECTED_EXECUTION_OUTPUT/package-01"
   ],
-  "stop": "Native package and its own successful readback complete; awaiting lead acceptance; no next unit scheduled.",
+  "stop": "CLOSED after lead acceptance; no further unit execution or next-unit scheduling by this worker.",
   "cpu_locator_repair": "Published preparation payloads and receipt remain unchanged; qualification binds absolute canonical input locators for execution from another checkout.",
   "effective_focused_checks": {
     "status": "PASS_CPU",
@@ -251,5 +251,14 @@
     "sha256": "d6a564ef7e3ee2a7073cb135fab51bf3eb7f2e92e6e941179f1a5f148fda71cf"
   },
   "native_return_report": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/native-terminal-report-01.md",
-  "native_return_receipt": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/native-terminal-return-01.json"
+  "native_return_receipt": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/native-terminal-return-01.json",
+  "technical_status": "completed_as_released",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/lead-acceptance-01.json",
+    "sha256": "c96bff203c76a69ae6601688141d4c7d362b686fdf6a68692c024e8aa754a06e"
+  },
+  "lead_ruling": {
+    "path": "research/experiments/2026-10-03-output-delta-crossover/lead-ruling-02.md",
+    "commit": "a5bfa61eb50a225d1643a9436ffef514ef2965a1"
+  }
 }
