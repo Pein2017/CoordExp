@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-03-rule-stability-iou90",
   "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION_AUTHORIZED",
+  "status": "CPU_REPAIR_REQUIRED",
   "evidence": "none",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
@@ -69,7 +69,7 @@
   "native_released": false,
   "cpu_boundary_exception": {
     "kind": "tiny_cpu_fixture_model_forwards_before_release",
-    "status": "recorded_test_selection_verification_pending",
+    "status": "recorded_selection_controls_verified",
     "log": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/cpu-lifecycle-01/combined-01.log",
     "observed_log_summary": "47 passed, 2 warnings in 8.97s",
     "reported_exit_code": 0,
@@ -78,12 +78,23 @@
       "tests/qwen/test_generation.py::test_seeded_policy_uses_fresh_config_and_exact_fixed_batch_replay"
     ],
     "scope": "Tiny CPU GPT2 fixture; seeded fixture configured up to 5 generated actions per request. Worker reports no research checkpoint load or GPU use. Native authority unchanged.",
-    "record_owner": "research/experiments/2026-10-03-rule-stability-iou90/results.md"
+    "record_owner": "research/experiments/2026-10-03-rule-stability-iou90/results.md",
+    "selection_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/cpu-lifecycle-01/generation-selection-collection-01.log"
+  },
+  "cpu_candidate_review": {
+    "commit": "9c1b3d11d04026dd93133f0d5f4912a0be62aa1d",
+    "status": "scoped_consumer_pass_native_blocked",
+    "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-01.md",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/lead-consumer-check-01.json",
+    "blocking_counterexamples": [
+      "Full-support generated PAD action rejected as padding",
+      "Full-support generated image action misclassified as an additional input image during replay"
+    ]
   },
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "job_state": "worker_cpu_implementation_in_progress_no_native_job",
-  "next_action": "Worker implements and verifies the CPU package, then returns candidate and exact native proposals directly to the lead. Lead verifies the final consumer and releases the already authorized finite study through source-bound packets.",
+  "next_action": "Worker repairs the two full-support counterexamples under the lead brief and returns a corrected candidate with new source-bound proposals. Native qualification remains unreleased; reuse unaffected package evidence and the accepted saved-consumer boundary.",
   "ownership": {
     "lead": [
       "unit.md",
