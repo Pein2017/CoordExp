@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-mass-versus-ranking",
   "lifecycle": "ready",
-  "status": "CPU_CANDIDATE_PENDING_LEAD_REVIEW",
+  "status": "NATIVE_TERMINAL_CANDIDATE_PENDING_LEAD_REVIEW",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "scientific_status": "fixed_observations_complete_lead_disposition_pending",
   "protocol": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-short-dose-ranking",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
@@ -35,15 +35,83 @@
   "cpu_checks": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/cpu-checks-final-01.json",
   "historical_gmax_displacement": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/historical-gmax-displacement-01.json",
   "qualification_owner": "worker_CPU_candidate_only",
-  "real_execution_status": "not_released_not_started",
-  "process_job_state": "no_real_model_or_native_package_started; no_gpu_job",
+  "real_execution_status": "completed_as_released",
+  "process_job_state": "no_matching_probe_process_or_observed_group_member; all_four_phase_groups_drained",
   "source_identity": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/candidate-01.json#/source",
   "real_runtime_gaps": [
-    "one_real_Gmass_update_and_20_HF_diagnostics",
-    "first_scheduled_native_readout_and_remaining_fixed_requests",
-    "real_Gmass_gradient_clip_finite_state_and_serialized_displacement",
-    "native_internal_startup_forward_count_explicitly_unmeasured"
+    "native_internal_startup_forward_count_explicitly_unmeasured",
+    "native_child_CUDA_memory_unmeasured",
+    "training_phase_PID_not_separately_captured"
   ],
-  "next_action": "Stop at qualified CPU candidate. Lead alone selects/qualifies execution source and releases one exact package to this same worker. No next-unit scheduling.",
-  "evidence_scope": "CPU_only"
+  "next_action": "Worker execution complete; stop. Lead verifies the final decision boundary and owns scientific disposition. No model calls, readback rerun, source advancement or next-unit scheduling.",
+  "evidence_scope": "fixed_real_observations",
+  "cpu_lead_accepted": true,
+  "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+  "execution_source_commit": "2876f43db0d81569937a4ff1142129039204d038",
+  "released_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/released-contract-01.json",
+    "sha256": "67e98ce0c666c15a08087be7282b95397b2d751f77eefc7b783f6d9632b55243"
+  },
+  "lead_release": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/lead-release-01.json",
+    "sha256": "4d5e1cce05eacdf6804b81f3c6b59fe6d1f08b0b9f9147d384a87070eae3da91"
+  },
+  "package_invocation": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-invocation-01.json",
+  "package_pid": 1812659,
+  "package_start_ticks": 3712729431,
+  "package_pgid": 1812659,
+  "package_sid": 1812659,
+  "package_tool_session": 35163,
+  "package_log": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01.log",
+  "execution_output_root": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07",
+  "first_real_update": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/first-real-update-01.json",
+  "first_native_readout": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/first-native-anchor-readout-01.json",
+  "technical_status": "completed_as_released",
+  "actual_package_exit": 0,
+  "source_commit": "2876f43db0d81569937a4ff1142129039204d038",
+  "terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/native-terminal-candidate-01.json",
+    "sha256": "9f48e159178032324dcd954ac98bfa55da03c9e0533e0e0758805ad99bb16bd5"
+  },
+  "terminal": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/complete.json",
+    "sha256": "43577c01ff640ad187a4e86d7e35d836ff469a3c7f94c28d0dbff649e6d832d5"
+  },
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/readback.json",
+    "sha256": "c4149312d5bc7ff269b50b577fab48bf53d0009845f904e2a3062109d01e4bc2"
+  },
+  "cleanup": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/cleanup-terminal-01.json",
+    "sha256": "78380d59794e94cdf8013a584c23597bd20655d6b29a5355728f6d356770eec8"
+  },
+  "counters": {
+    "HF_diagnostics": 20,
+    "continuation_requests": 54,
+    "generated_tokens": 30605,
+    "optimizer_steps": 1,
+    "requests": 84,
+    "score_requests": 30,
+    "training_replays": 6
+  },
+  "package_wall_seconds": 575.2394777238369,
+  "reported_active_seconds": 500.7666341736913,
+  "phase_receipts": {
+    "native-anchor": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/native-anchor/complete.json",
+      "sha256": "147ba0259c38943de0cd0b834edc8b43703a7582c04926695dd8072cdc837e2e"
+    },
+    "native-gmass1": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/native-gmass1/complete.json",
+      "sha256": "e057ac49eefa30fc07c2a21e5bcbcac25d6f257992617958f41675d50c6892eb"
+    },
+    "native-gmax1": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/native-gmax1/complete.json",
+      "sha256": "5a28db3ffd10642b729fded8198747bd42b2502e3b20c166c0db66540b3031f1"
+    },
+    "train": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/train/complete.json",
+      "sha256": "0deebd3f23418c09d29eb040bd9b081ef2c026c9f6f030a3eec01662b42d9316"
+    }
+  }
 }
