@@ -9,13 +9,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [rule-stability IoU90 unit](experiments/2026-10-03-rule-stability-iou90/unit.md)
-is open for user-requested GPT-6.1-Sol/xhigh implementation. From the mature
+has a lead-accepted CPU implementation by the requested GPT-6.1-Sol/xhigh worker. From the mature
 axis001 step2444 anchor under fixed median normalization, the finite two-arm16
 study compares full-label positives plus fresh geometry supervision with the same
 objective plus sampled strong-overlap credit on18 images/570 labels. Strict
 class-agnostic IoU>0.9 defines the overlap proxy; coverage and owner changes have
-no fixed acceptance threshold. CPU preparation comes first; no new native job is
-released. [State and technical progress](experiments/2026-10-03-rule-stability-iou90/results.md)
+no fixed acceptance threshold. One 8-GPU, all-18-image B qualification update,
+including a technical suffix diagnostic and fresh checkpoint reload, is
+[released](experiments/2026-10-03-rule-stability-iou90/lead-ruling-02.md).
+Primary arms remain unreleased pending that evidence. [State](experiments/2026-10-03-rule-stability-iou90/state.json)
+and [technical progress](experiments/2026-10-03-rule-stability-iou90/results.md)
 own continuation; historical closed units below remain closed.
 
 The pre-row detection auxiliary unit is [lead-accepted and closed](experiments/2026-10-03-pre-row-detection-aux/results.md). The frozen two-arm16 screen completed technically, but B covered225 of570 annotation owners versus233 for A and247 at the anchor. Geometry invalidity improved while valid repetition increased; both arms had the same2/8 conditional successes. Connected auxiliary gradients and falling training loss did not establish native coverage benefit. This is a bounded negative with mixed burdens, not a physical-FN or general auxiliary-method verdict. All jobs are cleaned up; no further model call, retuning, extension or next unit is scheduled.

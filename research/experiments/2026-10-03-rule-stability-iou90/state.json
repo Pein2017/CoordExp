@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-03-rule-stability-iou90",
-  "lifecycle": "planned",
-  "status": "CPU_REPAIR_REQUIRED",
+  "lifecycle": "running",
+  "status": "NATIVE_QUALIFICATION_RELEASED",
   "evidence": "none",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
@@ -66,7 +66,11 @@
     ],
     "user_gpu_hours_cap": null
   },
-  "native_released": false,
+  "native_released": true,
+  "native_scope": "qualification_B_one_update_only",
+  "primary_released": false,
+  "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/qualification-B-release.json",
+  "native_output": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-qualification-B-01",
   "cpu_boundary_exception": {
     "kind": "tiny_cpu_fixture_model_forwards_before_release",
     "status": "recorded_selection_controls_verified",
@@ -82,19 +86,18 @@
     "selection_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/cpu-lifecycle-01/generation-selection-collection-01.log"
   },
   "cpu_candidate_review": {
-    "commit": "9c1b3d11d04026dd93133f0d5f4912a0be62aa1d",
-    "status": "scoped_consumer_pass_native_blocked",
-    "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-01.md",
+    "commit": "cbbce5e588daeb5a9f3bad7422be3abe0e5e9fdc",
+    "status": "lead_accepted_cpu_candidate_native_unmeasured",
+    "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-02.md",
     "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/lead-consumer-check-01.json",
-    "blocking_counterexamples": [
-      "Full-support generated PAD action rejected as padding",
-      "Full-support generated image action misclassified as an additional input image during replay"
-    ]
+    "blocking_counterexamples": [],
+    "closed_counterexamples": ["Generated PAD retention", "Generated visual actions remain text during replay"]
   },
+  "cpu_implementation_lead_accepted": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
-  "job_state": "worker_cpu_implementation_in_progress_no_native_job",
-  "next_action": "Worker repairs the two full-support counterexamples under the lead brief and returns a corrected candidate with new source-bound proposals. Native qualification remains unreleased; reuse unaffected package evidence and the accepted saved-consumer boundary.",
+  "job_state": "qualification_invocation_owned_by_worker_see_output_receipts_for_live_state",
+  "next_action": "Worker executes the exact qualification-B packet once through fresh reload, terminal verification and cleanup, then returns directly. Lead verifies native evidence and binds the already authorized primary study; no primary launch or retry is released yet.",
   "ownership": {
     "lead": [
       "unit.md",
