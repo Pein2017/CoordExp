@@ -15,6 +15,8 @@ from typing import Any
 
 import torch
 
+from src.losses.token_scores import aligned_token_logprobs
+
 
 def _coordinate_ids(values: Sequence[int] | torch.Tensor) -> tuple[int, ...]:
     if isinstance(values, torch.Tensor):
@@ -126,6 +128,39 @@ class MedianPolicy:
         with torch.no_grad():
             factors = self.factors().detach().clone()
         return _MedianScoreTransform(self.coordinate_ids.clone(), factors)
+
+
+class TechnicalSuffixSelection:
+    """Six-action qualification selection, recording scores before forcing.
+
+    This processor follows the ordinary median processor. Its forced-selection
+    likelihood is separate from the unforced normalized policy likelihood and
+    never supplies a sampled training trajectory.
+    """
+
+    def __init__(self, action_ids: Sequence[int], prompt_length: int):
+        self.action_ids = tuple(action_ids)
+        if (len(self.action_ids) != 6 or len(set(self.action_ids)) != 6
+                or any(type(token) is not int or token < 0 for token in self.action_ids)
+                or type(prompt_length) is not int or prompt_length < 1):
+            raise ValueError("technical suffix requires six distinct IDs and one prompt")
+        self.prompt_length = prompt_length
+        self.unforced_policy_logprobs: list[float] = []
+
+    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        step = len(self.unforced_policy_logprobs)
+        if (input_ids.ndim != 2 or input_ids.shape != (1, self.prompt_length + step)
+                or scores.ndim != 2 or scores.shape[0] != 1 or step >= 6
+                or tuple(input_ids[0, self.prompt_length:].tolist()) != self.action_ids[:step]
+                or scores.shape[1] <= max(self.action_ids)
+                or not bool(torch.isfinite(scores).all())):
+            raise ValueError("technical cached action/score alignment or support differs")
+        target = self.action_ids[step]
+        value = aligned_token_logprobs(scores, torch.tensor([target], device=scores.device))[0]
+        self.unforced_policy_logprobs.append(float(value.detach()))
+        forced = torch.full_like(scores, -torch.inf)
+        forced[0, target] = 0.
+        return forced
 
 
 def replay_difference(

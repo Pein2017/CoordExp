@@ -287,7 +287,17 @@ def exact_history_inputs(
     *,
     pad_token_id: int,
     logits_to_keep: int = 0,
+    prompt_only_media: bool = False,
 ) -> dict[str, Any]:
+    """Replay literal IDs, optionally keeping media roles within one bound prompt.
+
+    ``prompt_only_media`` is an explicit singleton-image opt-in. It reuses the
+    original prompt's modality types and marks every appended action as text,
+    as HF generation does. It does not change placeholder-mask handling; that
+    probe-specific scoped behavior remains with its caller.
+    """
+    if not isinstance(prompt_only_media, bool):
+        raise ValueError("prompt_only_media must be boolean")
     if (
         isinstance(logits_to_keep, bool)
         or not isinstance(logits_to_keep, int)
@@ -314,12 +324,43 @@ def exact_history_inputs(
             "exact replay requires image_grid_thw",
             code="hf_backend.exact_history_image_grid",
         )
+    explicit_types = None
+    if prompt_only_media:
+        if len(token_rows) != 1 or original_ids.shape[0] != 1 or original_ids.dtype != torch.long:
+            raise ValueError("prompt-only media replay requires one original long-ID prompt")
+        if any(native_inputs.get(key) is not None for key in ("video_grid_thw", "pixel_values_videos")):
+            raise ValueError("prompt-only media replay does not support video inputs")
+        if grid.shape != (1, 3) or grid.dtype != torch.long or bool((grid <= 0).any()):
+            raise ValueError("prompt-only media replay requires the original single-image grid")
+        prompt = unpadded_token_rows(original_ids, native_inputs.get("attention_mask"))[0]
+        if not prompt or tuple(token_rows[0][: len(prompt)]) != prompt:
+            raise ValueError("literal replay history differs from the original prompt prefix")
+        config = getattr(getattr(resolve_rope_index(model), "__self__", None), "config", None)
+        supplied_types = native_inputs.get("mm_token_type_ids")
+        if supplied_types is None:
+            prompt_types = modality_token_type_ids(config, original_ids)
+        else:
+            if (not isinstance(supplied_types, torch.Tensor) or supplied_types.shape != original_ids.shape
+                    or supplied_types.dtype not in (torch.int32, torch.int64)):
+                raise ValueError("original prompt modality types must align with original IDs")
+            prompt_types = supplied_types
+        if bool(((prompt_types < 0) | (prompt_types > 1)).any()):
+            raise ValueError("prompt-only image replay requires text/image prompt modality types")
+        original_mask = native_inputs.get("attention_mask")
+        if original_mask is not None:
+            prompt_types = prompt_types[original_mask.to(prompt_types.device).bool()].reshape(1, -1)
+        merge = getattr(getattr(config, "vision_config", None), "spatial_merge_size", None)
+        if type(merge) is not int or merge <= 0 or int((prompt_types == 1).sum()) != int(grid.prod()) // merge**2:
+            raise ValueError("original prompt image modality count differs from its grid")
+        explicit_types = torch.cat((prompt_types.to(ids.device),
+            torch.zeros((1, ids.shape[1] - len(prompt)), dtype=prompt_types.dtype, device=ids.device)), dim=1)
     positions = derive_position_ids(
         model=model,
         input_ids=ids,
         attention_mask=mask,
         image_grid_thw=grid,
         video_grid_thw=kwargs.get("video_grid_thw"),
+        **({"mm_token_type_ids": explicit_types} if explicit_types is not None else {}),
     )
     kwargs.update(
         input_ids=ids,
@@ -329,6 +370,8 @@ def exact_history_inputs(
         return_dict=True,
         logits_to_keep=logits_to_keep,
     )
+    if explicit_types is not None:
+        kwargs["mm_token_type_ids"] = explicit_types
     return kwargs
 
 
@@ -459,10 +502,18 @@ def derive_position_ids(
     attention_mask: torch.Tensor,
     image_grid_thw: torch.Tensor,
     video_grid_thw: torch.Tensor | None,
+    mm_token_type_ids: torch.Tensor | None = None,
 ) -> torch.Tensor:
     get_rope_index = resolve_rope_index(model)
     config = getattr(getattr(get_rope_index, "__self__", None), "config", None)
-    mm_token_type_ids = modality_token_type_ids(config, input_ids)
+    if mm_token_type_ids is None:
+        mm_token_type_ids = modality_token_type_ids(config, input_ids)
+    elif (not isinstance(mm_token_type_ids, torch.Tensor) or mm_token_type_ids.shape != input_ids.shape
+          or mm_token_type_ids.dtype not in (torch.int32, torch.int64)
+          or bool(((mm_token_type_ids < 0) | (mm_token_type_ids > 2)).any())):
+        raise ValueError("explicit modality types must be aligned text/image/video integer IDs")
+    else:
+        mm_token_type_ids = mm_token_type_ids.to(input_ids.device)
     try:
         with torch.no_grad():
             position_ids, _rope_deltas = get_rope_index(

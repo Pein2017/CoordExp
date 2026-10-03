@@ -120,11 +120,15 @@ def prepare(output):
                 operational_observation_seconds=3600 if mode == 'qualification' else None,
                 cleanup_owner='persistent worker owns torchrun invocation and checks exact process settlement',
                 normal_completion='declared updates then final greedy and complete fresh readback; no quality gate')
+            config['technical_diagnostic'] = dict(a.TECHNICAL_DIAGNOSTIC) if mode == 'qualification' else None
             a.write(directory / f'{mode}-{arm}-proposal.json', config)
     a.write(directory / 'work-bounds.json', dict(
         native_qualification=dict(arms=1, updates=1, greedy_requests=36, sampled_requests=18,
             additional_fresh_checkpoint_reload_greedy_requests=18, positive_replays=18,
-            geometry_replays_max=18, duplicate_replays=18),
+            geometry_replays_max=18, duplicate_replays=18,
+            technical_generation_requests=1, technical_generated_actions=6,
+            technical_replay_requests=1, total_generation_requests=73,
+            acquisition_actions_max=222054),
         primary=dict(arms=2, updates_per_arm=16, greedy_requests=612, sampled_requests=576,
             acquisition_actions_max=3663792, positive_replays=576, geometry_replays_max=576,
             duplicate_replays=288, checkpoint_exports=10),

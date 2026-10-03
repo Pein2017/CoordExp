@@ -358,3 +358,149 @@ The candidate is worker-qualified CPU implementation, awaiting lead final consum
 acceptance and exact native release. Original boundary exception and unrelated
 three HF fixture failures remain explicitly recorded above. No research-model
 load, GPU allocation, native acquisition, training or model forward is released.
+
+
+## Post-review full-support repair: preparation held
+
+The lead's candidate review found two concrete reachable-action blockers.
+Candidate `9c1b3d11d04026dd93133f0d5f4912a0be62aa1d` and
+`candidate-preparation-01/` remain immutable historical evidence; source changes
+invalidate its exact proposals. Native remains unreleased. The separate visual
+image-token replay design is lead/Astra-owned and pending a concrete brief.
+No corrected preparation or native/model/GPU work proceeds before that repair.
+
+The PAD case is repaired at the task-local `NativeEngine.generate` caller by
+setting maintained `allow_pad_tokens=True`. Shared defaults remain unchanged.
+The tokenizer's PAD151643 differs from requested EOS151645; sampled PAD before
+EOS/budget is an actual action, while suffix padding after EOS/budget is removed.
+No mask, new stop rule or action remapping is introduced. Maintained
+`padded_histories` derives its attention mask from supplied row length, so an
+actual PAD in a literal replay history receives attention1.
+
+Affected explicit node:
+`tests/probes/test_rule_stability_policy.py::test_native_caller_preserves_sampled_pad_and_eos_actions`.
+Collection-only exited0,1node, with both prohibited native-generation fixture
+names absent (`cpu-pad-actions-01/collection.log`). Fixture inspection confirms
+a plain fake computation callback, CPU score tensors, substituted CUDA autocast
+and false CUDA availability; no model construction/load/forward. It calls the
+actual `NativeEngine.generate` and maintained continuation/likelihood consumer,
+then `exact_history_inputs` with a fake position-index operation.
+
+RED: explicit node execution exited1,1failed/2warnings in6.46s, with the original
+`hf_backend.unexpected_pad_token` rejection (`cpu-pad-actions-01/red.log`).
+GREEN after the one-line caller opt-in: exit0,1passed/2warnings in7.06s
+(`cpu-pad-actions-01/green.log`). The fake emitted payload is
+[151643,151645,151643,151643]; the assertions retain actual [151643,151645],
+stop `im_end`, exactly two finite raw/policy likelihoods, original replay IDs,
+attention [1,1,1] for prompt/PAD/EOS and gradients for both sampled actions.
+Separate assertions preserve a genuine PAD at budget exhaustion, remove batch
+padding beyond that budget and reject non-padding content after actual EOS.
+Earlier lifecycle/readback/model-fixture checks were not repeated.
+
+
+## Corrected CPU candidate after full-support review
+
+The lead/Astra implementation brief resolves the visual replay design hold.
+Root committed its state/ruling record in `891ce1677a1976339516d21ee6b195f9d86389ed`.
+The repaired source and new proposals belong to `candidate-preparation-02/`;
+its `candidate.json` and `preparation-exit.json` bind the corrected clean source
+commit/tree/closure and actual preparation cost. Preparation-01 and its candidate
+remain historical and cannot authorize this changed source. Native remains
+unreleased. The lead retains final acceptance and release ownership.
+
+Maintained `exact_history_inputs(..., prompt_only_media=True)` is an explicit
+singleton-image opt-in. It verifies the unchanged original prompt prefix,
+single image grid and image modality count, reuses original prompt modality
+types when supplied, and appends zero types for every generated action. Explicit
+types reach `derive_position_ids`/the bound `get_rope_index`; legacy defaults
+remain unchanged. Actual generated image/video/delimiter/PAD/EOS IDs and causal
+likelihood positions are retained. This adds no actual video-input capability.
+
+`probes/rule_stability/replay.py` scopes only the real rope owner's
+`get_placeholder_mask` around one replay. The original bound method receives
+the validated prompt ID/embedding slices and unchanged feature objects; false
+suffix masks extend its outputs to the full history. Original feature-count
+checks, scatter, visual positions, DeepStack injection and gradient graphs remain
+owned by the maintained forward. The exact prior instance/class attribute is
+restored in `finally`, including after validation/forward exceptions. Normal
+replay does not synchronize diagnostic mask counts.
+
+CPU evidence uses installed Qwen boundary methods on a plain fake owner and
+synthetic tensors; it never constructs a GPT2/Qwen model or invokes a real model
+forward. The saved baseline oracle (`cpu-media-replay-01/baseline.log`, exit0)
+catches the legacy second-grid `StopIteration` and extra-image feature mismatch.
+Collection-only checks exclude both prohibited model fixture names. The initial
+affected replay selection exited0,21passed/2warnings in6.82s (`green-01.log`);
+after the optional diagnostic receipt/None-mask change, only its two affected
+nodes ran, exit0,2passed/20deselected in6.25s (`green-02.log`). The current file
+has22 nodes. Assertions cover original/suffix IDs and modality types, image/video
+and vision-delimiter suffixes, grid/prefix/type failures, prompt feature-count
+failure, success/exception restoration, prompt scatter/DeepStack shapes, and
+nonzero synthetic feature/DeepStack/causal action gradients. Supplied prompt
+types are not recomputed from token IDs.
+
+The qualification-only diagnostic calls the actual generation entry and corrected
+replay seams, with model computation substituted in its CPU check. The ordered
+processors are median normalization, then six-action selection. Selection records
+each selected unforced normalized conditional likelihood before forcing; saved
+raw conditionals also remain separate. Forced-selection likelihoods are zero in
+the fake and are never policy likelihoods or `L_dup` inputs. Original six actions
+are PAD151643, image151655, video151656, vision-start151652, vision-end151653,
+EOS151645, resolved from the bound tokenizer/config. Exactly one request and one
+six-position replay run on rank0/image1584/anchor0 before qualification training.
+The receipt is teacher-forced technical evidence, with no backward, optimizer
+contribution, acquisition trajectory or scientific row/coverage metric.
+
+Exact new selections (each collection exited0 and excluded
+`real_generation_mixin`/`seeded_policy`; fixture dependencies are fake callbacks,
+plain CPU tensor math and path-only `tests/conftest.py`):
+
+```bash
+python -m pytest --collect-only -q tests/probes/test_rule_stability_policy.py::test_qualification_six_action_diagnostic_uses_unforced_scores_without_training
+python -m pytest -q tests/probes/test_rule_stability_policy.py::test_qualification_six_action_diagnostic_uses_unforced_scores_without_training
+python -m pytest --collect-only -q tests/probes/test_rule_stability_artifacts.py::test_release_keeps_technical_work_in_qualification_only tests/probes/test_rule_stability_policy.py::test_technical_processor_order_and_causal_prefix_have_teeth
+python -m pytest -q tests/probes/test_rule_stability_artifacts.py::test_release_keeps_technical_work_in_qualification_only tests/probes/test_rule_stability_policy.py::test_technical_processor_order_and_causal_prefix_have_teeth
+```
+
+`cpu-technical-suffix-01/collection.log` has1node; `check-01.log` exited0,
+1passed/2warnings in6.43s. It checks exact six IDs, PAD attention, original prompt
+image mask, false suffix masks, method restoration, six causal score positions,
+separate unforced scores and zero training/backward counters. Fake raw/policy
+numeric gaps are0 because the substituted scores agree; this is no native numeric
+claim. `selection-02.log` has3nodes; `check-02.log` exited0,3passed/2warnings
+in6.92s. Counterfactual processor order changes the retained unforced likelihood,
+altered cached prefixes fail, and packet validation rejects additional diagnostic
+requests or a primary diagnostic before output creation.
+
+Revised qualification work is36G+18S+18fresh-reloadG+1technical request =73requests,
+at most222,054 generated actions. It retains18P, at most18G geometry replays,
+18D and adds exactly one six-position full-history diagnostic replay. Primary
+work remains1188requests/at most3,663,792 actions,576P/at most576G/288D,
+17greedy versions and10checkpoint exports. Rank layout, materialization bounds,
+score-slab/disk estimates and cleanup/retry rules above remain applicable.
+The extra diagnostic uses existing resident rank0 inputs/model; six local
+score captures and one mask receipt have bounded storage. Native cached handling,
+raw/median score differences, finite positions/media, CUDA/NCCL peaks, runtime,
+checkpoint behavioral reload and finalizer costs remain qualification targets.
+Cached/full numeric differences are retained observations; count/position/media
+corruption, unsupported handling or nonfinite values fail qualification.
+
+Replacement future commands use the same invocation/output ownership with fresh
+source-bound release files (these files do not exist until the lead releases them):
+
+```bash
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/qualification-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-qualification-B-01
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/primary-A-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-A-01
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/primary-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01
+python -m probes.rule_stability compare --a-run outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-A-01 --a-config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/primary-A-release.json --b-run outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01 --b-config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/primary-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-arm-comparison-01.json
+```
+
+No prior successful lifecycle/readback or real model fixture was repeated. The
+47-pass boundary exception, exact mistaken exclusion command, two tiny CPU GPT2
+node IDs and configured22-action bound remain recorded above; actual vectors/call
+counts were not retained, and that execution does not satisfy the CPU no-model-
+forward gate. Earlier unrelated three HF fixture failures also remain recorded.
+No native/model/GPU invocation is started by this corrected CPU preparation.
+Narrow compilation of the nine changed Python files and `git diff --check`
+exited0; `cpu-candidate-repair-01/static-checks.json` retains paths, status and
+0.054786s check duration. No complete suite, acquisition or model fixture reran.

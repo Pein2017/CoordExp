@@ -62,6 +62,36 @@ def test_unreleased_packet_rejected_before_source_or_model(monkeypatch, tmp_path
     assert not (tmp_path / 'job').exists()
 
 
+@pytest.mark.parametrize('mode', ['qualification', 'primary'])
+def test_release_keeps_technical_work_in_qualification_only(monkeypatch, tmp_path, mode):
+    from src.artifacts import git_identity
+    unit = tmp_path / 'unit'
+    unit.mkdir()
+    (unit / 'unit.md').write_text('frozen protocol fixture')
+    monkeypatch.setattr(a, 'ROOT', tmp_path)
+    monkeypatch.setattr(a, 'UNIT', unit)
+    monkeypatch.setattr(a, 'OUTPUT', tmp_path / 'outputs')
+    monkeypatch.setattr(a, 'source_paths', lambda: [])
+    monkeypatch.setattr(git_identity, 'verify_source_identity', lambda *args, **kwargs: None)
+    output = a.OUTPUT / 'job'
+    packet = dict(schema=a.SCHEMA, released=True, lead_thread=a.LEAD, mode=mode,
+        arm='B', updates=1 if mode == 'qualification' else 16, world_size=8,
+        output=str(output), anchor=dict(path=str(a.ANCHOR), aggregate_digest=a.ANCHOR_DIGEST),
+        protocol=dict(path='unit/unit.md', sha256=a.digest(unit / 'unit.md')), source={},
+        frozen=dict(horizon=3084, coordinate_norm='median', images=18, labels=570,
+            sample_temperature=1, duplicate_comparator='>', duplicate_iou=.9),
+        technical_diagnostic=dict(a.TECHNICAL_DIAGNOSTIC) if mode == 'qualification' else None,
+        retry='no_automatic_relaunch', operational_observation_seconds=3600)
+    a.validate_packet(packet, output, mode=mode)
+    if mode == 'qualification':
+        packet['technical_diagnostic']['generation_requests'] = 2
+    else:
+        packet['technical_diagnostic'] = dict(a.TECHNICAL_DIAGNOSTIC)
+    with pytest.raises(ValueError, match='qualification-only technical diagnostic work'):
+        a.validate_packet(packet, output, mode=mode)
+    assert not output.exists()
+
+
 def checkpoint_fixture(tmp_path):
     import torch
     from safetensors.torch import save_file

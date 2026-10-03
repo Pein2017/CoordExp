@@ -14,6 +14,10 @@ ANCHOR = Path('/data/CoordExp/outputs/shared/checkpoints/untied-axis001-step2444
 ANCHOR_DIGEST = '3b168b98f23f5e42b00b6aa7ad8ca5438767bcb8c05f4cc4ce97087d800e0403'
 LEAD = '01a1016a-c440-77e2-b258-f3e8f860ede7'
 SCHEMA = 'rule-stability-iou90-v1'
+TECHNICAL_DIAGNOSTIC = dict(rank=0, image_id=1584, anchor_version=0,
+    actions=['PAD', 'image_token', 'video_token', 'vision_start', 'vision_end', 'EOS'],
+    generation_requests=1, generated_actions=6, replay_requests=1,
+    training_contribution=False, scientific_metric=False)
 
 
 def load(path):
@@ -192,5 +196,7 @@ def validate_packet(packet, output, *, mode):
     if packet['frozen'] != dict(horizon=3084, coordinate_norm='median', images=18, labels=570,
                                sample_temperature=1, duplicate_comparator='>', duplicate_iou=.9):
         raise ValueError('packet changed the frozen experiment')
+    if packet.get('technical_diagnostic') != (TECHNICAL_DIAGNOSTIC if mode == 'qualification' else None):
+        raise ValueError('packet changed qualification-only technical diagnostic work')
     if packet.get('retry') != 'no_automatic_relaunch' or not packet.get('operational_observation_seconds'):
         raise ValueError('packet needs retry/observation ownership')

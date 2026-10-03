@@ -224,23 +224,94 @@ class NativeEngine:
                 policy=NativeGenerationPolicy(temperature=1. if channel == 'sample' else 0.,
                     top_p=1., top_k=0, repetition_penalty=1., use_model_defaults=False),
                 trace='raw_and_policy', seed=seed_for(version, image['image_id']) if channel == 'sample' else None,
+                allow_pad_tokens=True,
                 logits_processor=[self.norm.generation_transform()])[0]
         self.calls[channel] += 1
         return dict(token_ids=list(result.token_ids), text=self.q.tokenizer.decode(result.token_ids, skip_special_tokens=False),
                     stop_reason=result.stop_reason, raw_logprobs=list(result.raw_logprobs),
                     policy_logprobs=list(result.policy_logprobs), generation_seconds=time.monotonic() - begin)
 
-    def replay(self, image_id, history, positions):
+    def replay(self, image_id, history, positions, *, record_media_masks=False):
         import torch
         from src.qwen.native import exact_history_inputs
+        from .replay import prompt_only_placeholder_masks
         if not positions:
             raise ValueError('empty replay positions')
         kwargs = exact_history_inputs(self.q.model, self.batches[image_id].inputs, [tuple(history)],
-                                      pad_token_id=self.q.tokenizer.pad_token_id)
+                                      pad_token_id=self.q.tokenizer.pad_token_id, prompt_only_media=True)
         kwargs['logits_to_keep'] = torch.tensor(positions, device='cuda')
-        with torch.autocast('cuda', dtype=torch.bfloat16):
+        prompt = self.batches[image_id].prompt_token_ids[0]
+        with prompt_only_placeholder_masks(self.q.model, prompt,
+                record_masks=record_media_masks) as binding, torch.autocast('cuda', dtype=torch.bfloat16):
             raw = self.q.model(**kwargs).logits
+        if record_media_masks:
+            self.last_replay_media = dict(binding, input_ids=kwargs['input_ids'].detach().cpu().tolist(),
+                attention_mask=kwargs['attention_mask'].detach().cpu().tolist(),
+                mm_token_type_ids=kwargs['mm_token_type_ids'].detach().cpu().tolist(),
+                position_ids=kwargs['position_ids'].detach().cpu().tolist(),
+                causal_positions=list(positions))
         return raw, self.norm.transform_replay(raw)
+
+    def technical_suffix_diagnostic(self, image_id=1584):
+        """One qualification-only cached/replay counterexample, without training."""
+        import torch
+        from src.qwen.generation import generate_continuations, NativeGenerationPolicy
+        from src.losses.token_scores import aligned_token_logprobs
+        from .policy import TechnicalSuffixSelection, replay_difference
+        if image_id != 1584 or image_id not in self.batches:
+            raise ValueError('technical diagnostic must use resident rank0/image1584')
+        tokenizer, config = self.q.tokenizer, self.q.model.config
+        names = ('<|endoftext|>', '<|image_pad|>', '<|video_pad|>',
+                 '<|vision_start|>', '<|vision_end|>', '<|im_end|>')
+        actions = tuple(tokenizer.convert_tokens_to_ids(name) for name in names)
+        if actions[0] != tokenizer.pad_token_id:
+            raise ValueError('technical PAD differs from bound tokenizer')
+        for index, field in ((1, 'image_token_id'), (2, 'video_token_id'), (3, 'vision_start_token_id')):
+            if actions[index] != getattr(config, field):
+                raise ValueError(f'technical token/config identity differs: {field}')
+        if getattr(config, 'vision_end_token_id', actions[4]) != actions[4]:
+            raise ValueError('technical vision-end token/config identity differs')
+        batch = self.batches[image_id]
+        prompt = batch.prompt_token_ids[0]
+        select = TechnicalSuffixSelection(actions, len(prompt))
+        self.q.model.eval()
+        begin = time.monotonic()
+        with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
+            generated = generate_continuations(self.q.model, batch, extensions=[()], budgets=[6],
+                eos_token_id=actions[-1], pad_token_id=actions[0],
+                policy=NativeGenerationPolicy(temperature=0., top_p=1., top_k=0,
+                    repetition_penalty=1., use_model_defaults=False), trace='raw_and_policy',
+                allow_pad_tokens=True, logits_processor=[self.norm.generation_transform(), select])[0]
+        generation_seconds = time.monotonic() - begin
+        if (generated.token_ids != actions or generated.stop_reason != 'im_end'
+                or len(select.unforced_policy_logprobs) != 6):
+            raise ValueError('technical cached suffix did not preserve the exact six actions')
+        positions = tuple(range(len(prompt) - 1, len(prompt) + 5))
+        begin = time.monotonic()
+        with torch.inference_mode():
+            raw, normalized = self.replay(image_id, [*prompt, *actions], positions, record_media_masks=True)
+            targets = torch.tensor(actions, device=raw.device)
+            comparison = replay_difference(request_id=f'rule-stability:technical:0:{image_id}',
+                token_ids=actions, behavior_raw_logprobs=generated.raw_logprobs,
+                behavior_policy_logprobs=select.unforced_policy_logprobs,
+                replay_raw_logprobs=aligned_token_logprobs(raw[0], targets),
+                replay_policy_logprobs=aligned_token_logprobs(normalized[0], targets))
+        media = self.last_replay_media
+        if (media['input_ids'] != [[*prompt, *actions]] or
+                media['attention_mask'] != [[1] * (len(prompt) + 6)] or
+                media['mm_token_type_ids'][0][-6:] != [0] * 6 or
+                not media['calls'] or not any(call['prompt_image_positions'] > 0 for call in media['calls']) or
+                any(call['suffix_image_true'] or call['suffix_video_true'] for call in media['calls'])):
+            raise ValueError('technical replay media/action binding differs')
+        return dict(status='complete', kind='teacher_forced_technical_evidence', image_id=image_id,
+            anchor_version=0, action_names=list(names), token_ids=list(actions), actions=6,
+            stop_reason=generated.stop_reason, comparison=comparison,
+            forced_selection_logprobs=list(generated.policy_logprobs),
+            likelihood_definition='comparison.policy is unforced median-normalized conditional likelihood; forced selection is separate',
+            replay_media=media, finite=True, action_alignment=True, prompt_media_preserved=True,
+            suffix_media_masks_false=True, generation_seconds=generation_seconds,
+            replay_seconds=time.monotonic() - begin, training_contribution=False, backward_calls=0,
+            scientific_metric=False, work=dict(generation_requests=1, generated_actions=6, replay_requests=1))
 
     def train_image(self, image, greedy, sample, analyses, arm):
         import torch
@@ -362,6 +433,12 @@ def run_rank(config_path, output):
         if rank == 0:
             engine.checkpoint(output / 'checkpoint-0', config['arm'], 0)
         dist.barrier()
+        if native and config['mode'] == 'qualification':
+            if rank == 0:
+                diagnostic = engine.technical_suffix_diagnostic()
+                diagnostic.update(source=config['source'], config_sha256=a.digest(config_path))
+                a.write(directory / 'technical-suffix-1584.json', diagnostic)
+            dist.barrier()
         for version in range(config['updates'] + 1):
             acquired = []
             analyses = {}
@@ -458,6 +535,15 @@ def readback(config_path, output):
     for version in config['checkpoint_versions']:
         checkpoints.append(a.checkpoint_readback(Path(output) / f'checkpoint-{version}', arm=config['arm'],
                                                 version=version, engine=config['engine']))
+    diagnostic = None
+    if config['engine'] == 'native' and config['mode'] == 'qualification':
+        diagnostic = a.load(Path(output) / 'rank-0/technical-suffix-1584.json')
+        if (diagnostic['status'] != 'complete' or diagnostic['image_id'] != 1584 or
+                diagnostic['anchor_version'] != 0 or diagnostic['actions'] != 6 or
+                diagnostic['training_contribution'] is not False or diagnostic['backward_calls'] != 0 or
+                diagnostic['scientific_metric'] is not False or diagnostic['source'] != config['source'] or
+                diagnostic['config_sha256'] != a.digest(config_path)):
+            raise ValueError('qualification technical suffix binding differs')
     metrics = evaluate(images, versions)
     a.write(Path(output) / 'metrics.json', metrics)
     a.write(Path(output) / 'readback.json', dict(schema=a.SCHEMA, status='complete', engine=config['engine'],
@@ -465,7 +551,8 @@ def readback(config_path, output):
         greedy_versions=list(versions), images=18, labels=570, checkpoints=checkpoints,
         calls={key: sum(r['calls'][key] for r in rank_receipts) for key in rank_receipts[0]['calls']},
         max_rank_seconds=max(r['seconds'] for r in rank_receipts),
-        max_rank_rss_kib=max(r['rss_max_kib'] for r in rank_receipts), metrics_sha256=a.digest(Path(output) / 'metrics.json')))
+        max_rank_rss_kib=max(r['rss_max_kib'] for r in rank_receipts),
+        technical_diagnostic=diagnostic, metrics_sha256=a.digest(Path(output) / 'metrics.json')))
     return metrics
 
 
