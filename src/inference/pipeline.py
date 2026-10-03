@@ -713,7 +713,7 @@ def _execute_indexed_rows(
         rows=rows,
         decode_results=decode_results,
         image_plan_rows=[
-            _image_plan_artifact_dict(row=row)
+            row.to_artifact_dict()
             for row in _image_plan_rows_with_backend_evidence(
                 rows=image_plan_batch.rows,
                 decode_results=decode_results,
@@ -1098,10 +1098,6 @@ def _image_plan_rows_with_backend_evidence(
         )
         for row in rows
     ]
-
-
-def _image_plan_artifact_dict(*, row: Any) -> dict[str, Any]:
-    return row.to_artifact_dict()
 
 
 def _model_config(qwen: Any) -> Any:
