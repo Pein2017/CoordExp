@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-endpoint-block-ablation",
   "lifecycle": "ready",
-  "status": "QUALIFIED_CPU_CANDIDATE_NATIVE_NOT_RELEASED",
+  "status": "TERMINAL_CANDIDATE_COMPLETED_AS_RELEASED_PENDING_LEAD_ACCEPTANCE",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "scientific_status": "measured_pending_lead_interpretation",
   "protocol": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
   "state_source": "research/experiments/2026-10-03-endpoint-block-ablation/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-output-delta-crossover",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
@@ -54,18 +54,16 @@
   ],
   "execution_checkout": {
     "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
-    "commit": "913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c",
+    "commit": "10c3d6873e44ca29efc0ba6b48e134e4c11b53b2",
     "clean": true,
     "detached": true,
-    "advanced": false
+    "selected_by_lead": true,
+    "worker_advanced": false
   },
-  "pending_real_runtime": [
-    "scheduled A_A exported-anchor load",
-    "scheduled A_M hybrid load"
-  ],
+  "pending_real_runtime": [],
   "original_anchor_weight_identity": "07ea98e90220a9126042a27b3a76f60e9955320fed4bf77c2a8803ac9d52001a",
   "exported_anchor_weight_identity": "8dcd444f01ef806b743fd5d0f25518ac305e251f2f1dfdb2609fcc1993b80eb3",
-  "technical_status": "CPU_candidate_pending_lead_acceptance",
+  "technical_status": "completed_as_released",
   "clean_source_commit_owner": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/qualified-candidate-01.json#source.commit",
   "preparation_check_exits": [
     1,
@@ -78,7 +76,56 @@
     "validation_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/cpu-candidate-binding-01.json"
   },
   "candidate_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/candidate-return-01.json",
-  "evidence_scope": "CPU-only",
+  "evidence_scope": "native measured; lead interpretation pending",
   "result": "research/experiments/2026-10-03-endpoint-block-ablation/results.md",
-  "knowledge_check_exit": 0
+  "knowledge_check_exit": 0,
+  "cpu_lead_accepted": true,
+  "released_contract": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/released-contract-01.json",
+    "sha256": "eb75dcb988e3de0833802c0852d179032cd92ff7cd61511155736672a3136948"
+  },
+  "lead_release": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/lead-release-01.json",
+    "sha256": "38d668b660543bce8c331e1d43e1a5bd7231ebdb81f4dbc34fcfb38212ef67cb"
+  },
+  "native_invocation": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/invocation-01.json",
+    "tool_session": 80135,
+    "pid": 1916535,
+    "utc": "2026-10-03T03:15:33.074623+00:00"
+  },
+  "terminal_candidate": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-candidate-01.json",
+  "scheduled_runtime_seams": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/scheduled-seams-01.json",
+  "scheduled_runtime_seams_resolved": true,
+  "package_exit": 0,
+  "package_readback_succeeded": true,
+  "successful_readback_rerun": false,
+  "terminal": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/package-01/complete.json",
+    "sha256": "c5983907fd33225a7673699b8d4dbfc4515be34832b8431cec70cfd381532420"
+  },
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/package-01/readback.json",
+    "sha256": "a08fbb2cdfbf691399932c8c025f7e6f8574f3022a68fbd7adbfa4181dacb9b2"
+  },
+  "terminal_readout": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-readout-01.json",
+  "cleanup": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-cleanup-01.json",
+  "actual_counters": {
+    "HF_diagnostics": 0,
+    "continuation_requests": 72,
+    "generated_tokens": 46036,
+    "optimizer_steps": 0,
+    "requests": 112,
+    "score_requests": 40,
+    "training_replays": 0
+  },
+  "active_seconds": 694.6420383676887,
+  "package_wall_seconds": 785.4766110256314,
+  "fresh_baseline_illegal_denominator": 6,
+  "fresh_baseline_legal_denominator": 4,
+  "observed_truth_classifications": {
+    "body_sufficient_required_with_M_output": 3,
+    "either_sufficient": 3
+  },
+  "terminal_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/terminal-return-01.json"
 }
