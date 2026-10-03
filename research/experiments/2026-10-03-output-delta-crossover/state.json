@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-output-delta-crossover",
-  "lifecycle": "planned",
-  "status": "CPU_PREPARATION_AUTHORIZED",
-  "evidence": "none",
+  "lifecycle": "ready",
+  "status": "CPU_CANDIDATE_AWAITING_EXACT_LEAD_RELEASE",
+  "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
@@ -23,5 +23,112 @@
     "editing predecessor probes/shared runtime or rewriting historical artifacts",
     "scientific self-acceptance or worker next-unit scheduling"
   ],
-  "boundary": "CPU-first exact two-hybrid assembly and four-arm native caller/consumer preparation; model execution requires separate exact lead release."
+  "boundary": "CPU-first exact two-hybrid assembly and four-arm native caller/consumer preparation; model execution requires separate exact lead release.",
+  "worker_thread": "01a0ff68-a085-7bd0-bfa6-01b47c2df2a1",
+  "actual_settings": {
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "verified_by": "worker_turn.py inspect exit 0"
+  },
+  "direct_return": {
+    "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+    "route": "worker_turn.py --to lead --send",
+    "watcher": false,
+    "entry_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/entry-return-01.json",
+    "candidate_report": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/worker-report-01.md",
+    "candidate_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/candidate-return-01.json"
+  },
+  "result_pointer": "research/experiments/2026-10-03-output-delta-crossover/results.md",
+  "owned_tracked_paths": [
+    "probes/output_delta_crossover.py",
+    "tests/probes/test_output_delta_crossover.py",
+    "research/experiments/2026-10-03-output-delta-crossover/state.json",
+    "research/experiments/2026-10-03-output-delta-crossover/results.md"
+  ],
+  "result": "research/experiments/2026-10-03-output-delta-crossover/results.md",
+  "frozen_protocol_commit": "04423a10753223d15b058f53550b4c129395b2c7",
+  "preparation": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/preparation-01/manifest.json",
+    "sha256": "e10a3075fc8e69276eb78b1975f3d6a3063f8a18ea9e221d33ff426300db2da9"
+  },
+  "cpu_layout": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/preparation-01/cpu-layout.json",
+    "sha256": "fe845cd85d0a6b330440bc5d39cdd5f14f8e9ab4c4af000ae480ad44a2434378"
+  },
+  "cpu_checks": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/checks-03.json",
+    "sha256": "4a80c152afbadec3a9eae400046035163511b6d2b631158d8c22b2d33eb15f53"
+  },
+  "check_exit_record": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/checks-exits-01.json",
+  "qualified_candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/cpu-candidate-01.json",
+  "qualification_record": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/qualification-01.json",
+  "qualification_condition": "Qualification record must exist with exit 0 and bind the candidate and clean source before release.",
+  "source_identity_owner": "cpu-candidate-01.json:source; final clean commit is recorded in qualification-01.json",
+  "hybrid_weights": {
+    "M_R": {
+      "arm": "M_R",
+      "checkpoint": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/preparation-01/hybrids/M_R",
+      "checkpoint_files": {
+        "adapter/adapter_config.json": "5d1463d255ecfc10f561d326534133d70493bc0e13a7b43083a54200e4bf10d8",
+        "adapter/adapter_model.safetensors": "d91cd32306d09e2a8f11685fd34505486d2a0bf88b69575bb95227de61273e8a",
+        "adapter/model_card.json": "53fbcabf127e795ed9e45f43ccf7a57e1d47b8d02f3b9f18337a78b593023000",
+        "special_token_embeddings/special_token_embeddings.json": "66e8cabc12bef41e0677be6d9613a6321cd8b5158c4dac55081647109c16dfa9",
+        "special_token_embeddings/special_token_embeddings.safetensors": "1a907778ffa808d72da50c2ffb8d95ad8e68c7b085a1bb354a77ac075811f83c"
+      },
+      "provenance_sha256": "dc2ca31014991c52c678e66ffe018c960b2339a7f973b53225772fc7f2e63797",
+      "weight_identity": "95452ecc1e7fae9bb71c670398fc769247dd51dde4699b3e3980395a876495c8"
+    },
+    "R_M": {
+      "arm": "R_M",
+      "checkpoint": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/preparation-01/hybrids/R_M",
+      "checkpoint_files": {
+        "adapter/adapter_config.json": "25f7a0eef631baac0eb5dfc5dccd75b6eb0945167eefd19cbb1d01c15aa6cc6e",
+        "adapter/adapter_model.safetensors": "fccf2cf0704f61aa605136bc347c0a2bf7c2399d4b2b35f5a4baab79aed93876",
+        "adapter/model_card.json": "53fbcabf127e795ed9e45f43ccf7a57e1d47b8d02f3b9f18337a78b593023000",
+        "special_token_embeddings/special_token_embeddings.json": "66e8cabc12bef41e0677be6d9613a6321cd8b5158c4dac55081647109c16dfa9",
+        "special_token_embeddings/special_token_embeddings.safetensors": "aef337de445e438aa0c81446aab0b202abbdb9a45a6305bc64a597279e8d0df8"
+      },
+      "provenance_sha256": "ecab3b30367f677e5d7e349d8853fb6a5a58ec9d492053836ba8b840261a5c4f",
+      "weight_identity": "f6b0b114fa6ce07bc39050104faa68fdf5422a6b816e135ee9bd1530c77c047b"
+    }
+  },
+  "real_execution": {
+    "model_loads": 0,
+    "HF_forwards": 0,
+    "native_requests": 0,
+    "optimizer_steps": 0,
+    "owned_model_processes": [],
+    "native_startup_forwards": null,
+    "child_CUDA": "unmeasured"
+  },
+  "first_hybrid_runtime_boundary": "Unresolved until separate release and scheduled R_M native phase; no extra smoke.",
+  "execution_checkout_selection": "lead-owned; greedy-prefix-native-01 retained at 2876f43db0d81569937a4ff1142129039204d038",
+  "proposed_package_command": [
+    "python",
+    "-m",
+    "probes.output_delta_crossover",
+    "package",
+    "--contract",
+    "EXACT_LEAD_RELEASE_CONTRACT",
+    "--contract-sha256",
+    "EXACT_LEAD_RELEASE_SHA256",
+    "--output",
+    "SELECTED_EXECUTION_OUTPUT/package-01"
+  ],
+  "stop": "CPU candidate returned directly; await exact separate lead release to this same worker.",
+  "cpu_locator_repair": "Published preparation payloads and receipt remain unchanged; qualification binds absolute canonical input locators for execution from another checkout.",
+  "effective_focused_checks": {
+    "status": "PASS_CPU",
+    "checks": 4,
+    "old_suites_rerun": false,
+    "assembly_and_release_gate": "checks-05.log exit0",
+    "qualification_and_four_callers_consumer": "checks-04.log each passed; module exit1 due separate release-test message mismatch repaired in checks-05",
+    "independent_factorial_signs": "checks-01.log passed; unchanged check reused"
+  },
+  "CPU_double_raw_evidence": {
+    "path": "/data/CoordExp/.worktrees/research-probes/.local/scratch/output-delta-crossover-08/pytest-04/test_four_native_callers_final0/package/complete.json",
+    "sha256": "8a15000d15cf4255bef2f15f00d92bafd1d169dee4b9fb243c2e45c63d30cba2",
+    "scientific_model_evidence": false
+  }
 }
