@@ -202,7 +202,11 @@ parameter sweeps are released by the initial assignment. Tiny CPU fixtures and
 tokenizer/processor metadata preparation are allowed; scientific changes return
 to the lead. No modification of historical inputs, shared assets or `/external`.
 
-Storage: maintained implementation in `probes/` (reuse `src/` mechanisms), tests
+Storage: per the user's explicit packaging direction, maintained implementation
+belongs in the cohesive `probes/pre_row_detection_aux/` package, with the minimum
+responsibility-based split and a thin `python -m probes.pre_row_detection_aux`
+entrypoint. Reuse `src/` mechanisms and the authorized shared owner seam; do not
+retain a parallel flat module or introduce speculative abstractions. Tests belong
 in `tests/probes/`; this unit owns protocol/state/results; disposable messages
 in `.local/scratch/pre-row-detection-aux-12/`; machine evidence and future runs
 in this worktree's `outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/`.
