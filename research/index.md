@@ -14,7 +14,8 @@ same-owner GT first-person history on image351017: four short cached continuatio
 zero optimizer updates. Native-history controls must reproduce saved actions;
 a failure is technical HOLD. The question is whether a three-coordinate prefix
 mismatch separates conditional bottle localization from the natural early failure.
-Implementation is CPU-only until the lead releases its exact native packet.
+The CPU implementation is accepted and its single native invocation is
+[released](experiments/2026-10-03-first-row-history-cross/lead-ruling-01.md).
 [State](experiments/2026-10-03-first-row-history-cross/state.json) owns continuation.
 
 The [rule-stability IoU90 contrast](experiments/2026-10-03-rule-stability-iou90/lead-ruling-04.md)
