@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-dora-input-ablation",
   "lifecycle": "ready",
-  "status": "CPU_PREPARATION_AUTHORIZED_NATIVE_NOT_RELEASED",
-  "evidence": "none",
+  "status": "CPU_CANDIDATE_NATIVE_NOT_RELEASED",
+  "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
   "state_source": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
@@ -23,5 +23,27 @@
     "GT training/acquisition or new contexts/thresholds",
     "predecessor/shared-source or historical receipt mutation",
     "worker next-unit scheduling or automatic layer/token-row subdivision"
-  ]
+  ],
+  "worker_thread": "01a0ffe3-ed0d-7642-b27f-98a47a4b68b5",
+  "worker_actual_model": "gpt-6.1-sol",
+  "worker_actual_effort": "high",
+  "entry_cwd": "/data/CoordExp/.worktrees/research-probes",
+  "freeze_commit": "052cb681e07302d508020641a75db02102fe718d",
+  "direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/entry-return-01.json",
+  "result_pointer": "research/experiments/2026-10-03-dora-input-ablation/results.md",
+  "result": "research/experiments/2026-10-03-dora-input-ablation/results.md",
+  "cpu_candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/cpu-candidate-01.json",
+  "qualified_contract": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/qualified-contract-01.json",
+  "checks": {
+    "prepare_exit": 0,
+    "focused_pytest_exit": 0,
+    "focused_tests": 6,
+    "focused_oracle_exit": 0,
+    "knowledge_exit": 0
+  },
+  "pending_runtime_seam": "first scheduled A_I new hybrid load",
+  "model_calls": 0,
+  "GPU_calls": 0,
+  "HF_forwards": 0,
+  "optimizer_steps": 0
 }
