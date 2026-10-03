@@ -1,0 +1,21 @@
+{
+  "unit_id": "2026-10-03-known-owner-visual-audit",
+  "lifecycle": "ready",
+  "status": "CPU_EVIDENCE_PREPARATION_AUTHORIZED",
+  "evidence": "unreviewed",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-known-owner-visual-audit/unit.md",
+  "state_source": "research/experiments/2026-10-03-known-owner-visual-audit/unit.md",
+  "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "predecessor": "2026-10-03-dora-input-ablation",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11",
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "next_unit_scheduled": false,
+  "model_calls": 0,
+  "GPU_calls": 0,
+  "boundary": "All23 AA-to-DI known-owner transitions on10 images; CPU materialization, lead visual candidate judgments only, no physical ground-truth or full-FN claim.",
+  "next_action": "New GPT-6.1-Sol/high worker materializes and checks saved evidence; lead owns image interpretation."
+}
