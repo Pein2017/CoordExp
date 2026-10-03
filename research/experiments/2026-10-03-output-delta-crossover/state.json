@@ -1,0 +1,27 @@
+{
+  "unit_id": "2026-10-03-output-delta-crossover",
+  "lifecycle": "planned",
+  "status": "CPU_PREPARATION_AUTHORIZED",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
+  "state_source": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
+  "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "predecessor": "2026-10-03-mass-versus-ranking",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08",
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "next_unit_scheduled": false,
+  "not_authorized": [
+    "real model or GPU calls before exact lead release",
+    "training, scaling, blending, row selection or changing checkpoint parents",
+    "GT training targets or acquisition/context/dose selection",
+    "extra anchor, repeat, context, threshold or model call",
+    "editing predecessor probes/shared runtime or rewriting historical artifacts",
+    "scientific self-acceptance or worker next-unit scheduling"
+  ],
+  "boundary": "CPU-first exact two-hybrid assembly and four-arm native caller/consumer preparation; model execution requires separate exact lead release."
+}
