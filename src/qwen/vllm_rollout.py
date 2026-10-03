@@ -1,8 +1,8 @@
 """Resident, TP=1 DoRA rollout engine isolated from the HF training process.
 
-The caller owns training, snapshot identity and sampling scope. Exact-history
-greedy continuations are explicitly requested. No model merge, checkpoint export or package
-patch is performed when refreshing the current adapter.
+The caller owns training, snapshot identity and sampling scope. Greedy remains
+the default; seeded temperature-one full-support sampling is explicit. No model
+merge, checkpoint export or package patch is performed during adapter refresh.
 """
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ import time
 import traceback
 from uuid import UUID
 
-from src.qwen.generation import ContinuationResult, ContinuationTrace, trim_suffix
+from src.qwen.generation import (
+    ContinuationResult, ContinuationTrace, NativeGenerationPolicy, trim_suffix,
+)
 from src.qwen.native import NativeRequest, _open_image
 
 
@@ -137,7 +139,50 @@ def _coordinate_output_norm_receipt(model):
     return model.coordinate_output_norm_receipt()
 
 
-def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
+def _generation_policy(policy, seeds, count):
+    """Resolve only the two resident policies with explicit neutral controls."""
+    policy = NativeGenerationPolicy(use_model_defaults=False) if policy is None else policy
+    if not isinstance(policy, NativeGenerationPolicy):
+        raise ValueError("resident generation requires NativeGenerationPolicy")
+    if (policy.use_model_defaults or policy.temperature not in (0, 1)
+            or policy.top_p != 1 or policy.top_k not in (None, 0)
+            or policy.repetition_penalty != 1):
+        raise ValueError("unsupported resident generation policy; use explicit neutral greedy or temperature-one full support")
+    if policy.temperature == 0:
+        if seeds is not None:
+            raise ValueError("per-request seeds require temperature-one sampling")
+        return policy, (None,) * count
+    try:
+        seeds = tuple(seeds)
+    except TypeError as exc:
+        raise ValueError("sampled resident generation requires aligned per-request seeds") from exc
+    if len(seeds) != count or any(type(seed) is not int or not 0 <= seed < 2**32 for seed in seeds):
+        raise ValueError("sampled resident generation requires one unsigned 32-bit seed per request")
+    return policy, seeds
+
+
+def _trace_rpc(engine, method, *args):
+    observed = engine.collective_rpc(method, args=args)
+    if not isinstance(observed, list) or len(observed) != 1:
+        raise RuntimeError("resident trace RPC requires exactly one worker acknowledgement")
+    return observed[0]
+
+
+def _refresh_engine(engine, adapter, embeddings, identity):
+    if _trace_rpc(engine, "coordexp_trace_assert_idle") is not True:
+        raise RuntimeError("resident trace idle state was not acknowledged")
+    installed = engine.apply_model(partial(_refresh_model, adapter=adapter,
+                                           embeddings=embeddings, identity=identity))
+    if installed != [identity]:
+        raise RuntimeError("vLLM adapter refresh was not acknowledged")
+    if not engine.reset_prefix_cache():
+        raise RuntimeError("vLLM did not reset its prefix cache")
+    return identity
+
+
+def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace,
+              policy=None, seeds=None, allow_pad_tokens=False, *, identity=None,
+              receipt=None):
     from vllm import SamplingParams
     from vllm.inputs import TextPrompt
 
@@ -149,18 +194,40 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
         raise ValueError("rollout budgets must be positive integers")
     if any(r.expected_token_ids is None for r in requests):
         raise ValueError("rollout requires authoritative HF prompt token IDs")
+    if type(trace) is not bool or type(allow_pad_tokens) is not bool:
+        raise ValueError("resident trace and allow_pad_tokens must be boolean")
+    policy, seeds = _generation_policy(policy, seeds, len(requests))
+    if trace and (not isinstance(identity, str) or not identity):
+        raise ValueError("paired trace requires a nonempty snapshot identity")
+    descriptors = [dict(request_id=r.request_id, snapshot_id=identity, max_new_tokens=b)
+                   for r, b in zip(requests, budgets, strict=True)]
     images = []
+    trace_active = False
     try:
         for request in requests:
             images.append(_open_image(request))
         prompts = [TextPrompt(prompt=r.chat_text, multi_modal_data={"image": im},
                               mm_processor_kwargs={"do_resize": False})
                    for r, im in zip(requests, images, strict=True)]
-        params = [SamplingParams(temperature=0, top_p=1, top_k=-1,
-                                 repetition_penalty=1, max_tokens=b,
+        params = [SamplingParams(temperature=policy.temperature, top_p=1, top_k=-1,
+                                 repetition_penalty=1, presence_penalty=0, frequency_penalty=0,
+                                 min_p=0, seed=seed, max_tokens=b,
                                  stop_token_ids=[eos_token_id], detokenize=False,
-                                 logprobs=1 if trace else None)
-                  for b in budgets]
+                                 logprobs=0 if trace else None,
+                                 extra_args={"coordexp_paired_trace": descriptor})
+                  for b, seed, descriptor in zip(budgets, seeds, descriptors, strict=True)]
+        if trace:
+            started = time.monotonic()
+            trace_active = True
+            begin_ack = _trace_rpc(engine, "coordexp_trace_begin", identity, descriptors)
+            if (not isinstance(begin_ack, dict) or begin_ack.get("snapshot_id") != identity
+                    or begin_ack.get("request_ids") != [r.request_id for r in requests]
+                    or any(not isinstance(begin_ack.get(key), str)
+                           or len(begin_ack[key].split(".")) < 2
+                           or not all(part.isidentifier() for part in begin_ack[key].split("."))
+                           for key in ("runner_class", "sampler_class"))):
+                raise RuntimeError("vLLM trace begin acknowledgement differs from requested identity or runtime classes")
+            begin_seconds = time.monotonic() - started
         outputs = engine.generate(prompts, params, use_tqdm=False)
         if len(outputs) != len(requests):
             raise RuntimeError("vLLM omitted rollout requests")
@@ -172,22 +239,53 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace):
                 raise RuntimeError("vLLM must return exactly one continuation")
             completion = output.outputs[0]
             ids, reason = trim_suffix(completion.token_ids, budget=budget,
-                                      eos_token_id=eos_token_id, pad_token_id=pad_token_id)
+                                      eos_token_id=eos_token_id, pad_token_id=pad_token_id,
+                                      allow_pad_tokens=allow_pad_tokens or policy.temperature == 1)
             if completion.finish_reason != ("stop" if reason == "im_end" else "length"):
                 raise RuntimeError("vLLM stop reason differs from token evidence")
-            evidence = None
-            if trace:
-                import math
-                scores = tuple(float(row[token].logprob) for token, row in
-                               zip(ids, completion.logprobs, strict=True))
-                if not all(math.isfinite(x) for x in scores):
-                    raise RuntimeError("nonfinite vLLM raw log probabilities")
-                evidence = ContinuationTrace(ids, scores, scores)
-            results.append(ContinuationResult(request.request_id, ids, reason, evidence))
+            results.append(ContinuationResult(request.request_id, ids, reason))
+        if trace:
+            import math
+            started = time.monotonic()
+            paired = _trace_rpc(engine, "coordexp_trace_finalize", identity,
+                [dict(request_id=r.request_id, token_ids=list(r.token_ids)) for r in results],
+                [eos_token_id])
+            trace_active = False
+            finalize_seconds = time.monotonic() - started
+            if not isinstance(paired, dict) or set(paired) != {r.request_id for r in results}:
+                raise RuntimeError("vLLM paired trace request identities differ")
+            traced_results = []
+            for result in results:
+                row = paired[result.request_id]
+                if tuple(row["token_ids"]) != result.token_ids:
+                    raise RuntimeError("vLLM paired trace tokens differ from emitted actions")
+                raw = tuple(float(value) for value in row["raw_logprobs"])
+                normalized = tuple(float(value) for value in row["policy_logprobs"])
+                if len(raw) != len(result.token_ids) or len(normalized) != len(result.token_ids):
+                    raise RuntimeError("vLLM paired trace action count differs")
+                if not all(math.isfinite(value) for value in (*raw, *normalized)):
+                    raise RuntimeError("nonfinite vLLM paired log probabilities")
+                traced_results.append(ContinuationResult(result.request_id, result.token_ids,
+                    result.stop_reason, ContinuationTrace(result.token_ids, normalized, raw)))
+            results = traced_results
+            if receipt is not None:
+                receipt.update(snapshot_id=identity, begin_seconds=begin_seconds,
+                    finalize_seconds=finalize_seconds,
+                    runner_class=begin_ack["runner_class"], sampler_class=begin_ack["sampler_class"],
+                    requests=[dict(request_id=r.request_id, emitted_actions=len(r.token_ids),
+                        captured_rows=paired[r.request_id]["captured_rows"],
+                        excluded_async_suffix=paired[r.request_id]["excluded_async_suffix"],
+                        discarded_prefill_actions=paired[r.request_id].get("discarded_prefill_actions", 0),
+                        dropped_budget_actions=paired[r.request_id].get("dropped_budget_actions", 0))
+                        for r in results])
         return tuple(results)
     finally:
-        for image in images:
-            image.close()
+        try:
+            if trace_active:
+                _trace_rpc(engine, "coordexp_trace_abort")
+        finally:
+            for image in images:
+                image.close()
 
 
 
@@ -290,6 +388,7 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                 tensor_parallel_size=1, pipeline_parallel_size=1,
                 distributed_executor_backend="uni", generation_config="vllm",
                 logprobs_mode="raw_logprobs", enable_prefix_caching=False,
+                worker_extension_cls="src.qwen.vllm_trace.CoordExpTraceWorkerExtension",
                 hf_overrides={"architectures": ["CoordExpDoRAQwen3VLForConditionalGeneration"],
                               "coordexp_dora": {
                                   "adapter_path": str(Path(checkpoint) / "adapter"),
@@ -305,6 +404,7 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                 if command == "close":
                     break
                 started = time.monotonic()
+                trace_evidence = {}
                 if command == "coordinate_output_norm":
                     mode, token_ids, requested_identity = payload
                     if requested_identity != identity:
@@ -319,13 +419,7 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                     from safetensors.torch import load
                     adapter_bytes, embedding_bytes, next_identity = payload
                     adapter, embeddings = load(adapter_bytes), load(embedding_bytes)
-                    installed = engine.apply_model(partial(_refresh_model, adapter=adapter,
-                                                           embeddings=embeddings, identity=next_identity))
-                    if installed != [next_identity]:
-                        raise RuntimeError("vLLM adapter refresh was not acknowledged")
-                    if not engine.reset_prefix_cache():
-                        raise RuntimeError("vLLM did not reset its prefix cache")
-                    identity = next_identity
+                    identity = _refresh_engine(engine, adapter, embeddings, next_identity)
                     value = None
                 elif command == "generate_exact":
                     requested_identity, *generation = payload
@@ -336,7 +430,8 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                     requested_identity, *generation = payload
                     if requested_identity != identity:
                         raise ValueError("stale rollout snapshot identity")
-                    value = _generate(engine, *generation)
+                    value = _generate(engine, *generation, identity=identity,
+                                      receipt=trace_evidence)
                 else:
                     raise ValueError(f"unknown rollout operation: {command}")
                 import torch
@@ -346,6 +441,7 @@ def _worker(connection, request, base_model, checkpoint, identity, options, log_
                                  "receipt": {"identity": identity,
                                              "seconds": time.monotonic()-started,
                                              "peak_allocated": torch.cuda.max_memory_allocated(),
+                                             **({"paired_trace": trace_evidence} if trace_evidence else {}),
                                              **({"coordinate_output_norm": norm_evidence} if norm_configured else {})}})
     except EOFError:
         pass
@@ -454,18 +550,34 @@ class VllmDoraRollout:
         from safetensors.torch import save
         if not isinstance(identity, str) or not identity:
             raise ValueError("a nonempty snapshot identity is required")
+        started = time.monotonic()
         adapter = {k: v.detach().to(device="cpu", copy=True) for k, v in
                    get_peft_model_state_dict(model, adapter_name="default").items()}
         embeddings = {k: v.detach().to(device="cpu", copy=True) for k, v in
                       embedding_deltas.delta_tensors().items()}
         # One byte message avoids a shared-memory file descriptor per tensor.
-        self._call("refresh", (save(adapter), save(embeddings), identity))
+        adapter_bytes, embedding_bytes = save(adapter), save(embeddings)
+        materialization_seconds = time.monotonic() - started
+        self._call("refresh", (adapter_bytes, embedding_bytes, identity))
         self.identity = identity
+        self.receipts[-1].update(snapshot_materialization_seconds=materialization_seconds,
+            adapter_bytes=len(adapter_bytes), embedding_bytes=len(embedding_bytes))
 
     def generate(self, requests: list[NativeRequest], *, budgets, eos_token_id,
-                 pad_token_id, identity, trace=False):
+                 pad_token_id, identity, trace=False, policy=None, seeds=None,
+                 allow_pad_tokens=False):
+        """Acquire acknowledged-policy actions; sampled requests need aligned seeds.
+
+        ``policy=None`` keeps explicit neutral greedy generation. A supplied
+        policy must disable model defaults. Full-support sampling preserves PAD
+        actions, and ``trace=True`` returns paired pre-median/policy likelihoods.
+        """
+        if identity != self.identity:
+            raise ValueError("stale rollout snapshot identity")
+        policy, checked_seeds = _generation_policy(policy, seeds, len(requests))
+        seeds = checked_seeds if policy.temperature == 1 else None
         return self._call("generate", (identity, requests, budgets, eos_token_id,
-                                       pad_token_id, trace))
+                                       pad_token_id, trace, policy, seeds, allow_pad_tokens))
 
     def generate_exact(self, requests, *, chat_token_ids, extensions, budgets,
                        eos_token_id, pad_token_id, identity, vocab_size, full_scores=False):
@@ -483,6 +595,7 @@ class VllmDoraRollout:
         if self._closed:
             return
         self._closed = True
+        started = time.monotonic()
         atexit.unregister(self.close)
         try:
             self._connection.send(("close", None))
@@ -490,9 +603,13 @@ class VllmDoraRollout:
             pass
         self._connection.close()
         self._process.join(timeout=10)
-        if self._process.is_alive():
+        terminated = self._process.is_alive()
+        if terminated:
             self._process.terminate()
             self._process.join(timeout=10)
+        self.shutdown = dict(pid=self._process.pid, exitcode=self._process.exitcode,
+            terminated=terminated, settled=not self._process.is_alive(),
+            seconds=time.monotonic() - started)
 
     def __enter__(self):
         return self

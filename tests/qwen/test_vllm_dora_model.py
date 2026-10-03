@@ -257,6 +257,61 @@ def test_coordinate_output_norm_uses_effective_base_plus_output_delta():
     assert receipt["factor_min"] == pytest.approx(1.0 / 3.0, rel=1e-5)
 
 
+def test_model_trace_capture_sees_output_delta_before_coordinate_scaling(monkeypatch):
+    model, coordinate_ids = _coordinate_model()
+    with torch.no_grad():
+        model.language_model.lm_head.weight[0] = torch.tensor([0.25, 0.0])
+        model.language_model.lm_head.weight[1009] = torch.tensor([0.75, 0.0])
+        model.coordexp_output_embed_delta[4, 0] = 0.25
+    model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+
+    def base_compute_logits(self, hidden_states):
+        return F.linear(hidden_states, self.language_model.lm_head.weight)
+
+    class Capture:
+        def capture(self, logits, identity):
+            self.raw = logits.clone()
+            self.identity = identity
+
+    monkeypatch.setattr(Qwen3VLForConditionalGeneration, "compute_logits", base_compute_logits)
+    state = Capture()
+    model._coordexp_paired_trace_state = state
+    policy = model.compute_logits(torch.tensor([[1.0, 0.0]], dtype=torch.bfloat16))
+    assert state.identity == "snapshot-1"
+    assert state.raw[0, 0].item() == 0.5  # base plus independent output delta
+    assert policy[0, 0].item() == 1.0
+    assert policy[0, 1009].item() == state.raw[0, 1009].item() == 0.75
+    assert state.raw.float().log_softmax(-1)[0, 1009] != policy.float().log_softmax(-1)[0, 1009]
+
+
+def test_model_refresh_rejects_active_trace_before_any_weight_change():
+    model, _ = _coordinate_model()
+    layer = _install_refresh_linear(model)
+    before = {name: value.clone() for name, value in layer.named_buffers()}
+    model._coordexp_paired_trace_state = object()
+    with pytest.raises(RuntimeError, match="paired trace is active"):
+        model.refresh_coordexp_dora(_refresh_adapter_payload(),
+            {"input_embed_delta": torch.ones_like(model.coordexp_input_embed_delta),
+             "output_embed_delta": torch.ones_like(model.coordexp_output_embed_delta)},
+            identity="snapshot-2")
+    assert model.coordexp_dora_identity == "snapshot-1"
+    assert torch.count_nonzero(model.coordexp_input_embed_delta) == 0
+    for name, value in layer.named_buffers():
+        torch.testing.assert_close(value, before[name], atol=0, rtol=0)
+
+
+def test_trace_off_model_keeps_no_trace_state_or_new_buffers(monkeypatch):
+    model, coordinate_ids = _coordinate_model()
+    model.configure_coordinate_output_norm("median", coordinate_ids, identity="snapshot-1")
+    buffers = {name: value.data_ptr() for name, value in model.named_buffers()}
+    monkeypatch.setattr(Qwen3VLForConditionalGeneration, "compute_logits",
+        lambda self, hidden: F.linear(hidden, self.language_model.lm_head.weight))
+    for _ in range(3):
+        model.compute_logits(torch.tensor([[1.0, 0.0]], dtype=torch.bfloat16))
+    assert not hasattr(model, "_coordexp_paired_trace_state")
+    assert {name: value.data_ptr() for name, value in model.named_buffers()} == buffers
+
+
 def test_coordinate_output_norm_rejects_bad_binding_and_invalid_norms():
     model, coordinate_ids = _coordinate_model()
     with pytest.raises(ValueError, match="mode"):

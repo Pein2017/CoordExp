@@ -11,6 +11,7 @@ registry or compatibility alias for a retired experiment.
 | Saved row evaluator | `src.eval.saved_rows`; explicit raw/case/reference-bank inputs, class-agnostic matching, validity and recurrence separately |
 | Online row-credit owner | `python -m probes.online_row_credit_owner --root <released-pair-root> --release-sha256 <exact-digest>`; one source-bound six-stage sequential invocation, separately released by the lead |
 | Rule stability | `python -m probes.rule_stability cpu-smoke --output <fresh-unit-output>`; eight-rank CPU lifecycle with substituted model computation. `native-run --config <exact-lead-packet> --output <bound-output>` runs the frozen [full18/570 IoU90 unit](../research/experiments/2026-10-03-rule-stability-iou90/unit.md); generated proposals grant no native execution. |
+| Resident rollout qualification | `python scripts/probes/coordexp_infras/vllm_dora_rollout.py --help`; bounded HF learning, resident vLLM acquisition, paired action likelihoods, and synchronous refresh. This measures infrastructure and does not change a released research backend. |
 
 QP NPZ fields are hidden_states, target_ids, route_token_ids, base_route_logits,
 top_ids and top_logits. No pickle, model loading or image/panel selection occurs.
@@ -75,3 +76,30 @@ new generic loader, training run, vLLM benchmark or evidence of numerical parity
 The saved 2026-09-29 result is relocated to
 `/data/CoordExp/.worktrees/research-probes/outputs/runtime/vllm-dora-20260929/hf-compat/`; original source and
 producer mappings live in the root OpenSpec migration receipt.
+
+## Reusing resident acquisition
+
+`src.qwen.vllm_rollout.VllmDoraRollout` owns the resident engine; the caller owns
+HF forward/backward, optimizer state, and snapshot identity. Configure coordinate
+normalization once, then complete each acquisition before updating HF. Await
+`refresh(...)` before acquiring the next snapshot. Acknowledgement includes
+derived factors and cache invalidation; engine startup is not repeated.
+
+Use an explicit `NativeGenerationPolicy` with `use_model_defaults=False` and
+aligned per-request seeds for full-support temperature-one sampling. Request
+`trace=True` for both raw and normalized-policy selected-action likelihoods.
+The returned `ContinuationResult` keeps literal action IDs, including EOS and
+sampled PAD. The two likelihood channels come from the same vLLM acquisition.
+Set `allow_pad_tokens=True` when greedy acquisition must preserve literal PAD too.
+Paired trace capture supports the native V2 sampler with TP=1/PP=1 and ordinary
+single-token decoding; speculative and batch-sharded sampling are rejected.
+
+HF uses `src.qwen.coordinate_policy.MedianPolicy` for the same normalization
+arithmetic and differentiable current factors. Literal multimodal suffix replay
+uses `src.qwen.native.exact_history_inputs(..., prompt_only_media=True)` together
+with `prompt_only_placeholder_masks` to keep original image placeholders bound
+to the prompt. These interfaces preserve action identity; they do not promise
+bitwise agreement between HF and vLLM or authorize changing a frozen experiment.
+The bounded native qualification, measured costs, numerical differences, and
+remaining integration boundary are recorded in
+[`verification.md`](../openspec/changes/unify-resident-rollout-policy/verification.md).
