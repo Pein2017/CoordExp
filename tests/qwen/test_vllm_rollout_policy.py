@@ -30,9 +30,14 @@ def paired_engine(requests, emitted, *, raw, policy):
 
     def collective_rpc(method, args=()):
         calls.append((method, args))
+        if method == "coordexp_trace_begin":
+            return [{"snapshot_id": args[0], "request_ids": [r.request_id for r in requests],
+                     "runner_class": "fake_engine.RunnerV2", "sampler_class": "fake_engine.SamplerV2"}]
         if method == "coordexp_trace_finalize":
             return [{r.request_id: {"token_ids": ids, "raw_logprobs": a,
-                                   "policy_logprobs": b, "excluded_async_suffix": 0}
+                                   "policy_logprobs": b, "excluded_async_suffix": 0,
+                                   "discarded_prefill_actions": 1, "dropped_budget_actions": 0,
+                                   "captured_rows": len(ids) + 1}
                      for r, ids, a, b in zip(requests, emitted, raw, policy, strict=True)}]
         return [None]
 
@@ -96,8 +101,38 @@ def test_seeded_fullsupport_mixed_budgets_preserves_pad_and_eos_pairs():
         {"request_id": "early", "snapshot_id": "s1", "max_new_tokens": 8},
         {"request_id": "pad", "snapshot_id": "s1", "max_new_tokens": 3}]))
     assert receipt["snapshot_id"] == "s1"
+    assert receipt["runner_class"] == "fake_engine.RunnerV2"
+    assert receipt["sampler_class"] == "fake_engine.SamplerV2"
     assert [r["emitted_actions"] for r in receipt["requests"]] == [2, 3]
+    assert [r["captured_rows"] for r in receipt["requests"]] == [3, 4]
+    assert [r["discarded_prefill_actions"] for r in receipt["requests"]] == [1, 1]
     assert all(r["excluded_async_suffix"] == 0 for r in receipt["requests"])
+
+
+@pytest.mark.parametrize("change", [
+    lambda ack: ack.update(snapshot_id="stale"),
+    lambda ack: ack.update(request_ids=["pad", "early"]),
+    lambda ack: ack.update(request_ids=["early"]),
+    lambda ack: ack.update(request_ids=["early", "early"]),
+    lambda ack: ack.pop("runner_class"),
+    lambda ack: ack.update(sampler_class=""),
+    lambda ack: ack.update(runner_class="UnqualifiedRunner"),
+    lambda ack: ack.update(sampler_class=3),
+])
+def test_trace_begin_ack_rejected_before_generation_and_aborted(change):
+    requests = [request("early"), request("pad", (20, 21))]
+    engine = paired_engine(requests, [[2], [3]], raw=[[-2.0], [-3.0]],
+                           policy=[[-1.0], [-1.5]])
+    rpc = engine.collective_rpc
+    def corrupt(method, args=()):
+        observed = rpc(method, args=args)
+        if method == "coordexp_trace_begin":
+            change(observed[0])
+        return observed
+    engine.collective_rpc = corrupt
+    with pytest.raises(RuntimeError, match="trace begin acknowledgement"):
+        _generate(engine, requests, [1, 1], 99, 0, True, identity="s1")
+    assert [call[0] for call in engine.calls] == ["coordexp_trace_begin", "coordexp_trace_abort"]
 
 
 @pytest.mark.parametrize("policy,seeds", [

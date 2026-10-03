@@ -219,7 +219,14 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace,
         if trace:
             started = time.monotonic()
             trace_active = True
-            _trace_rpc(engine, "coordexp_trace_begin", identity, descriptors)
+            begin_ack = _trace_rpc(engine, "coordexp_trace_begin", identity, descriptors)
+            if (not isinstance(begin_ack, dict) or begin_ack.get("snapshot_id") != identity
+                    or begin_ack.get("request_ids") != [r.request_id for r in requests]
+                    or any(not isinstance(begin_ack.get(key), str)
+                           or len(begin_ack[key].split(".")) < 2
+                           or not all(part.isidentifier() for part in begin_ack[key].split("."))
+                           for key in ("runner_class", "sampler_class"))):
+                raise RuntimeError("vLLM trace begin acknowledgement differs from requested identity or runtime classes")
             begin_seconds = time.monotonic() - started
         outputs = engine.generate(prompts, params, use_tqdm=False)
         if len(outputs) != len(requests):
@@ -264,7 +271,9 @@ def _generate(engine, requests, budgets, eos_token_id, pad_token_id, trace,
             if receipt is not None:
                 receipt.update(snapshot_id=identity, begin_seconds=begin_seconds,
                     finalize_seconds=finalize_seconds,
+                    runner_class=begin_ack["runner_class"], sampler_class=begin_ack["sampler_class"],
                     requests=[dict(request_id=r.request_id, emitted_actions=len(r.token_ids),
+                        captured_rows=paired[r.request_id]["captured_rows"],
                         excluded_async_suffix=paired[r.request_id]["excluded_async_suffix"],
                         discarded_prefill_actions=paired[r.request_id].get("discarded_prefill_actions", 0),
                         dropped_budget_actions=paired[r.request_id].get("dropped_budget_actions", 0))

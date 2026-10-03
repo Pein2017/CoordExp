@@ -1,8 +1,8 @@
 ## 1. Shared policy and resident acquisition
 
 - [x] 1.1 Centralize median arithmetic, HF binding, and the qualified singleton prompt placeholder context; remove duplicate calculation and verify frozen values, dtype, independent-head validation, current-factor gradients, and replay import compatibility through focused fixtures.
-- [x] 1.2 Add bounded paired traces at the existing vLLM sampler boundary; verify request reordering, discarded prefill, async suffix, PAD/EOS, missing/duplicate actions, trace-off storage, and stale-snapshot counterexamples.
-- [x] 1.3 Extend the resident API with seeded full-support sampling and explicit paired traces; verify caller defaults, unsupported-policy rejection, true distinct likelihood channels, and refresh/cache acknowledgement behavior.
+- [x] 1.2 Add bounded paired traces at the active V2 vLLM sampler boundary; verify request/slot reuse, discarded prefill, GPU position snapshots, async suffix, PAD/EOS, missing/duplicate actions, trace-off restoration, and stale-snapshot counterexamples.
+- [x] 1.3 Extend the resident API with seeded full-support sampling and explicit paired traces; verify caller defaults, unsupported-policy rejection, true distinct likelihood channels, active-runner evidence, and refresh/cache acknowledgement behavior.
 
 ## 2. Real consumer and qualification
 
