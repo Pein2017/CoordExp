@@ -1,0 +1,27 @@
+{
+  "unit_id": "2026-10-03-dora-input-ablation",
+  "lifecycle": "ready",
+  "status": "CPU_PREPARATION_AUTHORIZED_NATIVE_NOT_RELEASED",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
+  "state_source": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
+  "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "predecessor": "2026-10-03-endpoint-block-ablation",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10",
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "next_unit_scheduled": false,
+  "boundary": "CPU-first saved DoRA/input ablation with output held exactly anchor; model calls need separate exact lead release.",
+  "not_authorized": [
+    "model/GPU calls before exact release",
+    "training, scaling, blending, zeroing or row selection",
+    "any change to the common anchor output tensor",
+    "GT training/acquisition or new contexts/thresholds",
+    "predecessor/shared-source or historical receipt mutation",
+    "worker next-unit scheduling or automatic layer/token-row subdivision"
+  ]
+}
