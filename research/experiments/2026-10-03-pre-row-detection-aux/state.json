@@ -1,0 +1,49 @@
+{
+  "unit_id": "2026-10-03-pre-row-detection-aux",
+  "lifecycle": "planned",
+  "status": "CPU_IMPLEMENTATION_DESIGN_FROZEN",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
+  "state_source": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
+  "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
+  "worker_thread": null,
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "high",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12",
+  "authority": "User requested next experiment preparation with lead-worker 6.1-high on 2026-10-03. One unit only; initial CPU-only assignment.",
+  "source_base_commit": "9bcdea19736d9faa67f6803740db1e0f34486b5a",
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "job_state": "no_model_or_GPU_job",
+  "next_action": "Worker prepares fixed bank and implementation, reports inventory/cost/conditional selection; no native release.",
+  "boundary": "A existing row objective versus B same plus pre-row detection auxiliary on one fixed self-prefix bank; ordinary inference unchanged.",
+  "not_authorized": [
+    "model loading/forward, GPU work, new generation or training before an exact lead release",
+    "KV/cache edits, runtime coverage masks, new feedback/controller architecture",
+    "new data, labels, checkpoint selection, evaluator thresholds, unknown-as-negative targets",
+    "historical receipt/input mutation, shared-asset changes, /external mutation, push",
+    "worker scheduling another research unit"
+  ],
+  "design": {
+    "arms": [
+      "A_existing_fixed_bank",
+      "B_plus_pre_row_aux"
+    ],
+    "updates_per_arm": 16,
+    "bank": "accepted_balanced_constant_version0",
+    "aux_lambda": 0.1,
+    "aux_head": "FP32 affine C+4",
+    "aux_position": "post_norm_at_consumed_object_ref_start",
+    "target_conflict": "exclude_entire_prefix_group_from_aux_only",
+    "base_lr": [
+      1e-05,
+      5e-06,
+      5e-06
+    ],
+    "head_lr": 0.001,
+    "separate_clip": true,
+    "native_head_consumed": false
+  }
+}
