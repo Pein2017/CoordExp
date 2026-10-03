@@ -1,7 +1,9 @@
 # Verification
 
-Implementation resides in the isolated `vllm-rollout-policy` worktree based on
-`249b9b0`. The canonical frozen A/B source and its released backend are unchanged.
+Implementation was qualified in the isolated `vllm-rollout-policy` worktree
+based on `249b9b0`. It was subsequently merged into canonical `research-probes`
+after A/B completion and explicit source-holder release. Historical execution
+source and receipts remain unchanged; see the integration closure below.
 
 ## Original CPU candidate and its limits
 
@@ -146,7 +148,38 @@ boundaries without additional model queries.
 Standards verdict: **PASS within the declared repository-local V2, TP=1/PP=1
 contract**. Research-contract verdict: **technical qualification accepted**;
 scientific efficacy and exact HF/vLLM equivalence are not established. No Conda
-package or canonical source was edited. Canonical integration remains held while
-the original owner runs released B at frozen source `249b9b0`; A has reported
-terminal completion. The implementation is available on isolated branch
-`codex/unify-resident-rollout-policy`.
+package was edited. The original qualification preserved canonical frozen source
+`249b9b0` through the complete A/B package. Subsequent integration is recorded
+below, separately from that historical execution claim.
+
+## Canonical integration and retained evidence
+
+After A/B and its saved comparison exited0, the worker released its source hold.
+The lead merged shallow cleanup `c08a7b4e052e81c8944df76337bcc887b1607a45`
+and this implementation `00ae7aad1ecdbbcb8788daa259c59fdf1aa91958` without
+conflicts, producing merge commits `5ba8b8cae` and `bd67430d5`. The stable spec
+now includes both added requirements and all six scenarios; OpenSpec spec
+validation passed before archive. Existing qualified source/native results were
+not rerun or reidentified as measurements of the merged revision.
+
+Retained current output root:
+`/data/CoordExp/.worktrees/research-probes/outputs/runtime-optimization/unify-resident-rollout-policy/`.
+All90files/4,679,601bytes were copied and content-verified at retirement. Original
+receipt paths/hashes remain unchanged. The adjacent shallow cleanup's8files/
+26,124bytes are retained at canonical `outputs/maintenance/20261004-shallow-module-cleanup/`.
+The exact source/retained mapping is
+`outputs/maintenance/2026-10-03-research-integration/retained-artifacts.json`;
+merged consumer checks and lifecycle receipts live alongside it.
+
+The merged consumer boundary is lead-accepted from six selected CPU cases.
+The initial driver exited1 (five passes, one import-order identity failure);
+the corrected affected check exited0 with one pass. The initial two optional
+CUDA metadata probes were denied before initialization, not admitted GPU work.
+The failure arose when the test conftest purged src modules after probe aliases
+had already been imported; no maintained source repair was needed. Both original
+and corrected evidence remain in `consumer-checks/consumer-candidate.json`.
+No new model/native qualification was run for integration. The app archived
+the vLLM worktree, the shallow worktree was removed, and the fully merged temporary
+vLLM branch was deleted. Both commits remain ancestors of canonical research.
+`lead-acceptance.json` and `lifecycle.json` in the integration output root own
+the final consumer and retirement receipts.

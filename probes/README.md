@@ -102,4 +102,4 @@ to the prompt. These interfaces preserve action identity; they do not promise
 bitwise agreement between HF and vLLM or authorize changing a frozen experiment.
 The bounded native qualification, measured costs, numerical differences, and
 remaining integration boundary are recorded in
-[`verification.md`](../openspec/changes/unify-resident-rollout-policy/verification.md).
+[`verification.md`](../openspec/changes/archive/2026-10-03-unify-resident-rollout-policy/verification.md).
