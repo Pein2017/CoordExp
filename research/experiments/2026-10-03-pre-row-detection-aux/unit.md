@@ -130,6 +130,61 @@ drift. Reuse existing meaningful tests and pure functions. The current
 the trainable path; reuse text-stack resolution and a minimal differentiable
 collection at the selected norm output without changing diagnostic semantics.
 
+## Lead input and conditional-selection ruling
+
+The first real-input CPU bank is `cpu-01/bank.json` under this unit's output root,
+SHA256 `41ffaf9956187ac33f57ec43a71a29300cbf190f7cf5d05a2439665b5bf5c54f`.
+All18 saved plans equal the current maintained recomputation. The fixed schedule
+has18 trace,18 CHAIN and12 redirect forwards per full-bank update. Positive
+events are331 CHAIN B,237 relocated M and12 redirects; trace M is zero because
+all18 images have a CHAIN branch. All580 events are auxiliary-eligible, with no
+conflicting-prefix exclusions. Lead reconstruction confirms580 distinct
+image/prefix groups and all580 causal prefix bounds/history classifications.
+
+Direct positive supervision covers568 unique annotation owners. Owners
+`(4134,-99)` and `(7511,-167)` are absent because the inherited plan records
+`same_category_supported`; this is not an auxiliary exclusion or a removed
+evaluation label. Both remain in the570-label evaluation denominator. Do not
+repair that predecessor policy inside this contrast or claim complete570-owner
+supervision. The head vocabulary has37 exact GT descriptions.
+
+The initially proposed shortest-per-image/history conditional pool contained
+only CHAIN insertions and would omit actual duplicate redirection. The lead
+instead freezes8 cases without model outcomes: earliest eligible actual redirect
+in each of its two represented images, plus earliest actual CHAIN B from the
+first two other image IDs; then earliest synthetic CHAIN B for those same four
+images. The complete bank and preliminary35-case pool remain available.
+
+| History | Bank row | Image | Target owner | Role |
+|---|---:|---:|---:|---|
+| actual | 0 | 1584 | -66 | CHAIN B |
+| actual | 101 | 2299 | -10 | CHAIN B |
+| actual | 342 | 14038 | 321540 | redirect |
+| actual | 571 | 351017 | -4079047724528960 | redirect |
+| synthetic | 1 | 1584 | -65 | CHAIN B |
+| synthetic | 102 | 2299 | -19 | CHAIN B |
+| synthetic | 296 | 14038 | 1491536 | CHAIN B |
+| synthetic | 523 | 351017 | -3012841268137411 | CHAIN B |
+
+`conditional-selection-01.json` under the output root binds exact bank identity,
+row IDs, prefixes and targets. Native consumers must bind this explicit selection,
+not silently use the preliminary bank list. At shared anchor and both step16
+endpoints, each case receives ordinary greedy/EOS continuation with a64-new-token
+cap and no other forcing or custom stop rule:24 requests, at most1536 generated
+tokens. Score only the currently open row; its supplied opener receives no
+discovery credit, and a later correct row cannot repair a malformed/wrong current
+row for this endpoint. Retain all raw continuation. Actual and synthetic cases
+have different targets and are reported separately, not as a causal history
+comparison. Together with54 full-image requests at cap3084, the proposed primary
+observation has78 requests and at most168072 generated tokens, excluding any
+separately bounded real-entry qualification or explicit readback forwards.
+
+Implementation scope additionally includes a narrow fixed-bank mode in
+`probes/online_row_credit_owner.py` and its existing tests. Reuse its supervision,
+process identity, source/input/runtime validation, accounting and cleanup. Bind
+the new exact stages and counts; preserve legacy paired1/full-label behavior and
+all fail-closed checks. This grants CPU implementation only, not native release.
+
 ## Outcomes, limits and stop
 
 Retain conditional free-row completion and empty-history greedy outcomes as
