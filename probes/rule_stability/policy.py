@@ -1,133 +1,19 @@
-"""The current-weight median policy, shared by generation and gradient replay.
-
-The normalization arithmetic follows ``vllm_dora_model``: BF16 base rows plus
-independent FP32 output deltas, an FP32 effective sum, FP64 norms/lower median,
-and FP64 score multiplication followed by a cast to the input score dtype.
-HF generation promotes scores to FP32 before processors; replay does the same.
-No forward hook changes the raw-likelihood channel or the model's output head.
-"""
+"""Rule-stability diagnostics and compatible imports of the shared median policy."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import torch
 
 from src.losses.token_scores import aligned_token_logprobs
-
-
-def _coordinate_ids(values: Sequence[int] | torch.Tensor) -> tuple[int, ...]:
-    if isinstance(values, torch.Tensor):
-        if values.ndim != 1 or values.dtype != torch.long:
-            raise ValueError("coordinate IDs must be a one-dimensional long vector")
-        values = values.detach().cpu().tolist()
-    ids = tuple(values)
-    if (len(ids) != 1000 or any(type(value) is not int or value < 0 for value in ids)
-            or len(set(ids)) != 1000):
-        raise ValueError("coordinate IDs must contain 1,000 unique nonnegative integers")
-    return ids
-
-
-def _scale_coordinates(
-    logits: torch.Tensor, ids: torch.Tensor, factors: torch.Tensor,
-) -> torch.Tensor:
-    if logits.ndim < 1 or not logits.is_floating_point() or logits.shape[-1] <= int(ids.max()):
-        raise ValueError("policy scores must have a floating vocabulary covering coordinate IDs")
-    ids = ids.to(logits.device)
-    scaled = (logits.index_select(-1, ids).to(torch.float64)
-              * factors.to(device=logits.device, dtype=torch.float64)).to(logits.dtype)
-    # An out-of-place operation preserves HF's captured raw logits and autograd.
-    return logits.index_copy(-1, ids, scaled)
-
-
-@dataclass(frozen=True)
-class _MedianScoreTransform:
-    coordinate_ids: torch.Tensor
-    factors: torch.Tensor
-
-    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
-        return _scale_coordinates(scores, self.coordinate_ids, self.factors)
-
-
-class MedianPolicy:
-    """Bind an untied selected-output head without modifying model computation.
-
-    ``generation_transform()`` snapshots factors from the current weights once
-    per acquisition. Pass its result in ``generate_continuations``' optional
-    ``logits_processor`` list. ``transform_replay`` recomputes graph-connected
-    factors for each replay graph, after the same FP32 promotion used by HF.
-    Causal row selection and target/action reduction remain caller-owned.
-    """
-
-    def __init__(self, model: Any, coordinate_ids: Sequence[int] | torch.Tensor) -> None:
-        ids = _coordinate_ids(coordinate_ids)
-        self.head = model.get_output_embeddings()
-        self.input_head = model.get_input_embeddings()
-        self.coordinate_ids = torch.tensor(ids, dtype=torch.long)
-        selected = getattr(self.head, "selected_token_ids", None)
-        if not isinstance(selected, torch.Tensor) or selected.ndim != 1 or selected.dtype != torch.long:
-            raise ValueError("median policy requires the maintained selected output-delta head")
-        selected_ids = selected.detach().cpu().tolist()
-        if len(set(selected_ids)) != len(selected_ids):
-            raise ValueError("selected output token IDs must be unique")
-        rows = {token_id: row for row, token_id in enumerate(selected_ids)}
-        if any(token_id not in rows for token_id in ids):
-            raise ValueError("coordinate IDs are missing selected output delta rows")
-        self.coordinate_rows = torch.tensor([rows[token_id] for token_id in ids], dtype=torch.long)
-        self._validate_head()
-
-    def _validate_head(self) -> tuple[torch.Tensor, torch.Tensor]:
-        weight = getattr(self.head, "weight", None)
-        delta = getattr(self.head, "shared_embed_delta", None)
-        if (not isinstance(weight, torch.Tensor) or weight.ndim != 2
-                or weight.dtype != torch.bfloat16 or weight.requires_grad):
-            raise ValueError("median policy requires a frozen BF16 base output head")
-        if getattr(self.head, "bias", None) is not None:
-            raise ValueError("median policy does not support an output-head bias")
-        if (not isinstance(delta, torch.Tensor) or delta.ndim != 2
-                or delta.dtype != torch.float32 or delta.shape[1] != weight.shape[1]
-                or delta.shape[0] != self.head.selected_token_ids.numel()
-                or not bool(torch.isfinite(delta).all())):
-            raise ValueError("median policy requires finite FP32 selected output deltas")
-        input_delta = getattr(self.input_head, "shared_embed_delta", None)
-        if (not isinstance(input_delta, torch.Tensor) or input_delta.dtype != torch.float32
-                or input_delta.shape != delta.shape
-                or input_delta.untyped_storage().data_ptr() == delta.untyped_storage().data_ptr()):
-            raise ValueError("median policy requires independent input/output deltas")
-        if int(self.coordinate_ids.max()) >= weight.shape[0]:
-            raise ValueError("coordinate IDs lie outside the output vocabulary")
-        return weight, delta
-
-    def factors(self) -> torch.Tensor:
-        """Return current FP64 factors without detaching the output-weight graph."""
-        weight, delta = self._validate_head()
-        ids = self.coordinate_ids.to(weight.device)
-        rows = self.coordinate_rows.to(weight.device)
-        effective = (weight.index_select(0, ids).to(torch.float32)
-                     + delta.to(device=weight.device, dtype=torch.float32).index_select(0, rows))
-        norms = torch.linalg.vector_norm(effective.to(torch.float64), ord=2, dim=1)
-        if not bool(torch.isfinite(norms).all()) or bool((norms <= 0).any()):
-            raise ValueError("coordinate output row norms must be finite and positive")
-        factors = torch.median(norms) / norms
-        if not bool(torch.isfinite(factors).all()) or bool((factors <= 0).any()):
-            raise ValueError("coordinate output norm factors must be finite and positive")
-        return factors
-
-    def transform_logits(self, logits: torch.Tensor) -> torch.Tensor:
-        """Apply exact normalization/cast semantics, preserving the input dtype."""
-        return _scale_coordinates(logits, self.coordinate_ids, self.factors())
-
-    def transform_replay(self, logits: torch.Tensor) -> torch.Tensor:
-        """Apply the HF score policy with derivatives through current factors."""
-        return self.transform_logits(logits.float())
-
-    def generation_transform(self) -> _MedianScoreTransform:
-        """Capture one current-model score transform; use a fresh one after updates."""
-        with torch.no_grad():
-            factors = self.factors().detach().clone()
-        return _MedianScoreTransform(self.coordinate_ids.clone(), factors)
+from src.qwen.coordinate_policy import (
+    MedianPolicy,
+    _coordinate_ids,
+    _MedianScoreTransform,
+    scale_coordinate_logits as _scale_coordinates,
+)
 
 
 class TechnicalSuffixSelection:

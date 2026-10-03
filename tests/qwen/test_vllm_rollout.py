@@ -118,7 +118,11 @@ class DeviceRoutingTest(unittest.TestCase):
         from contextlib import ExitStack
         from probes import iterative_positive as p
         module=runpy.run_path(str(Path(__file__).resolve().parents[2]/'scripts/probes/coordexp_infras/vllm_dora_rollout.py'))
-        entry=module['main'];source=p.load(online.INPUTS)
+        entry=module['main']
+        source=[dict(image_id=i,request_id=str(i),image_path='/unused.png',
+                     crop=[0,0,32,32],width=32,height=32,prompt_token_ids=[10,11],
+                     image_grid_thw=[1,2,2],media_sha256='unused',image_sha256='unused')
+                for i in (1584,2299)]
         q=SimpleNamespace(model=torch.nn.Linear(1,1),base_model_path='/base',
             tokenizer=SimpleNamespace(convert_tokens_to_ids=lambda x:99,pad_token_id=0),
             processor=SimpleNamespace(apply_chat_template=lambda *a,**k:'chat'))
@@ -194,8 +198,8 @@ def test_rollout_never_accepts_changed_prompt_or_false_stop():
                                            {99: SimpleNamespace(logprob=-0.1)}])
     output = SimpleNamespace(prompt_token_ids=[10, 11], outputs=[completion])
     engine = SimpleNamespace(generate=lambda *a, **kw: [output])
-    result = _generate(engine, [request], [8], 99, 0, True)[0]
-    assert result.token_ids == (5, 99) and result.raw_logprobs == (-0.2, -0.1)
+    result = _generate(engine, [request], [8], 99, 0, False)[0]
+    assert result.token_ids == (5, 99) and result.trace is None
     output.prompt_token_ids = [10, 12]
     with pytest.raises(RuntimeError, match="prompt tokens"):
         _generate(engine, [request], [8], 99, 0, False)
@@ -212,13 +216,20 @@ def test_refresh_590_tensors_uses_bytes_not_per_tensor_file_descriptors():
     embeddings = {k: torch.ones(2, 3) for k in ('input_embed_delta', 'output_embed_delta')}
     runtime = object.__new__(VllmDoraRollout)
     calls = []
-    runtime._call = lambda operation, payload: calls.append((operation, payload))
+    runtime.receipts = []
+    def call(operation, payload):
+        calls.append((operation, payload))
+        runtime.receipts.append(dict(operation=operation))
+    runtime._call = call
     with patch('peft.get_peft_model_state_dict', return_value=adapter):
         runtime.refresh(None, SimpleNamespace(delta_tensors=lambda: embeddings), identity='new')
     operation, (a, e, identity) = calls[0]
     assert operation == 'refresh' and isinstance(a, bytes) and isinstance(e, bytes)
     assert len(load(a)) == 588 and load(a)['587'].item() == 587
     assert set(load(e)) == set(embeddings) and identity == runtime.identity == 'new'
+    assert runtime.receipts[-1]['adapter_bytes'] == len(a)
+    assert runtime.receipts[-1]['embedding_bytes'] == len(e)
+    assert runtime.receipts[-1]['snapshot_materialization_seconds'] >= 0
 
 
 def test_coordinate_norm_rpc_is_explicit_and_snapshot_bound():

@@ -20,6 +20,8 @@ from vllm.model_executor.models.qwen3_vl import Qwen3VLForConditionalGeneration
 from src.adapters.dora import inspect_dora_adapter_payload, normalize_dora_state_key
 from src.qwen.untied_embeddings import inspect_special_token_embedding_delta_payload
 from src.qwen.tokens import DEFAULT_COORDINATE_TOKENS
+from src.qwen.coordinate_policy import coordinate_norm_values, scale_coordinate_logits
+from src.qwen.vllm_trace import assert_trace_idle, capture_raw_logits
 
 
 _KINDS = frozenset({"lora_A", "lora_B", "lora_magnitude_vector"})
@@ -292,6 +294,7 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         *,
         identity: str,
     ) -> str:
+        assert_trace_idle(self)
         if self.coordexp_dora_identity is None or not isinstance(identity, str) or not identity:
             raise ValueError("CoordExp DoRA is uninitialized or snapshot identity is empty")
         targets = _target_tensors(adapter_tensors)
@@ -328,7 +331,6 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
             destination.copy_(source.detach().to(destination.device))
         for destination, source in scale_copies:
             destination.copy_(source)
-        self.coordexp_dora_identity = identity
         if refreshed_coordinate_norms is not None:
             self.coordexp_coordinate_output_norm_factors.copy_(
                 refreshed_coordinate_norms["factors"]
@@ -336,6 +338,7 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
             self._store_coordinate_output_norm_stats(refreshed_coordinate_norms)
         elif getattr(self, "_coordinate_output_norm_configured", False):
             self._coordinate_output_norm_stats = None
+        self.coordexp_dora_identity = identity
         return identity
 
     @staticmethod
@@ -394,16 +397,8 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
             or int(selected_rows.max()) >= delta.shape[0]
         ):
             raise ValueError("coordinate IDs are missing selected output delta rows")
-        effective = weight.index_select(0, ids).to(torch.float32) + delta.to(
-            device=weight.device, dtype=torch.float32
-        ).index_select(0, selected_rows.to(weight.device))
-        norms = torch.linalg.vector_norm(effective.to(torch.float64), ord=2, dim=1)
-        if not torch.isfinite(norms).all() or (norms <= 0).any():
-            raise ValueError("coordinate output row norms must be finite and positive")
-        median = torch.median(norms)
-        factors = median / norms
-        if not torch.isfinite(factors).all() or (factors <= 0).any():
-            raise ValueError("coordinate output norm factors must be finite and positive")
+        values = coordinate_norm_values(weight, delta, ids, selected_rows)
+        factors, norms, median = (values[key] for key in ("factors", "norms", "median"))
         return {
             "factors": factors,
             "norm_min": float(norms.min().item()),
@@ -506,17 +501,19 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
         correction = correction.to(logits.dtype)
         index = self.coordexp_token_ids.view(*([1] * (correction.ndim - 1)), -1).expand_as(correction)
         logits.scatter_add_(-1, index, correction)
+        capture_raw_logits(self, logits)
         if getattr(self, "_coordinate_output_norm_configured", False):
             self._coordinate_output_norm_calls += 1
             self._coordinate_output_norm_positions += logits.numel() // logits.shape[-1]
             if self._coordinate_output_norm_mode == "median":
                 norm_ids = self.coordexp_coordinate_output_norm_ids.to(logits.device)
-                before = logits.index_select(-1, norm_ids)
-                scaled = before.to(torch.float64) * self.coordexp_coordinate_output_norm_factors.to(
-                    device=logits.device, dtype=torch.float64
-                )
-                scaled = scaled.to(logits.dtype)
+                before = (logits.index_select(-1, norm_ids)
+                          if self._coordinate_output_norm_first_call is None else None)
+                scale_coordinate_logits(logits, norm_ids,
+                    self.coordexp_coordinate_output_norm_factors, inplace=True)
                 if self._coordinate_output_norm_first_call is None:
+                    assert before is not None
+                    scaled = logits.index_select(-1, norm_ids)
                     delta = (scaled.to(torch.float64) - before.to(torch.float64)).abs()
                     self._coordinate_output_norm_first_call = {
                         "native_dtype": str(logits.dtype),
@@ -525,7 +522,6 @@ class CoordExpDoRAQwen3VLForConditionalGeneration(Qwen3VLForConditionalGeneratio
                         "max_abs_difference": delta.max() if delta.numel() else torch.zeros((), device=logits.device),
                         "non_coordinate_unchanged": True,
                     }
-                logits.index_copy_(-1, norm_ids, scaled)
             elif self._coordinate_output_norm_first_call is None:
                 self._coordinate_output_norm_first_call = {
                     "native_dtype": str(logits.dtype),
