@@ -69,5 +69,12 @@
     "path": "outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/lead-acceptance-01.json",
     "sha256": "c2263d7d57a69d64cb0ba5dcd45b2bff52367a6d9525bd2e99ce8c30341f9ddf"
   },
-  "closed_at": "2026-10-02T23:34:59.773286+00:00"
+  "closed_at": "2026-10-02T23:34:59.773286+00:00",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {},
+    "retained_predecessor_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01"
+  }
 }

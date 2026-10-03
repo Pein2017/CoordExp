@@ -1,5 +1,7 @@
 # Round08 accepted and closed
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 The exactly released package exited0; all four fresh serial arms completed and the
 package's own final readback succeeded. Source remains clean/detached at
 `913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c` in `/data/CoordExp/.worktrees/greedy-prefix-native-01`. No phase/request relaunch,

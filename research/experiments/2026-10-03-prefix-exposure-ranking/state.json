@@ -65,5 +65,16 @@
     "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/lead-acceptance-01.json",
     "sha256": "c93f0863496fde0f14404ca4af8daa2733f7c88f37bc405553131b4b21cba931"
   },
-  "closed_at": "2026-10-02T23:10:35.519053+00:00"
+  "closed_at": "2026-10-02T23:10:35.519053+00:00",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/execution_invocation": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/package-invocation-01.json",
+      "/released_contract/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/released-contract-01.json",
+      "/native_terminal_candidate/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/native-terminal-candidate-01.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }

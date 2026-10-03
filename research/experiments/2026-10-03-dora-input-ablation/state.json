@@ -96,5 +96,20 @@
   },
   "acceptance_ruling": "research/experiments/2026-10-03-dora-input-ablation/lead-ruling-02.md",
   "acceptance_ruling_commit": "dde0a2ccad55f4eb2fa0adca4a3f0af823c2706f",
-  "branch_disposition": "Close saved endpoint block-ablation branch; no layer or token-row subdivision scheduled."
+  "branch_disposition": "Close saved endpoint block-ablation branch; no layer or token-row subdivision scheduled.",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/execution_contract/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/released-contract-01.json",
+      "/lead_release/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/lead-release-01.json",
+      "/native_terminal/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/package-01/complete.json",
+      "/native_readback/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/package-01/readback.json",
+      "/terminal_candidate/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/terminal-candidate-01.json",
+      "/terminal_cleanup/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/terminal-cleanup-01.json",
+      "/scheduled_A_I_seam/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/scheduled-A_I-seam-01.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }

@@ -1,5 +1,7 @@
 # Round07 accepted fixed observations
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 The single released package completed with **exit 0**. Both endpoints repaired
 **6/6** fresh baseline-illegal contexts and retained **4/4** baseline-legal
 contexts. Relative to the shared fresh anchor, Gmass1 exchanged 10 gained / 12

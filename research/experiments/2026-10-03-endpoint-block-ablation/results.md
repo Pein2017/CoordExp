@@ -1,5 +1,7 @@
 # Round09 lead-accepted and closed
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 The exactly released single package exited0, including its own successful final
 consumer/readback. Four fresh serial engines A_A,A_M,M_A,M_M completed40 supplied
 scores and72 natural generations:112 requests,46036 generated tokens including40

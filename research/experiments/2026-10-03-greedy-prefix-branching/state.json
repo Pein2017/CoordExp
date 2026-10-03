@@ -120,5 +120,18 @@
     "sha256": "cea0da67d3bf7f1469035af39d6522e734f7d4ac027c76dc2569311e0fa0d6ab"
   },
   "terminal_candidate_sha256": "63a9c1b6ae3bc3d0b48983f6a1cd7f06eee42977fbe54d9a8a3d23ab9b0abeec",
-  "continuation_unit": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md"
+  "continuation_unit": "research/experiments/2026-10-03-matched-coordinate-branches/unit.md",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/execution_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01",
+      "/release_contract/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/released-contract-01.json",
+      "/terminal_candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/native-terminal-candidate-01.json",
+      "/native_complete": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/native-01/complete.json",
+      "/native_readback": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/native-01/readback.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }

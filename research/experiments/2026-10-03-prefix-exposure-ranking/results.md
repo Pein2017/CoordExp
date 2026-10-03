@@ -1,5 +1,7 @@
 # Accepted round04: selected conditional repair with natural preservation cost
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 Current status: **closed; lead-accepted** (2026-10-02T23:07:37.841487+00:00). Technical status is `completed_as_released`; scientific status is `selected_conditional_repair_with_natural_preservation_cost`. User scientific acceptance remains false.
 
 Scientific authority: [lead-ruling-02.md](lead-ruling-02.md), committed at `804bf41cd5ff8eb37116f62cce5ccabc5cf76f6d`. Immutable [lead acceptance](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/lead-acceptance-01.json) SHA256 `c93f0863496fde0f14404ca4af8daa2733f7c88f37bc405553131b4b21cba931`.

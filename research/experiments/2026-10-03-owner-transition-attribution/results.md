@@ -1,5 +1,7 @@
 # Round05 accepted saved-output attribution
 
+Current evidence: [attribution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/owner-transition-attribution-05/) and [retained round04 raw evidence](../../../outputs/research/physical-fn-recovery/2026-10-03/prefix-exposure-ranking-04/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance and logical hash keys. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 All54 saved measurements reproduce the accepted round04 records exactly, including raw/category owner IDs, matches, IoUs, denominator IDs, invalid-row details and burdens. All114 category transition instances reconcile to the accepted ID sets: single31 gains/29 losses; multiple24 gains/30 losses. Coverage remains anchor274, single276, multiple268 on18 images/570 annotations. The lead has accepted and closed this unit. Technical status is `completed_as_frozen`; scientific status is `descriptive_evaluator_conditions_only`. User scientific acceptance remains false; no next unit is scheduled.
 
 ## Current acceptance

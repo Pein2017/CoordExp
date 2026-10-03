@@ -117,5 +117,13 @@
     "unresolved_entity_identity": 8,
     "assignment_exchange_unchanged_candidate": 1
   },
-  "closed_at": "2026-10-03T05:26:26.573948+00:00"
+  "closed_at": "2026-10-03T05:26:26.573948+00:00",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {},
+    "retained_predecessor_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/retained-execution-01",
+    "local_raw_expansion_map": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/receipt.json#/raw_identities"
+  }
 }

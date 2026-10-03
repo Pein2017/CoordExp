@@ -1,5 +1,7 @@
 # CPU preparation candidate
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 At CPU handoff, no native/model request had been executed. Scientific status was unmeasured;
 the [frozen unit](unit.md) owns meaning and bounds. Fresh worker
 `01a0fe66-3b0a-7082-8122-0319b5163bfa` was verified live as GPT-6.1-Sol/high in the

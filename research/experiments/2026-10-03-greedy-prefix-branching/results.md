@@ -1,5 +1,7 @@
 # Native coordinate branching: terminal fidelity HOLD
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 Native and maintained readback completed with exits0/0; cleanup verification
 exited0. All four frozen sites retain native-fidelity HOLD, so all eight
 alternative requests were skipped and the alternative-continuation comparison

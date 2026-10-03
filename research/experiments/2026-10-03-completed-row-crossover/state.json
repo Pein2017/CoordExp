@@ -81,5 +81,21 @@
     "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/lead-acceptance-01.json",
     "sha256": "ec559aac3ed02be82513bd98ed7fa4f21861a7c9879ea01cabef6e942feb0d26"
   },
-  "result": "research/experiments/2026-10-03-completed-row-crossover/results.md"
+  "result": "research/experiments/2026-10-03-completed-row-crossover/results.md",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/released_contract": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/released-contract-01.json",
+      "/lead_release_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/lead-release-01.json",
+      "/native_invocation": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/native-invocation-01.json",
+      "/native_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01",
+      "/native_terminal_candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/native-terminal-candidate-01.json",
+      "/native_terminal": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/native-01/complete.json",
+      "/native_readback": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/native-01/readback.json",
+      "/native_cleanup": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/native-cleanup-01.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/completed-row-crossover-03/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }

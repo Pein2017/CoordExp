@@ -260,5 +260,26 @@
   "lead_ruling": {
     "path": "research/experiments/2026-10-03-output-delta-crossover/lead-ruling-02.md",
     "commit": "a5bfa61eb50a225d1643a9436ffef514ef2965a1"
+  },
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/native_invocation/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/invocation-01.json",
+      "/native_release/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/released-contract-01.json",
+      "/native_terminal_candidate/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/terminal-candidate-01.json",
+      "/native_terminal/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/complete.json",
+      "/native_readback/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/readback.json",
+      "/native_phase_receipts/R_R/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/native-R_R/complete.json",
+      "/native_phase_receipts/R_M/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/native-R_M/complete.json",
+      "/native_phase_receipts/M_R/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/native-M_R/complete.json",
+      "/native_phase_receipts/M_M/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/package-01/native-M_M/complete.json",
+      "/native_cleanup/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/terminal-cleanup-01.json",
+      "/first_hybrid_seam/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/first-hybrid-seam-01.json",
+      "/native_return_report": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/native-terminal-report-01.md",
+      "/native_return_receipt": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/native-terminal-return-01.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/retained-execution-01/lead-acceptance-01.json"
+    }
   }
 }

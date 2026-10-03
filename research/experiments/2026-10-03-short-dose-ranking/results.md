@@ -1,5 +1,7 @@
 # Accepted short-dose contrast; round06 closed
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/short-dose-ranking-06/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 Both fixed endpoints repair6/6 fresh baseline-illegal contexts and retain4/4 baseline-legal contexts. Natural category-correct known-owner counts are274 at anchor,267 after1 and261 after4. The package and unchanged final readback exited0. The lead accepts the completed fixed contrast under [ruling02](lead-ruling-02.md); user scientific acceptance remains false.
 
 | Native endpoint | Illegal repaired | Legal retained | Category owners | Geometry owners |

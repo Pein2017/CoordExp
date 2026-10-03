@@ -119,5 +119,28 @@
     "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/lead-acceptance-01.json",
     "sha256": "ff045f47565bdce6c92e1c8e08eca207876d0b591a20c2db660491acb1825d3f"
   },
-  "lead_accepted_at": "2026-10-03T01:26:38.456866+00:00"
+  "lead_accepted_at": "2026-10-03T01:26:38.456866+00:00",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/released_contract/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/released-contract-01.json",
+      "/lead_release/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/lead-release-01.json",
+      "/package_invocation": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-invocation-01.json",
+      "/package_log": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01.log",
+      "/execution_output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01",
+      "/first_real_update": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/first-real-update-01.json",
+      "/first_native_readout": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/first-native-anchor-readout-01.json",
+      "/terminal_candidate/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/native-terminal-candidate-01.json",
+      "/terminal/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/complete.json",
+      "/readback/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/readback.json",
+      "/cleanup/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/cleanup-terminal-01.json",
+      "/phase_receipts/native-anchor/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/native-anchor/complete.json",
+      "/phase_receipts/native-gmass1/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/native-gmass1/complete.json",
+      "/phase_receipts/native-gmax1/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/native-gmax1/complete.json",
+      "/phase_receipts/train/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/package-01/train/complete.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }

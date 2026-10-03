@@ -1,5 +1,7 @@
 # Lead-accepted matched supplied-coordinate continuations
 
+Current evidence: [retained execution artifacts](../../../outputs/research/physical-fn-recovery/2026-10-03/matched-coordinate-branches-02/retained-execution-01/); see the [shared retirement record](../2026-10-03-greedy-prefix-branching/retirement-01.md). Old absolute locations remain historical provenance. Execution/readback commands tied to the old checkout are archived; new execution requires separate qualification.
+
 Native and maintained readback exited0/0. All24 requests completed; all12
 condition pairs agreed on the primary semantic vector and exact tokens/stop.
 All8 C-A/C-B contrasts are eligible within the frozen supplied-prefix scope.

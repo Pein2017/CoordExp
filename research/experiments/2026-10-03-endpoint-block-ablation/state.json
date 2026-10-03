@@ -142,5 +142,22 @@
       "image_id": 5001
     }
   ],
-  "closure_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/.local/scratch/endpoint-block-ablation-09/closed-return-01.json"
+  "closure_direct_return_receipt": "/data/CoordExp/.worktrees/research-probes/.local/scratch/endpoint-block-ablation-09/closed-return-01.json",
+  "artifact_retention": {
+    "status": "verified_byte_preserving_retention",
+    "record": "research/experiments/2026-10-03-greedy-prefix-branching/retirement-01.md",
+    "copy_manifest": "outputs/research/physical-fn-recovery/2026-10-03/greedy-prefix-branching-01/worktree-retirement-01/copy-manifest.json",
+    "current_artifacts": {
+      "/released_contract/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/released-contract-01.json",
+      "/lead_release/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/lead-release-01.json",
+      "/native_invocation/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/invocation-01.json",
+      "/terminal_candidate": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/terminal-candidate-01.json",
+      "/scheduled_runtime_seams": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/scheduled-seams-01.json",
+      "/terminal/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/package-01/complete.json",
+      "/readback/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/package-01/readback.json",
+      "/terminal_readout": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/terminal-readout-01.json",
+      "/cleanup": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/terminal-cleanup-01.json",
+      "/lead_acceptance/path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/retained-execution-01/lead-acceptance-01.json"
+    }
+  }
 }
