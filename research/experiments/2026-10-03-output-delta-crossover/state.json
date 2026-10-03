@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-output-delta-crossover",
   "lifecycle": "ready",
-  "status": "CPU_CANDIDATE_AWAITING_EXACT_LEAD_RELEASE",
+  "status": "NATIVE_COMPLETED_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
   "evidence": "unreviewed",
-  "scientific_status": "unmeasured",
+  "scientific_status": "unreviewed_fixed_four_arm_observation",
   "protocol": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
   "state_source": "research/experiments/2026-10-03-output-delta-crossover/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -11,7 +11,7 @@
   "worker_effort": "high",
   "predecessor": "2026-10-03-mass-versus-ranking",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
@@ -29,7 +29,8 @@
     "model": "gpt-6.1-sol",
     "reasoningEffort": "high",
     "cwd": "/data/CoordExp/.worktrees/research-probes",
-    "verified_by": "worker_turn.py inspect exit 0"
+    "execution_cwd": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
+    "verified_by": "worker_turn.py release-entry inspection exit0"
   },
   "direct_return": {
     "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -94,15 +95,15 @@
     }
   },
   "real_execution": {
-    "model_loads": 0,
-    "HF_forwards": 0,
-    "native_requests": 0,
+    "model_engines": 4,
+    "native_requests": 112,
+    "HF_training_forwards": 0,
     "optimizer_steps": 0,
     "owned_model_processes": [],
     "native_startup_forwards": null,
     "child_CUDA": "unmeasured"
   },
-  "first_hybrid_runtime_boundary": "Unresolved until separate release and scheduled R_M native phase; no extra smoke.",
+  "first_hybrid_runtime_boundary": "Scheduled R_M completed successfully; bound first-hybrid-seam-01.json, without an extra call.",
   "execution_checkout_selection": "lead-owned; greedy-prefix-native-01 retained at 2876f43db0d81569937a4ff1142129039204d038",
   "proposed_package_command": [
     "python",
@@ -116,7 +117,7 @@
     "--output",
     "SELECTED_EXECUTION_OUTPUT/package-01"
   ],
-  "stop": "CPU candidate returned directly; await exact separate lead release to this same worker.",
+  "stop": "Native package and its own successful readback complete; awaiting lead acceptance; no next unit scheduled.",
   "cpu_locator_repair": "Published preparation payloads and receipt remain unchanged; qualification binds absolute canonical input locators for execution from another checkout.",
   "effective_focused_checks": {
     "status": "PASS_CPU",
@@ -130,5 +131,125 @@
     "path": "/data/CoordExp/.worktrees/research-probes/.local/scratch/output-delta-crossover-08/pytest-04/test_four_native_callers_final0/package/complete.json",
     "sha256": "8a15000d15cf4255bef2f15f00d92bafd1d169dee4b9fb243c2e45c63d30cba2",
     "scientific_model_evidence": false
-  }
+  },
+  "cpu_lead_accepted": true,
+  "native_invocation": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/invocation-01.json",
+    "exec_session": 72309,
+    "pid": 1861454,
+    "start_ticks": 3713156479,
+    "pgid": 1861454,
+    "sid": 1861454,
+    "utc": "2026-10-03T02:14:09.773413+00:00"
+  },
+  "native_release": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/released-contract-01.json",
+    "sha256": "ff1990247c77b2c9b441fa1db2de6f94abd3937f649c8cea5785a597ff5b9707"
+  },
+  "native_terminal_candidate": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/terminal-candidate-01.json",
+    "sha256": "f7a343347d9cfa5b1df1da50be4588eefa4dbc7450ee306df6f53821399066e7"
+  },
+  "native_terminal": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/complete.json",
+    "sha256": "75d266c0ce733c9348ab42789ae6d168af87d5d59c4748b41fef37863ffe97d5"
+  },
+  "native_readback": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/readback.json",
+    "sha256": "b177a9a32f4bc8cdd1ab729b0c2e76769b14e203e52f6a4e858d0445ac08241a"
+  },
+  "native_phase_receipts": {
+    "R_R": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/native-R_R/complete.json",
+      "sha256": "2f76284a04f82da236eb5931f430360aabbd895ac97e9a0fb92132278be562ea"
+    },
+    "R_M": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/native-R_M/complete.json",
+      "sha256": "d55dbacd4336b63cd61b01b0eb50195c020ef22a9b60efe9189e0cb099292a3d"
+    },
+    "M_R": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/native-M_R/complete.json",
+      "sha256": "62928906f190aab7fddd61da839dbec6277f7623e932f3d979abfb553ee04fb6"
+    },
+    "M_M": {
+      "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/native-M_M/complete.json",
+      "sha256": "dbe41f8259f3b64f0002bc7c851790370a69057e8f36c1deb17d6eb8e9fa82e1"
+    }
+  },
+  "native_counters": {
+    "HF_diagnostics": 0,
+    "continuation_requests": 72,
+    "generated_tokens": 40647,
+    "optimizer_steps": 0,
+    "requests": 112,
+    "score_requests": 40,
+    "training_replays": 0
+  },
+  "native_exit": 0,
+  "native_resources": {
+    "R_R": {
+      "active_seconds": 133.2781804203987,
+      "startup_seconds": 27.556502029299736,
+      "cuda_peak_allocated": null,
+      "cuda_peak_reserved": null,
+      "peak_rss_kib": 1245316,
+      "reaped_children_peak_rss_kib": 6803264,
+      "seconds": 137.11918925493956,
+      "native_internal_startup_capture_forwards": null,
+      "child_CUDA": "unmeasured"
+    },
+    "R_M": {
+      "active_seconds": 150.1043494939804,
+      "startup_seconds": 27.38789112865925,
+      "cuda_peak_allocated": null,
+      "cuda_peak_reserved": null,
+      "peak_rss_kib": 1243376,
+      "reaped_children_peak_rss_kib": 6823880,
+      "seconds": 153.923530690372,
+      "native_internal_startup_capture_forwards": null,
+      "child_CUDA": "unmeasured"
+    },
+    "M_R": {
+      "active_seconds": 162.10138332098722,
+      "startup_seconds": 27.587736897170544,
+      "cuda_peak_allocated": null,
+      "cuda_peak_reserved": null,
+      "peak_rss_kib": 1241212,
+      "reaped_children_peak_rss_kib": 6803192,
+      "seconds": 165.88600450009108,
+      "native_internal_startup_capture_forwards": null,
+      "child_CUDA": "unmeasured"
+    },
+    "M_M": {
+      "active_seconds": 186.64046628028154,
+      "startup_seconds": 27.59038271009922,
+      "cuda_peak_allocated": null,
+      "cuda_peak_reserved": null,
+      "peak_rss_kib": 1239872,
+      "reaped_children_peak_rss_kib": 6831044,
+      "seconds": 190.36534620076418,
+      "native_internal_startup_capture_forwards": null,
+      "child_CUDA": "unmeasured"
+    }
+  },
+  "native_wall_resources": {
+    "exit": 0,
+    "wall_seconds": 724.1639910638332,
+    "utc": "2026-10-03T02:26:13.937406+00:00",
+    "invocation_pid": 1861454,
+    "invocation_start_ticks": 3713156479,
+    "reaped_package_peak_rss_kib": 6831044,
+    "supervisor_peak_rss_kib": 1613292
+  },
+  "retained_new_unit_bytes": 417126779,
+  "native_cleanup": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/terminal-cleanup-01.json",
+    "sha256": "11d7e5fa748c3ff68c847cd0563052a39f19a8f89767b81c0a359ff4fc4f0bb6"
+  },
+  "first_hybrid_seam": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/first-hybrid-seam-01.json",
+    "sha256": "d6a564ef7e3ee2a7073cb135fab51bf3eb7f2e92e6e941179f1a5f148fda71cf"
+  },
+  "native_return_report": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/native-terminal-report-01.md",
+  "native_return_receipt": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/native-terminal-return-01.json"
 }

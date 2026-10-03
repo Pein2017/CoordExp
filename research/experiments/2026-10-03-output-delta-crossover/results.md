@@ -1,74 +1,119 @@
-# CPU candidate: output-delta crossover round08
+# Round08 native terminal candidate
 
-Worker `01a0ff68-a085-7bd0-bfa6-01b47c2df2a1` verified actual `gpt-6.1-sol/high`, active,
-and canonical cwd through `worker_turn.py` on ENTRY (exit0). Starting source was clean
-`04423a10753223d15b058f53550b4c129395b2c7`. Direct return is to lead
-`01a0fdd8-26b6-7240-ab56-f021c05f3445` through the [lead-worker skill](/data/CoordExp/.codex/skills/lead-worker/SKILL.md).
+The exactly released package exited0; all four fresh serial arms completed and the
+package's own final readback succeeded. Source remains clean/detached at
+`913cc57e1f8cdc6283a906d90b3d8c293a9e6d2c` in `/data/CoordExp/.worktrees/greedy-prefix-native-01`. No phase/request relaunch,
+extra model call, HF/training forward, optimizer, fresh anchor or repeated readback occurred.
+Worker actual settings remain GPT-6.1-Sol/high. Lead acceptance and scientific
+interpretation remain pending; this record is an unreviewed terminal candidate.
 
-The [frozen unit](unit.md) owns meaning, fixed observations, bounds and directed
-contrasts. CPU preparation is complete; scientific evidence remains unmeasured.
-No real model load, HF/native forward, optimizer, GPU job or checkpoint advancement occurred.
+[CPU preparation and its test history](../2026-10-03-output-delta-crossover/state.json)
+remain bound in state and canonical outputs. The [unit](unit.md) and
+[lead ruling](lead-ruling-01.md) own the fixed question, release and claim boundary.
 
-Two originals reference their immutable accepted checkpoints. Both hybrids are
-published read-only under `/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/preparation-01/hybrids/`. Each replaces the entire output table,
-keeps the input table with its body and preserves adapter/config/model-card and
-metadata bytes. Installed safetensors serialized the FP32 tables directly. The
-maintained untied runtime inspector verifies both parents and both hybrids on CPU.
-The ordered token IDs/strings and base/config/tokenizer identities align exactly.
+Both fixed-body replacements with the M output table increase aggregate invalidity
+(+18 at R body,+164 at M body), complete repeats (+141,+220), length (+1483,+2182)
+and net category/geometry known-owner counts (+1 each). Body contrasts add four net
+known owners at either fixed output. Scene7511 has the opposing invalidity change
+(-1 at both bodies); near-pair and literal-repeat magnitudes disagree across bodies.
+These are measured endpoint differences; their scientific disposition belongs to
+the lead.
 
-| Hybrid | Five-payload weight identity |
-|---|---|
-| R_M | `f6b0b114fa6ce07bc39050104faa68fdf5422a6b816e135ee9bd1530c77c047b` |
-| M_R | `95452ecc1e7fae9bb71c670398fc769247dd51dde4699b3e3980395a876495c8` |
+Exact release SHA256`ff1990247c77b2c9b441fa1db2de6f94abd3937f649c8cea5785a597ff5b9707`; qualified execution candidate
+SHA256`e10756535812f1f169ad87eb5e82a338aaa2eba411ea6193a12f7f1d51b43afb`. Full immutable source/release/command,
+phase/weight/parent/hybrid provenance/readback/resource/cleanup bindings:
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/terminal-candidate-01.json` (SHA256`f7a343347d9cfa5b1df1da50be4588eefa4dbc7450ee306df6f53821399066e7`).
+Full per-image outcome and owner gained/lost/retained IDs for all five edges:
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/complete.json` (SHA256`75d266c0ce733c9348ab42789ae6d168af87d5d59c4748b41fef37863ffe97d5`). Readback:
+`/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01/readback.json` (SHA256`b177a9a32f4bc8cdd1ab729b0c2e76769b14e203e52f6a4e858d0445ac08241a`).
 
-New immutable hybrid payload/provenance/identity storage is177,210,378 bytes;
-read-only parent inputs are excluded. Preparation, CPU layout and focused check
-identities are bound in [state.json](state.json); candidate/source/check-log identities
-and actual command exits are recorded in `/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/qualification-01.json`
-and `checks-exits-01.json`. Source qualification requires a clean scoped commit;
-`cpu-candidate-01.json` is the authoritative candidate/source envelope.
-
-Focused checks passed across the unchanged assembly/sign checks and the final caller
-check. The first module run exited1 because JSON restoration changed original bytes,
-preventing a later mutation from reaching its intended consumer check. The test now
-restores exact bytes. Its repaired caller rerun exited0; its final aggregate-readout
-rerun exited0. Final qualification/assembly/caller checks also verify that the
-qualified candidate binds absolute canonical checkpoint inputs. Preparation had
-process-relative locators; its payloads and immutable receipt remain unchanged.
-Qualification resolves those locators before publishing the execution candidate.
-The last three-check run exited1: qualification and caller/consumer passed,
-while a release-gate test hit the absolute-path guard on the preserved preparation
-manifest. The final assembly/release-gate rerun uses absolute candidate inputs and
-exited0. All four focused checks pass across these bounded runs; unchanged sign
-checks are reused. Full logs and all exits remain in canonical unit outputs. No old suite
-was rerun. Existing pure frontend, score, natural, evaluator and process-group cleanup
-helpers are reused without changes to predecessor/shared-runtime globals.
-
-The actual four serial native callers were exercised with CPU engines in
-R_R,R_M,M_R,M_M order:40 supplied scores+72 natural requests=112 simulated requests.
-Checks reject nine assembly/identity mutations, six false receipt arm/source/count/
-cleanup mutations, four re-signed score/owner/length mutations and four false terminal
-fields. An independent factorial oracle checks signs, interaction and gained/lost/
-retained owner IDs. Actual consumer readback rejects reversed direction and recomputes
-per-image plus per-arm aggregate owner IDs, burdens, length and stop counts. These are
-CPU-double plumbing checks, not fresh model results.
-
-Proposed exact package invocation template, after lead selects source/checkout/output
-and supplies the exact release SHA:
+Exact command (sole invocation; PID1861454/start ticks3713156479,
+PGID/SID1861454, tool session72309, started2026-10-03T02:14:09.773413+00:00):
 
 ```bash
-python -m probes.output_delta_crossover package --contract EXACT_LEAD_RELEASE_CONTRACT --contract-sha256 EXACT_LEAD_RELEASE_SHA256 --output SELECTED_EXECUTION_OUTPUT/package-01
+python -m probes.output_delta_crossover package --contract /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/released-contract-01.json --contract-sha256 ff1990247c77b2c9b441fa1db2de6f94abd3937f649c8cea5785a597ff5b9707 --output /data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/package-01
 ```
 
-Its four serial phase commands are bound in the candidate. Fixed limits remain40
-scores+72 natural requests, at most222088 new tokens, cap3084, context4456, one GPU/rank/
-sequence,2GiB KV, four1800-second active windows with one30-second owned-group cleanup
-window per phase, and1GiB retained hybrid/native evidence. Successful phases continue
-for null/mixed/worse science; technical failure preserves partial evidence, drains
-owned groups and stops without relaunch.
+All40 supplied scores and72 natural generations completed:112 requests, actual
+40647 generated tokens including40 scored tokens;
+maximum222088. Natural generation cap3084, context4456,2GiB KV and one GPU/rank/
+sequence remained frozen. Total active632.124s (<7200);
+package wall724.164s. New retained unit evidence417126779 bytes (<1GiB),
+including both hybrids and records, excluding accepted parent inputs.
 
-The first scheduled R_M engine is the unresolved real composition/runtime boundary.
-Native startup/capture forwards and child CUDA remain explicitly unmeasured. There
-are no owned model/native processes. The native checkout remains at2876f43db until
-lead selection. Await separate exact release to this worker; no scientific
-self-acceptance or next-unit scheduling.
+R_R: 10/10 legal; R_M: 10/10 legal; M_R: 10/10 legal; M_M: 10/10 legal. Literal emissions, full-vocabulary legal mass and max margin
+are retained at every context/site/inherited split. Zero illegal denominators remain
+absent error contrasts. These observations do not create natural-recovery credit.
+
+Aggregate natural measurements; owner IDs are annotation-relative known owners.
+Longer/capped outputs have more opportunities for invalid and repeated rows.
+Near-pair counts multiply row occurrences and do not count physical entities:
+
+| Arm | Category owners | Geometry owners | Invalid | Complete repeats | Valid repeats | Near pairs | Malformed | Unmatched | Category disagreements | Natural tokens | Caps | EOS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| R_R | 267 | 269 | 193 | 284 | 100 | 987 | 1 | 396 | 2 | 7924 | 1 | 17 |
+| R_M | 268 | 270 | 211 | 425 | 230 | 5709 | 1 | 525 | 2 | 9407 | 1 | 17 |
+| M_R | 271 | 273 | 391 | 519 | 150 | 459 | 2 | 487 | 2 | 10547 | 2 | 16 |
+| M_M | 272 | 274 | 555 | 739 | 215 | 1026 | 3 | 564 | 2 | 12729 | 3 | 15 |
+
+Directed scalar changes use the frozen after-minus-before signs. All other scalar
+burdens and every per-image gained/lost/retained owner set are retained in the terminal:
+
+| Edge (after minus before) | Category owners | Geometry owners | Invalid | Complete repeats | Valid repeats | Near pairs | Natural tokens | Caps |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| d_R (R_M - R_R) | 1 | 1 | 18 | 141 | 130 | 4722 | 1483 | 0 |
+| d_M (M_M - M_R) | 1 | 1 | 164 | 220 | 65 | 567 | 2182 | 1 |
+| body_at_R (M_R - R_R) | 4 | 4 | 198 | 235 | 50 | -528 | 2623 | 1 |
+| body_at_M (M_M - R_M) | 4 | 4 | 344 | 314 | -15 | -4683 | 3322 | 2 |
+| original (M_M - R_R) | 5 | 5 | 362 | 455 | 115 | 39 | 4805 | 2 |
+| Interaction d_M - d_R | 0 | 0 | 146 | 79 | -65 | -4155 | 699 | 1 |
+
+Net owner changes do not describe which owners were exchanged. Counts below
+retain loss alongside gain; full per-image IDs remain in the bound terminal:
+
+| Edge | Category gained / lost / retained | Geometry gained / lost / retained |
+|---|---:|---:|
+| d_R | 4 / 3 / 264 | 4 / 3 / 266 |
+| d_M | 1 / 0 / 271 | 1 / 0 / 273 |
+| body_at_R | 18 / 14 / 253 | 18 / 14 / 255 |
+| body_at_M | 19 / 15 / 253 | 19 / 15 / 255 |
+| original | 18 / 13 / 254 | 18 / 13 / 256 |
+
+Scene7511 remains visible alongside the aggregate:
+
+| Arm | Category owners | Geometry owners | Invalid | Complete repeats | Near pairs | Tokens | Cap |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| R_R | 9 | 9 | 192 | 260 | 960 | 3084 | 1 |
+| R_M | 9 | 9 | 191 | 262 | 725 | 3084 | 1 |
+| M_R | 9 | 9 | 221 | 263 | 239 | 3084 | 1 |
+| M_M | 9 | 9 | 220 | 264 | 205 | 3084 | 1 |
+
+Measured phase resources; RSS units KiB. Startup/capture forwards and child CUDA
+allocation remain explicitly unmeasured; startup time is inside each active window:
+
+| Arm | Requests | Active seconds | Startup seconds | Parent peak RSS | Reaped child peak RSS |
+|---|---:|---:|---:|---:|---:|
+| R_R | 28 | 133.278 | 27.557 | 1245316 | 6803264 |
+| R_M | 28 | 150.104 | 27.388 | 1243376 | 6823880 |
+| M_R | 28 | 162.101 | 27.588 | 1241212 | 6803192 |
+| M_M | 28 | 186.640 | 27.590 | 1239872 | 6831044 |
+
+The first scheduled R_M hybrid engine loaded the canonical hybrid, bound the expected
+weight identity in startup and all29 norm/operation receipts, acknowledged norm OFF,
+and completed10 scores+18 natural generations before automatic continuation. Its
+[seam record](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/first-hybrid-seam-01.json) and direct-return receipt are retained.
+This resolves the scheduled composition/runtime boundary without an extra smoke.
+
+All four package phase exits are0 and owned groups drained; all four native children
+closed. Fresh `/proc` observations find no live owned process/group or matching
+invocation; [cleanup record](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/output-delta-crossover-08/terminal-cleanup-01.json) retains observed PID/start
+identity and PGID/SID for package, phases and native children. No unrelated process
+was stopped. The initial scratch-script path error exited2 before any package process;
+then the corrected launcher started the sole package invocation.
+
+This exchange measures the saved output block on these two saved bodies, including
+later autoregressive history cascades. Metric disagreement and owner gained/lost
+sets constrain interpretation; no universal head mechanism, physical false-negative
+recovery, population generalization or training-replicate estimate is claimed.
+Unmatched predictions remain annotation-relative unknown. Stop here for lead
+acceptance; no subsequent unit is scheduled.
