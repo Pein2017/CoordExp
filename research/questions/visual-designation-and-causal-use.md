@@ -34,6 +34,12 @@ Reopening is justified by a new discriminating contrast: correct versus source-s
 
 The accepted visual-instance-binding contrast (catalog:2026-09-21-visual-instance-binding) finds differentiated A/N region dependence at three admitted recurrence states and one matched control. This downgrades the tested visual-aliasing hypothesis on finite row support. Joint-corner and full-row separation can depend on supplied candidate coordinates, so the evidence does not prove distinct native x1 owner selection, a general instance representation, or a pretraining cause. The accompanying spatial-progress hypothesis (catalog:2026-09-21-spatial-progress-gate) remains untested after technical qualification failure. Neither a new internal binding architecture nor further model work is authorized.
 
+## Training-only pre-row supervision
+
+The finite fixed-bank contrast (catalog:2026-10-03-pre-row-detection-aux) adds a differentiable class/joint-box head at the consumed object opener and discards that head at deployment. On the same18 training images and570 evaluation annotations, the real auxiliary/autograd path executed and losses fell, but the16-update endpoint did not improve ordinary coverage over the matched baseline. The saved owner sets contain207 shared,26 baseline-only and18 auxiliary-only assignments. Conditional realization improved in both arms on the same two of eight supplied-prefix targets, giving no auxiliary-specific advantage.
+
+This is a bounded counterexample to promoting auxiliary-loss fit or confirmed wiring into native utility. Invalid geometry and total complete repeats decreased while valid repetition increased; lower one symptom is not full recovery. Head-local/conditional fitting and shared-generator interference remain compatible alternatives, and the combined class/strict-point-box/gradient exposure contrast does not identify one cause. It neither proves auxiliary supervision universally ineffective nor measures physical false negatives. The unit is closed; a discriminating component/gradient-matched follow-up would require a new question and authorization, not automatic extension.
+
 ## Current reopening boundary
 
 Reopen a bridge with matched target/source-swap and full native-trajectory tests. The chain privileged information -> usable actuator -> endogenous prediction -> specific consumption -> useful native behavior has separate gates; a good activation patch does not establish them all.
