@@ -1,15 +1,15 @@
 {
   "unit_id": "2026-10-03-first-row-history-cross",
-  "lifecycle": "ready",
-  "status": "NATIVE_RELEASED_LAUNCH_PENDING",
-  "evidence": "partial",
-  "scientific_status": "unmeasured",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_COMPLETED_LOCAL_NEGATIVE",
+  "evidence": "accepted",
+  "scientific_status": "first_row_GT_alignment_did_not_rescue_local_bottle_target",
   "protocol": "research/experiments/2026-10-03-first-row-history-cross/unit.md",
   "state_source": "research/experiments/2026-10-03-first-row-history-cross/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
   "authority": "User autonomous next-round grant; lead selected finite4request zero-update diagnostic",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross",
   "budget": {
@@ -19,7 +19,7 @@
     "gpus": 1,
     "optimizer_updates": 0
   },
-  "next_action": "Worker runs one exact4request native invocation; stop at completion, technicalHOLD or failure; no retry or extension.",
+  "next_action": "None scheduled. Unit closed after its four conditions; no automatic training or follow-on query.",
   "boundary": "One image, A0/A16 by native/GT first9 cached actions then64free, at most4requests292actions and zerooptimizer; exactnativefidelitycontrols",
   "not_authorized": [
     "Model/native/GPU call before exact lead release",
@@ -33,5 +33,20 @@
   "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross/native-release-01.json",
   "native_output": "outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross/native-01",
   "cpu_implementation_lead_accepted": true,
-  "job_state": "exact_packet_publication_pending"
+  "job_state": "complete_exit0_process_settled",
+  "result": "research/experiments/2026-10-03-first-row-history-cross/results.md",
+  "native_acceptance": {
+    "status": "lead-accepted",
+    "ruling": "research/experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross/lead-native-consumer-check-01.json",
+    "command_exit": "outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross/native-01-command-exit.json",
+    "execution_commit": "2daf0da8dfc6aed13e16e91cdfe591d464c9f7ac",
+    "readback_sha256": "9ea83fcb5e917a04ab063bf032825587e02b07d795df6d26369d8e9905c4f278",
+    "natural_fidelity_controls": "2of2 exactfirst9argmaxand73tokenmatches",
+    "requests": 4,
+    "generated_actions": 292,
+    "optimizer_updates": 0,
+    "seconds": 47.605080075562,
+    "blocking_counterexamples": []
+  }
 }

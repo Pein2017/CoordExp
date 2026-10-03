@@ -38,6 +38,22 @@ Source256 fixed-history completion (catalog:2026-09-16-source256-fixed-prefix-co
 
 The fresh128 norm-policy result (catalog:2026-09-17-readout-norm-fresh128) shows that output-only inference changes can reduce structural failures without learning, while population physical benefit remains unresolved. The human-review successor discussion (catalog:2026-09-17-readout-norm-fresh128) proposes an inference-only complete-row contrast at confirmed recurrence. Supplied-row success is conditional evidence; recovery credit belongs only to later freely emitted owners, with incumbents and credible unlabeled owners tracked separately.
 
+## First-row history on image351017
+
+The accepted [four-condition diagnostic](../experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md)
+(catalog:2026-10-03-first-row-history-cross) crosses saved rule-stability A0/A16
+with native versus exact-GT first-person history. Both native controls reproduce
+all73saved actions. The three-coordinate substitution changes some later boxes,
+but neither checkpoint localizes the intended next bottle in64free actions.
+At A16/GT, the teacher first row and correct freely generated bottle header still
+produce x1=0 instead of186 before any wrong generated coordinate or repetition.
+That required conditional decision is not yet realized; this specific first-row
+mismatch is insufficient to explain the failure. This does not identify the
+training cause or exclude other history effects, and supplies no sustained
+coverage or physical-recovery evidence. The unit is closed; a new intervention
+would need a separate matched contrast rather than treating this as a general
+history-insensitivity result.
+
 ## Reopening condition
 
 Classify the decision-relevant unresolved behavior from retained evidence before changing the learning problem; this does not require adjudicating every unmatched proposal. Separate conditional underfit, natural access, harmful continuation and incumbent loss. A failed fixed dose is not a general negative; a proposal for more dose or refresh is not evidence that it will work. [Research entry](../index.md) owns the current frontier; the proposed recurrence discriminator is not a frozen protocol or launch grant.

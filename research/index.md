@@ -8,15 +8,17 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [first-row history cross](experiments/2026-10-03-first-row-history-cross/unit.md)
-is the active bounded diagnostic. It crosses saved A0/A16 with native versus
-same-owner GT first-person history on image351017: four short cached continuations,
-zero optimizer updates. Native-history controls must reproduce saved actions;
-a failure is technical HOLD. The question is whether a three-coordinate prefix
-mismatch separates conditional bottle localization from the natural early failure.
-The CPU implementation is accepted and its single native invocation is
-[released](experiments/2026-10-03-first-row-history-cross/lead-ruling-01.md).
-[State](experiments/2026-10-03-first-row-history-cross/state.json) owns continuation.
+The [first-row history cross](experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md)
+is lead-accepted and closed. Four requests/292actions with exact native-history
+controls show that replacing the first person's three differing coordinate
+tokens with GT does not recover the intended next bottle at A0 or A16. At A16,
+the correct teacher first row and freely correct bottle header still lead to
+x1=0 instead of186 before any wrong generated coordinate or repeated row.
+Other coordinates do change, so this is a local negative for that specific
+prefix-mismatch explanation, not history invariance or an identified training
+cause. No checkpoint is promoted and no further unit is scheduled.
+[Results](experiments/2026-10-03-first-row-history-cross/results.md) retain all
+four continuations, short-budget censoring, costs and limitations.
 
 The [rule-stability IoU90 contrast](experiments/2026-10-03-rule-stability-iou90/lead-ruling-04.md)
 is lead-accepted and complete. At the prescribed 16-update endpoint, B has
