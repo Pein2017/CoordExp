@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-mass-versus-ranking",
-  "lifecycle": "planned",
-  "status": "CPU_PREPARATION_AUTHORIZED",
-  "evidence": "none",
+  "lifecycle": "ready",
+  "status": "CPU_CANDIDATE_PENDING_LEAD_REVIEW",
+  "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
@@ -23,5 +23,27 @@
     "editing predecessor probes or shared runtime without lead ruling",
     "rewriting historical evidence or worker next-unit scheduling"
   ],
-  "boundary": "CPU-first preparation of one Gmass update and fresh native anchor/Gmax1/Gmass1 readout; exact separate lead release required for model execution."
+  "boundary": "CPU-first preparation of one Gmass update and fresh native anchor/Gmax1/Gmass1 readout; exact separate lead release required for model execution.",
+  "worker_thread": "01a0ff2d-e098-74e2-aa11-c65e21e558fc",
+  "worker_actual_model": "gpt-6.1-sol",
+  "worker_actual_effort": "high",
+  "worker_actual_cwd": "/data/CoordExp/.worktrees/research-probes",
+  "direct_return": "python /data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py --lead-thread 01a0fdd8-26b6-7240-ab56-f021c05f3445 --worker-thread 01a0ff2d-e098-74e2-aa11-c65e21e558fc --cwd /data/CoordExp/.worktrees/research-probes --to lead --send --message REPORT_FILE --receipt NEW_RECEIPT_FILE",
+  "result": "research/experiments/2026-10-03-mass-versus-ranking/results.md",
+  "preparation": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/preparation-01/manifest.json",
+  "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/candidate-01.json",
+  "cpu_checks": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/cpu-checks-final-01.json",
+  "historical_gmax_displacement": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/historical-gmax-displacement-01.json",
+  "qualification_owner": "worker_CPU_candidate_only",
+  "real_execution_status": "not_released_not_started",
+  "process_job_state": "no_real_model_or_native_package_started; no_gpu_job",
+  "source_identity": "outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/candidate-01.json#/source",
+  "real_runtime_gaps": [
+    "one_real_Gmass_update_and_20_HF_diagnostics",
+    "first_scheduled_native_readout_and_remaining_fixed_requests",
+    "real_Gmass_gradient_clip_finite_state_and_serialized_displacement",
+    "native_internal_startup_forward_count_explicitly_unmeasured"
+  ],
+  "next_action": "Stop at qualified CPU candidate. Lead alone selects/qualifies execution source and releases one exact package to this same worker. No next-unit scheduling.",
+  "evidence_scope": "CPU_only"
 }
