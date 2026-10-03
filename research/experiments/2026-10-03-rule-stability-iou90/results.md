@@ -504,3 +504,114 @@ No native/model/GPU invocation is started by this corrected CPU preparation.
 Narrow compilation of the nine changed Python files and `git diff --check`
 exited0; `cpu-candidate-repair-01/static-checks.json` retains paths, status and
 0.054786s check duration. No complete suite, acquisition or model fixture reran.
+
+
+## Released native qualification: completed, pending lead acceptance
+
+The lead accepted implementation `cbbce5e588daeb5a9f3bad7422be3abe0e5e9fdc` and
+released one B qualification in `22ea4e1175b8e11fd16b9d8d062eb49769a6207b`
+(tree`8654e9ab03a7ec8e182176206080dde3456ae8bf`). All157 source-file contents
+were unchanged by that records-only rebind. Exact release SHA256:
+`fabc492e6fd3e56b04619b451932d649cd7942cdcf5b4774ba1a234d5564503e`.
+The command below ran once; no primary packet, retry, warmup, extra acquisition
+or repeated successful readback was executed:
+
+```bash
+python -m probes.rule_stability native-run --config outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/candidate-preparation-02/qualification-B-release.json --output outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-qualification-B-01
+```
+
+Owner wrapperPID2950598, nativePID2950599, torchrunPID2951102, initial
+rank0..7 PIDs2951463..2951470, exec session90297. Owner/main torchrun/fresh-reload
+torchrun and terminal all exited0; all16 rank completion receipts are present.
+The entry performed its one full base/anchor qualification on11 payload files.
+Terminal source/stat verification completed before this results update. All
+owned processes settled, with no manual kill or replacement; a final `/proc`
+check found none. Fresh-reload PIDs were not retained by the runner and were not
+reconstructed; its awaited exit0 and eight completion receipts are retained.
+
+Evidence under the unit output root: `native-qualification-B-01/` contains
+invocation/process-exit/terminal/readback, rank entry/assignment/composition,
+version0/1 acquisition and analyses, update1, checkpoints0/1, and fresh-reload
+receipts. Adjacent `native-qualification-B-01-owner.log`, `*-owner-start.json`,
+`*-owner-exit.json`, `*-session.json`, `*-launched.json`, `*-cleanup.json` and
+`*-worker-summary.json` retain ownership, actual exits, structured observations
+and cost/projection details. Direct launch receipt: `transport/native-launched-01.json`.
+The summary only reads published metadata; it does not rerun a model or consumer.
+Two one-off projections exited1 (an acquisition-summary file treated as a
+trajectory, then `full:ID` positive owners compared directly to integer IDs).
+Corrected projections exited0 without source/native changes. All570 unique
+positive owner IDs then matched the full570 evaluator IDs, with5331 target atoms.
+
+Actual work:36G+18S+18fresh-reloadG+1technical =73generation requests,
+19,008generated actions (12,672initial +6technical +6,330reload),18P,
+3geometry replays,18D and1six-position diagnostic replay. Both greedy versions
+and checkpoints0/1 passed maintained readback; optimizer continuity/roles,
+independent delta schema and inventories passed. All eight fresh checkpoint1
+loads retained optimizer update1. Reload original IDs and stop reasons matched
+saved version1 on18/18 images, including the capped output.
+
+The diagnostic retained exact six original IDs, finite raw/unforced-normalized
+likelihoods,1024prompt image positions, zero suffix image/video positions and
+restored method binding. Its teacher-forced selection contributed no loss or
+backward. Generation1.627131s, replay0.196786s; maximum absolute cached/full
+conditional log-likelihood gap0.385347 for both raw/policy, mean0.131742.
+Ordinary sampled replay maximum raw gap0.858914, policy0.857063; image-mean
+absolute gaps0.027050/0.027068. Full per-action values are preserved in
+`rank-*/update-1.json` and the diagnostic. Numeric differences are observations;
+no policy/media/position/identity/nonfinite failure occurred.
+
+All18 positive branches and three active geometry branches had nonzero gradients.
+Duplicate credit had160nonzero advantage positions on image14038: sampled events0
+versus greedy events5 at original actions139/148/166/175/193. Advantages ranged
+3/3084..5/3084; its duplicate loss0.487500 and language/input/output gradient
+L2 per-image-over18 were0.053455/0.034559/0.039435. Other17D gradients were zero.
+Global preclip norm2.538394 agreed across ranks, followed by clip1 and one
+continuous AdamW update. This supplies a branch signal, not policy-efficacy proof.
+
+| Greedy observation | Version0 | Version1 |
+|---|---:|---:|
+| Matched full570 annotation IDs |255|246|
+| Annotation-relative FN / FP |315 /98|324 /219|
+| F1 |0.552546|0.475362|
+| Valid rows / duplicate events |353 /5|465 /119|
+| Geometry-invalid rows / malformed outputs |4 /0|226 /1|
+| Generated actions / caps |3342 /0|6330 /1|
+
+Version1 gained17 IDs, lost26 and retained229; complete per-image IDs/burdens are
+in `metrics.json` and the summary. Image351017 changed326actions/17matches to
+3084actions/1match, with113duplicate events and221invalid rows. Its greedy
+request took315.376439s and stopped at budget; fresh reload reproduced it.
+These are one-update B qualification observations, not the finite16-update
+contrast, generalization or physical-FN evidence. No quality gate was added.
+
+Owner wall1078.114521s; launch-to-terminal1066.823509s. Entry import/source/payload
+interval10.194447s includes the one hash but does not isolate hash time.
+Main torchrun671.301107s; initial readback-publication interval7.360626s;
+fresh reload process interval386.468685s; reload readback-publication0.492042s;
+terminal stat/source-publication1.196103s. Slowest main rank7 took649.731622s,
+with325.365972s skew; its startup-to-composition21.975919s and measured
+G0/S0/G1 acquisition sums67.531368/61.794711/351.189500s. Joint branch
+replay/loss/backward/gradient-measurement sums across images were20.411907s P,
+2.385449s G and13.367146s D; these parallel sums are not wall time, and separate
+backward timing was not retained. Checkpoint first-file-write-to-seal spans
+0.352030s/0.668057s exclude export work before the first file. Checkpoints
+contain88,606,106/266,045,742bytes; native output216files/372,890,528bytes.
+Separate finalizer RSS was not retained and was not reconstructed by a rerun.
+
+Maximum main rank RSS13,617,268KiB; reload/owner-child peak13,621,020KiB.
+Maximum CUDA allocated9,159,713,792bytes, reserved12,035,555,328bytes;
+reload allocated9,062,720,000bytes. Peak sampled length343; a full3084-action
+differentiable sampled replay was not acquired. The greedy/reload horizon was
+exercised; future full-horizon training memory and event supply remain uncertain.
+
+Proposed primary observation estimate:43,200s per arm (12hours), for lead binding,
+never a cap/kill/retry/quality gate. With static ranks, version1-like greedy costs,
+version0-like sample lengths/branch costs and measured startup/export/finalizer,
+the slowest-rank projection is7088.895249s/arm (about1.97hours). If all99requests
+on a three-image rank reach3084 at the observed capped rate, acquisition alone
+is31,222.267509s/arm (8.67hours), before larger replay/event/export costs. The
+12hour estimate allows uncertainty but is not a guaranteed upper bound; later
+lengths, full-horizon sampled gradients, parsing, shared contention and memory
+can change. The lead owns native acceptance and exact primary packets. Primary
+remains unreleased; earlier CPU fixture exception and unrelated HF failures remain
+preserved above.
