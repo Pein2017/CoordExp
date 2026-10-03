@@ -1,10 +1,10 @@
-# Native qualification failed; CPU prefix repair accepted
+# One-update native qualification accepted; primary16 prepared
 
-The first one-update native qualification failed during anchor conditional evaluation, before either arm trained. Cleanup is complete. The lead accepts the worker's minimal CPU repair: pass unexpanded chat IDs to vLLM while preserving the frozen expanded expected prompt, literal history suffix, and strict full-prefix equality guard. Native qualification and scientific benefit remain unmeasured.
+The replacement CPU07 qualification completed all11 stages with actual exit0, including both training branches, head-free exports, ordinary/exact-prefix inference, readbacks, offline comparison and cleanup. The lead accepts this one-update execution/consumer qualification. Primary16 outcomes and scientific benefit remain unmeasured.
 
-The user subsequently authorized continuation of this unit. One replacement one-update qualification is being bound under `cpu-07`; the immutable `qualification-candidate-1/lead-release.json` owns its exact launch authority, and owner receipts own subsequent runtime state. Primary16 remains unreleased. Protocol and scientific meaning remain in [unit.md](unit.md). The worker owns package execution, technical checks and ordinary repairs; the lead owns the final consumer/research boundary.
+One-update annotation-relative observations: anchor247, A1 232 and B1 236 matched owners out of570; all conditional current-row scores are0/8. Neither arm improves anchor coverage here. These observations are not a success/nonregression gate, and no parameter or dose is changed. The user-authorized continuation proceeds to the original two-arm16 screen through a separate exact release at `native-16-01/lead-release.json`, with a5400s whole-owner ceiling and no retry, extra dose or subsequent unit.
 
-The preparation evidence below remains historical CPU evidence. The final sections record the failed native invocation and accepted repair.
+Protocol and scientific meaning remain in [unit.md](unit.md). The worker owns package execution, technical checks and ordinary repairs; the lead owns final consumer/research acceptance. The sections below preserve earlier CPU and failed-native evidence; the last section records the accepted native qualification and primary release boundary. Immutable release/owner receipts govern subsequent live runtime state while tracked records remain frozen.
 
 ## Source and implementation
 
@@ -107,7 +107,7 @@ Owner elapsed time was 72.990874s including cleanup/finalization, or 0.162202 al
 
 Immutable raw evidence: `cpu-05/qualification-candidate-1/{terminal.json,stage-0-zero-evaluate-issued.json,stage-0-zero-evaluate-start.json,stage-0-zero-evaluate-terminal.json,stage-0-zero-evaluate.log,owner-native-01.log}`. Projected exit/resource/cleanup evidence: `worker-native-terminal-01.json` in that same root. Failed artifacts and historical source receipts remain unchanged.
 
-## CPU repair acceptance and continuation
+## Historical CPU repair acceptance and replacement qualification
 
 The caller had supplied already-expanded HF bank prompt IDs as `generate_exact`'s unexpanded chat. vLLM expanded the image placeholder again. The repair only tokenizes the maintained `NativeRequest.chat_text` with `add_special_tokens=False`. Image identity, frozen extension, expected expanded prompt, decoder, targets, losses, branch schedule, optimizer/head/export behavior and costs are unchanged. The shared exact-prefix guard is unchanged.
 
@@ -118,3 +118,30 @@ The lead inspected the changed caller and unchanged native guard, obtained a foc
 The replacement `cpu-07/qualification-candidate-1` preserves the eleven-stage two-arm one-update packet: 96 HF forwards, 162,008 HF input tokens, 94,976 visual tokens, 78 evaluation requests capped at 168,072 generated tokens, eight ranks, 1,800s whole-owner ceiling including 30s cleanup reserve. A separate exact release permits one invocation only; no autonomous native retry, extra model readback, warmup, primary16 execution or scientific retuning. The worker retains technical execution/check/repair ownership within that grant.
 
 Native successful exact-prefix evaluation, Qwen/PEFT auxiliary autograd, uneven-rank DDP/head reductions, head-free endpoint export, endpoint inference and final readback/offline remain unqualified. The failure reached none of the training paths. CPU acceptance establishes the tested caller contract, not numerical parity, efficacy or physical-FN recovery.
+
+## Accepted one-update native qualification and primary16 boundary
+
+CPU07 used clean source `faee6831e4c0f89b620de79a616dfee6f6263cb6` and release SHA256 `9dc6df92eae796d660cb37dd28972ea17e0c82e9c2bc059447ece53cdfd85e9c`. All11 owner stages and the external invocation returned exit0. Both arms completed8 ranks and one full-bank update:96 HF forwards,162,008 input tokens and94,976 visual tokens total. Losses, generator/head norms and auxiliary components were finite. B delivered all580 eligible rows exactly once across30 positive branches; A delivered none. Base losses and base-logit hashes matched on all48 initialization pairs. B's native opener autograd guard passed, head gradients were nonzero, and589/590 generator norm entries changed; isolated native auxiliary gradient vectors were not separately measured. Separate clipping and head-free endpoint export executed; the B head is saved separately.
+
+Each of zero/A1/B1 has18 ordinary records and8 frozen conditional records with complete8-rank receipts. Endpoint identities match their arm exports and the zero anchor. Both ordinary comparisons retain the same570 annotation identities and identical zero scores. Conditional scoring considers only the completed current row beginning at character zero; later continuations do not rescue a target. All24 current rows parsed but none matched exact description plus IoU>=.5. For example, B/image2299/row101 produced person `[72,415,154,918]` against `[3,298,100,552]` (IoU about.062). No scoring/identity blocker was found.
+
+| One-update observation | Anchor | A existing objective | B plus auxiliary |
+|---|---:|---:|---:|
+| Matched annotation owners | 247 | 232 | 236 |
+| Annotation-relative FN | 323 | 338 | 334 |
+| Valid rows | 391 | 381 | 354 |
+| F1@IoU.5 | .51405 | .48791 | .51082 |
+| Malformed rows | 0 | 137 | 0 |
+| Literal valid repeats | 10 | 26 | 3 |
+| Newly gained / lost anchor owners | — | 14 / 29 | 10 / 21 |
+| Conditional current target correct | 0/8 | 0/8 | 0/8 |
+
+These are bounded one-update observations, not primary16 benefit or physical-FN recovery. B avoids the observed A malformed/repetition burden but still loses anchor coverage. Unmatched predictions remain annotation-relative unknown.
+
+External owner wall was443.470425s (0.985490 allocated-slot GPU-hours), including startup through teardown; internal meter443.344702s, cleanup completed442.988719s. Sampled descendant aggregate RSS peaked44.029648GiB (15s samples, excludes owner; instantaneous peak unknown). Artifacts at worker inspection totaled204,513,006 bytes including endpoint exports/control/log files, excluding shared model assets. All54 ordinary outputs ended EOS; all24 conditional continuations reached64 tokens. Retained inference tokens totaled13,591 across78 requests. Counts exclude engine-internal initialization/kernel work. Terminal cleanup has no owned-live/unconfirmed/unresolved stage or unfinished watcher;100 PID/start-tick identities were rechecked without matching non-zombie processes.
+
+Evidence: `cpu-07/qualification-candidate-1/{worker-candidate-01.json,worker-qualification-checks-01.json,worker-external-exit-01.json,terminal.json,offline-results.json}` plus complete per-rank updates/exports/evaluation receipts. Lead acceptance: `cpu-07/lead-native-acceptance-01.json`. Lead checked terminal consumer evidence identity and ordinary denominators/results, inspected native gradient summaries, and used one focused independent checkpoint/current-row-consumer review. Worker technical checks were reused; no duplicate evaluator/model invocation or test suite was issued.
+
+The original primary16 contrast is released only by `native-16-01/lead-release.json`: fresh anchor/optimizer per arm,16 updates each,1536 HF forwards,2,592,128 input tokens,1,519,616 visual tokens,78 evaluation requests capped at168,072 generated tokens. The owner runs11 serial stages on8 ranks under5400s including30s cleanup reserve. Scaling the entire measured training-stage wall16-fold gives a planning estimate around2618s including other stages; this is not a guaranteed bound. RSS160GiB and artifacts8GiB remain planning estimates, not enforced gates. Measured one-update memory does not prove an instantaneous or long-run peak.
+
+Primary source/packet binding preserves every execution source byte from the accepted qualification; the intervening commit updates research records only. The packet uses current repaired test/runtime bindings. Primary16 starts afresh rather than continuing A1/B1 or selecting a checkpoint. No head-only proxy, perfect-F1 gate, retuning, retry, extra readback or dose extension. General numerical parity, repeated-run determinism and physical-FN efficacy remain outside this qualification. Stop after the frozen primary result and cleanup; no next unit is scheduled.

@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-03-pre-row-detection-aux",
   "lifecycle": "ready",
-  "status": "LEAD_ACCEPTED_CPU_REPAIR_NATIVE_REBIND_PENDING",
+  "status": "LEAD_ACCEPTED_NATIVE_QUALIFICATION_PRIMARY16_RELEASE_PREPARED",
   "evidence": "accepted",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
@@ -16,8 +16,8 @@
   "native_released": false,
   "lead_accepted": true,
   "user_scientific_acceptance": false,
-  "job_state": "first_native_qualification_failed_cleanup_complete_CPU_repair_accepted",
-  "next_action": "Bind clean repaired source and issue one separate two-arm one-update qualification release at cpu-07; primary16 remains unreleased.",
+  "job_state": "one_update_native_qualification_complete_cleanup_verified",
+  "next_action": "Issue the separate native-16-01 exact release and run the frozen two-arm16 screen once. Stop after terminal results/cleanup; no dose extension or next unit.",
   "boundary": "A existing row objective versus B same plus pre-row detection auxiliary on one fixed self-prefix bank; ordinary inference unchanged.",
   "not_authorized": [
     "model loading/forward, GPU work, new generation or training before an exact lead release",
@@ -82,7 +82,7 @@
       "lead_counterexamples_preserved": true
     }
   },
-  "acceptance_scope": "CPU preparation only; no native qualification or scientific acceptance",
+  "acceptance_scope": "CPU preparation and one-update native execution/consumer qualification; primary16 outcome unmeasured",
   "cpu_acceptance": {
     "status": "lead-accepted",
     "scope": "CPU preparation",
@@ -102,7 +102,7 @@
     "native_qualified": false,
     "scientific_status": "unmeasured"
   },
-  "evidence_note": "Initial CPU preparation accepted; first native qualification failed before training; CPU06 repair accepted after worker RED/GREEN and 18 affected/shared checks plus one lead consumer check. Native success and scientific benefit remain unmeasured.",
+  "evidence_note": "CPU07 owner and all11stages exit0; one-update native path/consumer accepted. A1/B1 do not exceed anchor owner coverage and conditional current-row scores are0/8; these are observations, not qualification gates or efficacy claims.",
   "result": "research/experiments/2026-10-03-pre-row-detection-aux/results.md",
   "native_attempts": [
     {
@@ -122,6 +122,20 @@
       "cleanup": "verified_no_matching_live_owned_process",
       "terminal": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1/terminal.json",
       "measured_resources": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1/worker-native-terminal-01.json"
+    },
+    {
+      "attempt": 2,
+      "root": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/qualification-candidate-1",
+      "source_commit": "faee6831e4c0f89b620de79a616dfee6f6263cb6",
+      "release_sha256": "9dc6df92eae796d660cb37dd28972ea17e0c82e9c2bc059447ece53cdfd85e9c",
+      "status": "lead-accepted_complete",
+      "owner_exit_code": 0,
+      "stages_completed": 11,
+      "training_forwards": 96,
+      "endpoint_exports": 2,
+      "cleanup": "verified_no_matching_live_owned_process",
+      "terminal": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/qualification-candidate-1/terminal.json",
+      "measured_resources": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/qualification-candidate-1/worker-external-exit-01.json"
     }
   ],
   "cpu_repair_acceptance": {
@@ -140,5 +154,38 @@
     "qualification_packet": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/qualification-candidate-1",
     "native_qualified": false
   },
-  "native_release_state_note": "This tracked record freezes pre-launch acceptance. The cpu-07 immutable lead-release.json and owner terminal receipts determine subsequent authorization and runtime state; no retry is implied by a failed invocation."
+  "native_release_state_note": "This tracked record freezes pre-launch qualification acceptance. native-16-01/lead-release.json and subsequent owner receipts determine current launch/runtime authority; no retry or dose extension is implied.",
+  "native_qualified": true,
+  "native_acceptance": {
+    "status": "lead-accepted",
+    "scope": "one-update native execution and terminal consumer qualification",
+    "source_commit": "faee6831e4c0f89b620de79a616dfee6f6263cb6",
+    "receipt": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-07/lead-native-acceptance-01.json",
+    "one_update_outcomes": {
+      "anchor_tp": 247,
+      "A_tp": 232,
+      "B_tp": 236,
+      "conditional_correct": [
+        0,
+        0,
+        0
+      ],
+      "conditional_denominator": 8
+    },
+    "scientific_status": "primary16_unmeasured"
+  },
+  "primary_packet": {
+    "root": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/native-16-01",
+    "updates_per_arm": 16,
+    "source_identity": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/native-16-01/source-identity.json",
+    "release": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/native-16-01/lead-release.json",
+    "native_released": false,
+    "HF_forwards": 1536,
+    "HF_input_tokens": 2592128,
+    "HF_visual_tokens": 1519616,
+    "evaluation_requests": 78,
+    "evaluation_token_ceiling": 168072,
+    "whole_owner_wall_seconds": 5400,
+    "cleanup_reserve_seconds": 30
+  }
 }
