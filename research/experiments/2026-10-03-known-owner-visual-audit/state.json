@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-03-known-owner-visual-audit",
   "lifecycle": "ready",
-  "status": "CPU_EVIDENCE_PREPARATION_AUTHORIZED",
+  "status": "CPU_CANDIDATE_PENDING_LEAD_IMAGE_AUDIT",
   "evidence": "unreviewed",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-known-owner-visual-audit/unit.md",
@@ -24,5 +24,71 @@
     "source-image, predecessor, checkpoint, shared renderer/evaluator or historical receipt mutation",
     "execution checkout advancement, push or worker next-unit scheduling"
   ],
-  "next_action": "New GPT-6.1-Sol/high worker materializes and checks saved evidence; lead owns image interpretation."
+  "next_action": "Lead reviews all23 images/cases, records candidate judgments and acceptance, closes round11, then stops for user report/discussion. No round12.",
+  "worker_thread": "01a1001a-db84-72f2-8e13-221bf749de6b",
+  "technical_status": "CPU_materialization_checked",
+  "result": "research/experiments/2026-10-03-known-owner-visual-audit/results.md",
+  "candidate_receipt": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/receipt.json",
+  "gallery": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/index.html",
+  "ledger": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/ledger.json",
+  "checks": {
+    "accepted_measurements_equal": true,
+    "all_valid_rows_preserved": true,
+    "exact_keys": 23,
+    "first_boundary": {
+      "checked": "real saved adapter -> supported JSONLs -> shared renderer -> PNG/manifest; explicit target reference and full pools",
+      "image_id": 1584,
+      "key": "1584_541559_gain",
+      "passed": true,
+      "renderer_manifest": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/images/1584/shared/manifest.json"
+    },
+    "focused_target_pairs": 23,
+    "full_image_pairs": 10,
+    "gains": 10,
+    "images": 10,
+    "losses": 13,
+    "raw_records": 20,
+    "structural_token_text_mapping_equal": true,
+    "focused_adapter_check": {
+      "command": "python -m pytest -q tests/probes/test_known_owner_visual_audit.py",
+      "exit_code": 0,
+      "passed": 1,
+      "tool_output_chunk": "27aabb",
+      "counterexamples": [
+        "stale image",
+        "parser row mismatch",
+        "omitted valid row",
+        "serialized geometry"
+      ]
+    },
+    "research_knowledge": {
+      "command": "python scripts/check_research_knowledge.py check",
+      "exit_code": 0,
+      "ok": true,
+      "log": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/knowledge-check.log"
+    },
+    "final_inventory_readback": {
+      "exit_code": 0,
+      "source_diff_equal": true,
+      "all10_renderer_manifests_full_pools_equal": true,
+      "all20_source_resolution_dimensions_equal": true,
+      "source_images_not_rehashed": true
+    }
+  },
+  "resources": {
+    "active_wall_seconds": 13.338564187288284,
+    "evidence_bytes": 41619024,
+    "peak_rss_bytes": 1652011008
+  },
+  "entry": {
+    "actual_model": "gpt-6.1-sol",
+    "actual_effort": "high",
+    "cwd": "/data/CoordExp/.worktrees/research-probes",
+    "source_commit": "7b590a8d9d808146a0ea19ac68445aa544e5e53f",
+    "git_status": "clean"
+  },
+  "direct_return": {
+    "entry_receipt": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/entry-return.json",
+    "candidate_receipt": "outputs/research/physical-fn-recovery/2026-10-03/known-owner-visual-audit-11/candidate-return.json"
+  }
 }
