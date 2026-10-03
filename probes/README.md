@@ -10,6 +10,7 @@ registry or compatibility alias for a retired experiment.
 | Readout norm | `python -m probes.readout_norm --input <explicit-arrays.json> --output <fresh.json>`; effective OUTPUT-row lower-median norm scaling, selected logits only |
 | Saved row evaluator | `src.eval.saved_rows`; explicit raw/case/reference-bank inputs, class-agnostic matching, validity and recurrence separately |
 | Online row-credit owner | `python -m probes.online_row_credit_owner --root <released-pair-root> --release-sha256 <exact-digest>`; one source-bound six-stage sequential invocation, separately released by the lead |
+| Rule stability | `python -m probes.rule_stability cpu-smoke --output <fresh-unit-output>`; eight-rank CPU lifecycle with substituted model computation. `native-run --config <exact-lead-packet> --output <bound-output>` runs the frozen [full18/570 IoU90 unit](../research/experiments/2026-10-03-rule-stability-iou90/unit.md); generated proposals grant no native execution. |
 
 QP NPZ fields are hidden_states, target_ids, route_token_ids, base_route_logits,
 top_ids and top_logits. No pickle, model loading or image/panel selection occurs.

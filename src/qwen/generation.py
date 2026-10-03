@@ -190,6 +190,7 @@ def generate_continuations(
     trace: Literal["none", "policy", "raw_and_policy"] = "none",
     seed: int | None = None,
     allow_pad_tokens: bool = False,
+    logits_processor: Sequence[Any] | None = None,
 ) -> tuple[ContinuationResult, ...]:
     """Continue literal histories; fixed seed and fixed grouping define sampling.
 
@@ -197,6 +198,8 @@ def generate_continuations(
     terminal extension or zero budget performs no model work for that request.
     Repetition-penalty batches use equal history widths so left-padding tokens
     cannot become unintended penalty conditioning.
+    Optional score processors must return fresh tensors if raw traces are used;
+    mutating HF's input scores in place would also corrupt its raw-logit channel.
     """
     if trace not in ("none", "policy", "raw_and_policy"):
         raise ValueError("unsupported generation trace")
@@ -292,6 +295,10 @@ def generate_continuations(
             kwargs["generation_config"] = GenerationConfig(
                 **{k: v for k, v in kwargs.items() if k not in inputs}
             )
+        if logits_processor is not None:
+            from transformers import LogitsProcessorList
+
+            kwargs["logits_processor"] = LogitsProcessorList(logits_processor)
         if len(set(group_budgets)) > 1:
             from transformers import StoppingCriteria, StoppingCriteriaList
 
