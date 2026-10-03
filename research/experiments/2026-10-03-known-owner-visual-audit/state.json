@@ -17,5 +17,12 @@
   "model_calls": 0,
   "GPU_calls": 0,
   "boundary": "All23 AA-to-DI known-owner transitions on10 images; CPU materialization, lead visual candidate judgments only, no physical ground-truth or full-FN claim.",
+  "not_authorized": [
+    "model, processor, engine, GPU, training or new generation calls",
+    "new arms, samples, labels or evaluator thresholds",
+    "visual candidate judgments promoted to ground truth or training/acquisition feedback",
+    "source-image, predecessor, checkpoint, shared renderer/evaluator or historical receipt mutation",
+    "execution checkout advancement, push or worker next-unit scheduling"
+  ],
   "next_action": "New GPT-6.1-Sol/high worker materializes and checks saved evidence; lead owns image interpretation."
 }
