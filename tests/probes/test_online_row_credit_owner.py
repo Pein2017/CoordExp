@@ -16,7 +16,7 @@ from probes import online_row_credit_owner as owner
 
 
 CWD = Path(__file__).resolve().parents[2]
-EVIDENCE = CWD / 'outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01'
+EVIDENCE = Path(os.environ.get('OWNER_CPU_SCRATCH', str(CWD / 'outputs/research/physical-fn-recovery/2026-10-02/full-label-self-rollout-fit-01/cpu-01')))
 
 
 class Boundary:
@@ -216,6 +216,8 @@ class Boundary:
                 return CWD
 
         def fixture_open(path, *args, **kwargs):
+            if path.name=='stage-2-A-run.log' and boundary.case=='pre_row_stale_stage' and not (boundary.root/'A').exists():
+                (boundary.root/'A').mkdir()
             if path.name.startswith('evaluator-gate') and boundary.case == 'stale_launch':
                 boundary.clock = boundary.cutoff
             if path.name == 'terminal.json' and boundary.case == 'finalization_overrun':
@@ -223,7 +225,16 @@ class Boundary:
             return original_open(path, *args, **kwargs)
 
         def fixture_popen(argv, **kwargs):
-            if boundary.mode=='full-label':
+            if boundary.mode=='pre-row-aux':
+                row=boundary.commands[len(boundary.launches)];arm=row['arm'];stage=row['stage']
+                if stage=='arm-readback':
+                    directory=boundary.root/arm;directory.mkdir(exist_ok=True)
+                    boundary.dump(directory/'readback.json',dict(bank_sha256=boundary.qual['bank_sha256'],updates=boundary.updates,forwards=48*boundary.updates))
+                if stage=='eval-readback':
+                    directory=boundary.root/('evaluation-'+arm);directory.mkdir(exist_ok=True)
+                    boundary.dump(directory/'frozen.json',dict(CPU_fixture=True))
+                    boundary.dump(directory/'readback.json',dict(bank_sha256=boundary.qual['bank_sha256'],ordinary_requests=18,conditional_requests=8,frozen_sha256=boundary.digest(directory/'frozen.json')))
+            elif boundary.mode=='full-label':
                 row=boundary.commands[len(boundary.launches)]
                 if row['stage']=='run':boundary.run_output.mkdir()
                 if row['stage']=='readback':boundary.install_full_gate()
@@ -289,6 +300,84 @@ class Proc:
 
 
 class OwnerTest(unittest.TestCase):
+    def pre_row_fixture(self,root,updates=16,case='success'):
+        from probes.pre_row_detection_aux.experiment import packet_commands
+        b=Boundary(root,case);b.mode='pre-row-aux';b.updates=updates
+        b.total=1800 if updates==1 else 5400;b.cutoff=b.total-30
+        unit=CWD/'outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12'
+        bank=unit/'cpu-01/bank.json';selection=unit/'conditional-selection-01.json'
+        payload=json.loads(bank.read_text());anchor=Path(payload['checkpoint'])
+        b.commands=packet_commands(root,bank,b.digest(bank),selection,b.digest(selection),anchor,updates)
+        b.dump(root/'argv.json',b.commands)
+        runtime={k:'fixture-'+k for k in ('torch','transformers','vllm')}
+        b.qual=dict(schema='pre-row-fixed-bank-qualification-v1',bank=str(bank),bank_sha256=b.digest(bank),
+            selection=str(selection),selection_sha256=b.digest(selection),updates=updates,
+            runtime=runtime,decoder_runtime_identity=dict(version='fixture-vllm',source_sha256={}),
+            source=dict(commit='fixture-source',files=[dict(path=p,sha256=b.digest(CWD/p)) for p in
+                ('probes/online_row_credit.py','probes/online_row_credit_owner.py','probes/pre_row_detection_aux/__init__.py',
+                 'probes/pre_row_detection_aux/__main__.py','probes/pre_row_detection_aux/bank.py',
+                 'probes/pre_row_detection_aux/objective.py','probes/pre_row_detection_aux/experiment.py')]),sha256={},test_source_sha256={p:b.digest(CWD/p) for p in
+                ('tests/probes/test_pre_row_detection_aux.py','tests/probes/test_online_row_credit_owner.py')},
+            costs=dict(training=dict(input_tokens_total=5032*96*updates,visual_tokens_total=1024*96*updates)))
+        b.dump(root/'qualification.json',b.qual)
+        native=[]
+        for row in b.commands:
+            if row['stage'] in ('run','evaluate'):
+                tail=row['argv'][row['argv'].index('probes.pre_row_detection_aux')+1:]
+                native.append([owner.sys.executable,'-m','probes.pre_row_detection_aux',*tail])
+        b.release.update(mode=b.mode,unit_id='2026-10-03-pre-row-detection-aux',native_released=True,updates=updates,
+            total_wall_ceiling_seconds=b.total,owner_root=str(root),runtime=runtime,bank_sha256=b.qual['bank_sha256'],
+            selection_sha256=b.qual['selection_sha256'],argv_sha256=b.digest(root/'argv.json'),
+            qualification_sha256=b.digest(root/'qualification.json'),exact_invocations=native)
+        b.dump(root/'lead-release.json',b.release);b.release_sha=b.digest(root/'lead-release.json')
+        return b
+
+    def test_pre_row_exact_stages_budgets_and_cleanup(self):
+        for updates in (1,16):
+            with tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+                b=self.pre_row_fixture(Path(d),updates);code,terminal,final=b.run()
+                self.assertEqual(code,0,terminal);self.bounded(b)
+                self.assertEqual([(r['arm'],r['stage']) for r in terminal['issued_stages']],owner.PRE_ROW_STAGES)
+                self.assertEqual(terminal['owned_live_after_cleanup'],[])
+                self.assertEqual(terminal['unresolved_issued_stages'],[])
+                self.assertEqual(final['gpu_hours'],final['elapsed']*8/3600)
+                for launch in b.launches:self.assertNotIn('LEAD_RELEASE_SHA256',launch['argv'])
+
+    def test_pre_row_failure_and_unreleased_or_drifted_packet(self):
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+            b=self.pre_row_fixture(Path(d),case='nonzero');code,terminal,_=b.run()
+            self.assertEqual(code,1);self.assertEqual(len(terminal['issued_stages']),1)
+            self.assertEqual(len(terminal['skipped_stages']),10)
+        for mutation in ('unreleased','stage','bank','dose','source'):
+            with self.subTest(mutation=mutation),tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+                b=self.pre_row_fixture(Path(d))
+                if mutation=='unreleased':b.release['native_released']=False
+                if mutation=='stage':b.commands[0]['stage']='run';b.dump(b.root/'argv.json',b.commands);b.release['argv_sha256']=b.digest(b.root/'argv.json')
+                if mutation=='bank':b.release['bank_sha256']='0'*64
+                if mutation=='dose':b.updates=2
+                if mutation=='source':
+                    b.qual['source']['files']=[];b.dump(b.root/'qualification.json',b.qual);b.release['qualification_sha256']=b.digest(b.root/'qualification.json')
+                b.dump(b.root/'lead-release.json',b.release);b.release_sha=b.digest(b.root/'lead-release.json')
+                with self.assertRaises((AssertionError,ValueError)):b.run()
+                self.assertEqual(b.launches,[])
+
+    def test_pre_row_cost_rejects_conditional_token_overrun(self):
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+            root=Path(d);out=root/'evaluation-zero';rank=out/'rank-0';rank.mkdir(parents=True)
+            (rank/'conditional.json').write_text(json.dumps([dict(generated_tokens=65)]))
+            with self.assertRaises(AssertionError):owner.pre_row_costs([], [out],dict(costs=dict(training=dict(input_tokens_total=1,visual_tokens_total=1))),16)
+
+    def test_pre_row_rejects_stale_stage_initially_and_before_launch(self):
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+            b=self.pre_row_fixture(Path(d));(b.root/'A').mkdir()
+            with self.assertRaises(AssertionError):b.run()
+            self.assertEqual(b.launches,[])
+        with tempfile.TemporaryDirectory(dir=EVIDENCE) as d:
+            b=self.pre_row_fixture(Path(d),case='pre_row_stale_stage');code,terminal,_=b.run()
+            self.assertEqual(code,1,terminal)
+            self.assertEqual(len(b.launches),2)
+            self.assertEqual(terminal['owned_live_after_cleanup'],[])
+
     def exercise(self, case, full_updates=None):
         with tempfile.TemporaryDirectory(dir=EVIDENCE) as directory:
             boundary = Boundary(Path(directory), case)

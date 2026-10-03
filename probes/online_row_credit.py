@@ -950,7 +950,7 @@ def native_batch(q, item):
     return batch
 
 
-def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, insertion_policy=None, branch_index=None, correction_arm=None, duplicate_weight=0):
+def forward(q, model, batch, image, record, plan, encoding, vocab, branch, preservation=None, preservation_weight=0, geometry_weight=0, insertion_policy=None, branch_index=None, correction_arm=None, duplicate_weight=0, replay_device_type='cuda'):
     import torch
     from src.qwen.native import exact_history_inputs
     lineage=None
@@ -1001,8 +1001,9 @@ def forward(q, model, batch, image, record, plan, encoding, vocab, branch, prese
         context_bound,selected_bound=FULL_LABEL_BOUNDS[branch]
         assert len(full)<=context_bound and len(positions)<=selected_bound and len(q.tokenizer)==FULL_LABEL_BOUNDS['vocabulary'], 'full label execution bound exceeded'
     kwargs = exact_history_inputs(q.model,batch.inputs,[full],pad_token_id=q.tokenizer.pad_token_id)
-    kwargs['logits_to_keep'] = torch.tensor(positions,device='cuda')
-    with torch.autocast('cuda',dtype=torch.bfloat16): logits = model(**kwargs).logits
+    assert replay_device_type in ('cpu','cuda')
+    kwargs['logits_to_keep'] = torch.tensor(positions,device=replay_device_type)
+    with torch.autocast(replay_device_type,dtype=torch.bfloat16,enabled=replay_device_type=='cuda'): logits = model(**kwargs).logits
     if branch=='bridge':
         component_rows=[] if plan.get('owner_region') is not None else None
         loss,terms=bridge_objective(logits,positions,sequences,plan,'chain' if completion else insertion_policy,vocab,branch_index,image,record,component_rows)

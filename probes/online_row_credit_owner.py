@@ -6,6 +6,89 @@ from datetime import datetime,timezone
 from importlib.metadata import version
 
 
+PRE_ROW_STAGES = [('zero','evaluate'),('zero','eval-readback'),('A','run'),('A','arm-readback'),
+                  ('B','run'),('B','arm-readback'),('A','evaluate'),('A','eval-readback'),
+                  ('B','evaluate'),('B','eval-readback'),('joint','offline')]
+
+
+def pre_row_binding(root,release,qual,argv,updates,fresh=False):
+    """Validate the one new fixed-bank packet without weakening historical modes."""
+    from probes.pre_row_detection_aux.bank import verify_bank,selection_cases
+    digest=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    assert updates in (1,16) and release['mode']=='pre-row-aux' and release['updates']==updates
+    assert release['native_released'] is True and release['unit_id']=='2026-10-03-pre-row-detection-aux'
+    assert release['total_wall_ceiling_seconds']==(1800 if updates==1 else 5400)
+    assert release['owner_root']==str(root.resolve())
+    assert release['argv_sha256']==digest(root/'argv.json') and release['qualification_sha256']==digest(root/'qualification.json')
+    assert [(r['arm'],r['stage']) for r in argv]==PRE_ROW_STAGES
+    assert qual['schema']=='pre-row-fixed-bank-qualification-v1' and qual['updates']==updates
+    assert qual['source']['commit']==release['source_commit']
+    required={'probes/online_row_credit.py','probes/online_row_credit_owner.py',
+        *('probes/pre_row_detection_aux/'+name for name in ('__init__.py','__main__.py','bank.py','objective.py','experiment.py'))}
+    assert required<={row['path'] for row in qual['source']['files']},'missing frozen execution source'
+    assert release['bank_sha256']==qual['bank_sha256'] and release['selection_sha256']==qual['selection_sha256']
+    bank=verify_bank(qual['bank'],qual['bank_sha256'])
+    cases=selection_cases(qual['selection'],qual['selection_sha256'],bank,qual['bank_sha256'])
+    assert {'torch','transformers','vllm'}<=release['runtime'].keys()
+    assert all(version(k)==v for k,v in release['runtime'].items())
+    assert qual['runtime']==release['runtime'] and qual['decoder_runtime_identity']['version']==release['runtime']['vllm']
+    for path,sha in qual['decoder_runtime_identity']['source_sha256'].items():assert digest(path)==sha,path
+    for path,sha in qual['test_source_sha256'].items():assert digest(path)==sha,path
+    assert {'tests/probes/test_pre_row_detection_aux.py','tests/probes/test_online_row_credit_owner.py'}<=qual['test_source_sha256'].keys()
+    def option(command,name):
+        assert command.count(name)==1 and command.index(name)+1<len(command),name
+        return command[command.index(name)+1]
+    native=[]
+    for row in argv:
+        command=row['argv'];stage=row['stage'];arm=row['arm']
+        assert all(isinstance(x,str) for x in command)
+        distributed=stage in ('run','evaluate')
+        prefix=['python','-m','torch.distributed.run','--standalone','--nproc-per-node=8','--module','probes.pre_row_detection_aux'] if distributed else ['python','-m','probes.pre_row_detection_aux']
+        assert command[:len(prefix)]==prefix and command[len(prefix)]==stage
+        assert option(command,'--bank')==qual['bank'] and option(command,'--bank-sha256')==qual['bank_sha256']
+        output=root/('offline-results.json' if stage=='offline' else arm if stage in ('run','arm-readback') else 'evaluation-'+arm)
+        assert Path(option(command,'--output')).resolve()==output.resolve()
+        if stage in ('run','arm-readback'):
+            assert option(command,'--arm')==arm and int(option(command,'--updates'))==updates
+        if stage in ('evaluate','eval-readback','offline'):
+            assert option(command,'--selection')==qual['selection'] and option(command,'--selection-sha256')==qual['selection_sha256']
+        if stage=='evaluate':
+            checkpoint=Path(bank['checkpoint']) if arm=='zero' else root/arm/f'checkpoint-{updates}'
+            assert Path(option(command,'--checkpoint')).resolve()==checkpoint.resolve()
+        if stage=='offline':
+            for flag,label in (('--zero','zero'),('--arm-a','A'),('--arm-b','B')):
+                assert Path(option(command,flag)).resolve()==(root/('evaluation-'+label)).resolve()
+        if distributed:
+            assert option(command,'--release')==str(root/'lead-release.json') and option(command,'--release-sha256')=='LEAD_RELEASE_SHA256'
+            native.append([sys.executable,'-m','probes.pre_row_detection_aux',*command[len(prefix):]])
+    assert release['exact_invocations']==native
+    if fresh:
+        assert all(not (root/name).exists() for name in ('A','B','evaluation-zero','evaluation-A','evaluation-B','offline-results.json'))
+    assert len(cases)==8
+    return [root/'A',root/'B'],[root/('evaluation-'+a) for a in ('zero','A','B')]
+
+
+def pre_row_costs(run_outputs,evaluation_outputs,qual,updates):
+    result=dict(requests=0,generated_tokens=0,HF_forwards=0,HF_input_tokens=0,HF_visual_tokens=0)
+    for out in run_outputs:
+        for path in out.glob('rank-*/update-*.json'):
+            for row in json.loads(path.read_text())['forwards']:
+                assert 0<=row['tokens']<=5032 and 0<=row['visual_tokens']<=1024
+                result['HF_forwards']+=1;result['HF_input_tokens']+=row['tokens'];result['HF_visual_tokens']+=row['visual_tokens']
+    for out in evaluation_outputs:
+        for path in out.glob('rank-*/*.json'):
+            if path.stem.isdigit():rows=[json.loads(path.read_text())];cap=3084
+            elif path.name=='conditional.json':rows=json.loads(path.read_text());cap=64
+            else:continue
+            for row in rows:
+                assert type(row['generated_tokens']) is int and 0<=row['generated_tokens']<=cap
+                result['requests']+=1;result['generated_tokens']+=row['generated_tokens']
+    limits=dict(requests=78,generated_tokens=168072,HF_forwards=96*updates,
+        HF_input_tokens=qual['costs']['training']['input_tokens_total'],HF_visual_tokens=qual['costs']['training']['visual_tokens_total'])
+    assert all(result[k]<=v for k,v in limits.items()),result
+    return result
+
+
 def run(root, release_sha256, mode='paired1', updates=None):
     start=time.monotonic()
     root=Path(root);cwd=Path(__file__).resolve().parents[1]
@@ -34,6 +117,9 @@ def run(root, release_sha256, mode='paired1', updates=None):
         assert [(x['arm'],x['stage']) for x in argv]==[('control','run'),('control','readback'),('treatment','run'),('treatment','readback'),('control','offline'),('treatment','offline')]
         assert release['total_wall_ceiling_seconds']==2700
         total_seconds=2700;run_outputs=[root/'control',root/'treatment'];canonical_qual=None
+    elif mode=='pre-row-aux':
+        run_outputs,evaluation_outputs=pre_row_binding(root,release,qual,argv,updates,fresh=True)
+        total_seconds=release['total_wall_ceiling_seconds'];canonical_qual=None
     else:
         assert mode=='full-label' and updates in (2,16)
         total_seconds=900 if updates==2 else 2700
@@ -100,6 +186,8 @@ def run(root, release_sha256, mode='paired1', updates=None):
         owner_source_sha256=digest(__file__),
         **({'mode':mode,'updates':updates,'qualification_sha256':digest(root/'qualification.json'),
             'qualification_path':str(canonical_qual),'run_output':str(run_outputs[0])} if mode=='full-label' else {}),
+        **({'mode':mode,'updates':updates,'bank_sha256':qual['bank_sha256'],'selection_sha256':qual['selection_sha256'],
+            'run_outputs':[str(p) for p in run_outputs],'evaluation_outputs':[str(p) for p in evaluation_outputs]} if mode=='pre-row-aux' else {}),
         direct_return=['python','/data/CoordExp/.codex/skills/lead-worker/scripts/worker_turn.py','--lead-thread',release['lead_thread'],
                        '--worker-thread',release['worker_thread'],'--cwd',str(cwd),'--to','lead','--send','--message','REPORT_FILE','--receipt','NEW_RECEIPT_FILE']))
     def children():
@@ -156,6 +244,7 @@ def run(root, release_sha256, mode='paired1', updates=None):
                                        processes=[{k:x[k] for k in ('pid','ppid','start_ticks','state','rss_kib','hwm_kib')} for x in rows]))+'\n')
             logs=list(root.glob('stage-*.log'))+list(root.glob('*/rank-*/vllm.log'))
             if mode=='full-label':logs+=list(run_outputs[0].rglob('vllm.log'))
+            if mode=='pre-row-aux':logs += [p for out in evaluation_outputs for p in out.rglob('vllm.log')]
             for path in logs:
                 try:
                     with path.open('rb') as f:f.seek(offsets.get(str(path),0));new=f.read();offsets[str(path)]=f.tell()
@@ -173,7 +262,9 @@ def run(root, release_sha256, mode='paired1', updates=None):
         for path,sha in release['bindings'].items():assert digest(cwd/path if not Path(path).is_absolute() else path)==sha,path
         for row in qual['source']['files']:assert digest(cwd/row['path'])==row['sha256'],row['path']
         for path,sha in qual['sha256'].items():assert digest(path)==sha,path
-        if mode=='full-label':
+        if mode=='pre-row-aux':
+            pre_row_binding(root,release,qual,argv,updates)
+        elif mode=='full-label':
             assert release['argv_sha256']==digest(root/'argv.json')
             assert release['qualification_sha256']==digest(root/'qualification.json')
             assert canonical_qual.read_bytes()==(root/'qualification.json').read_bytes()
@@ -186,6 +277,7 @@ def run(root, release_sha256, mode='paired1', updates=None):
             for path,sha in qual['test_source_sha256'].items():assert digest(cwd/path)==sha,path
             assert {k:version(k) for k in qual['runtime']}==qual['runtime']
     def costs():
+        if mode=='pre-row-aux':return pre_row_costs(run_outputs,evaluation_outputs,qual,updates)
         result=dict(requests=0,generated_tokens=0,HF_forwards=0,HF_input_tokens=0,HF_visual_tokens=0)
         arms=('control','treatment') if mode=='paired1' else ('treatment',)
         for arm,out in zip(arms,run_outputs):
@@ -217,7 +309,18 @@ def run(root, release_sha256, mode='paired1', updates=None):
             guard()
             if why:raise RuntimeError(why[-1])
             execution_remaining()
-            if row['stage']=='offline':
+            if row['stage']=='offline' and mode=='pre-row-aux':
+                gate={}
+                for out in run_outputs:
+                    value=json.loads((out/'readback.json').read_text())
+                    assert value['bank_sha256']==qual['bank_sha256'] and value['updates']==updates and value['forwards']==48*updates
+                for out in evaluation_outputs:
+                    value=json.loads((out/'readback.json').read_text())
+                    assert value['bank_sha256']==qual['bank_sha256'] and value['ordinary_requests']==18 and value['conditional_requests']==8
+                    assert digest(out/'frozen.json')==value['frozen_sha256']
+                    gate[out.name]=dict(readback_sha256=digest(out/'readback.json'),frozen_sha256=value['frozen_sha256'])
+                write(f'evaluator-gate-{index}.json',dict(verified_utc=datetime.now(timezone.utc).isoformat(),arms=gate))
+            elif row['stage']=='offline':
                 gate={}
                 if mode=='full-label':
                     out=run_outputs[0];read=json.loads((out/'readback.json').read_text())
@@ -243,8 +346,13 @@ def run(root, release_sha256, mode='paired1', updates=None):
             with (root/(label+'.log')).open('xb') as log:
                 execution_remaining()
                 if mode=='full-label' and row['stage']=='run':assert not run_outputs[0].exists()
-                current=subprocess.Popen(row['argv'],cwd=cwd,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-                receipt=dict(index=index,arm=row['arm'],stage=row['stage'],argv=row['argv'],
+                command=row['argv']
+                if mode=='pre-row-aux':
+                    if row['stage'] in ('run','evaluate'):
+                        assert not Path(command[command.index('--output')+1]).exists(),'pre-row stage output exists'
+                    command=[release_sha256 if x=='LEAD_RELEASE_SHA256' else x for x in command]
+                current=subprocess.Popen(command,cwd=cwd,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+                receipt=dict(index=index,arm=row['arm'],stage=row['stage'],argv=command,
                              child=dict(pid=current.pid),status='issued',exit_code=None,
                              started_utc=datetime.now(timezone.utc).isoformat(),elapsed=time.monotonic()-start)
                 receipts.append(receipt)
@@ -323,7 +431,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--release-sha256',required=True)
-    parser.add_argument('--mode',choices=('paired1','full-label'),default='paired1')
+    parser.add_argument('--mode',choices=('paired1','full-label','pre-row-aux'),default='paired1')
     parser.add_argument('--updates',type=int)
     args=parser.parse_args()
     return run(args.root,args.release_sha256,args.mode,args.updates)

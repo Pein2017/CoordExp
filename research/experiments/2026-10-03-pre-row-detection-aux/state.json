@@ -1,8 +1,8 @@
 {
   "unit_id": "2026-10-03-pre-row-detection-aux",
-  "lifecycle": "running",
-  "status": "CPU_IMPLEMENTATION_IN_PROGRESS",
-  "evidence": "none",
+  "lifecycle": "ready",
+  "status": "LEAD_ACCEPTED_CPU_PREPARATION_NATIVE_HOLD",
+  "evidence": "accepted",
   "scientific_status": "unmeasured",
   "protocol": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
   "state_source": "research/experiments/2026-10-03-pre-row-detection-aux/unit.md",
@@ -14,10 +14,10 @@
   "authority": "User requested next experiment preparation with lead-worker 6.1-high on 2026-10-03. One unit only; initial CPU-only assignment.",
   "source_base_commit": "9bcdea19736d9faa67f6803740db1e0f34486b5a",
   "native_released": false,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
-  "job_state": "persistent_CPU_preparation_worker_active_no_model_or_GPU_job",
-  "next_action": "Worker prepares fixed bank and implementation, reports inventory/cost/conditional selection; no native release.",
+  "job_state": "CPU_package_complete_no_model_or_GPU_job",
+  "next_action": "Preparation complete. A separate exact release and measured one-update native qualification are required before any primary16 execution; no job is scheduled.",
   "boundary": "A existing row objective versus B same plus pre-row detection auxiliary on one fixed self-prefix bank; ordinary inference unchanged.",
   "not_authorized": [
     "model loading/forward, GPU work, new generation or training before an exact lead release",
@@ -46,8 +46,62 @@
     "separate_clip": true,
     "native_head_consumed": false
   },
-  "worker_name": "\u7814\u7a76\u6267\u884c12\uff5c\u884c\u524d\u68c0\u6d4b\u8f85\u52a9\u76d1\u7763",
+  "worker_name": "研究执行12｜行前检测辅助监督",
   "worker_creation_receipt": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/transport/create-worker-01.json",
   "worker_model_at_creation": "gpt-6.1-sol",
-  "worker_effort_at_creation": "high"
+  "worker_effort_at_creation": "high",
+  "cpu_candidate": {
+    "status": "lead-accepted",
+    "dispatch_commit": "3cd1ee54717c5d34fb8e8609a485ee98365a48d2",
+    "source_HEAD": "d28eddc2b2e933ea01622bbc8aa7dc05bac07848",
+    "source_state": "Historical worker submission was uncommitted; final clean source identity is owned by cpu_acceptance.source_identity.",
+    "checks": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-04/checks-01.json",
+    "knowledge_diff": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-04/knowledge-diff-01.json",
+    "inventory": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-03/inventory-02.json",
+    "tests_passed": 33,
+    "native_packet": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-04/native-candidate-16",
+    "qualification_proposal": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-04/qualification-candidate-1",
+    "bank_sha256": "41ffaf9956187ac33f57ec43a71a29300cbf190f7cf5d05a2439665b5bf5c54f",
+    "selection_sha256": "3cedbb1dd9ca976c214a998476061d48890004d20b88a3523c78f6c443a3fca6",
+    "positive_events": 580,
+    "directly_supervised_owners": 568,
+    "evaluation_owners": 570,
+    "prefix_conflict_exclusions": 0,
+    "native_released": false,
+    "lead_accepted": true,
+    "previous_candidate_checks": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-03/checks-02.json",
+    "prior_full_suite_passed": 109,
+    "untouched_tests_reused": 80,
+    "consumer_repairs": [
+      "owner fresh-stage admission plus per-rank exclusive mkdir",
+      "unit payload freeze excludes and validates derived root readback receipt"
+    ],
+    "repair_red_green": {
+      "consumer_green_passed": 4,
+      "affected_tests_exit": 0,
+      "lead_counterexamples_preserved": true
+    }
+  },
+  "acceptance_scope": "CPU preparation only; no native qualification or scientific acceptance",
+  "cpu_acceptance": {
+    "status": "lead-accepted",
+    "scope": "CPU preparation",
+    "lead_consumer_checks": {
+      "passed": 3,
+      "exit_code": 0,
+      "log": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/lead-consumer-green-01.log"
+    },
+    "worker_checks": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-04/checks-01.json",
+    "reused_base_region_tests": 80,
+    "affected_tests": 33,
+    "source_identity": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/source-identity.json",
+    "receipt": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/lead-acceptance.json",
+    "native_packet": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/native-candidate-16",
+    "qualification_proposal": "outputs/research/physical-fn-recovery/2026-10-03/pre-row-detection-aux-12/cpu-05/qualification-candidate-1",
+    "native_released": false,
+    "native_qualified": false,
+    "scientific_status": "unmeasured"
+  },
+  "evidence_note": "CPU04 RED/GREEN and 33 affected checks; 80 unchanged base/region checks reused; lead consumer recheck 3 passed",
+  "result": "research/experiments/2026-10-03-pre-row-detection-aux/results.md"
 }
