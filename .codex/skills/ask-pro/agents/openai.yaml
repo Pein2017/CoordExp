@@ -1,4 +1,4 @@
 interface:
   display_name: "Ask Pro"
-  short_description: "为关键难题准备可直接复制给网页版 GPT-pro 的自洽咨询提示词"
-  default_prompt: "使用 $ask-pro，把当前关键难题、必要证据和真正需要外部推理的分歧，整理成我可直接复制给网页版 GPT-pro 的自洽 prompt。"
+  short_description: "结合共享 Notion 阅读材料，为关键难题准备网页版 GPT-pro 咨询提示词"
+  default_prompt: "使用 $ask-pro，把当前关键难题、关键约束和 Notion 尚未记录的重要更新整理成可直接复制给网页版 GPT-pro 的 prompt，并列明所需 Notion 页面与阅读顺序。"
