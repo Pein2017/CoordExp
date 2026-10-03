@@ -15,6 +15,11 @@ question. The worker does not decide entity identity or promote labels to truth.
 No model/processor/engine/GPU invocation, training, new generation, external
 vision service or human-contact task is authorized or needed.
 
+The user returned during worker11 dispatch and explicitly requested completion
+of this current round, followed by a stop for reporting and discussion. This
+supersedes autonomous scheduling beyond round11. Finish this package, lead
+image audit and closure; do not start round12 or any other research unit.
+
 Accepted [round10](../2026-10-03-dora-input-ablation/lead-ruling-02.md) closes the
 saved block-ablation branch. DoRA alone repairs the six selected conditional
 errors, but no isolated component cleanly removes preservation/burden costs.
