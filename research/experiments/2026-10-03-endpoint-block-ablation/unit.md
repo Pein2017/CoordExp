@@ -45,6 +45,8 @@ Both read-only parent inputs come from round07:
 `/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/train/`.
 A is `checkpoint-0`, exported before the optimizer update. M is `checkpoint-1`,
 weight identity`9fc7b57baee2168412001b97c4ac547f03d276dde1216cc3c406ac6aa7548b08`.
+A's distinct five-payload identity is
+`8dcd444f01ef806b743fd5d0f25518ac305e251f2f1dfdb2609fcc1993b80eb3`.
 Round07 `lead-acceptance-01.json` at its unit output root, SHA256
 `ff045f47565bdce6c92e1c8e08eca207876d0b591a20c2db660491acb1825d3f`,
 binds the training publication/composition evidence and M's five payloads.
@@ -59,6 +61,11 @@ key normalization/export semantics; do not invent permissive key dropping or
 equivalence tolerances. Record original and exported identities separately.
 Any unresolved changed value or effective configuration stops CPU preparation.
 No model loading or re-export is needed to prove saved payload identity.
+The accepted round07 readback calls `consume_train` then `verify_start_export`,
+which checks exact normalized-key/dtype/tensor equality. This evidence is reusable;
+the recorded adapter-config difference is only `target_modules` ordering and the
+export adds a model card. Preserve the original anchor's separate identity
+`07ea98e90220a9126042a27b3a76f60e9955320fed4bf77c2a8803ac9d52001a`.
 
 Reuse both originals. Publish only two immutable hybrids under canonical
 `outputs/research/physical-fn-recovery/2026-10-03/endpoint-block-ablation-09/`.
