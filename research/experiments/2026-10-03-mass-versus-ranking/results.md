@@ -1,11 +1,13 @@
-# Round07 fixed observations: terminal candidate
+# Round07 accepted fixed observations
 
 The single released package completed with **exit 0**. Both endpoints repaired
 **6/6** fresh baseline-illegal contexts and retained **4/4** baseline-legal
 contexts. Relative to the shared fresh anchor, Gmass1 exchanged 10 gained / 12
 lost category-correct owners; saved Gmax1 exchanged 15 gained / 22 lost.
 Gmass1 had more invalid rows, repeats, generated tokens and capped outputs.
-These are observations on the frozen cohort; lead scientific disposition is pending.
+The [lead ruling](lead-ruling-02.md) accepts scientific status
+`both_objectives_repair_with_mixed_preservation_and_recurrence`;
+user scientific acceptance remains false.
 
 Worker `01a0ff2d-e098-74e2-aa11-c65e21e558fc` remained GPT-6.1-Sol/high.
 Execution source stayed clean/detached at
@@ -134,5 +136,8 @@ saved realized training outcome, not a fresh training replicate; training
 variability is unmeasured. The unequal margins, preservation and recurrence
 readouts remain separate. No global determinism, objective dominance, causal
 owner-loss explanation or physical false-negative recovery is claimed.
-Worker execution is complete; lead final acceptance and scientific disposition
-remain pending. No next unit is scheduled.
+Round07 is closed with evidence accepted and `lead_accepted=true`. The exact
+acceptance is `lead-acceptance-01.json` at the execution-local evidence root,
+SHA256 `ff045f47565bdce6c92e1c8e08eca207876d0b591a20c2db660491acb1825d3f`.
+The [lead ruling](lead-ruling-02.md) owns scientific disposition. User scientific
+acceptance remains false; no next unit is scheduled by this worker.

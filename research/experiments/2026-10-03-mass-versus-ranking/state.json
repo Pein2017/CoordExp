@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-mass-versus-ranking",
-  "lifecycle": "ready",
-  "status": "NATIVE_TERMINAL_CANDIDATE_PENDING_LEAD_REVIEW",
-  "evidence": "unreviewed",
-  "scientific_status": "fixed_observations_complete_lead_disposition_pending",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "both_objectives_repair_with_mixed_preservation_and_recurrence",
   "protocol": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
   "state_source": "research/experiments/2026-10-03-mass-versus-ranking/unit.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
@@ -12,7 +12,7 @@
   "predecessor": "2026-10-03-short-dose-ranking",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "not_authorized": [
@@ -43,7 +43,7 @@
     "native_child_CUDA_memory_unmeasured",
     "training_phase_PID_not_separately_captured"
   ],
-  "next_action": "Worker execution complete; stop. Lead verifies the final decision boundary and owns scientific disposition. No model calls, readback rerun, source advancement or next-unit scheduling.",
+  "next_action": "Round07 closed after lead acceptance. Worker stops; any future unit requires its own lead-owned protocol and authorization. No next-unit scheduling by this worker.",
   "evidence_scope": "fixed_real_observations",
   "cpu_lead_accepted": true,
   "execution_checkout": "/data/CoordExp/.worktrees/greedy-prefix-native-01",
@@ -113,5 +113,11 @@
       "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/package-01/train/complete.json",
       "sha256": "0deebd3f23418c09d29eb040bd9b081ef2c026c9f6f030a3eec01662b42d9316"
     }
-  }
+  },
+  "acceptance_ruling": "research/experiments/2026-10-03-mass-versus-ranking/lead-ruling-02.md",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/mass-versus-ranking-07/lead-acceptance-01.json",
+    "sha256": "ff045f47565bdce6c92e1c8e08eca207876d0b591a20c2db660491acb1825d3f"
+  },
+  "lead_accepted_at": "2026-10-03T01:26:38.456866+00:00"
 }
