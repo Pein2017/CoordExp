@@ -1,18 +1,18 @@
 {
   "unit_id": "2026-10-03-dora-input-ablation",
-  "lifecycle": "ready",
-  "status": "NATIVE_COMPLETED_CANDIDATE_AWAITING_LEAD_ACCEPTANCE",
-  "evidence": "unreviewed",
-  "scientific_status": "measured_unaccepted",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "dora_increment_repairs_selected_contexts_without_clean_owner_burden_decoupling",
   "protocol": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
-  "state_source": "research/experiments/2026-10-03-dora-input-ablation/unit.md",
+  "state_source": "research/experiments/2026-10-03-dora-input-ablation/lead-ruling-02.md",
   "lead_thread": "01a0fdd8-26b6-7240-ab56-f021c05f3445",
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "high",
   "predecessor": "2026-10-03-endpoint-block-ablation",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "next_unit_scheduled": false,
   "boundary": "CPU-first saved DoRA/input ablation with output held exactly anchor; model calls need separate exact lead release.",
@@ -89,5 +89,12 @@
   },
   "successful_readback_repeated": false,
   "source_edits": false,
-  "next_action": "STOP for lead acceptance; no later unit or automatic layer/token-row subdivision"
+  "next_action": "CLOSED. Saved endpoint block-ablation branch closed; no layer/token-row/dose subdivision or worker next-unit scheduling.",
+  "lead_acceptance": {
+    "path": "/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/lead-acceptance-01.json",
+    "sha256": "1ce79e06a96ab5b7389240bb6ddc3afe31927c0cca00b114ba213b89bfcf910b"
+  },
+  "acceptance_ruling": "research/experiments/2026-10-03-dora-input-ablation/lead-ruling-02.md",
+  "acceptance_ruling_commit": "dde0a2ccad55f4eb2fa0adca4a3f0af823c2706f",
+  "branch_disposition": "Close saved endpoint block-ablation branch; no layer or token-row subdivision scheduled."
 }

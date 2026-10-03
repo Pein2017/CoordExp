@@ -1,10 +1,12 @@
-# Round10 completed candidate; lead acceptance pending
+# Round10 lead-accepted and closed
 
-The exactly released single package exited0, including its own final consumer/readback. Four fresh serial engines A_A,A_I,D_A,D_I completed40 supplied scores and72 natural generations:112 requests,40746 generated tokens including40 scored tokens. Technical status is `completed_as_released`; scientific status is measured and unaccepted. Lead owns scientific interpretation and acceptance. No later unit or layer/token-row sweep is scheduled.
+The exactly released single package exited0, including its own final consumer/readback. Four fresh serial engines A_A,A_I,D_A,D_I completed40 supplied scores and72 natural generations:112 requests,40746 generated tokens including40 scored tokens. Technical status is `completed_as_released`; lead-accepted scientific status is `dora_increment_repairs_selected_contexts_without_clean_owner_burden_decoupling`. Evidence is accepted and this unit is closed; user scientific acceptance remains false. The saved endpoint block-ablation branch is closed, with no layer/token-row/dose subdivision or worker next-unit scheduling.
+
+[Lead ruling02](lead-ruling-02.md), root commit `dde0a2ccad55f4eb2fa0adca4a3f0af823c2706f`, owns final acceptance and branch closure. Immutable [lead acceptance](/data/CoordExp/.worktrees/greedy-prefix-native-01/outputs/research/physical-fn-recovery/2026-10-03/dora-input-ablation-10/lead-acceptance-01.json) SHA256 `1ce79e06a96ab5b7389240bb6ddc3afe31927c0cca00b114ba213b89bfcf910b` binds the accepted evidence. Closure preserves all historical candidate receipts and reuses the successful consumer; no model, test, qualification or readback was rerun.
 
 Fresh A_A has6 illegal and4 legal supplied contexts. D_A and D_I repair all6 errors and retain all4 baseline-legal contexts. A_I repairs3 errors, all at literal ties with margin0, and loses baseline legality at `7511-626/-2` and `351017-1507/+0`. The fixed endpoint/context classifier gives3 `DoRA_sufficient_required_with_I_input` and3 `either_sufficient` cases; baseline-legal losses remain separate. There are0 input-required, complementary, antagonistic or no-repair cases on the6-error denominator.
 
-D_A retains all6 conditional repairs with491 complete repeats,102 valid repeats and9976 natural tokens versus D_I518,147 and10547. Its opposing costs are397 invalid rows versus392,537 near-repeat occurrence pairs versus365, and24 anchor category-owner losses versus13 (gains15 versus10). These are mixed component measurements. A_I has22 anchor category-owner losses and only3 conditional repairs. No winner or net-only score is assigned; lead owns branch disposition. Unmatched remains annotation-relative unknown. This is not physical recovery or independently trained-block evidence.
+D_A retains all6 conditional repairs with491 complete repeats,102 valid repeats and9976 natural tokens versus D_I518,147 and10547. Its opposing costs are397 invalid rows versus392,537 near-repeat occurrence pairs versus365, and24 anchor category-owner losses versus13 (gains15 versus10). These are mixed component measurements. A_I has22 anchor category-owner losses and only3 conditional repairs. No winner or net-only score is assigned; lead ruling02 closes the saved endpoint block-ablation branch. Unmatched remains annotation-relative unknown. This is not physical recovery or independently trained-block evidence.
 
 The [unit](unit.md) owns meaning/readout/bounds/stop; [lead ruling01](lead-ruling-01.md) owns CPU acceptance, selected source and exact native release. Execution remained clean/detached at `c36dec2648151408b4fb6080e82c3c6a87d6bb27`. Canonical records alone are updated. Accepted parents, all1004 FP32[1004,2048] rows, exact common anchor output, mapping/base/config/tokenizer and additive/untied metadata remain bound. Current D_I references unchanged historical M_A bytes/provenance; current phase role is separate.
 
@@ -85,7 +87,7 @@ Opposing scene7511 remains in the full18 readout: D_A has264 complete repeats ve
 | D_A | 28 | 155.745 | 27.408 | 1240004 | 6825212 |
 | D_I | 28 | 162.756 | 28.006 | 1241968 | 6803724 |
 
-Worker stops for lead acceptance. Conditional saved-endpoint/context classification does not establish population necessity/sufficiency, independent generalization, physical recovery or a trained block recipe.
+Worker closure is complete; the saved endpoint block-ablation branch is closed. Conditional saved-endpoint/context classification does not establish population necessity/sufficiency, independent generalization, physical recovery or a trained block recipe.
 
 ## CPU preparation history
 
