@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-03-rule-stability-iou90",
-  "lifecycle": "running",
-  "status": "PRIMARY_NATIVE_RELEASED",
-  "evidence": "partial",
-  "scientific_status": "qualification_regressed_primary_pending",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_COMPLETED_MIXED",
+  "evidence": "accepted",
+  "scientific_status": "mixed_training_internal_no_promotion",
   "protocol": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
   "state_source": "research/experiments/2026-10-03-rule-stability-iou90/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -97,10 +97,10 @@
     ]
   },
   "cpu_implementation_lead_accepted": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
-  "job_state": "primary_packet_publication_and_worker_launch_pending",
-  "next_action": "Worker runs exact primary A then B serially from the original anchor with fresh optimizer per arm, keeps tracked records unchanged through both terminal checks, runs one saved-artifact comparison and returns. No retry, quality gate or extension.",
+  "job_state": "terminal_and_source_holder_released",
+  "next_action": "None within this unit. A separately frozen first-row-history diagnostic is authorized by the user autonomous-next-round instruction.",
   "ownership": {
     "lead": [
       "unit.md",
@@ -146,5 +146,15 @@
     "B": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/native-primary-B-01"
   },
   "primary_comparison_output": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-comparison-01.json",
-  "primary_operational_observation_seconds_per_arm": 43200
+  "primary_operational_observation_seconds_per_arm": 43200,
+  "primary_acceptance": {
+    "status": "lead-accepted",
+    "ruling": "research/experiments/2026-10-03-rule-stability-iou90/lead-ruling-04.md",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/lead-primary-consumer-check-01.json",
+    "execution_commit": "249b9b09762457d2f786ab2fbc0c7de677cb5d3f",
+    "report_commit": "e63c60ecf8e161041cd9169aedcfd02ad9b0bd96",
+    "holder_release": "outputs/research/physical-fn-recovery/2026-10-03/rule-stability-iou90/primary-holder-release-01.json",
+    "blocking_counterexamples": []
+  },
+  "result": "research/experiments/2026-10-03-rule-stability-iou90/results.md"
 }

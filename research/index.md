@@ -8,21 +8,25 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [rule-stability IoU90 unit](experiments/2026-10-03-rule-stability-iou90/unit.md)
-has a lead-accepted native qualification by the requested GPT-6.1-Sol/xhigh worker. From the mature
-axis001 step2444 anchor under fixed median normalization, the finite two-arm16
-study compares full-label positives plus fresh geometry supervision with the same
-objective plus sampled strong-overlap credit on18 images/570 labels. Strict
-class-agnostic IoU>0.9 defines the overlap proxy; coverage and owner changes have
-no fixed acceptance threshold. The one-update B qualification completed technically,
-but matched owners fell255 to246, duplicates rose5 to119 and geometry-invalid
-rows rose4 to226. Cached/full likelihood differences remain a numerical limit.
-The frozen A-then-B16-update package is
-[released](experiments/2026-10-03-rule-stability-iou90/lead-ruling-03.md), with each
-arm independently restarting the anchor; scientific acceptance remains pending.
-[State](experiments/2026-10-03-rule-stability-iou90/state.json)
-and [technical progress](experiments/2026-10-03-rule-stability-iou90/results.md)
-own continuation; historical closed units below remain closed.
+The [first-row history cross](experiments/2026-10-03-first-row-history-cross/unit.md)
+is the active bounded diagnostic. It crosses saved A0/A16 with native versus
+same-owner GT first-person history on image351017: four short cached continuations,
+zero optimizer updates. Native-history controls must reproduce saved actions;
+a failure is technical HOLD. The question is whether a three-coordinate prefix
+mismatch separates conditional bottle localization from the natural early failure.
+Implementation is CPU-only until the lead releases its exact native packet.
+[State](experiments/2026-10-03-first-row-history-cross/state.json) owns continuation.
+
+The [rule-stability IoU90 contrast](experiments/2026-10-03-rule-stability-iou90/lead-ruling-04.md)
+is lead-accepted and complete. At the prescribed 16-update endpoint, B has
+187 fewer strict-IoU>.9 duplicate events, 115 fewer invalid rows and 2 more
+matched annotations than A. Both worsen repetition and lose baseline owners:
+A retains/gains/loses 223/63/32, B 230/58/25. B's longest duplicate burst is
+worse. This is mixed training-internal evidence, with approximate replay and
+no checkpoint promotion or physical-FN claim. All jobs are settled and the
+source holder is released. [State](experiments/2026-10-03-rule-stability-iou90/state.json)
+and [results](experiments/2026-10-03-rule-stability-iou90/results.md) retain the
+completed package and its limitations.
 
 The pre-row detection auxiliary unit is [lead-accepted and closed](experiments/2026-10-03-pre-row-detection-aux/results.md). The frozen two-arm16 screen completed technically, but B covered225 of570 annotation owners versus233 for A and247 at the anchor. Geometry invalidity improved while valid repetition increased; both arms had the same2/8 conditional successes. Connected auxiliary gradients and falling training loss did not establish native coverage benefit. This is a bounded negative with mixed burdens, not a physical-FN or general auxiliary-method verdict. All jobs are cleaned up; no further model call, retuning, extension or next unit is scheduled.
 

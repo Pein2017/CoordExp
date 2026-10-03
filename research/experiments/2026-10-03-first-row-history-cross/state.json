@@ -1,0 +1,33 @@
+{
+  "unit_id": "2026-10-03-first-row-history-cross",
+  "lifecycle": "planned",
+  "status": "CPU_CANDIDATE_PENDING",
+  "evidence": "none",
+  "scientific_status": "unmeasured",
+  "protocol": "research/experiments/2026-10-03-first-row-history-cross/unit.md",
+  "state_source": "research/experiments/2026-10-03-first-row-history-cross/unit.md",
+  "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "authority": "User autonomous next-round grant; lead selected finite4request zero-update diagnostic",
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-03/first-row-history-cross",
+  "budget": {
+    "requests": 4,
+    "actions": 292,
+    "checkpoint_loads": 2,
+    "gpus": 1,
+    "optimizer_updates": 0
+  },
+  "next_action": "CPU implementation and input preparation; exact native packet remains lead-owned",
+  "boundary": "One image, A0/A16 by native/GT first9 cached actions then64free, at most4requests292actions and zerooptimizer; exactnativefidelitycontrols",
+  "not_authorized": [
+    "Model/native/GPU call before exact lead release",
+    "Extra model queries, retry, training, dose extension, checkpoint selection, new image or category forcing",
+    "Full-scene or physical-FN recovery claims from supplied prefix",
+    "Historical/shared evidence mutation, /external mutation or publication"
+  ],
+  "worker_agent": "/root/first_row_history_impl",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "xhigh"
+}
