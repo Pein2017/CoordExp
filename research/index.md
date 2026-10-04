@@ -8,6 +8,15 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/unit.md)
+is frozen for CPU implementation under the user's autonomous continuation grant.
+Thirty-two predetermined x1 midpoints query the same clean native bottle prefix;
+one short historical anchor brings the maximum to33 requests/627 actions, one
+B16 load and zero training. Query selection uses no GT coordinates. Root will
+inspect all candidates and the saved baseline's14 unique bottle geometries,
+separating physical entity support from geometry and duplicate/unsupported costs.
+Native execution remains unreleased; the original worker owns the CPU package.
+
 The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/results.md)
 is lead-accepted and closed: six B16 requests/114 actions, exact historical A
 anchor and zero training. Changing supplied x1 from186 to495 changes which
@@ -15,9 +24,7 @@ regional mask most affects the same first-free y1 decision. Within-mask cue
 preferences are D_A0.5362 and D_B0.4427; the new B-clean native-history completion
 overlaps its geometric reference. This establishes conditional regional
 selectivity at one state, not endogenous discovery or natural physical recovery.
-All jobs are settled. Lead is selecting a separate finite test of candidate
-generation without GT-derived cue coordinates under the user's autonomous grant;
-the existing native release is consumed.
+All jobs are settled and the existing native release is consumed.
 
 The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/results.md)
 is lead-accepted and closed:12 B16 requests/1530 actions, four exact clean
