@@ -32,6 +32,7 @@
   "companion_boundary": "1000-coordinate FP32 shadow of existing final hidden states; no decoder pass or feedback; unsupported shadow HOLD does not automatically invalidate untouched primary contrast.",
   "source_requirement": "Current canonical integrated source; preserve unrelated changes and exact release qualification.",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-assignment-01.json",
+  "layout_dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-layout-01.json",
   "next_action": "Worker implements frozen unit and qualifies CPU entry/consumer; Root binds exact clean source/input/runtime release before one native invocation.",
   "job_state": "Original worker reconciled and protocol-ready implementation assignment delivered; CPU qualification in progress, native not released",
   "not_authorized": [

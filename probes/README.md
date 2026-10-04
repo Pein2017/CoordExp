@@ -7,6 +7,22 @@ owner; operator contracts belong to `tests/probes/`. Do not add another test roo
 universal trainer, profile registry or compatibility alias for a retired experiment.
 The entries below describe retained execution boundaries, not a launch queue.
 
+## Implementation placement
+
+Prefer a cohesive `probes/<direction>/` package for related probes. Reuse an
+existing owner where it fits; otherwise name the package for the research
+direction or shared mechanism, rather than a run, date or individual experiment.
+Avoid adding one top-level module per experiment. A small, independent, stable
+operator may remain a root module when a package would add no useful grouping;
+do not create a framework, wrapper or one-file package just to add a directory.
+Keep corresponding contracts under `tests/probes/`, mirroring package ownership.
+
+Choose the implementation and test paths before delegation or source freezing.
+Existing code need not move with every new probe: check callers and path-bound
+evidence before a separately scoped migration, and preserve sealed receipts.
+
+## Retained entries
+
 | Capability | Entry and contract |
 |---|---|
 | Output-QP | `python -m probes.output_qp --capture <six-array.npz> --output <fresh.json>`; selected-output-row minimum-Frobenius solve with exhaustive supplied-state FP32 certificate |

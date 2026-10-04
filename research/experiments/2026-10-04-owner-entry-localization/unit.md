@@ -261,8 +261,11 @@ actual exit status, wall/RSS/CUDA/payload counters and process cleanup evidence.
 There is no retry, warmup, replacement checkpoint, extra decoder pass, model
 export, training/backward, dose extension or automatic follow-on investigation.
 
-Maintained implementation belongs in `probes/owner_entry_localization.py` and
-focused tests, reusing current helpers. New immutable artifacts belong under
+Maintained implementation belongs in `probes/coordinate_diagnostics/owner_entry.py`
+with focused tests in `tests/probes/coordinate_diagnostics/test_owner_entry.py`,
+reusing current helpers. The entry is `python -m probes.coordinate_diagnostics.owner_entry`.
+This pre-release placement revision follows `probes/README.md#implementation-placement`;
+the earlier CPU slice retains its original paths and receipts. New immutable artifacts belong under
 `/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/`.
 Root binds the exact execution source and CPU-qualified packet before the one
 native invocation; the existing user authorization covers this complete
