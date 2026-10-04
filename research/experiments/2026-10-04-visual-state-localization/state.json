@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-visual-state-localization",
-  "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION",
+  "lifecycle": "ready",
+  "status": "NATIVE_RELEASED",
   "evidence": "none",
   "scientific_status": "not_evaluated",
   "protocol": "research/experiments/2026-10-04-visual-state-localization/unit.md",
@@ -11,7 +11,7 @@
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "xhigh",
   "authority": "User authorized preparation and dispatch of the next decoder-state localization package to the original Worker on 2026-10-04, then explicitly delegated sample and object-role selection to Lead. The existing CPU qualification and exact Lead native-release workflow continues.",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "initial_source_anchor": "c60d5d905b7463f1ee069875cd3a336d957c3030",
@@ -36,20 +36,37 @@
     "clean_donor_noop_controls": 2
   },
   "selected_cases": [
-    {"image_id": 351017, "annotation_id": -4947389372712316, "role": "failed first-bottle entry", "action": 14},
-    {"image_id": 13348, "annotation_id": 191150, "role": "already-localized person control", "action": 231}
+    {
+      "image_id": 351017,
+      "annotation_id": -4947389372712316,
+      "role": "failed first-bottle entry",
+      "action": 14
+    },
+    {
+      "image_id": 13348,
+      "annotation_id": 191150,
+      "role": "already-localized person control",
+      "action": 231
+    }
   ],
   "source_requirement": "Use current canonical source and maintained helpers; preserve unrelated work and closed receipts. Bind exact clean source/input/runtime before native release.",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/transport/worker-assignment-01.json",
   "worker_turn": "01a10825-538f-75b2-886d-d22604c4bd6f",
-  "next_action": "Original Worker implements and qualifies the real CPU entry/consumer and prepares frozen masks; Root checks the CPU candidate and gallery before exact native release.",
-  "job_state": "Assignment submitted once via turn/start, transport exit 0; original Worker directly confirmed entry, gpt-6.1-sol/xhigh, clean protocol commit and predecessor settlement. CPU implementation active; native not released",
+  "next_action": "Original Worker verifies the exact clean release and executes one serial native invocation, automatic saved consumer, external exit and cleanup; Root retains scientific acceptance.",
+  "job_state": "CPU candidate and final galleries accepted; exact source-bound native release approved for the original Worker, launch not yet observed.",
   "boundary": "Two selected B16 pre-x1 states. Same-position current-token residual transplantation with receiver KV retained measures transport of a specified visual perturbation effect; it does not identify a unique fault layer, full visual mediation, natural physical recovery or population prevalence.",
   "not_authorized": [
-    "Research model/tensor load or GPU call before exact Lead release",
+    "Any research load/GPU request outside the exact native-release-01 packet",
     "Training, architecture or runtime change",
     "Outcome-based mask, fill, sample or layer tuning; retries, warmups, extra queries or successor units",
     "Post-x1 privileged-state donation as evidence about pre-x1 selection",
     "Physical-recovery or unique mechanism claims from supplied prefixes and residual transport"
-  ]
+  ],
+  "native_started": false,
+  "implementation_commit": "fe3ac14c97617ed07292860339355f9fa674386f",
+  "technical_acceptance": "lead-accepted-cpu",
+  "lead_ruling": "research/experiments/2026-10-04-visual-state-localization/lead-ruling-01.md",
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/native-release-01.json",
+  "cpu_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/lead-consumer-check-01.json",
+  "native_dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/transport/native-release-01.json"
 }

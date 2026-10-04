@@ -9,15 +9,15 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
-is the sole active unit, dispatched to the original Worker for implementation
-and CPU qualification. Two fixed B16 pre-x1 states contrast failed bottle entry with an
+is the sole active unit, CPU-qualified and [released once](experiments/2026-10-04-visual-state-localization/lead-ruling-01.md)
+to the original Worker. Two fixed B16 pre-x1 states contrast failed bottle entry with an
 already-localized person. Target-region and matched background perturbations
 provide donors for current-token residual transplants at three fixed boundaries;
 the clean receiver retains its own prefix KV cache. The package measures signed
 changes in coordinate competition and actual short continuations, not a unique
 fault layer or natural recovery. The cap is20 requests/2550 actions, one B16 load,
-one GPU and zero training. CPU qualification and the prepared-mask gallery come
-before Root's exact native release; no native invocation is released yet.
+one GPU and zero training. Root accepted the CPU consumer and final prepared-mask
+galleries; native numerical fidelity and scientific outcomes remain pending.
 [State](experiments/2026-10-04-visual-state-localization/state.json) owns execution
 status and the stop boundary.
 
