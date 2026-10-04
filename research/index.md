@@ -9,8 +9,8 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
-is the sole new unit, authorized for preparation and dispatch to the original
-Worker. Two fixed B16 pre-x1 states contrast failed bottle entry with an
+is the sole active unit, dispatched to the original Worker for implementation
+and CPU qualification. Two fixed B16 pre-x1 states contrast failed bottle entry with an
 already-localized person. Target-region and matched background perturbations
 provide donors for current-token residual transplants at three fixed boundaries;
 the clean receiver retains its own prefix KV cache. The package measures signed

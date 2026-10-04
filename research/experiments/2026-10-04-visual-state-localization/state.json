@@ -15,6 +15,7 @@
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "initial_source_anchor": "c60d5d905b7463f1ee069875cd3a336d957c3030",
+  "protocol_commit": "72d6ca389777c834d710b08662bc0c80623debc8",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization",
   "budget": {
     "requests": 20,
@@ -40,8 +41,9 @@
   ],
   "source_requirement": "Use current canonical source and maintained helpers; preserve unrelated work and closed receipts. Bind exact clean source/input/runtime before native release.",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/transport/worker-assignment-01.json",
+  "worker_turn": "01a10825-538f-75b2-886d-d22604c4bd6f",
   "next_action": "Original Worker implements and qualifies the real CPU entry/consumer and prepares frozen masks; Root checks the CPU candidate and gallery before exact native release.",
-  "job_state": "Original worker reconciled idle; Lead accepted the frozen protocol and prepared the bounded CPU implementation assignment; native not released",
+  "job_state": "Assignment submitted once via turn/start, transport exit 0; original Worker directly confirmed entry, gpt-6.1-sol/xhigh, clean protocol commit and predecessor settlement. CPU implementation active; native not released",
   "boundary": "Two selected B16 pre-x1 states. Same-position current-token residual transplantation with receiver KV retained measures transport of a specified visual perturbation effect; it does not identify a unique fault layer, full visual mediation, natural physical recovery or population prevalence.",
   "not_authorized": [
     "Research model/tensor load or GPU call before exact Lead release",
