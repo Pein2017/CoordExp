@@ -1,12 +1,12 @@
 # CoordExp research workset
 
 Current research authority is the registered `research-probes` checkout. This
-repository retains the maintained train/infer/evaluation core, two reusable
-research operators and distilled scientific knowledge, not every historical run.
+repository retains the maintained train/infer/evaluation core, research-direction
+methods and distilled scientific knowledge, not every historical run.
 
 Start at [research/index.md](research/index.md) for current questions and decisions,
-[probes/README.md](probes/README.md) for retained operators, or
-[docs/README.md](docs/README.md) for engineering interfaces.
+[probes/README.md](probes/README.md) for executable methods, or
+[docs/README.md](docs/README.md) for durable engineering contracts.
 
 ## Maintained entries
 
@@ -20,11 +20,18 @@ Start at [research/index.md](research/index.md) for current questions and decisi
 | Output-only norm rescaling | `python -m probes.readout_norm --help` |
 | Knowledge integrity | `python -m scripts.check_research_knowledge check` |
 
-`src/` owns common execution, geometry, losses, artifacts and integrity.
-`probes/` owns the two explicit numerical methods, not a runner registry.
-`tests/` protects retained contracts; tests for retired capabilities retire with
-them. `configs/coordexp_infras` contains current production/qualification inputs.
-External datasets and outputs are not a cleanup target.
+`src/` owns reusable execution, geometry, losses, artifacts and integrity.
+`probes/<direction>` owns question-specific methods and their actual consumers,
+not a universal runner registry. `tests/probes/` is their single test owner;
+other `tests/` modules follow their source owner. Retire a test with a superseded
+contract, not merely because it is small.
+
+`research/questions/` owns distilled arguments; `research/experiments/` owns
+bounded units, evidence and conclusions. `docs/` holds stable cross-cutting
+knowledge, not experiment logs or module/API mirrors. `openspec/changes/` records
+bounded engineering changes. `configs/coordexp_infras` contains local maintained
+training/qualification inputs; its name does not make a sibling checkout current.
+External datasets, released evidence and outputs are separate ownership surfaces.
 
 New decision-bearing training and operator qualification require clean Git source
 identity. Old receipts lacking a verifiable current source gate cannot resume;

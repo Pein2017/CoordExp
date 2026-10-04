@@ -1,24 +1,23 @@
 schema: spec-driven
 
 context: |
-  CoordExp has two non-substitutable current routes. Repository main is the
-  accepted coordexp-infras production-training and evaluation route. The fixed
-  research authority is the research-probes worktree; use it for probe
-  hypotheses, disposable experiment worktrees, research records, and reusable
-  probe mechanics. shared mechanics are maintained in that research base. Read docs/PROJECT_CONTEXT.md and
-  docs/BRANCH_AND_WORKTREE_POLICY.md first, then select the Swift or research
-  route from the user-named task. Do not infer a research task should start on
-  main merely because it is the repository root.
+  This checkout is the canonical research-probes worktree at
+  /data/CoordExp/.worktrees/research-probes. main and coordexp-infras are separate
+  versioned checkouts with their own source and contracts, not an automatic
+  stable/dev/research release ladder. docs/BRANCH_AND_WORKTREE_POLICY.md owns
+  this boundary. Cross-checkout promotion requires an explicit scoped decision;
+  no sibling retirement or new worktree follows from this context.
 
-  New research directions use ordinary probes/<direction> packages and fork
-  from research-probes when isolation is useful. No tag or admission is a
-  prerequisite for ordinary exploratory work. Record code/config context and
-  select strict binding, journal or admission only when its contract is needed.
-  research-probes is the single permanent research base. The former infra lane
-  retires after preservation and integration; temporary development lanes do
-  not become a permanent integration layer.
+  New research directions use ordinary probes/<direction> packages with current
+  questions and consumers. src/ owns reusable execution and integrity mechanics;
+  tests/probes/ owns probe contracts, with other tests following their source
+  owner. No tag or admission is a prerequisite for ordinary exploration; use
+  strict binding, journal or admission where the actual execution contract needs
+  it. Do not weaken a released source gate to accommodate development changes.
 
-  docs/ describes accepted current architecture and operator workflows.
+  research/questions/ owns distilled scientific arguments; research/experiments/
+  owns bounded units, evidence and conclusions. docs/ holds stable architecture,
+  conventions and provenance, not source/API mirrors or experiment logs.
   openspec/specs/ owns stable compatibility-sensitive behavior contracts.
   openspec/changes/<change>/ is the sole local workspace for bounded changes
   that benefit from durable proposal, design, tasks, implementation,

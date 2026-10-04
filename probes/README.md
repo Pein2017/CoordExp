@@ -1,8 +1,11 @@
 # Retained research operators
 
 Scientific decisions belong to [research](../research/index.md), not these files.
-The small implementation set is explicit; there is no universal trainer, profile
-registry or compatibility alias for a retired experiment.
+New methods belong to a concrete `probes/<direction>` owner with a current question
+or caller. Reusable execution and integrity mechanics belong to their `src/`
+owner; operator contracts belong to `tests/probes/`. Do not add another test root,
+universal trainer, profile registry or compatibility alias for a retired experiment.
+The entries below describe retained execution boundaries, not a launch queue.
 
 | Capability | Entry and contract |
 |---|---|
