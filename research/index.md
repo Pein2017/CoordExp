@@ -8,6 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/unit.md)
+is the active successor under the user's autonomous-research grant. It tests
+whether the bottle completion unlocked by a supplied x1 depends on target-region
+pixels: two fixed histories, uncued versus designated-x1-cued, crossed with the
+same clean/target-masked/background-masked images (12 requests, maximum1530
+actions). Bottle is primary and person is a visual-use control. CPU implementation
+precedes an exact Lead native release; no new native call has started. This
+addresses an unresolved premise closer to owner entry before partitioning the
+normal person's residual/cache effect. No training is planned.
+
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
 is [closed with accepted partial evidence](experiments/2026-10-04-visual-state-localization/results.md).
 One B16 invocation acquired20 requests/2550 actions;18 cells passed, while two

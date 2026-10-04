@@ -1,0 +1,48 @@
+{
+  "unit_id": "2026-10-04-cued-visual-use",
+  "lifecycle": "planned",
+  "status": "CPU_IMPLEMENTATION",
+  "evidence": "none",
+  "scientific_status": "Unmeasured: does designated-x1-conditioned bottle completion depend on target-region pixels under the same literal history?",
+  "protocol": "research/experiments/2026-10-04-cued-visual-use/unit.md",
+  "state_source": "research/experiments/2026-10-04-cued-visual-use/unit.md",
+  "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "worker_thread": "01a101ac-9ec8-7862-bdb6-38b9cd154673",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "xhigh",
+  "authority": "On 2026-10-04 at 19:47 UTC the user authorized Lead to autonomously recommend and advance worthwhile research and exploration while the user sleeps, without further permission. Lead selects this bounded successor; previous consumed releases and failed artifacts remain immutable.",
+  "initial_source_anchor": "ddeaf5536b2f97e18f81376d13663bd460860bf6",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use",
+  "native_released": false,
+  "native_started": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "budget": {
+    "requests": 12,
+    "max_actions": 1530,
+    "checkpoint_loads": 1,
+    "gpus": 1,
+    "optimizer_updates": 0,
+    "producer_wall_seconds": 900,
+    "rss_bytes": 34359738368,
+    "cuda_allocated_bytes": 12884901888,
+    "retained_bytes": 134217728
+  },
+  "population": {
+    "selected_states": 2,
+    "coordinate_cue_conditions": 2,
+    "image_conditions": 3,
+    "clean_reference_anchors": 4
+  },
+  "next_action": "Original Worker implements and CPU-qualifies the frozen package; Lead checks its final consumer and issues an exact native release autonomously under the current user grant.",
+  "job_state": "No new package dispatched or native invocation started yet.",
+  "boundary": "Conditional visual use in two selected B16 histories. Supplied x1 and partial literal history cannot establish natural physical recovery, prevalence, instance representation, or a training remedy. Cache-state localization is deferred.",
+  "not_authorized": [
+    "Native execution before an exact new Lead release",
+    "Extra model calls, warmups or retries under the initial one-invocation release",
+    "Training, checkpoint or runtime changes, residual or cache intervention",
+    "New masks, images, cue values, corrected histories, or remaining teacher coordinates",
+    "Changes to closed artifacts, original HOLD status, or historical qualification receipts",
+    "Worker-selected successor research or physical-recovery claims"
+  ]
+}
