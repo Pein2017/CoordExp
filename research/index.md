@@ -8,6 +8,14 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [box-continuity probe](experiments/2026-10-04-box-continuity/unit.md)
+is the sole active unit. The user authorized implementation and execution after
+advisor consultation:13 B16 requests, at most3390 actions, one model load and
+zero training. It compares one-bin input edits under free versus clamped corner
+continuations, plus one preceding-bottle edit, to distinguish direct conditional
+sensitivity from greedy feedback. CPU qualification precedes exact lead release;
+no native launch or scientific result is implied by the assignment.
+
 The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/results.md)
 is lead-accepted and closed:16 cached score requests/3226 actions, six exact
 natural-fidelity controls and zero training. All1000 coordinate rows remain
@@ -16,7 +24,8 @@ change can switch a neighboring output winner. B0 given the same B16 histories
 also produces the selected zero-width/reversed-coordinate decisions. Raw-score
 ties and normalization affect local winners, but do not identify a unique cause.
 The result supports conditional score competition, not global row collapse,
-instance-binding attribution or free-loop escape. No further unit is scheduled.
+instance-binding attribution or free-loop escape. The separate box-continuity
+unit addresses free continuation; this audit remains closed.
 
 The [first-row history cross](experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md)
 is lead-accepted and closed. Four requests/292actions with exact native-history
