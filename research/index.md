@@ -8,6 +8,14 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/unit.md)
+is active under the user's bounded diagnostic grant: CPU B0/B16 coordinate-row
+geometry plus16 cached score requests on three selected images, at most3226
+actions and zero training. Exact natural-prefix fidelity gates the dependent
+history interventions. It asks whether nearby coordinate distinctions survive
+actual computation; no mechanistic conclusion or further training is authorized
+by the diagnostic alone.
+
 The [first-row history cross](experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md)
 is lead-accepted and closed. Four requests/292actions with exact native-history
 controls show that replacing the first person's three differing coordinate
@@ -16,7 +24,7 @@ the correct teacher first row and freely correct bottle header still lead to
 x1=0 instead of186 before any wrong generated coordinate or repeated row.
 Other coordinates do change, so this is a local negative for that specific
 prefix-mismatch explanation, not history invariance or an identified training
-cause. No checkpoint is promoted and no further unit is scheduled.
+cause. No checkpoint is promoted; this historical unit remains closed.
 [Results](experiments/2026-10-03-first-row-history-cross/results.md) retain all
 four continuations, short-budget censoring, costs and limitations.
 
