@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-coordinate-readout-audit",
   "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION_AUTHORIZED",
+  "status": "CPU_LEAD_ACCEPTED_AWAITING_CLEAN_SOURCE",
   "evidence": "none",
   "scientific_status": "diagnostic_pending",
   "protocol": "research/experiments/2026-10-04-coordinate-readout-audit/unit.md",
@@ -15,8 +15,20 @@
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit",
-  "budget": {"requests": 16, "actions": 3226, "checkpoint_loads": 2, "gpus": 1, "optimizer_updates": 0},
-  "next_action": "Implement and CPU-qualify; lead binds clean source and releases the already user-authorized native package",
+  "budget": {
+    "requests": 16,
+    "actions": 3226,
+    "checkpoint_loads": 2,
+    "gpus": 1,
+    "optimizer_updates": 0
+  },
+  "next_action": "Bind clean source and run real CPU preparation, then exact native release; preserve concurrent unowned documentation/test-layout changes",
   "boundary": "Three selected images; saved B0/B16; static rows and exact cached score diagnostics with natural fidelity controls",
-  "not_authorized": ["Native model call before exact lead release", "Training, retries, extra query, checkpoint selection or extension", "Historical evidence mutation, physical-FN claim or publication"]
+  "not_authorized": [
+    "Native model call before exact lead release",
+    "Training, retries, extra query, checkpoint selection or extension",
+    "Historical evidence mutation, physical-FN claim or publication"
+  ],
+  "cpu_implementation_lead_accepted": true,
+  "cpu_qualification": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/cpu-qualification-01/qualification.json"
 }
