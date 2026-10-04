@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-box-continuity",
-  "lifecycle": "ready",
-  "status": "NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "not_evaluated",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_COMPLETED_DIAGNOSTIC",
+  "evidence": "accepted",
+  "scientific_status": "local_winner_changes_and_cross_row_sensitivity_observed_no_selected_large_within_box_cascade_training_objective_unresolved",
   "protocol": "research/experiments/2026-10-04-box-continuity/unit.md",
   "state_source": "research/experiments/2026-10-04-box-continuity/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -12,7 +12,7 @@
   "worker_effort": "xhigh",
   "authority": "User authorized advisor consultation, lead-selected next probe, and existing Worker Session implementation and execution on 2026-10-04; zero training.",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/box-continuity",
   "budget": {
@@ -23,9 +23,9 @@
     "optimizer_updates": 0
   },
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/transport/worker-assignment-01.json",
-  "next_action": "Worker runs the exact release once, saves consumer and terminal/resource/source evidence, then returns for lead acceptance. No retry or successor.",
+  "next_action": "None scheduled. Frozen matrix complete; no automatic training or successor query.",
   "boundary": "Two within-box B16 sites and one preceding-row bottle site; finite selected contexts, no prevalence or training-objective claim.",
-  "job_state": "Single native invocation released; worker launch pending",
+  "job_state": "complete_exit0_producer_and_owner_settled",
   "not_authorized": [
     "Model call before exact lead release",
     "Training, warmup, retry, additional query, checkpoint selection or dose extension",
@@ -42,5 +42,27 @@
   "final_cpu_preparation": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/prepared-04/admission-receipt.json",
   "integrated_runtime_commit": "2e444da87783c7ce3bf81f405ce275ca3adc3104",
   "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-release-01.json",
-  "native_output": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-01"
+  "native_output": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-01",
+  "result": "research/experiments/2026-10-04-box-continuity/results.md",
+  "native_acceptance": {
+    "status": "lead-accepted",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/lead-consumer-check-01.json",
+    "command_exit": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-owner-01-terminal.json",
+    "worker_report": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-summary-01.json",
+    "execution_commit": "106aaed8558265a9554c057620d2444e93b37da4",
+    "readback_sha256": "24b2e54bd9762262fb02ebf1ca8a2ab6f5f53cc91010c9b8560984e2e8ed8a19",
+    "requests": 13,
+    "generated_actions": 3390,
+    "forced_actions": 3319,
+    "free_actions": 71,
+    "checkpoint_loads": 1,
+    "natural_fidelity_controls": "3of3 full-budget token and incoming-policy exact;690 comparisons",
+    "within_box_contrasts": 4,
+    "preceding_row_contrasts": 2,
+    "historical_clamped_cells_reused": 2,
+    "optimizer_updates": 0,
+    "seconds": 356.8183193355799,
+    "blocking_counterexamples": [],
+    "settlement": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-settlement-01.json"
+  }
 }

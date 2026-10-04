@@ -101,6 +101,21 @@ finite-precision and small-margin effects unresolved. The bounded
 [results](../experiments/2026-10-04-coordinate-readout-audit/results.md) separate
 these decisions from free continuation, physical recovery and training benefit.
 
+The accepted free-continuation follow-up (catalog:2026-10-04-box-continuity)
+finds at most2bins of freely generated corner change across four within-box
+contrasts. Two preceding-bottle edits both produce a6bin next-x2 shift, with
+coordinate-conditional TV0.03433/0.02226 and Wasserstein0.56776/0.21478bin.
+Each first free divergence occurs before any intervening free token changes;
+those first shifts do not require greedy-token feedback, although the original
+edit can propagate through hidden states/cache. Restoring native intermediate
+coordinates can change later distributions without changing their winners.
+This weakens a large within-box cascade explanation at the selected sites and
+supports fragile conditional winners, not global smoothness or an identified
+internal representation. Strict duplicate reduction here is width drift in an
+unowned region, not established physical progress. Soft-target versus exact-CE
+training remains untested. See the bounded
+[results](../experiments/2026-10-04-box-continuity/results.md); the unit is closed.
+
 Reopen only for a matched improvement in fitting cost, old-owner preservation or transfer, or a discriminating readout mechanism. Do not repeat small-panel perfect-fit demonstrations as evidence of generalization. The corrected coordinate-order branch is closed; a legal-box objective is not an owner-enumeration objective.
 
 ## Provenance

@@ -8,15 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [box-continuity probe](experiments/2026-10-04-box-continuity/unit.md)
-is the sole active unit. The user authorized implementation and execution after
-advisor consultation:13 B16 requests, at most3390 actions, one model load and
-zero training. It compares one-bin input edits under free versus clamped corner
-continuations, plus one preceding-bottle edit, to distinguish direct conditional
-sensitivity from greedy feedback. CPU qualification precedes exact lead release;
-no native launch or scientific result is implied by the assignment. The first
-CPU candidate is implemented; the user requires final integration against the
-concurrent current-stack migration before native source is frozen.
+The [box-continuity probe](experiments/2026-10-04-box-continuity/results.md)
+is lead-accepted and closed after13 B16 requests/3390actions, three exact natural
+controls and zero training on the current integrated codebase. Four within-box
+x1 contrasts change a freely generated corner by at most2bins; two preceding-row
+bottle edits move the next x2 by6bins under small probability redistribution.
+Every first free divergence occurs while all preceding free tokens are still
+native, so these first changes do not require a cascade of altered intermediate
+outputs. Later coordinate feedback can change scores without changing a winner.
+Numerical duplicate reduction is not physical-owner recovery; smooth targets
+versus exact CE remains untested. All jobs are settled; no successor is scheduled.
 
 The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/results.md)
 is lead-accepted and closed:16 cached score requests/3226 actions, six exact
