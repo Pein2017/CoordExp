@@ -26,5 +26,17 @@ Historical docs are [sealed and recoverable](docs/RETENTION.md), not another
 active source tree. No model launch or resource change follows from reading this
 page.
 
+## Validation boundaries
+
+Tests live with their source owner under `tests/`; small size alone does not
+justify removing a contract test. Default discovery includes both annotation
+systems. Frontend contracts use Node 22. Tests marked `live_environment` compare
+installed applications or external data with frozen receipts and remain enabled
+by default. Use `pytest -m 'not live_environment'` for the retained CPU contracts
+without that data/application gate, and `pytest -m live_environment` for the gate
+itself. Local model-component canaries can still depend on installed libraries
+and assets; passing one gate does not imply the other passed. No routine check
+authorizes a model run.
+
 ## License
 Pending project decision; preserve applicable upstream licenses.

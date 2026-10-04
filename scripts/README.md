@@ -1,57 +1,28 @@
-# Scripts
+# Script ownership
 
-This directory contains user-facing entrypoints plus compatibility wrappers and
-historical diagnostics. The canonical training/inference implementation is
-owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/SYSTEM_OVERVIEW.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+Training and inference are configuration-first module entrypoints:
+`python -m src.train --config ...` and `python -m src.infer --config ...`.
+Main's runnable model configurations live under `configs/coordexp_infras/`.
+Do not introduce another launcher around retired MS-Swift or Stage-2 APIs.
 
-## Stable entrypoints
+`scripts/` owns thin operational entrypoints; reusable behavior belongs to its
+`src/` owner. The offline evaluator is `scripts/evaluate_detection.py`.
+Annotation operations delegate to `src/coco_refinement/` or
+`src/label_studio_coco_refinement/`. Visualization is not evaluation evidence.
+Self-contained artifact reducers may remain under `scripts/analysis/`; new
+research experiments belong to the canonical research checkout, not a revived
+`src.analysis` tree in main. Tooling needs a current consumer and must not
+duplicate a source-owned API.
 
-- Training (canonical Swift): `python -m src.train --config configs/coordexp_infras/...`.
-- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_infras/infer/...`.
-- Offline coordexp-infras detection evaluation (direct artifact reducer):
-  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
+Public-data recovery is a separate contract. Two legacy diagnostics still have
+data-preparation callers: `scripts/tools/inspect_chat_template.py` and
+`scripts/analysis/measure_gt_max_new_tokens.py`. Their removed model APIs make
+them unsupported as runnable diagnostics. Migrate their rendering/token-budget
+consumers deliberately before retirement; do not silently change regenerated
+samples or reintroduce the old model stack.
 
-## Compatibility / debug wrappers
-
-- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`,
-  `scripts/postop_confidence.py`, and
-  `scripts/evaluate_proxy_detection_bundle.py`: legacy/mainline wrappers.
-  They are not the canonical Swift entrypoints and should be used only for
-  explicit compatibility or historical reproduction.
-- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.
-- `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
-  supplied prediction artifact and image root. Prefer evaluator overlays or
-  `vis_resources/` artifacts tied to resolved pipeline provenance for
-  reportable evidence.
-
-## Shared helpers
-
-- `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
-
-## External transfer helpers
-
-No current transfer helper is owned by this directory or a first-party skill.
-For an explicitly authorized outputs transfer, follow
-`docs/OUTPUT_STORAGE_POLICY.md`, inspect the installed
-BaiduPCS-Go client, and bind exact local and remote roots before acting. Do not
-use Baidu Netdisk as the default sync surface for `model_cache/`, raw
-`public_data/`, or processed `public_data/` contents.
-
-## Utilities (organized)
-
-- Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/`
-- Small pipelines / workflow wrappers and diagnostics: `scripts/pipelines/`
-  - tmux queue manager for sequential training jobs: `scripts/pipelines/train_task_manager.sh`
-    (Python core: `scripts/pipelines/train_task_manager.py`)
-  - historical rollout parser/stability diagnostic:
-    `scripts/pipelines/run_rollout_stability_probe.sh`; this delegates to the
-    legacy/debug `run_infer_eval.sh` wrapper and is not a stable benchmark
-    pipeline.
-
-## Deprecated
-
-Deprecated wrappers are removed. Prefer stable YAML-first entrypoints for
-inference, scoring, evaluation, and reportable visualization artifacts.
+Use this checkout's source, typed configuration and tests for current behavior.
+`docs/BRANCH_AND_WORKTREE_POLICY.md` owns checkout boundaries and
+`docs/OUTPUT_STORAGE_POLICY.md` owns artifacts and explicit transfers.
+Git history supplies obsolete command implementations; this directory is not
+their archive.

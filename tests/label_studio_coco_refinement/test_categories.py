@@ -61,6 +61,7 @@ def test_registry_accepts_only_exact_canonical_name_sparse_id_pairs(
     assert exc_info.value.code == code
 
 
+@pytest.mark.live_environment
 def test_source_contract_receipts_match_exact_selected_sources() -> None:
     contract = _source_contract()
     assert (REPO_ROOT / contract["image_root"]).is_dir()
@@ -98,6 +99,7 @@ def test_source_contract_receipts_match_exact_selected_sources() -> None:
         assert fixture_raw == representative_raw
 
 
+@pytest.mark.live_environment
 def test_fixture_pins_current_label_studio_revision_and_version() -> None:
     expected = _source_contract()["label_studio"]
     revision = subprocess.run(

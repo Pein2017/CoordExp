@@ -1,28 +1,16 @@
 schema: spec-driven
 
 context: |
-  coordexp-infras on repository main is the accepted implementation. Read
-  docs/PROJECT_CONTEXT.md, docs/coordexp_infras.md, docs/SYSTEM_OVERVIEW.md,
-  and docs/IMPLEMENTATION_MAP.md before proposing a change.
+  Main owns integrated CoordExp source and annotation/data operations. Resolve
+  the exact checkout and current code; sibling branches can have different
+  capabilities. docs/BRANCH_AND_WORKTREE_POLICY.md owns checkout boundaries.
 
-  docs/ describes accepted current architecture and operator workflows.
+  docs/README.md routes long-lived design knowledge, not API inventories.
+  Current interfaces belong to source, typed configs and executable contracts.
   openspec/specs/ owns stable compatibility-sensitive behavior contracts.
   openspec/changes/<change>/ is the sole local workspace for bounded changes
   that benefit from durable proposal, design, tasks, implementation,
   verification, and archive state.
-
-  When Superpowers is explicitly invoked, it owns execution planning, TDD,
-  debugging, commit checkpoints, code review, and fresh verification. OpenSpec
-  remains the authority for scope, semantics, compatibility, and completion.
-  Superpowers artifacts must link the active change and remain derivative
-  execution plans; they never replace or independently advance its authoritative
-  proposal, design, specs, or task state.
-
-  PWSG is sequencing discipline inside a change: Program is the change, Wave
-  is a task group, Slice is a small dependency-ordered task, and Gate is
-  lead-owned executable verification. Require independent audit only for a
-  frozen, conclusion-bearing or high-risk integration target, not every slice
-  or routine wave. Detail only the active wave.
 
   Protect semantic alignment across data, images, geometry, ordering,
   templates, tokens, packing, forward behavior, losses, metrics, configs,

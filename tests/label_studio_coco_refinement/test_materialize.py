@@ -973,7 +973,7 @@ def test_runtime_layout_is_exact_dedicated_and_split_scoped(tmp_path: Path) -> N
     layout = RefinementRuntimeLayout.under_repository(repository)
 
     assert layout.repository_root == repository
-    assert layout.root == repository / "outputs" / "label_studio_coco_refinement" / (
+    assert layout.root == repository / ".local" / "state" / "label_studio_coco_refinement" / (
         "rescale_32_1024_bbox_len12000"
     )
     assert (

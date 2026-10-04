@@ -317,6 +317,7 @@ def test_exact_source_and_runtime_contracts() -> None:
     assert managed_image_link_plan(layout, Split.TRAIN).target_path == layout.image_root
 
 
+@pytest.mark.live_environment
 def test_selected_validation_source_hash_schema_counts_and_identities() -> None:
     contract = SOURCE_CONTRACTS[Split.VAL]
     inspection = inspect_source(

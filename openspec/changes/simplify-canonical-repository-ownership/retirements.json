@@ -1,0 +1,3627 @@
+{
+  "base_commit": "52d7dd204449a5d610715666359c91ce243b758e",
+  "scope": "main only",
+  "protected": {
+    "scripts/tools/inspect_chat_template.py": "public_data/run.sh consumer; rendering semantics need separate migration",
+    "scripts/analysis/measure_gt_max_new_tokens.py": "LVIS export consumer; token-budget semantics need separate migration"
+  },
+  "files": [
+    {
+      "path": "scripts/analysis/candidate_field_cardinality_tomography/finalize_if_ready.py",
+      "sha256": "ae1565b84d79f01603cb7b8f5a6c6c982e55dcf09d185cfbc633b1f79e350703",
+      "bytes": 1114,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.finalize"
+      ]
+    },
+    {
+      "path": "scripts/analysis/candidate_field_cardinality_tomography/launch_candidate_field_cardinality_tomography_tmux.sh",
+      "sha256": "afacb5a20d28e9ecd26328659e764917506d6bcc85881d0efa56a34c83f65f94",
+      "bytes": 3723,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/candidate_field_cardinality_tomography/run.py",
+      "sha256": "2582d654a4c66a76092a8ccf1453d125ee1d163558c1076b52ce590e2b04f5bf",
+      "bytes": 1275,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/candidate_field_cardinality_tomography/status.py",
+      "sha256": "d239dd6b1b886435ad507677e01a6d264c98b7f0f35e8432c05783baba4483eb",
+      "bytes": 881,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.status"
+      ]
+    },
+    {
+      "path": "scripts/analysis/compute_iou_gibbs_coord_stats.py",
+      "sha256": "8176af35157ed027239d15499820a89c44d659d4193c54a9d93c22ffec32feef",
+      "bytes": 19686,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets"
+      ]
+    },
+    {
+      "path": "scripts/analysis/debug_rollout_collection_parity.py",
+      "sha256": "25eb627be194172426225f5f4051ded720c6dc314c706cc08bd8de3b847230e9",
+      "bytes": 7426,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.rollout_parity",
+        "src.common.prediction_parsing",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_attention_evidence_routing_tmux.sh",
+      "sha256": "71187800b0f2646e3a30f424c5b74c33eff468e3681e5bad97cea1b8c70eec79",
+      "bytes": 7874,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_fn_rescue_attention_guided_causal_binding_tmux.sh",
+      "sha256": "2bc959496f3bc10a6e8be4b7fe66da43dec031033cf5a9fecb6a106ceb6cd253",
+      "bytes": 5960,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_fn_rescue_continuation_tmux.sh",
+      "sha256": "d4bacc607cee15c35436a4f41f3fc5b58bb2efe7ae6a91e64811d76e10e93998",
+      "bytes": 9738,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_object_rollout_lane_b_tmux.sh",
+      "sha256": "e1dafbc807b2656537c2be7782ee0338a99df227226fbeeb90cce747db447db9",
+      "bytes": 4714,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_object_rollout_lane_c_tmux.sh",
+      "sha256": "a17c5d80971fa74ed9df4b27878c8651ae3faab9e60265903835253e6dce3555",
+      "bytes": 5555,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_autoreg_object_rollout_lane_d_tmux.sh",
+      "sha256": "a36ecb542aa80a87f227d1ebd0852b8eb204e61efb3a437eea497531cd30c73d",
+      "bytes": 6608,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/launch_policy_objective_mechanism_comparison_tmux.sh",
+      "sha256": "7220151647f5a3a11915d1b71f7a3d663bd3e7970d4f4e4fb5e61c20b2164db8",
+      "bytes": 8009,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/policy_objective_mechanism_comparison/run.py",
+      "sha256": "323c1c9378cd5977e1ad1465d535113b03c34356a387748300f06142072527b8",
+      "bytes": 733,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.policy_objective_mechanism_comparison.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/prefix_state_transition_tomography/finalize_if_ready.py",
+      "sha256": "e30fd641c16d7fbf028cc382839d93602a1246b04802e2656ac603c51a03fcfd",
+      "bytes": 1084,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.finalize"
+      ]
+    },
+    {
+      "path": "scripts/analysis/prefix_state_transition_tomography/launch_prefix_state_transition_tomography_tmux.sh",
+      "sha256": "e01d656cf7d99f21d95b49ba905b856b06f7b4432345f221cfea97561e1cb1d0",
+      "bytes": 6140,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/prefix_state_transition_tomography/run.py",
+      "sha256": "3861de0071ba2a5d8c37c93dde06942c585e108d3578b26f0dbc07df7c16f102",
+      "bytes": 1179,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/prefix_state_transition_tomography/status.py",
+      "sha256": "62ddba8f7628de18ea1034fee11f7ddd69f16b336a83b136158185df34cff788",
+      "bytes": 875,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.status"
+      ]
+    },
+    {
+      "path": "scripts/analysis/report_topk_by_objects_tokens.py",
+      "sha256": "51c474d6d9d2a24f2521118f126f1faf2dc675fe649944742c763defa7522b36",
+      "bytes": 6222,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.validator",
+        "src.datasets.builders.jsonlines",
+        "src.datasets.utils"
+      ]
+    },
+    {
+      "path": "scripts/analysis/rollout_backend_bench/benchmark_rollout_backends.py",
+      "sha256": "985953c2ae7cbe12b590336502f60cd04437e52d92f2554cef499569ee55edda",
+      "bytes": 42417,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.coord_tokens.codec",
+        "src.coord_tokens.template_adapter",
+        "src.datasets.builders.jsonlines",
+        "src.trainers.rollout_aligned_evaluator",
+        "src.trainers.rollout_matching",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "path": "scripts/analysis/rollout_backend_bench/vis_rollout_backend_compare.py",
+      "sha256": "d2902071b52c51cf95290a01ee519568c1c2533f0ee90fd23098563f414ce14a",
+      "bytes": 6068,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.paths"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_attention_evidence_routing.py",
+      "sha256": "0d8d0b1e4672cb3d89d1e4b9ccca4cf7d3ff06da0966ba3e21a259a46e9cec4a",
+      "bytes": 4443,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_attention_evidence_routing"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_fn_rescue_attention_guided_causal_binding.py",
+      "sha256": "815e43d994d1f0671c84bc2172c32d00994be55fe35b14cfdee71980b427e649",
+      "bytes": 2504,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_attention_guided_causal_binding"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_fn_rescue_continuation.py",
+      "sha256": "7cedaa56263f988c273ae416b75bcb8e33ebb7b1c96e7d5326917293f3c771e9",
+      "bytes": 5175,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_continuation"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_fn_rescue_desc_x1_phase2.py",
+      "sha256": "2a1dee4ecca2dc0861fb1f5c1725a21981d796f280a81350b20a093d43e462b7",
+      "bytes": 2396,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase2"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_fn_rescue_desc_x1_phase4.py",
+      "sha256": "242e2d094686dc4b95960b833f7a8e036758e1f74a7a70757efacdff7796fe20",
+      "bytes": 2207,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase4"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_fn_rescue_desc_x1_phase5.py",
+      "sha256": "e5ebd57642d8735a3cf94ed5d50b04c19fe239b7cd9913cfdc397df2641b5378",
+      "bytes": 2223,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase5"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_hidden_state_probe.py",
+      "sha256": "55d3916daff6f864f2bf23a03a2d73c231ab1beb5ac2535dad22ab5b63d27267",
+      "bytes": 6163,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_hidden_state_probe"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_object_rollout_anatomy.py",
+      "sha256": "3356f0f79dfa1370f0f6049595a832afc651d6e255080b4984b26c53738736d5",
+      "bytes": 169,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_object_rollout"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_autoreg_supervision_credit.py",
+      "sha256": "12da3c03270b2ab9caa474d7ad1f0c28b00437bddaf7c3381a8d07d018671c88",
+      "bytes": 2520,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_supervision_credit"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_ckpt_pair_confidence_eval.sh",
+      "sha256": "dcaac6569dee385bc038adfb7b55a8484b28a695fbe399583557e02d137f95a3",
+      "bytes": 9850,
+      "reason": "invokes retired run_infer.py and postop_confidence.py"
+    },
+    {
+      "path": "scripts/analysis/run_duplication_collapse_analysis.py",
+      "sha256": "e19539edb7fa9e0c34198b3a81ceae43668632f93f8f2f6774824b8a31d536c2",
+      "bytes": 1274,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.duplication_collapse_analysis"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_duplication_followup.py",
+      "sha256": "f65324b17af0b7a9f724bc0e30c77d4b834032995adbb7a34e2c00bab7ae70de",
+      "bytes": 113,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.duplication_followup"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_hard_ce_coord_logit_locality.py",
+      "sha256": "d12f1421c504734d260a0562c43bc1a54416f39acdb40a58ccba93d98a30fdf2",
+      "bytes": 2374,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.hard_ce_coord_logit_locality"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_manual_audit_reviewer.py",
+      "sha256": "2ca66cd9b636becf2fee805d6eae083274de6eaee450c3e87d7f25c193c28230",
+      "bytes": 2414,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.manual_audit_reviewer"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_policy_objective_mechanism_comparison.py",
+      "sha256": "211ef8ac17e84c9437c1ca9d7b12ba3013239433fea41e23937b50b454f53ee4",
+      "bytes": 1020,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.policy_objective_mechanism_comparison.config",
+        "src.analysis.policy_objective_mechanism_comparison.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_post_x1_instance_basin_tomography.py",
+      "sha256": "eb532969f9ed3de20cd32391837b6bc3b7329a22eb88737cdf968f2b7eb0b8c2",
+      "bytes": 1300,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_qwen3_vl_instance_binding_study.py",
+      "sha256": "7029ce2b81ab44a4ce030b68e48823638d26c26ca0b9866f588d1d22de8191bf",
+      "bytes": 1461,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.qwen3_vl_instance_binding"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_rollout_fn_factor_study.py",
+      "sha256": "cbdd3097d27c5689452f28cd79031c84e0553f5e8e2f15a01099e49d9e4e67bf",
+      "bytes": 759,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.rollout_fn_factor_study"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_small_object_duplication_diagnostics.py",
+      "sha256": "8379533ac1ee2f6263d69453a238a15c644b60345fde0e02f0afe00b81e542ed",
+      "bytes": 609,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.small_object_duplication_diagnostics"
+      ]
+    },
+    {
+      "path": "scripts/analysis/run_unmatched_proposal_verifier.py",
+      "sha256": "7a35fc75cd50b896bb28a7ff20004d0f3c72f46f4f5887dc79318b65f5f11cce",
+      "bytes": 1344,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.unmatched_proposal_verifier"
+      ]
+    },
+    {
+      "path": "scripts/analysis/sorted_random_no_newline_phenotype/launch_a3_2_tmux.sh",
+      "sha256": "45034256dc0d2fdb748c18133ebfbf842fef21ab6c6c6ad9c46f5f3ead9ae1ff",
+      "bytes": 9468,
+      "reason": "orchestrates retired src.analysis or removed research script implementation"
+    },
+    {
+      "path": "scripts/analysis/sorted_random_no_newline_phenotype/real_runtime.py",
+      "sha256": "a3b823d8b7acc9c9b5e053b0dd98c04afc878751a403ef841938c82718d9dee6",
+      "bytes": 3387,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.fn_hint_runtime",
+        "src.analysis.sorted_random_no_newline_phenotype.native_rollout",
+        "src.analysis.sorted_random_no_newline_phenotype.paired_probe"
+      ]
+    },
+    {
+      "path": "scripts/analysis/sorted_random_no_newline_phenotype/run.py",
+      "sha256": "4022ab286fcf1c818327678ec417bbaceb9e560bbc50834257582004b9686e25",
+      "bytes": 2151,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.runner"
+      ]
+    },
+    {
+      "path": "scripts/analysis/sorted_random_no_newline_phenotype/status.py",
+      "sha256": "4e7acd2eca73599b82345768311d868133f0ff4f65315b70eee69edecd166fbe",
+      "bytes": 1942,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.status"
+      ]
+    },
+    {
+      "path": "scripts/analysis/token_length_analysis.py",
+      "sha256": "8471cc9a28c5a8dd0573cce1fbfafb6812f8c0ba2e1513bded8b4fcf1781b121",
+      "bytes": 13717,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.builders.jsonlines",
+        "src.datasets.utils"
+      ]
+    },
+    {
+      "path": "scripts/diagnostics/audit_instance_trie_gaussian_targets.py",
+      "sha256": "d0c166d85dd1cfcf6c1ddfb8b1852948365267fc2af52ac56271504f1b880c49",
+      "bytes": 24059,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets",
+        "src.detection.runtime"
+      ]
+    },
+    {
+      "path": "scripts/evaluate_oracle_k.py",
+      "sha256": "7d049ce6b2c4d8c68f646ed2785cbfe85d1f4542fc728f639a45b5d5dedbf46e",
+      "bytes": 1040,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.oracle_k"
+      ]
+    },
+    {
+      "path": "scripts/evaluate_proxy_detection_bundle.py",
+      "sha256": "6eec3fc84f00178a66c42742c28348c677a05dfdb9f6277c3d611ace6e6c3cef",
+      "bytes": 1334,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.proxy_eval_bundle"
+      ]
+    },
+    {
+      "path": "scripts/export_coco_submission.py",
+      "sha256": "dfbc97c6f973be737ea0482b04afc739707d46293558fc5e7cfba1b76514e468",
+      "bytes": 7265,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection",
+        "src.infer.artifacts",
+        "src.utils"
+      ]
+    },
+    {
+      "path": "scripts/materialize_proxy_eval_views.py",
+      "sha256": "93d69a5e54ec2e64dc14dcd1da5e8a8c441810403c71f50faddebd5641187cc2",
+      "bytes": 1533,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.proxy_views"
+      ]
+    },
+    {
+      "path": "scripts/pipelines/run_rollout_stability_probe.sh",
+      "sha256": "f53e8f31f8c3d26496d36d52051860e77ed301f37579115212e51250a0d89236",
+      "bytes": 3949,
+      "reason": "exclusive wrapper of retired run_infer_eval.sh"
+    },
+    {
+      "path": "scripts/pipelines/train_task_manager.py",
+      "sha256": "1a8c887d1254430a35745691009d2d8c2729fb5b79445db1efb0d276f7cba76e",
+      "bytes": 32083,
+      "reason": "imports removed ConfigLoader symbol and manages retired training interface"
+    },
+    {
+      "path": "scripts/pipelines/train_task_manager.sh",
+      "sha256": "53439a938f9b7009f87e17b146f8b3b5d457ecf70c2101ee066db177227a3eb6",
+      "bytes": 2829,
+      "reason": "exclusive shell entrypoint for retired train_task_manager.py"
+    },
+    {
+      "path": "scripts/postop_confidence.py",
+      "sha256": "d139c7814c45ebc2e33c435fa5825726a796c641eddb0433e648fbc3a5d254fd",
+      "bytes": 1326,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.confidence_postop"
+      ]
+    },
+    {
+      "path": "scripts/probes/coordexp_infras/checkpoint_reload_probe.py",
+      "sha256": "4d61e24b8b53d848af31eb52319e87e4d3016732f1e7fa3181e2974cecd59e52",
+      "bytes": 10908,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.artifacts.checkpoint_reload"
+      ]
+    },
+    {
+      "path": "scripts/run_infer.py",
+      "sha256": "cb3d4b69cb7d1abbe20f48e7b887ad4ccff7ac323509e378a6e62cceabf878f4",
+      "bytes": 15600,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.pipeline"
+      ]
+    },
+    {
+      "path": "scripts/run_infer_eval.sh",
+      "sha256": "6289170c23f7f6c046e12f34532e9cb96cad9ece9f114e894d991c55c36f1da9",
+      "bytes": 6071,
+      "reason": "exclusive legacy wrapper of retired scripts/run_infer.py"
+    },
+    {
+      "path": "scripts/tools/convert_to_coord_tokens.py",
+      "sha256": "2079209e8fd95671924cf5c1dbf76f14865b67a76c4b5759b41927090c58722c",
+      "bytes": 811,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.codec"
+      ]
+    },
+    {
+      "path": "scripts/tools/dump_rollout_text.py",
+      "sha256": "4bf3a2fd9dd29e150499d7ad6b03a41db21c51a2dc02c87c014ee9e9019b44f3",
+      "bytes": 7254,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.parsing",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "scripts/train.sh",
+      "sha256": "7665a863d65ece9fd3b4a5429f2fc07c00322d3c8dccbcc2378cca6c9bfcb02c",
+      "bytes": 10845,
+      "reason": "launches removed src.sft and src.trainers preflight"
+    },
+    {
+      "path": "scripts/train_stage2.sh",
+      "sha256": "7a54dfbb07e0788e4e550666427576f1bdb6db1763f4a4b5292bbb4e6e36eaad",
+      "bytes": 1616,
+      "reason": "launches removed src.launchers.stage2_vllm_server"
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_artifacts.py",
+      "sha256": "02a797f613cea4e7ac98ca64e68e5d82d7e1485ea5dc2d510804bf7b59f23472",
+      "bytes": 2077,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.artifacts"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_attention_components.py",
+      "sha256": "664f6826df4be3b2a4d44f60076daacaf4c39234418f8f9e3a967beb62271177",
+      "bytes": 1402,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.attention_components"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_basin_attraction.py",
+      "sha256": "020b69212bcb5c9bc6d2ac276c0a79a8d1d32f8f7d39b5d9650298d558e53dda",
+      "bytes": 1442,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.basin_attraction"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_case_index.py",
+      "sha256": "b1db20785aeab43103ab187524c135720cc35c1ad51d3accae42d039320d3e86",
+      "bytes": 1259,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.case_index"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_config.py",
+      "sha256": "a59c144e7d281ba1b7463724135e02c5c1ab96cdf0babccce6f70554e77fd0dd",
+      "bytes": 1487,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_controls.py",
+      "sha256": "51fd355b55514fbf4746ecec4af64f0f1b5fab584d1c7ea43417395c432d6739",
+      "bytes": 654,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.controls"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_finalize.py",
+      "sha256": "9f4022c207d71125cc6cf1ecbef895fb39c89dcdc10f95c9f1a0847e3140ee95",
+      "bytes": 2067,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.artifacts",
+        "src.analysis.candidate_field_cardinality_tomography.finalize"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_prefixes.py",
+      "sha256": "756eaa9dd9da4c63c79388b191130d69f2391b4034275717ee8f9e4b1393fd42",
+      "bytes": 2751,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.prefixes",
+        "src.common.detection_compact_rows"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_probe_plan.py",
+      "sha256": "1f641c256c6ab174c81fca9ff06f595a03c4dc5f4a06559c80880568b821939f",
+      "bytes": 898,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.probe_plan"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_report.py",
+      "sha256": "4148fae7796ae1fad03cd51a52273a984006761e022c7438d6b5333061db1852",
+      "bytes": 3105,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.report"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_residual_row_scoring.py",
+      "sha256": "0b26c8f6b01b4704789087244f30661518218e7282df4e97b2dce793b605b3f2",
+      "bytes": 1991,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.residual_row_scoring"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_runner_cli.py",
+      "sha256": "ea90e0c65ab9b8552dba2d5dc376afe33d39ded82dfe86e70b7d4437605d81df",
+      "bytes": 9070,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.artifacts",
+        "src.analysis.candidate_field_cardinality_tomography.controls",
+        "src.analysis.candidate_field_cardinality_tomography.runner"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_status.py",
+      "sha256": "820eb8b72d98d18c351fbc3c6d3835b2ee3dd5999dd36ac73cd37252d8ad1f82",
+      "bytes": 2193,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.artifacts",
+        "src.analysis.candidate_field_cardinality_tomography.status"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_taxonomy.py",
+      "sha256": "b3418615391aad3ab14d87e2113c91365efc0f501c83e3f871e86c1cc9414411",
+      "bytes": 2705,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.artifacts",
+        "src.analysis.candidate_field_cardinality_tomography.taxonomy"
+      ]
+    },
+    {
+      "path": "tests/analysis/candidate_field_cardinality_tomography/test_x1_candidate_field.py",
+      "sha256": "56ef9907b6a143558d4cc5e7ae4cb470a41f5c057afa001088ad35c4a9a3d0a6",
+      "bytes": 1758,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.candidate_field_cardinality_tomography.x1_candidate_field"
+      ]
+    },
+    {
+      "path": "tests/analysis/policy_objective_mechanism_comparison/test_config_and_report.py",
+      "sha256": "7e95a4a6675795b03796c0e542ea32467f9b47492f2d1a8c1c63579d3ce3002f",
+      "bytes": 1758,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.policy_objective_mechanism_comparison.config",
+        "src.analysis.policy_objective_mechanism_comparison.report"
+      ]
+    },
+    {
+      "path": "tests/analysis/policy_objective_mechanism_comparison/test_existing_harness_configs.py",
+      "sha256": "c2c0f48a759b0d534df5fc204c9d7d6ac419c51b6552392ed99b766b7378b97f",
+      "bytes": 1802,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.config",
+        "src.analysis.prefix_state_transition_tomography.config",
+        "src.analysis.sorted_random_no_newline_phenotype.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/policy_objective_mechanism_comparison/test_policy_objective_mechanism_comparison.py",
+      "sha256": "f2ae36c0272228003d69e3efcef4d198d096c6b8e84b3d7c95766f78e77310a3",
+      "bytes": 2883,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.policy_objective_mechanism_comparison.config",
+        "src.analysis.policy_objective_mechanism_comparison.runner",
+        "src.analysis.post_x1_instance_basin_tomography.config",
+        "src.analysis.prefix_state_transition_tomography.config",
+        "src.analysis.sorted_random_no_newline_phenotype.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_case_universe.py",
+      "sha256": "50949aa1673b6642f9fd649838420c99c240f650e74ec70159daf727f898120b",
+      "bytes": 4652,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.case_universe"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_config.py",
+      "sha256": "59aa2676ede693c40cb98161d6435f0701e0db20ceaf96163838be631b8cffd4",
+      "bytes": 13853,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_gallery.py",
+      "sha256": "814f98d22196e221084d2b9b7e24de6d5f98e3f1580a55581328a218171d2e15",
+      "bytes": 2520,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.gallery",
+        "src.analysis.post_x1_instance_basin_tomography.jsonl"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_merge_report.py",
+      "sha256": "edb373041d083c5c0d0696c2ad118fc5525fdef54a179dff5adacd22be92189a",
+      "bytes": 2409,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.merge_report"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_posterior.py",
+      "sha256": "86325b771eef9cf209ed99ec8cf34daecb219c63d9039a091e64daf5402c73b3",
+      "bytes": 7286,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.posterior"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_prefix_modes.py",
+      "sha256": "0506fdd66b7e7d9b95bec0eb249b9ed0a442f0fc6bfd3acd8401adf6e86bc50f",
+      "bytes": 4020,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.prefix_modes"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_runner_cli.py",
+      "sha256": "b779665f28ce2e6fd61c37820a787f76139895e76e7141e6ed25a13e491b9a01",
+      "bytes": 10402,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.jsonl",
+        "src.analysis.post_x1_instance_basin_tomography.runner"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_status.py",
+      "sha256": "1c096931766f92cb85cacc1fd682978f866c26d0b8d2c2165ed178d5cc4177ae",
+      "bytes": 8494,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.jsonl",
+        "src.analysis.post_x1_instance_basin_tomography.status"
+      ]
+    },
+    {
+      "path": "tests/analysis/post_x1_instance_basin_tomography/test_trajectory.py",
+      "sha256": "9959ef6944141ff78f50c076d18354304aa2fc8efa14ddd2ef4102b8debf11fb",
+      "bytes": 4917,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.post_x1_instance_basin_tomography.trajectory"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_boundary_scoring.py",
+      "sha256": "a423349c3419b59747430a6f27b880eab0e4730265679cd45cd008a99176fe66",
+      "bytes": 3464,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.boundary_scoring"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_config.py",
+      "sha256": "3edbe8330494a537eda64d170d5bbfb7271ebc4aa90dbae2d63d43c6d933f8c4",
+      "bytes": 4482,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_gallery.py",
+      "sha256": "46bda94ca8926ccc67db9632a24545a126273062d35721d59bbe7f3d31322e21",
+      "bytes": 1311,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.gallery"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_jsonl.py",
+      "sha256": "bf0f9b28cd2e5f96c9c3134e1d0de5deb476a04d91d8737f252d85ba92861976",
+      "bytes": 1137,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.jsonl"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_merge_report.py",
+      "sha256": "ff555141549f3c3c913e9004f7f4d9da1954e89484b6eb04ee96e54e499ec1ad",
+      "bytes": 3380,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.merge_report"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_paired_probe.py",
+      "sha256": "9c47cd7ba7854f7e1eab4797b3d43ac6969008d59c9da1bc9213450b546366a6",
+      "bytes": 8309,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.config",
+        "src.analysis.prefix_state_transition_tomography.jsonl",
+        "src.analysis.prefix_state_transition_tomography.paired_probe"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_prefix_rendering.py",
+      "sha256": "b6f3c6b2d249f8dbf6cfab65ee863b91cbdab1cd26ae58c358c721be16e8305d",
+      "bytes": 2282,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.prefix_rendering"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_prefix_state_index.py",
+      "sha256": "7fb6200455a8314094394ee0972772512b4062d7064312999457ecf4cfc4f01a",
+      "bytes": 5231,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.prefix_state_index"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_runner_cli.py",
+      "sha256": "781dcbc32f7eba98ce88289de1eef7ea6cec919d93680d0739cd44723a380ff0",
+      "bytes": 3014,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.runner"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_status_finalize.py",
+      "sha256": "0c405838d11e012e0625dde5fd3d3bed108fe7485076a5aee020ee8ceca758e9",
+      "bytes": 3721,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.finalize",
+        "src.analysis.prefix_state_transition_tomography.jsonl",
+        "src.analysis.prefix_state_transition_tomography.status"
+      ]
+    },
+    {
+      "path": "tests/analysis/prefix_state_transition_tomography/test_x1_readout.py",
+      "sha256": "9e9c773a68dd518e929fb5f6d5b78bb82a934caadcc588296628e60eb08b44a1",
+      "bytes": 2542,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_state_transition_tomography.x1_readout"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_boundary_roles.py",
+      "sha256": "bf8f2833fda8b6fabaf28cce214edb6b713eeaf60262ee214f0be9e5a67cdcff",
+      "bytes": 7690,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.boundary_roles"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_config.py",
+      "sha256": "845abf7cec5df8eed0e78c729fced7b74201b0b9053338e96d2cd260f55a3168",
+      "bytes": 7498,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.config"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_data_root_audit.py",
+      "sha256": "514290f985db41d224656a99458902a1ca2015a6379d17c373c77f544a084e20",
+      "bytes": 7220,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.data_root_audit"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_fn_hint_runtime.py",
+      "sha256": "8a46f447a67ba273dae6e0f9f2c4962eff6322ba904297eb399b66f57bcb38a4",
+      "bytes": 5429,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.fn_hint_runtime",
+        "src.analysis.sorted_random_no_newline_phenotype.fn_probe",
+        "src.analysis.sorted_random_no_newline_phenotype.status"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_fn_matching.py",
+      "sha256": "24bbca6cecd1faa716be076810169b56cb6423b85438548675b41a146da32986",
+      "bytes": 23411,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.fn_matching"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_fn_probe.py",
+      "sha256": "e5a5525732bcb9a3ee1404645c1943ca57361f672c62d2c429d55c0086a6bec0",
+      "bytes": 23367,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype",
+        "src.analysis.sorted_random_no_newline_phenotype.fn_probe"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_gallery.py",
+      "sha256": "517f9c58306eb6798319a1d0a904f06df915a2ea9f6562ad436925d3d8009367",
+      "bytes": 3267,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.gallery"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_merge_report.py",
+      "sha256": "434d7d2e081ef18c426505379b16ace44e5900c468d3eb8f7476f045dadbe5a8",
+      "bytes": 7822,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.merge_report"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_native_rollout.py",
+      "sha256": "a94ef63d4ff88a403230d5881df66ff3df0b35282e5c2b28fa4c617b0a7c92d5",
+      "bytes": 7140,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype",
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.native_rollout",
+        "src.analysis.sorted_random_no_newline_phenotype.status"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_paired_probe.py",
+      "sha256": "aefc0fd60cd58178df52b853335ac4a152d90fb6e1a35ba42e1ac37ba728ba90",
+      "bytes": 13948,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype",
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.paired_probe"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_prefix_index.py",
+      "sha256": "5b33a1771cc8274ab7ed4e01a686431d7598ff5c32cc1707c86b1d51bb5074b1",
+      "bytes": 13332,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.config",
+        "src.analysis.sorted_random_no_newline_phenotype.prefix_index"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_rollout_phenotype.py",
+      "sha256": "6f22614c96c7ee196ce10384861f1148d8f49467690536377e68eb538aa181e5",
+      "bytes": 19541,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.rollout_phenotype"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_runner_cli.py",
+      "sha256": "19b47ae331f0b263b6ef8c1a31450aa1a233edfbed0eb97b27f511fb2ef1e2eb",
+      "bytes": 27809,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.runner"
+      ]
+    },
+    {
+      "path": "tests/analysis/sorted_random_no_newline_phenotype/test_status.py",
+      "sha256": "d5e5c132820ef5a7bc939332deb15a6b5d531caedb0df7ebb484df1b9ec46c30",
+      "bytes": 15961,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.sorted_random_no_newline_phenotype.status"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_augmentation_roundtrip.py",
+      "sha256": "8723506d33bc5f6a39f8a78bb1ac9276d6352acf0cb95e4d861dabdac75ece30",
+      "bytes": 5504,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.preprocessors.augmentation"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_codec.py",
+      "sha256": "ea30eac47bbe9989321e33983c78ece713c228a4f8496e70d2614474de7d3050",
+      "bytes": 1618,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.codec"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_gaussian_rps.py",
+      "sha256": "6564c14fff174f9ac8dfa2f1d825fff7d407cfd56bd04f0beb2247c2644e42f0",
+      "bytes": 2385,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.gaussian_rps",
+        "src.trainers.losses.coord_gaussian_rps"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_soft_ce_w1.py",
+      "sha256": "19599de62e47c830c45c75bf0387a6efdafaa0ce82474899daab34aab3a44d58",
+      "bytes": 1400,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.soft_ce_w1"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_template_adapter.py",
+      "sha256": "6fbe7507a924b5195d07086a1f895e3253e36fb25460852a78059cfc11ed58dd",
+      "bytes": 875,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.template_adapter"
+      ]
+    },
+    {
+      "path": "tests/coord_tokens/test_validator.py",
+      "sha256": "664936fb47af23178e97aad6ce91c84c451b5a97d7c62aae4d37016f70c2fc22",
+      "bytes": 1051,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.validator"
+      ]
+    },
+    {
+      "path": "tests/inference/test_real_smoke_readiness.py",
+      "sha256": "54d3bc1c844b888bbb64180521aa8d74e1c0a743ff1aafa0344d850729236e37",
+      "bytes": 3851,
+      "reason": "historical Wave-7 checkpoint/machine receipt assertions; current schema and entry contracts retained in test_config_runtime.py"
+    },
+    {
+      "path": "tests/runtime/test_serena_client_config.py",
+      "sha256": "7ab23b40893ecf30543e2578a338a6009d6de6745363fd9ab17049d143e0c0f5",
+      "bytes": 3820,
+      "reason": "hardcoded agent/harness registrations, prompt wording and installation paths; no CoordExp runtime/data contract, concurrent harness settings are not repository truth"
+    },
+    {
+      "path": "tests/test_aggregate_token_metric_events.py",
+      "sha256": "295952b4dd67df608cccbb7cf6c47bdd29f680e07df1c268674988cb0efeb062",
+      "bytes": 1587,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.data_collators.token_types",
+        "src.metrics.aggregate_token_metrics"
+      ]
+    },
+    {
+      "path": "tests/test_artifact_contract_docs.py",
+      "sha256": "2342916cb3f63f8b2e0c53d24ca6915b7386e2a6cd455b019c8ff2c6c4cb846a",
+      "bytes": 7719,
+      "reason": "permanently quarantined retired capability"
+    },
+    {
+      "path": "tests/test_augmentation_curriculum_contract.py",
+      "sha256": "b6d6810abcbaaa8278c17427a11bc125871d5bc6a16000a96267259d9d139431",
+      "bytes": 2458,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.preprocessors.augmentation"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_attention_evidence_routing.py",
+      "sha256": "04c3870e5311d1edc6fbe93af017865d4470308f03c81c1c7d8829378daf793b",
+      "bytes": 11956,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_attention_evidence_routing",
+        "src.datasets.geometry"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_fn_rescue_attention_guided_causal_binding.py",
+      "sha256": "f210ef45af7b3c5cfccea934bf763df874adbff126a729abfe44c82cafec70e2",
+      "bytes": 23477,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_attention_guided_causal_binding"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_fn_rescue_continuation.py",
+      "sha256": "4eb1bd8382ddf0a9d8d0c87f24da24b97f5783502fb4bed8cc8a5f52a6ba6850",
+      "bytes": 132337,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_continuation",
+        "src.common.qwen_generation"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_fn_rescue_desc_x1_phase2.py",
+      "sha256": "80cebbc984f35470825a86775ef14ca4fddd8a452aa65be0d1221f4b897c71f5",
+      "bytes": 12705,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase2"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_fn_rescue_desc_x1_phase4.py",
+      "sha256": "5c3f8fbc720004f051f75bded4fc7d07d26a45ecca35a74b14b6887a3b18f022",
+      "bytes": 9448,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase4"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_fn_rescue_desc_x1_phase5.py",
+      "sha256": "2fa277b382694d5f73b2fb8734aad9eb5115a53287a93fc9b74a61299a16c2cd",
+      "bytes": 10087,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_fn_rescue_desc_x1_phase5"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_hidden_state_probe.py",
+      "sha256": "b8f69835b5748ce925c69514bf99762acb062544fe8205ca28fada165cf70f1c",
+      "bytes": 87529,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_hidden_state_probe",
+        "src.analysis.hard_ce_coord_logit_locality"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_object_rollout.py",
+      "sha256": "d2ccaa06144aee06971c88b0a198d0fa8458569166b341f56444abe6d8d84b24",
+      "bytes": 9992,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_object_rollout"
+      ]
+    },
+    {
+      "path": "tests/test_autoreg_supervision_credit.py",
+      "sha256": "b2554954ea792b0c84d391e1db4bfb58135123531dccb600b86cf5cc24e8387d",
+      "bytes": 9296,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.autoreg_supervision_credit"
+      ]
+    },
+    {
+      "path": "tests/test_batch_extras_contract.py",
+      "sha256": "1298e0867dce71545315b6dc8be18ef63aadd37d366b23b9321019e9a6dbc8a9",
+      "bytes": 7225,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.data_collators.dataset_metrics",
+        "src.metrics.dataset_metrics",
+        "src.trainers.batch_extras",
+        "src.trainers.metrics.teacher_forcing"
+      ]
+    },
+    {
+      "path": "tests/test_batch_extras_failure_not_silent.py",
+      "sha256": "467c0187ed68a61f860b773a8b3daf84b2197c8e665d590cb5cfe304e623d8e0",
+      "bytes": 1147,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.metrics.mixins"
+      ]
+    },
+    {
+      "path": "tests/test_bbox_confidence.py",
+      "sha256": "d7e8bedcbcead29b332a75ecd419b4a3053b42286380f2bb7cee003c580a1158",
+      "bytes": 3223,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.bbox_confidence"
+      ]
+    },
+    {
+      "path": "tests/test_bbox_format_switch.py",
+      "sha256": "c16fd11e84f189f5738f488adc43fb57060bd130f2ee4614d73ea92c5d1b309a",
+      "bytes": 7752,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.coord_standardizer",
+        "src.common.geometry.bbox_parameterization",
+        "src.config.schema",
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_bbox_parameterization.py",
+      "sha256": "188081c0bf93497ae69f364cd43654e7ddc87bcee81973ce9eaca67196554caf",
+      "bytes": 13240,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.geometry.bbox_parameterization",
+        "src.config.schema",
+        "src.datasets.builders.jsonlines",
+        "src.datasets.dense_caption"
+      ]
+    },
+    {
+      "path": "tests/test_chat_template_regression.py",
+      "sha256": "3b4e73b2e640ee11cf18d3258a7ab21d027a772dcf55a20e9fa74108c18b3850",
+      "bytes": 4681,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.prompts",
+        "src.coord_tokens.codec",
+        "src.datasets.builders",
+        "src.utils.coordjson_transpiler"
+      ]
+    },
+    {
+      "path": "tests/test_checkpoint_weight_only_policy.py",
+      "sha256": "6d3afb53be21abdff6a2df9ac67611ad3c891270dc1f14ad3680346131a74368",
+      "bytes": 32769,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.callbacks.save_delay_callback",
+        "src.sft",
+        "src.trainers",
+        "src.trainers.final_checkpoint"
+      ]
+    },
+    {
+      "path": "tests/test_coco_submission_export_provenance.py",
+      "sha256": "9f5982da7c1213b1078191a39422b66aff2f9a916c4ca1460a384a519f115b0d",
+      "bytes": 4303,
+      "reason": "test of retired command",
+      "targets": [
+        "scripts/export_coco_submission.py"
+      ]
+    },
+    {
+      "path": "tests/test_common_io_jsonl.py",
+      "sha256": "e47fc0491652bcef4cd1202d230870c54d6deed811ee962c472d336e81b3f35a",
+      "bytes": 2324,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.io"
+      ]
+    },
+    {
+      "path": "tests/test_common_paths.py",
+      "sha256": "bae5e86e2f7ae67616a4deb996cd700524948f5ddfe587921a49f1e88cfb9416",
+      "bytes": 3451,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.paths"
+      ]
+    },
+    {
+      "path": "tests/test_compact_et_rmp_span_contract.py",
+      "sha256": "364c2309160c17826cedc601bbb519a7e6dce59b530c016ea9c4be44e0d5c345",
+      "bytes": 6691,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_compact_full_encoding_contract.py",
+      "sha256": "cdd799204da7b2b29a533a57e3f9dc780269b68d875344620afeb0913359479c",
+      "bytes": 16990,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.template",
+        "src.detection.tokenization",
+        "src.training.encoding.view",
+        "src.training.templates.codec",
+        "src.training.templates.compact_full"
+      ]
+    },
+    {
+      "path": "tests/test_compact_full_marker_policy.py",
+      "sha256": "299faf61e005467769f6f620c905a9767891d5fd043cbcad59a13a0b5a68984b",
+      "bytes": 6760,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.teacher_forcing.compact_full_policy"
+      ]
+    },
+    {
+      "path": "tests/test_compact_span_projector.py",
+      "sha256": "4ea48df0043c91e230feb24e1d4aa1c3828b757c3620facab69a5217e93bf0db",
+      "bytes": 4904,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.tokenization",
+        "src.training.encoding.view",
+        "src.training.span_adapters.compact_projector"
+      ]
+    },
+    {
+      "path": "tests/test_compact_tokenizer_stop_contract.py",
+      "sha256": "f3549dcaf8990837f22ed5806c88ceab74aea13c93379c5b8a201d53b03e0202",
+      "bytes": 6683,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.tokenizer_contract"
+      ]
+    },
+    {
+      "path": "tests/test_compact_type_gate.py",
+      "sha256": "b0bf1d3601a6e696d1fa1070f42a2fb8fa591f8f6008131a95f9d2d017764fe5",
+      "bytes": 5602,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.token_types"
+      ]
+    },
+    {
+      "path": "tests/test_confidence_postop.py",
+      "sha256": "74d6fe29423111f0330616887751dbb2f72817c8c78f28ca84779354a1951fd2",
+      "bytes": 29704,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.confidence_postop"
+      ]
+    },
+    {
+      "path": "tests/test_coord_gaussian_rps_loss.py",
+      "sha256": "18a6028574cccfc11e54bf87778b81a127fbed40a4b8d484c1dec0ad43f6b7ca",
+      "bytes": 7612,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.data_collators.token_types",
+        "src.trainers.losses",
+        "src.trainers.losses.coord_gaussian_rps"
+      ]
+    },
+    {
+      "path": "tests/test_coord_geometry_invariants.py",
+      "sha256": "29ed05863327a8c88b22de03bf060ebb3014730e9607085bfc9b6a903462edff",
+      "bytes": 803,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.geometry.coord_utils",
+        "src.eval.parsing"
+      ]
+    },
+    {
+      "path": "tests/test_coord_helper_boundaries.py",
+      "sha256": "5793bf724b16c14a06c119b8b4014d3633b523c0a7a138ef51f0f680eb5de809",
+      "bytes": 1240,
+      "reason": "AST checks of removed coord_utils/datasets/eval parsing modules"
+    },
+    {
+      "path": "tests/test_coord_soft_ce_w1_collective_guard.py",
+      "sha256": "93bdafb2f15fda9577ae97c4ce3eefd15a7f6ce2eb05945168cf11aed1892cd8",
+      "bytes": 4701,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.trainers.losses.coord_soft_ce_w1"
+      ]
+    },
+    {
+      "path": "tests/test_coord_softce_w1_loss.py",
+      "sha256": "ad22fd65b5c5316552abcbd9af91206a428cb7f9f8127321dff693e579788b95",
+      "bytes": 11421,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.metrics.dataset_metrics",
+        "src.trainers.losses.coord_soft_ce_w1"
+      ]
+    },
+    {
+      "path": "tests/test_coord_standardizer.py",
+      "sha256": "bf04a7b4ceba7ec154052023be32d5c58666fe186d06ed5ced27673603756637",
+      "bytes": 2545,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.coord_standardizer"
+      ]
+    },
+    {
+      "path": "tests/test_coord_token_mode_invariants.py",
+      "sha256": "5b868db1ee36f9118b0fccaeb2c29ac9ba1e2937b04467ab3fb91bd28a856b67",
+      "bytes": 1410,
+      "reason": "imports removed ConfigLoader API"
+    },
+    {
+      "path": "tests/test_coord_utils.py",
+      "sha256": "3f2b648df3b9c523d453901ea6234001cce9af3376596d37cc1b90fe3beaeed2",
+      "bytes": 7722,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.geometry",
+        "src.eval.detection",
+        "src.eval.parsing"
+      ]
+    },
+    {
+      "path": "tests/test_coordjson_transpiler.py",
+      "sha256": "0482b7790ecc68930c826da8504e7b1bb9da69f77efa7a13c88f66e9d1284aea",
+      "bytes": 6773,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.utils.assistant_json",
+        "src.utils.coordjson_transpiler"
+      ]
+    },
+    {
+      "path": "tests/test_custom_extra_merge.py",
+      "sha256": "a3431b32840f82295a14180fb0bf310c7691530d530908ee823f76ca0ec95ec1",
+      "bytes": 2519,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_dataset_multworker_determinism_probe.py",
+      "sha256": "634cefdcaa7f907249ec0b6d41416905000e6e0ed5cddceb35d361ab2fd5c82e",
+      "bytes": 3884,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.datasets.dense_caption"
+      ]
+    },
+    {
+      "path": "tests/test_dataset_runtime_contracts.py",
+      "sha256": "ae7e4a430aa55fe351559091f97da55387121066d2e72528ac41c086b67d3a2a",
+      "bytes": 7636,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.builders.jsonlines",
+        "src.datasets.utils"
+      ]
+    },
+    {
+      "path": "tests/test_dataset_seed_resolution.py",
+      "sha256": "94a00e5b50a6b982de5c370d5907233bb8b5a546a75671720820038b75565fb7",
+      "bytes": 1009,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_ddp_fail_fast_multiprocess.py",
+      "sha256": "93ab5838cc618ab6eb0eaa1e33445b2a44f327d63c66ec34a2c98d0c279e0576",
+      "bytes": 10900,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers",
+        "src.trainers.stage2_rollout_correction",
+        "src.trainers.stage2_rollout_runtime",
+        "src.utils.ddp_fail_fast"
+      ]
+    },
+    {
+      "path": "tests/test_ddp_fail_fast_stage2_metrics.py",
+      "sha256": "c95a5da61391b81e703ed56e884ec41cd611f07f3b6ed995add37ef71a80830d",
+      "bytes": 6749,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.metrics.mixins",
+        "src.trainers.stage2_rollout_correction",
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_ddp_pending_metrics_guard.py",
+      "sha256": "e78161c1d538bf4c82875c7765d8eb8ffd6fc151681c8050931f889bd2334348",
+      "bytes": 3934,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_correction",
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_ddp_vllm_sync_failure_propagation.py",
+      "sha256": "dab76d1b71057366ebecea309d69669ed0543d7321f9d84379a292cf616b286e",
+      "bytes": 4363,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_decode_backend_trace_contract.py",
+      "sha256": "f2af7085876691690dd75435a796461d0e2b610c63618689938efa84511b83ec",
+      "bytes": 10792,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend"
+      ]
+    },
+    {
+      "path": "tests/test_decode_provenance_contract.py",
+      "sha256": "3b303b726422b81229a4028e508fa0e5dc2035dac22e57dc72dd0caea2072fd0",
+      "bytes": 22592,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.artifacts"
+      ]
+    },
+    {
+      "path": "tests/test_dense_caption_prompt_override.py",
+      "sha256": "43ab8b3d87279711f5867549791fb3d3545cee55634de5462cfcfce9002ad25b",
+      "bytes": 9059,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.datasets.dense_caption",
+        "src.tokens.qwen_native"
+      ]
+    },
+    {
+      "path": "tests/test_dependency_provenance.py",
+      "sha256": "053f59e7d2c1880c9bb82cf1def2b1591ef00e9351981f47ce78fcc84f012d7a",
+      "bytes": 1248,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_detection_compact_full_template.py",
+      "sha256": "b8115a3719a40d99339e5c7fa6142fc3dc22c2dd5edbb43e5d4bd43fba2c9cc6",
+      "bytes": 21241,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.scene",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_detection_eval_ingestion_diagnostics.py",
+      "sha256": "a8aca83adc0f84ac035cc7a7da77fdbe55deae57e9f96c37657a098725d770be",
+      "bytes": 1335,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection"
+      ]
+    },
+    {
+      "path": "tests/test_detection_eval_output_parity.py",
+      "sha256": "39fc997bf63c64333fac3f56188dab98e20293d4bec770d04c36a4e86bdba459",
+      "bytes": 32509,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection",
+        "src.infer.pipeline"
+      ]
+    },
+    {
+      "path": "tests/test_detection_eval_semantic_patch_compat.py",
+      "sha256": "d3fab9178cfcb34ff8727b422365d5c822337f0fbe3e2d9b546c42c63db571bc",
+      "bytes": 1183,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection"
+      ]
+    },
+    {
+      "path": "tests/test_detection_ir_contract.py",
+      "sha256": "32e59237075a4eb339edb7f1d9875e55a3fa8ca8f8f668a207bb5bad19bf3d82",
+      "bytes": 7416,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection",
+        "src.detection.data",
+        "src.detection.ir"
+      ]
+    },
+    {
+      "path": "tests/test_detection_length_bucketing.py",
+      "sha256": "bf940688fa778f5fa72d73b6b5519cd0244076852c4bcabe6cab5333f9284d8b",
+      "bytes": 16447,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.dataset",
+        "src.detection.length_bucketing"
+      ]
+    },
+    {
+      "path": "tests/test_detection_normalization_contract.py",
+      "sha256": "81ae435cb99a511809706c2265e696c943cadfaf697d1809a04adf5886d6537a",
+      "bytes": 5286,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data"
+      ]
+    },
+    {
+      "path": "tests/test_detection_prompt_input_codec.py",
+      "sha256": "e3cae05c20fbdeff51e612a839ab8ba416b84e8811c08d092e1fa548e4777947",
+      "bytes": 11236,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.prompt"
+      ]
+    },
+    {
+      "path": "tests/test_detection_raw_schema_contract.py",
+      "sha256": "206158915a600aaf8d85166f45406cda3341c01fdd5753357a8212cb421575ee",
+      "bytes": 6834,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data"
+      ]
+    },
+    {
+      "path": "tests/test_detection_scene_contract.py",
+      "sha256": "4b3f7dfea89735553bab68aeaab6df18491eb576aa2b2da382ba1298491f8529",
+      "bytes": 10881,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection",
+        "src.detection.data",
+        "src.detection.dataset",
+        "src.detection.ir",
+        "src.detection.scene"
+      ]
+    },
+    {
+      "path": "tests/test_detection_scene_phase4_infer_eval_projection.py",
+      "sha256": "a58b5d2b4203b6934f25226e8f1ddd08e58bdcfc74889859caabaa62b7e20a89",
+      "bytes": 11117,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.artifacts",
+        "src.eval.confidence_postop",
+        "src.eval.detection_records",
+        "src.infer.artifacts",
+        "src.infer.parsing",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_detection_scene_stage1_projection.py",
+      "sha256": "272a7fa5a0f1f4a920a74a095a1171f67988d98935b7ea025630dc0281291085",
+      "bytes": 9446,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection",
+        "src.detection.dataset",
+        "src.training.teacher_forcing.constants"
+      ]
+    },
+    {
+      "path": "tests/test_detection_sequence_format.py",
+      "sha256": "bef4e6fa9a061b851044c61aee08a408abf8e0c44833c7ea5f16c9be9cb17888",
+      "bytes": 5766,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence"
+      ]
+    },
+    {
+      "path": "tests/test_detection_sequence_metric_events.py",
+      "sha256": "4b77c1456a69530ddbbeeb78a88d7ce2720554c1c4c77463e20a93d7c466a516",
+      "bytes": 4018,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.detection_sequence",
+        "src.metrics.events"
+      ]
+    },
+    {
+      "path": "tests/test_detection_stage1_json_pretty_template.py",
+      "sha256": "47b3a6c97ff1f9e53a53ab43b8e44940ed3760f587cc38b950fe9eca70d6251b",
+      "bytes": 10264,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.scene",
+        "src.detection.template",
+        "src.utils.assistant_json"
+      ]
+    },
+    {
+      "path": "tests/test_detection_template_ir_contract.py",
+      "sha256": "3ed01712cbe5d35388f34bc09df851ba45cb63c921252f73fa2c0b0477b17f26",
+      "bytes": 22229,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.template",
+        "src.utils.assistant_json"
+      ]
+    },
+    {
+      "path": "tests/test_detection_template_parsing_eval.py",
+      "sha256": "33a1b0a37dd247bd0dce97f7c2967501de5a56e06aaffdc722f45861bd0a17cb",
+      "bytes": 11793,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.evaluation",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_detection_template_registry.py",
+      "sha256": "82895d80570d2d35619e5a7179e2fc05a200119027af8f9531c20bcd808155f9",
+      "bytes": 4130,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_detection_template_span_alignment.py",
+      "sha256": "f7c5270bcefa9436b4f0a34dc4f9d9ac43771d6a513707b13a63955475ca58a2",
+      "bytes": 10602,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_detection_template_variants.py",
+      "sha256": "d6c5027bf5096b52e8f7d54f7e8edb24d0a24d6824703ebd1596b80d7ee4c89e",
+      "bytes": 4521,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.template_contracts"
+      ]
+    },
+    {
+      "path": "tests/test_detection_tokenized_view.py",
+      "sha256": "15c604796e88d1a6aed8a84d8ea5b0a02e3d06051b757915281c9cfbcd1fb64b",
+      "bytes": 20612,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_detection_training_config_contract.py",
+      "sha256": "731f4464dee3281845c1a0a47663daa0d45496dcdb3b8a76ea6767550d876ef0",
+      "bytes": 85529,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.detection.packing",
+        "src.detection.runtime",
+        "src.detection.template_contracts",
+        "src.sft",
+        "src.trainers.batch_extras",
+        "src.trainers.metrics",
+        "src.trainers.metrics.recursive_detection",
+        "src.utils.run_manifest"
+      ]
+    },
+    {
+      "path": "tests/test_detection_training_dataset.py",
+      "sha256": "99d0191ddff6d928b1cb319732b9db912feb358bf85b9189f547e2bba3f7cd37",
+      "bytes": 17445,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.dataset"
+      ]
+    },
+    {
+      "path": "tests/test_diagnostic_sampling_policy.py",
+      "sha256": "2ca7918e2945919dd0a1a0a9ca8fbb1bb97a1d9d2527817fcab6ac0967182223",
+      "bytes": 3809,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.observability"
+      ]
+    },
+    {
+      "path": "tests/test_dump_clip_text_safety.py",
+      "sha256": "7ccd0aad0494ccdbd6bb6a9bdc46c034b36f014f3fbde912ec3a533c2eacacc3",
+      "bytes": 584,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_duplication_collapse_analysis.py",
+      "sha256": "37f1d2cac8e462d35861bf19a0ee9325ba4a7615e87ecb9ae8e03895daf6baf4",
+      "bytes": 30684,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.duplication_collapse_analysis",
+        "src.analysis.rollout_fn_factor_study"
+      ]
+    },
+    {
+      "path": "tests/test_encoded_sample_cache.py",
+      "sha256": "ee771688ad0e5bbf135ed65598580280719f4c54df24b143abfb969c6b955229",
+      "bytes": 23773,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.datasets",
+        "src.datasets.dense_caption",
+        "src.datasets.encoded_sample_cache",
+        "src.datasets.wrappers.packed_caption"
+      ]
+    },
+    {
+      "path": "tests/test_encoded_sample_cache_runtime_config.py",
+      "sha256": "d7eb2a56593ff7eb4f2bfa080acb4eb6bdcca9cb3513e6c61a53be2e300f2d89",
+      "bytes": 21900,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.datasets.encoded_sample_cache",
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_experiment_manifest_file.py",
+      "sha256": "22fdb47fb44f0ee2a89c8ae1fa16eea25303448561f966fafa67bb020a4b7ee0",
+      "bytes": 9036,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.bootstrap.experiment_manifest",
+        "src.config.schema",
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_grad_accum_loss_scale_mixin.py",
+      "sha256": "149ecf6b50b2e52b438fc7342d1e09a53c3195754bf8d2003532ca957567e059",
+      "bytes": 3276,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.dataset_metrics"
+      ]
+    },
+    {
+      "path": "tests/test_hard_ce_coord_logit_locality.py",
+      "sha256": "ba1a1ff6004dad7a439de838a63f628fe0167e7e3d567babcbb53ce086e9d595",
+      "bytes": 15749,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.hard_ce_coord_logit_locality"
+      ]
+    },
+    {
+      "path": "tests/test_image_path_resolution_contract.py",
+      "sha256": "276dbbf19a5ab61c59e699f24b7747df79f43e54505ad40f1069b427f0e528c4",
+      "bytes": 4199,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.datasets.dense_caption"
+      ]
+    },
+    {
+      "path": "tests/test_infer_artifact_metadata.py",
+      "sha256": "32d24854a5f16c3461ef89268cd7650f778198bf5fe0421ace57f5305d01cb86",
+      "bytes": 8348,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.artifacts"
+      ]
+    },
+    {
+      "path": "tests/test_infer_batch_decoding.py",
+      "sha256": "f9c999a7c9409bd85ad467d461784d20bbe775863c466f2b3731765ca646cd46",
+      "bytes": 57123,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.prompt",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_infer_compact_full_policy_contract.py",
+      "sha256": "61f536e22ee0f318752a86fcfd56d564d856a3c167e3f8515928142087968d7c",
+      "bytes": 27555,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.config.prompts",
+        "src.detection.data",
+        "src.detection.evaluation",
+        "src.detection.template",
+        "src.infer.pipeline",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_infer_decode_request_mapping.py",
+      "sha256": "97beef8accf1c986881772ada8de4527f8f02413369a0697061eb4fd02e4ab5c",
+      "bytes": 19728,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_infer_layout_import_gates.py",
+      "sha256": "84c46904806cea88c2c06d14d8d15d25977b04531975f78303db015fcb57aa73",
+      "bytes": 15696,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.artifacts",
+        "src.infer.backend",
+        "src.infer.backend_vllm_infer",
+        "src.infer.backend_vllm_server",
+        "src.infer.rollout_dispatch",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_infer_pipeline_shared_decode_request.py",
+      "sha256": "bd4f9676a39bc732ad7240ce43bdc5ce959589567d92f6da1529092699dd1a52",
+      "bytes": 8692,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.artifacts",
+        "src.infer.pipeline"
+      ]
+    },
+    {
+      "path": "tests/test_inference_runtime_backend_facade.py",
+      "sha256": "1edfe701b298459c5416e816c2375797879bdc1383e67b3119401518227592df",
+      "bytes": 17686,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_instance_trie_gaussian_config_diff.py",
+      "sha256": "cfc9eb3b3340a776a431b66609e17745933ae0373add077d1250d2de56be7e83",
+      "bytes": 8580,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_instance_trie_gaussian_coord_softce.py",
+      "sha256": "41057776cae1e71ecee66d4af204b68538c5245bfc4273c55e2b78de58187a91",
+      "bytes": 17328,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets"
+      ]
+    },
+    {
+      "path": "tests/test_instance_trie_gaussian_target_shape_audit.py",
+      "sha256": "a17b3e79fd58f2e104963705decd4d8a92a71e89641fda43512b2cabead2536f",
+      "bytes": 9577,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets"
+      ]
+    },
+    {
+      "path": "tests/test_iou_gibbs_coord_softce.py",
+      "sha256": "4ffd24308602756918bc80a00ad90d0066aa9356a52ebd5228d354b9e79223fe",
+      "bytes": 5328,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets"
+      ]
+    },
+    {
+      "path": "tests/test_iou_gibbs_coord_stats.py",
+      "sha256": "f824a4e005267d8028b00f5e69e970e9912c630d96526f21e6973097538c8eaa",
+      "bytes": 5008,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets"
+      ]
+    },
+    {
+      "path": "tests/test_latest_detection_norm1000_view.py",
+      "sha256": "3f588e7a6a8544ddc766d4c1ae3ebedeb7aead8c600002a3a11283952defa92f",
+      "bytes": 2411,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_latest_detection_view_metadata.py",
+      "sha256": "3c8c373a74ab5eeb3117f718c46a6af20010075914a6a709eab824c48af748c9",
+      "bytes": 29643,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_compact_rows",
+        "src.detection.data",
+        "src.detection.dataset",
+        "src.detection.objective",
+        "src.detection.template",
+        "src.detection.token_types",
+        "src.sft",
+        "src.training.teacher_forcing.constants",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.validation",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_launcher_metadata_env.py",
+      "sha256": "294666a24fd3d387bfb9240fbb70467992091cb76a17800f107441afa105bdeb",
+      "bytes": 519,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_legacy_config_contract.py",
+      "sha256": "5ad3534b09d87879d3dc5e635ebafba9c08d0a349d77820257e0329c52067013",
+      "bytes": 2742,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_length_insensitive_loss_normalization.py",
+      "sha256": "3436d3afc608f9a0c3a121abe5baf93c05dba59ea9ab5abfaade53039bf4b2d2",
+      "bytes": 9924,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_loss_gradient_monitor.py",
+      "sha256": "d68cbf7ed6ebbaa0f32c3a8297475840ead3b4760a50b29ddef50947cb0045c4",
+      "bytes": 3646,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.monitoring.loss_gradient_monitor"
+      ]
+    },
+    {
+      "path": "tests/test_manual_audit_reviewer.py",
+      "sha256": "eeadfa5ac80f4c6240d2040ec158d0b18d314cdf5b305fc192345a3e6d473491",
+      "bytes": 5278,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.manual_audit_reviewer"
+      ]
+    },
+    {
+      "path": "tests/test_max_pixels_enforcement.py",
+      "sha256": "8fb89a9e10b16fcf0cdef3463b2c27ac3848a0ad304c7afe02131b0ab6dc86da",
+      "bytes": 3536,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.dense_caption",
+        "src.datasets.preprocessors.resize"
+      ]
+    },
+    {
+      "path": "tests/test_metric_events.py",
+      "sha256": "29a4a6c153253c55ea08a9dc49adca15057434cad88e58a6b15038c0812514ed",
+      "bytes": 9801,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.detection_sequence",
+        "src.metrics.events"
+      ]
+    },
+    {
+      "path": "tests/test_metric_key_lookup.py",
+      "sha256": "f6e9cc5050e6ca2d8e3064b0b93e16908dc0df5f88ae0bb64095449cf97333d9",
+      "bytes": 4186,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.callbacks.save_delay_callback",
+        "src.trainers.stage2_rollout_runtime",
+        "src.utils.metric_key_lookup"
+      ]
+    },
+    {
+      "path": "tests/test_model_input_bundle_contract.py",
+      "sha256": "309172ed11e43ac04462a0df15365869e22fe52733d4aad506f1ea236e2b338d",
+      "bytes": 7720,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.encoding.model_inputs",
+        "src.training.sidecars",
+        "src.training.teacher_forcing.constants"
+      ]
+    },
+    {
+      "path": "tests/test_monitor_dump_io_best_effort.py",
+      "sha256": "dbaa794e880ae9aae85366ceb3f07971dc77cfc946fdae88573485e9cf207506",
+      "bytes": 2871,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_ms_swift_placeholder_dataset_contract.py",
+      "sha256": "682948a29a32cb0f3dd3db99b2aff19e6abe0bd903a9ddf142be245de2840fbc",
+      "bytes": 1091,
+      "reason": "imports removed ConfigLoader API"
+    },
+    {
+      "path": "tests/test_object_geometry_extract.py",
+      "sha256": "6182913a8633a70695fc85fc5c9144788a5b1fef68c17318fd57adcfa87f1bfd",
+      "bytes": 1997,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.geometry.object_geometry"
+      ]
+    },
+    {
+      "path": "tests/test_object_ordering_strategy.py",
+      "sha256": "cc305b3fad021639841ba7a0f000534b4f4f1479bbe81acf88e622fb0c6de0a1",
+      "bytes": 2213,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.ordering"
+      ]
+    },
+    {
+      "path": "tests/test_objective_profile_resolution.py",
+      "sha256": "d7bb74ee7e212477a42caf69f872f7c1a754992a67ebce3ed6f79e0eb143d82f",
+      "bytes": 4939,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.pipeline_registry"
+      ]
+    },
+    {
+      "path": "tests/test_observability_events.py",
+      "sha256": "acc4d91ce7d67f9f4667af8bc729ce10ebd65c5010cc18f461adbb021632ba18",
+      "bytes": 7511,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.events",
+        "src.training.observability",
+        "src.training.observability.contracts",
+        "src.training.observability.legacy"
+      ]
+    },
+    {
+      "path": "tests/test_oracle_k_eval.py",
+      "sha256": "b569c97037d4d422a1df01b92e299376a31255cc5c3f5ae695166ec3d7fbbd18",
+      "bytes": 15984,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection",
+        "src.eval.oracle_k",
+        "src.infer.pipeline"
+      ]
+    },
+    {
+      "path": "tests/test_pack_num_samples_collator.py",
+      "sha256": "42727b3b50027c2bd0175331968cb27784805cb950f63f69bf03e6ef25cc9475",
+      "bytes": 1725,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.data_collators.dataset_metrics"
+      ]
+    },
+    {
+      "path": "tests/test_packed_labels_and_coord_targets.py",
+      "sha256": "3dee213274e6f331c25294154eabfdb6a51134f606be5e0f6c08c1e3725b7d99",
+      "bytes": 1996,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_packing_attention_backend_gate.py",
+      "sha256": "5f41179e08584e4b79c4064501e5da2193bc88485418929a8ea9a9f22094112a",
+      "bytes": 1070,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_packing_cache_fingerprints.py",
+      "sha256": "24cca66e7c60c562a82feb00464e56490765c8b5e0baf58bbab3b6b74369185b",
+      "bytes": 12002,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.packing"
+      ]
+    },
+    {
+      "path": "tests/test_packing_template_contracts.py",
+      "sha256": "daa3485b2ab1dcc893aac7c05e38eff51985dbd8a526bce94299760bc9d16d37",
+      "bytes": 3520,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.packing",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_packing_wrapper.py",
+      "sha256": "d90c80a5db9789e3aabf6edd7b75755673be4f479a6b53558ac71670d62d559c",
+      "bytes": 32020,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.datasets.wrappers",
+        "src.datasets.wrappers.packed_caption"
+      ]
+    },
+    {
+      "path": "tests/test_parser_policy_parity.py",
+      "sha256": "05267d3b002bc929de8781a1e11f4cd86bd2708625ad40fa5528f72d927baec5",
+      "bytes": 16670,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.infer.parsing",
+        "src.trainers.rollout_matching.parsing",
+        "src.training.stage2.rollout_codec"
+      ]
+    },
+    {
+      "path": "tests/test_prefix_rollin_dataset_alignment.py",
+      "sha256": "d024589cd71830bb73a1e6f8f8417765866a57d9dcaa95e6ac7121f9f9d6c262",
+      "bytes": 16231,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.loss",
+        "src.detection.objective",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_prefix_rollin_real_qwen_tokenizer.py",
+      "sha256": "ff2d8532b015aa163e33a901c927be003cd5476910133433903b0d976553cbde",
+      "bytes": 12579,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.token_types"
+      ]
+    },
+    {
+      "path": "tests/test_prefix_rollin_sampler.py",
+      "sha256": "66b35499348786ebeae0fe4a2386bdb704d2fe12ac6994ce5d5ffa0412f860d3",
+      "bytes": 6483,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.rollin"
+      ]
+    },
+    {
+      "path": "tests/test_prefix_rollin_teacher_forced_diagnostic.py",
+      "sha256": "6061d163c53882a29d052848b1129a30ec6e1e314ea7e462b173db4c54888bc8",
+      "bytes": 28653,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.prefix_rollin_teacher_forced_diagnostic",
+        "src.detection.data",
+        "src.detection.objective"
+      ]
+    },
+    {
+      "path": "tests/test_prepare_samples_for_rollout_vllm_multimodal.py",
+      "sha256": "df71b0542efec3470feb5d9290783403730cf78811bb2c1a7e4cd05674d4f93c",
+      "bytes": 3540,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.prompt",
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_prompt_parity_guard.py",
+      "sha256": "dffaceeed5f7769704c91786756f790bb91c1ce1be14fb60290f806bd0ca7964",
+      "bytes": 8233,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.prompt"
+      ]
+    },
+    {
+      "path": "tests/test_prompt_variants.py",
+      "sha256": "40fadb291ecb8e12b6de3bf46d650e899ede114999c23b6c3d49bf9cfd3d5215",
+      "bytes": 21818,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_chat",
+        "src.config.prompt_variants",
+        "src.config.prompts"
+      ]
+    },
+    {
+      "path": "tests/test_proxy_eval_bundle.py",
+      "sha256": "1715f083c1fab962447681605ff49441a65ec8e3450a7ab0e855983e4620dd50",
+      "bytes": 3449,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.proxy_eval_bundle"
+      ]
+    },
+    {
+      "path": "tests/test_proxy_eval_views.py",
+      "sha256": "f5758451caf19fa5b37f02eb86df22cedccbe22f8387be849dcd1a638ee78668",
+      "bytes": 3819,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.proxy_views"
+      ]
+    },
+    {
+      "path": "tests/test_proxy_supervision_enricher.py",
+      "sha256": "cdffcde478d790e5447b24ecebd4ffd2deb89d0ce563cdda7889968d440199a1",
+      "bytes": 5188,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.coord_tokens.codec",
+        "src.data_collators.enrichers"
+      ]
+    },
+    {
+      "path": "tests/test_qwen3_vl_instance_binding_study.py",
+      "sha256": "54f8da94154ede33ee5e07796e66c39cf4e4b2d228d34381a708403746fbbcc6",
+      "bytes": 35788,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.qwen3_vl_instance_binding"
+      ]
+    },
+    {
+      "path": "tests/test_qwen_generation_contract.py",
+      "sha256": "6a4b69c0fe81e2f9b2848be9a261b1f049a072bdfeb8d4784c3a4cd530afcb27",
+      "bytes": 6047,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/test_random_order_sft_contract.py",
+      "sha256": "e428268730cd6d2cd2b89b85549ca9118ea8c126f0d073d6dcbde8c93ade5ee8",
+      "bytes": 7887,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_random_permutation_et_rmp_ce_contract.py",
+      "sha256": "fcc488fbc349a8a6a40d1044035052b69d7ebb7ab1396788d61805bf56867511",
+      "bytes": 6233,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_ce_loss_adapter.py",
+      "sha256": "091ecd8274923a871f9098d25037d3f203f4614ac25c5f88c0d648c8a9202751",
+      "bytes": 66706,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.coord_soft_targets",
+        "src.detection.loss",
+        "src.detection.objective",
+        "src.detection.tokenization",
+        "src.metrics.events",
+        "src.training.teacher_forcing.ir"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_ce_sft_wiring.py",
+      "sha256": "bf9dd937edaea4bbf86165ebffe9b32983591caa667de966d39c8b1aae558441",
+      "bytes": 13482,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.data_collators.batch_extras_collator",
+        "src.detection.dataset",
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_ce_target_builder.py",
+      "sha256": "807622f4871b89faaa3d185b8c3f46dffc1e6d66d87251843840b9d1cef37cd7",
+      "bytes": 28603,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.coord_soft_targets",
+        "src.detection.data",
+        "src.detection.loss",
+        "src.detection.objective",
+        "src.detection.template",
+        "src.detection.tokenization",
+        "src.metrics.events"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_ce_trainer_mixin.py",
+      "sha256": "762434e6cf2ff549cc23312e954ae235e0d7c624028ce313191ee88b381a4265",
+      "bytes": 13510,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.objective",
+        "src.detection.tokenization",
+        "src.trainers.batch_extras",
+        "src.trainers.metrics.mixins"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_state_weighting.py",
+      "sha256": "cb8e0816ec097d262f12190878d226445456c39606190c753833907bcc39f7e1",
+      "bytes": 15948,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_detection_targets.py",
+      "sha256": "80a013bb1e66164a8eac18307e5006362da1469ae07ae270d0bce0dc940d58d5",
+      "bytes": 3012,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.dataset",
+        "src.detection.objective",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_recursive_loss_support_balance.py",
+      "sha256": "c2c1b00c0b241c26e897a407d8ca71944276aae8522e14b1f7ae90895575a94b",
+      "bytes": 2729,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.loss"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_fn_factor_study.py",
+      "sha256": "8c9fa3a171fcf340cfcc6f4ef711a68b1913d1f1b3c991aa96e2f6c670a67d22",
+      "bytes": 15659,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.rollout_fn_factor_study"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_hf_length_coherence_gate.py",
+      "sha256": "b5d78b4bcc168d2b716ceed41366dd19f71eac34aad8d298ed3eafde9364ed87",
+      "bytes": 1034,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_length_coherence_gates.py",
+      "sha256": "8e6bdcf4e5e4de9e8cb4d535827df4272630e0a578041442b37fea32723984b1",
+      "bytes": 5662,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_matching_decoding_cfg.py",
+      "sha256": "b413b393b19342a2d740b8223819f7fdaf63025c95cef1d472c7259e750af608",
+      "bytes": 13441,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.rollout_matching_schema",
+        "src.infer.backend",
+        "src.infer.runtime",
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_offload_context.py",
+      "sha256": "933213eeafbbebfd4e68685962e1305615d3ce5652a1da7031c61b27afb20f12",
+      "bytes": 4288,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_parity.py",
+      "sha256": "6ff87fac4786f42dd384c3fe3021db40ecca101dc35a55b4bbc56e22ae2d130a",
+      "bytes": 728,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.rollout_parity"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_seed_nonzero_contract.py",
+      "sha256": "b9f22754a247f92dd9c0152165294eedc88c1cbb18d37492a278e5af1b23dda2",
+      "bytes": 814,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_rollout_time_metrics_gating.py",
+      "sha256": "a033c3fa45b3614eaa64338aaf396ed1df197a4017452ab82f4bd510b98778e6",
+      "bytes": 2031,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_run_infer_legacy_shared_runtime.py",
+      "sha256": "f42c56b26ea0e4799b2e6fa5e9bf4d0b8b7ea8b573bf77a014969c994b277dd3",
+      "bytes": 2956,
+      "reason": "dynamically loads retired scripts/run_infer.py"
+    },
+    {
+      "path": "tests/test_run_manifest_files.py",
+      "sha256": "a441457c39e0d18e433e656861b2053bebceb845761963fb73b4e8e660aa991c",
+      "bytes": 9670,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.utils.run_manifest"
+      ]
+    },
+    {
+      "path": "tests/test_run_metadata_file.py",
+      "sha256": "dfba18f8f521fa745c739591461588f786104159f57c66024e0dc43d1be9cb44",
+      "bytes": 2116,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.bootstrap.run_metadata"
+      ]
+    },
+    {
+      "path": "tests/test_score_policy_fingerprint.py",
+      "sha256": "9eba38ad6f4a08702b06e18a192c75950f46a6e897a2ecc459fe77d9fd9a7fa7",
+      "bytes": 3883,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.artifacts"
+      ]
+    },
+    {
+      "path": "tests/test_sft_preparation_contract.py",
+      "sha256": "9cf70b4c6a629230ec6dd44870daf8f65f879dbdad0cb310e4564c8b07e56174",
+      "bytes": 6399,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.objective",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_small_object_duplication_study.py",
+      "sha256": "16b59c826c2c44761a81b414e3de4f1d0ab45469544b2b5c7ff9459c57290d16",
+      "bytes": 6768,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.small_object_duplication_study"
+      ]
+    },
+    {
+      "path": "tests/test_stage1_compact_span_adapter.py",
+      "sha256": "a969f4ea952a3288efab1136ce50d60d57701ea6fd8f31ca7b4dc9916da5153f",
+      "bytes": 5146,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.span_adapters.compact_projector",
+        "src.training.span_adapters.stage1_compact",
+        "src.training.supervision.distributions"
+      ]
+    },
+    {
+      "path": "tests/test_stage1_detection_eval.py",
+      "sha256": "6a5894ccd7cb54ea9c47fd6652d68deec3b43ed0e82f399e3205670fc97c58da",
+      "bytes": 20100,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.callbacks.stage1_detection_eval",
+        "src.infer.artifacts"
+      ]
+    },
+    {
+      "path": "tests/test_stage1_registry_masks.py",
+      "sha256": "6823685b463e6571d7079e5cda21886907535c2b309f8000b6272cfd7e007a04",
+      "bytes": 831,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.metrics.mixins",
+        "src.trainers.teacher_forcing.stage1"
+      ]
+    },
+    {
+      "path": "tests/test_stage1_sft_structural_close.py",
+      "sha256": "68d8177643fe3a0e1ce3b796ab25230a719e662896925a03c85c73b967a38a13",
+      "bytes": 7050,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.data_collators.batch_extras_collator",
+        "src.trainers.metrics.mixins"
+      ]
+    },
+    {
+      "path": "tests/test_stage1_static_packing_runtime_config.py",
+      "sha256": "42afcf7576e1259723fd3583404a74dc25325280e9d852cf0f85f9db6f4c02e1",
+      "bytes": 62150,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.callbacks",
+        "src.config.schema",
+        "src.datasets.wrappers",
+        "src.datasets.wrappers.packed_caption",
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_a_only_log_keys_sparse.py",
+      "sha256": "81688ef30cc3cf58014409bb0a2c941a5f1d5e01144041280b2edebd6e59367c",
+      "bytes": 1362,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_channel_a_pack_count_skew_barrier.py",
+      "sha256": "629efaf1162dc8ef8b85f57ddcdd8546535aef47e97567e2e4a2d611e6790620",
+      "bytes": 8040,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.executors"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_channel_b_pipeline_guard.py",
+      "sha256": "252fb58094b753ec6baf0bae5c4c6ff91b27d175c7c836eefa058cc0ac86f4af",
+      "bytes": 1283,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_channel_local_packing_buffer.py",
+      "sha256": "4032f6ef81ea3eb6b9862fcfef6de56abb7539ac1bf65437bc661d359ce26eec",
+      "bytes": 2559,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_config_contract.py",
+      "sha256": "e945760c11bfcd0356ff4161d53f365cb15f2cf54bb831c656b4cf5feed7a1e2",
+      "bytes": 4495,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_ddp_phase_monitor_disable.py",
+      "sha256": "bbfa161811dea8dc8c73ce2693e54bf301295f9bf0d41c3dd27011ec4dd1761d",
+      "bytes": 27158,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.coordination",
+        "src.trainers.rollout_correction.executors",
+        "src.trainers.stage2_coordination"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_disable_average_tokens_across_devices.py",
+      "sha256": "979d7a5bb96d10fa7f27394b2eccddaa3f7ef0ab8b6185878c79d85dbc402239",
+      "bytes": 3856,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.executors"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_packing_mask_gradients.py",
+      "sha256": "c001e8604e7a55782acbe189c8b89a8b4e55887c05c4b15ac20f1965701431a1",
+      "bytes": 5391,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.utils.assistant_json"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_prompt_alignment_contract.py",
+      "sha256": "3ed5b6dda7aec0c4a690f775de4dbfeca958ebc995bc02324ce53d07e19915c8",
+      "bytes": 1112,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.prompt",
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_time_metrics_gating.py",
+      "sha256": "1b6fe7d4333d9d7090978132c0f437fdf69e04602f49de8016fe6462a23b6624",
+      "bytes": 1455,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_training.py",
+      "sha256": "05954f73bd84cc0bd335cdffbc02345b28dfc57cbaab94f04f28a693aa5cffff",
+      "bytes": 310751,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.trainers.rollout_correction",
+        "src.trainers.rollout_correction.objective_runner",
+        "src.trainers.rollout_correction.rollout_views",
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.rollout_correction.teacher_forcing_adapter",
+        "src.trainers.rollout_correction.trie_supervision",
+        "src.trainers.rollout_correction.ul_consensus",
+        "src.trainers.rollout_matching.contracts",
+        "src.trainers.stage2_rollout_runtime",
+        "src.training.stage2.assignment",
+        "src.training.stage2.rollout_codec",
+        "src.training.teacher_forcing.constants",
+        "src.training.teacher_forcing.ir",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_ab_vllm_server_mode_smoke.py",
+      "sha256": "28fa10f5cdccc64141879a3fc28d716287390ad619bd794e311bbba5577bb538",
+      "bytes": 23316,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.backend_vllm_server",
+        "src.infer.prompt",
+        "src.infer.runtime",
+        "src.trainers.rollout_matching.preflight",
+        "src.trainers.stage2_rollout_runtime",
+        "src.utils.assistant_json"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_assignment_greedy_iou.py",
+      "sha256": "9391d6736bd614d7ac3a25752b4a5d5b38b1130d408150f78ef0d2e8875dd93f",
+      "bytes": 4294,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_matching.contracts",
+        "src.trainers.rollout_matching.matching",
+        "src.training.stage2.assignment"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_attempt_table.py",
+      "sha256": "316172c11cb6b5b7c41194118efe7516678232526294b087d1b202bfb990363e",
+      "bytes": 2524,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.attempt_table"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_channel_b_pipeline_coordination.py",
+      "sha256": "9812e20818e4a79f310c85d92acd9f9b8a28fa6ced36c126d40d7f31e8e44809",
+      "bytes": 1394,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.coordination"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_compact_full_rollout_io.py",
+      "sha256": "e8942d2e6a25a944f31d365b9f65eb3b644a425af84aa13189f868e891d6ad25",
+      "bytes": 12409,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.trainers.rollout_correction.rollout_views",
+        "src.training.stage2.rollout_codec"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_compact_span_adapter.py",
+      "sha256": "3bff6dfaa3f0331cb3a63d8e18b89c118587763cf54e7a1fd65cc3e085286b8e",
+      "bytes": 5796,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.span_adapters.compact_projector",
+        "src.training.span_adapters.stage2_compact",
+        "src.training.supervision.distributions"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_coordjson_rollout_legacy.py",
+      "sha256": "a4c4c99ebca283d43e7205af79603b3916b44bf1f90c5adc4bbe6a39ce453fb6",
+      "bytes": 6682,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.training.stage2.rollout_codec",
+        "src.utils.coordjson_transpiler"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_duplicate_filter.py",
+      "sha256": "cadd58b62c99486f918ff91c6900944466601dd2984d18c357ab18920eda19b0",
+      "bytes": 8412,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.rollout_matching.contracts",
+        "src.training.stage2.duplicate_filter"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_launcher_preflight_contract.py",
+      "sha256": "7c4494fdf39965d16d91acaa2a78a3b62d4ad8d31cb3231f033627e61bcd3899",
+      "bytes": 13265,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_matching.preflight",
+        "src.training_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_launcher_server_template_flags.py",
+      "sha256": "4b5c00f6b0b2720072252f05e402a9f2ec9d582bdca6362aeb23d75119ae6a11",
+      "bytes": 4444,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.launchers.stage2_vllm_server",
+        "src.trainers.rollout_matching.preflight"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_objective_atoms_projection.py",
+      "sha256": "cdcb9b96921b6eb77caa74ddb0819c720d52d0cddae389f02971a2f09598e033",
+      "bytes": 4585,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.teacher_forcing.contracts",
+        "src.trainers.teacher_forcing.objective_atoms"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_pending_metrics_aggregation.py",
+      "sha256": "9a594a41a04aeecbb05c1a4d9a206622fce52966eb21987a64aa6be17b5fd77e",
+      "bytes": 13095,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_coordination",
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_policy_provenance.py",
+      "sha256": "43b9ce4326b69eb0337a4a6a330dafb0930a3dd7b83419935475ee006529e450",
+      "bytes": 4890,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.bootstrap.stage2_policy_provenance"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_post_rollout_packing_binpacking.py",
+      "sha256": "c0fe39bb5acda1240b460fe9e7d1f8fbe3b4ce8686d40b83b20b2ac7fb133a45",
+      "bytes": 3318,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_preflight_path_resolution.py",
+      "sha256": "b0724b9f49482c917379de86b4ee349d8ab2233ea2442ac1e8bf5ddd7a57ba84",
+      "bytes": 820,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_matching.preflight"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_preflight_server_knob_plumbing.py",
+      "sha256": "f11ec6945841955ce32c780438f9a3a246882612807d83272f18985c6b1b89af",
+      "bytes": 835,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_matching.preflight"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_residual_boundary_adapter.py",
+      "sha256": "f27ca764aee9292376fcccfeca4c8832fa667d0571abdbebfbc6cece372d38eb",
+      "bytes": 7956,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.template",
+        "src.detection.tokenization",
+        "src.training.encoding.view",
+        "src.training.span_adapters.residual_boundary"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_residual_set_correction.py",
+      "sha256": "ea09c73152bc3aa9516ef229581e896672853113c46cbf46552195efcda8e2bb",
+      "bytes": 52061,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.residual_set",
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.rollout_correction.teacher_forcing_adapter",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_residual_set_loss_module.py",
+      "sha256": "b0036fd77c4d4770db74e4738d9bc373fe41e2206bf7a2235bf59729d81f326c",
+      "bytes": 32936,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.teacher_forcing.contracts",
+        "src.trainers.teacher_forcing.modules.residual_set_correction",
+        "src.trainers.teacher_forcing.objective_atoms",
+        "src.trainers.teacher_forcing.objective_pipeline",
+        "src.training.teacher_forcing.constants",
+        "src.training.teacher_forcing.ir",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_residual_ul_consensus.py",
+      "sha256": "78b4b642348f0e299bf8c702177b4b229456c50698d156f66c473b8cae271f21",
+      "bytes": 17922,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.ul_consensus",
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_boundary_gates.py",
+      "sha256": "b39e35dfdb63cf726f54e8ec38e9328b780ba896d66ea7cb6d75343c9330ce84",
+      "bytes": 1866,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_contract.py",
+      "sha256": "3d20ed96ab2315cf709ef45c12510ddb7b782b2a858c780e6f9a6ff874c7ac6e",
+      "bytes": 8110,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.training_runtime.plan",
+        "src.training_runtime.profile"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_pack_schedule.py",
+      "sha256": "29f9a0707b8b3b150e905e3f0831d3f8499ed5440025db711bed50349b6af722",
+      "bytes": 1682,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.coordination",
+        "src.trainers.rollout_correction.pack_schedule"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_profile_leaf_contract.py",
+      "sha256": "a559f627fbbb8bf165b890c62663c497e2be4dec238547718a7e3839b08a02d8",
+      "bytes": 7984,
+      "reason": "imports removed ConfigLoader API and asserts retired stage2 profiles"
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_removed_schedule_contract.py",
+      "sha256": "893d279a82643699d935eafcd9f74d8da05695224e205242f632a1990fef9b34",
+      "bytes": 1764,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_correction_target_boundary.py",
+      "sha256": "5924d9825624c4d4694bb8bfe5040096e59ea8b31b6262552378b0ae6790dadf",
+      "bytes": 35256,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.data",
+        "src.detection.scene",
+        "src.infer.backend",
+        "src.infer.runtime",
+        "src.trainers.rollout_correction.projections",
+        "src.trainers.rollout_correction.rollout_views",
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.rollout_matching.contracts",
+        "src.trainers.stage2_rollout_correction_impl",
+        "src.training.stage2.rollout_codec"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_import_boundaries.py",
+      "sha256": "ad4ea9b0f97ea6e65bfc65f423ea676838b7547466472d0fa192742d6e3b357b",
+      "bytes": 1904,
+      "reason": "reads removed stage2 rollout trainer implementation"
+    },
+    {
+      "path": "tests/test_stage2_rollout_runtime.py",
+      "sha256": "5f5fb590eee111bdb51515ab13555291635a6b6b8f12deb5cac5bebdbc6be5c6",
+      "bytes": 209858,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.config.prompts",
+        "src.config.rollout_matching_schema",
+        "src.infer.artifacts",
+        "src.infer.backend",
+        "src.infer.backend_vllm_infer",
+        "src.infer.backend_vllm_server",
+        "src.infer.parsing",
+        "src.infer.prompt",
+        "src.infer.rollout_dispatch",
+        "src.infer.runtime",
+        "src.trainers.rollout_aligned_evaluator",
+        "src.trainers.rollout_matching.matching",
+        "src.trainers.stage2_rollout_correction",
+        "src.trainers.stage2_rollout_runtime",
+        "src.utils.metric_key_lookup"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_rollout_template_policy.py",
+      "sha256": "e914c5216d6fef6c754a5b722fad11f7290d4340e36eae05b323338f2dc3301f",
+      "bytes": 8369,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.stage2.rollout_codec"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_step_budget_windows.py",
+      "sha256": "df862b4c008ab03a8e6dc73f2ef5da8f833976ed7f0df86168d438e7217817a5",
+      "bytes": 1605,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.sft"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_supervision_planning_smoke.py",
+      "sha256": "d22cdebad513c6139524c26a199cdb3f72b712b79873ab9a7dbf40fd2e24b91b",
+      "bytes": 19193,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.rollout_matching.contracts",
+        "src.trainers.stage2_rollout_correction",
+        "src.trainers.stage2_rollout_runtime",
+        "src.training.ordering",
+        "src.training.stage2.assignment",
+        "src.training.stage2.duplicate_filter",
+        "src.training.stage2.planners",
+        "src.training.supervision.plans"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_teacher_forcing_adapter_contract.py",
+      "sha256": "4f89cb58c271a9a882ca0ee99118f9e1992acea5ea3885c2704c5b0fa015dd40",
+      "bytes": 6816,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.teacher_forcing_adapter",
+        "src.training.teacher_forcing.ir",
+        "src.training.teacher_forcing.roles"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_trie_ce_module.py",
+      "sha256": "9a258a54d3fddf9a8ee6b9c248da185e2d641630f8d159c012b5bbf2da1a65e1",
+      "bytes": 26522,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.trie_supervision",
+        "src.trainers.teacher_forcing.contracts",
+        "src.trainers.teacher_forcing.module_registry",
+        "src.trainers.teacher_forcing.modules.stage2_trie_ce",
+        "src.trainers.teacher_forcing.objective_pipeline"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_trie_supervision.py",
+      "sha256": "5a31148526c0a64e8976dafbd8930811ffe7042170f970a9a8cf9c250af072bc",
+      "bytes": 26941,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction.trie_supervision"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_two_channel_training.py",
+      "sha256": "625182948aacb74cc91b649de3b2a83e20e8eb35761b7103098ec720847d5bce",
+      "bytes": 2990,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.rollout_correction",
+        "src.trainers.rollout_correction.target_builder",
+        "src.trainers.stage2_rollout_correction"
+      ]
+    },
+    {
+      "path": "tests/test_stage2_vllm_server_launcher.py",
+      "sha256": "f45a0be9f51955be146a4a8ad089313ebf7826bd88f457c6b7ae68ff26160300",
+      "bytes": 16159,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.launchers.stage2_vllm_server"
+      ]
+    },
+    {
+      "path": "tests/test_standard_sft_dataset_contract.py",
+      "sha256": "2b5c11abd12fc930e3e522fc1f7f4ac966169b5e5ee46817571cee0cda887ed0",
+      "bytes": 6521,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.detection.dataset"
+      ]
+    },
+    {
+      "path": "tests/test_strict_dataclass_parser.py",
+      "sha256": "c198befe8054948f1c78dfd0255e28cfd890e94460b599ae9cfa11872e8b11b3",
+      "bytes": 1957,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.strict_dataclass"
+      ]
+    },
+    {
+      "path": "tests/test_supervision_plan_contract.py",
+      "sha256": "75c8a0435fc17b1cb2b70f2dfd936cb188d0395cb9c1a1f539ddd91e83524087",
+      "bytes": 16233,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.supervision.context",
+        "src.training.supervision.plans"
+      ]
+    },
+    {
+      "path": "tests/test_supervision_span_distribution_contract.py",
+      "sha256": "75006aa9ce647095bd305e1d7de9ee8a6a4745444f202ee0cdd9c3f3e1f8f55a",
+      "bytes": 18636,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.supervision.batch",
+        "src.training.supervision.distributions",
+        "src.training.supervision.spans"
+      ]
+    },
+    {
+      "path": "tests/test_swift_rollout_endpoints_contract.py",
+      "sha256": "0a84640086949924f5724804a7df0bfb286428da5c6acd51eb8b3e042a414210",
+      "bytes": 2526,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend_sync"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_config_contract.py",
+      "sha256": "b62ae4ff723ee1a4244142fcdea0cbb2eef3072bc13ae5c52d17c6b587616274",
+      "bytes": 22738,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.detection.runtime",
+        "src.detection.template_contracts",
+        "src.sft",
+        "src.training.teacher_forcing.constants"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_encoded_cache_contract.py",
+      "sha256": "9d67452f20dcd0a35e8d3dc83394826736c0d6fa3a029c2fa7b6cc2025ad88e4",
+      "bytes": 11068,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.encoding.teacher_forcing_cache",
+        "src.training.teacher_forcing.constants",
+        "src.training.teacher_forcing.ir",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.vocab",
+        "src.training_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_ir_contract.py",
+      "sha256": "40ba43e534892e3f6c8624a2ca86a202a541dd34a547705e4f60b28059f1c6b2",
+      "bytes": 14106,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.training.teacher_forcing.constants",
+        "src.training.teacher_forcing.ir",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.validation",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_loss_catalog.py",
+      "sha256": "c77593417898de6aced962e847f47e6f04b3a3fec42465f32eb04634d34fdb81",
+      "bytes": 6948,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.teacher_forcing.module_registry",
+        "src.trainers.teacher_forcing.modules.residual_set_correction",
+        "src.trainers.teacher_forcing.objective_pipeline"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_metric_contract.py",
+      "sha256": "d2d5588a3cd355d14918451b58eb21034153322c750b775d64798f6653050976",
+      "bytes": 9863,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.events",
+        "src.training.teacher_forcing.metrics"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_report_contract.py",
+      "sha256": "27c10b32a391f770ef7bddeb1795e55f9189d69a59cdadc2b0a4277a26dc304a",
+      "bytes": 7076,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.compact_full_parse_report",
+        "src.analysis.teacher_forcing_atom_probe",
+        "src.analysis.teacher_forcing_objective_report"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_target_builder.py",
+      "sha256": "40dde512020f8048ca6d24fad248f39d8ad3df0a31e3801f99610109243910f1",
+      "bytes": 23191,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_compact_rows",
+        "src.detection.data",
+        "src.detection.scene",
+        "src.detection.teacher_forcing.rollin",
+        "src.detection.teacher_forcing.target_builder",
+        "src.detection.template",
+        "src.detection.template_contracts",
+        "src.training.teacher_forcing.roles",
+        "src.training.teacher_forcing.validation",
+        "src.training.teacher_forcing.vocab"
+      ]
+    },
+    {
+      "path": "tests/test_teacher_forcing_token_ce.py",
+      "sha256": "1e4c7a5a1908078a655c096afd78bcf85f95778c564b4eb67bafcb91384b3af6",
+      "bytes": 7867,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.teacher_forcing.contracts",
+        "src.trainers.teacher_forcing.modules.schema_format_ce",
+        "src.trainers.teacher_forcing.modules.token_ce"
+      ]
+    },
+    {
+      "path": "tests/test_token_span_masks_from_templates.py",
+      "sha256": "f36276133746a08f7e4f7859b4f1ac10848e9d5c80e6f43a1555dfa106270363",
+      "bytes": 9472,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.common.detection_sequence",
+        "src.detection.data",
+        "src.detection.template",
+        "src.detection.tokenization"
+      ]
+    },
+    {
+      "path": "tests/test_token_type_metrics.py",
+      "sha256": "d731156dfe3025ee21160c77c49ec033d5e684fca5da220596e21620955581e2",
+      "bytes": 7739,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.data_collators.dataset_metrics",
+        "src.data_collators.token_types"
+      ]
+    },
+    {
+      "path": "tests/test_token_type_metrics_config.py",
+      "sha256": "af50bd6efd065a4011d9d3c08e722935ccfa7a34466d3f008559f8bb92f3ab8a",
+      "bytes": 576,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_token_types_coord_quotes.py",
+      "sha256": "bcef9a0729ef1d7f010da670af22fe7ad4efc505de6c39ba988faea85ea2b1b4",
+      "bytes": 1313,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.data_collators.token_types"
+      ]
+    },
+    {
+      "path": "tests/test_train_batch_contract.py",
+      "sha256": "ef24a6f72622ad0d64ca5dcffd582160134d21c377eb434ec153ff40e2b0486f",
+      "bytes": 5128,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.metrics.mixins"
+      ]
+    },
+    {
+      "path": "tests/test_train_heartbeat.py",
+      "sha256": "ab56a97c78e7e856eb18f10144dcdc72026c065662b1f48ce205a180f3dc2e67",
+      "bytes": 2334,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.callbacks.train_heartbeat"
+      ]
+    },
+    {
+      "path": "tests/test_trainer_metrics_payload_contract.py",
+      "sha256": "ce54eb8e37c9f162d843297e0622630b39afd3acc0840cce302929ed10f5c205",
+      "bytes": 3947,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.metrics.payload_contract",
+        "src.metrics.reporter"
+      ]
+    },
+    {
+      "path": "tests/test_training_config_hierarchy_contract.py",
+      "sha256": "f36a665160b6726b29bf66ba706c24af0927f0d1f28ac0d6ca897ae2a902db9d",
+      "bytes": 7132,
+      "reason": "imports removed ConfigLoader API; production config retention is independently governed by data manifests"
+    },
+    {
+      "path": "tests/test_training_config_strict_unknown_keys.py",
+      "sha256": "0a3f9029421d26050e676ca62f15b8870eb518386def3ee96e81c3d74442a884",
+      "bytes": 47846,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_training_objective_public_ids.py",
+      "sha256": "1a3cb8858edffed202c79adcdc5def18635d2744cec7a445d1f49207397476f7",
+      "bytes": 1383,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_training_pipeline_hierarchy_schema.py",
+      "sha256": "f9c40b537a69d0ecfa3f925d75ec982b995176906c22f95479d07754cc127849",
+      "bytes": 1639,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema"
+      ]
+    },
+    {
+      "path": "tests/test_training_runtime_plan.py",
+      "sha256": "69f4ebf307b3d3b27afc0134e432f5e2cbd1da669e804391be8fa27efbf439eb",
+      "bytes": 5834,
+      "reason": "dynamically imports removed src.training_runtime.plan"
+    },
+    {
+      "path": "tests/test_training_runtime_profile.py",
+      "sha256": "167d55b12138f8453cfe0e06e855c2d58bf2c86834b92525cfc9a0140c7f4baa",
+      "bytes": 12959,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.bootstrap.trainer_setup",
+        "src.trainers.metrics.mixins"
+      ]
+    },
+    {
+      "path": "tests/test_unified_infer_pipeline.py",
+      "sha256": "72890ccb92e9da603a45cf70705441307704f1975826023c9928afb308f753bc",
+      "bytes": 62567,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.eval.detection",
+        "src.infer.artifacts",
+        "src.infer.pipeline",
+        "src.infer.runtime",
+        "src.infer.vis"
+      ]
+    },
+    {
+      "path": "tests/test_unmatched_proposal_verifier.py",
+      "sha256": "b4afda533eb2653d5f7cf2f0101a7cd0b248b10efcd08f45dde32f9f7a6a34b7",
+      "bytes": 17262,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.unmatched_proposal_verifier"
+      ]
+    },
+    {
+      "path": "tests/test_unmatched_proposal_verifier_scorer.py",
+      "sha256": "52e67bed07491344ac647286ecb0bc1a00bb5e1363aa3853c050ff8c2812f1e7",
+      "bytes": 14922,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.analysis.unmatched_proposal_verifier",
+        "src.infer.checkpoints"
+      ]
+    },
+    {
+      "path": "tests/test_vllm_server_adapter_payload.py",
+      "sha256": "6a6b784ea910e8e4c7f7275a594d9cddf03e1f13061bfd7e982e68bff14c9376",
+      "bytes": 16980,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend_vllm_server",
+        "src.tokens.row_offsets"
+      ]
+    },
+    {
+      "path": "tests/test_vllm_server_chunking.py",
+      "sha256": "447194def4b280453736f25a25650fd533274c33abf794196af2ebae1ed22fd6",
+      "bytes": 1876,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_vllm_server_debug_dump_io_best_effort.py",
+      "sha256": "c6d80873f00e1ae732ffbb8560d9db1313284fffbd9f87cfd87e866c05c77857",
+      "bytes": 1579,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.trainers.stage2_rollout_runtime"
+      ]
+    },
+    {
+      "path": "tests/test_vllm_server_multimodal_payload_contract.py",
+      "sha256": "93c5189559e3b0f616ac793e2864f37a7ef62d8c67f1ec718df94de72aa4db7a",
+      "bytes": 1636,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend_vllm_server"
+      ]
+    },
+    {
+      "path": "tests/test_vllm_server_rollout_contract.py",
+      "sha256": "e7e9f9dc850c9a1467fad4cc7384919fea699767334a71db8b0f8664451e8563",
+      "bytes": 11348,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.infer.backend",
+        "src.infer.backend_vllm_server",
+        "src.infer.rollout_dispatch",
+        "src.infer.runtime"
+      ]
+    },
+    {
+      "path": "tests/tokens/test_row_offsets.py",
+      "sha256": "e20ebb9d39850b3c17a4eea95dc9d102e22e6c970879d7b8d944c0bfd7c23911",
+      "bytes": 551,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.tokens.row_offsets"
+      ]
+    },
+    {
+      "path": "tests/tokens/test_token_embeddings_adapter.py",
+      "sha256": "42b044083956bdcfb4e996d0f21a9d44a2a8d49f0722a85feb2247531710cca4",
+      "bytes": 14898,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.coord_tokens.codec",
+        "src.tokens.row_offsets"
+      ]
+    },
+    {
+      "path": "tests/tokens/test_token_embeddings_adapter_optimizer.py",
+      "sha256": "bed3b68ceaac3509088e215c9d1a73ea43a90ec05ad072946de02570994446ad",
+      "bytes": 5524,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.optim.token_embeddings_adapter_optimizer",
+        "src.tokens.row_offsets"
+      ]
+    },
+    {
+      "path": "tests/tokens/test_token_roles.py",
+      "sha256": "b8aa3508ae9e09a4140db184bc2c26898768f065f913b1c3a4ceb4cad6e7b47f",
+      "bytes": 3676,
+      "reason": "imports removed implementation",
+      "missing_modules": [
+        "src.config.schema",
+        "src.coord_tokens.codec",
+        "src.tokens.roles"
+      ]
+    }
+  ]
+}

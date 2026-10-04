@@ -626,7 +626,11 @@ def test_qwen_loading_train_wrapper_uses_single_neutral_loader() -> None:
 
 def test_infer_entry_help_resolves_without_src_infer_package() -> None:
     assert Path("src/infer.py").is_file()
-    assert not Path("src/infer").exists()
+    from importlib.util import find_spec
+
+    spec = find_spec("src.infer")
+    assert spec is not None and spec.origin is not None
+    assert Path(spec.origin).resolve() == Path("src/infer.py").resolve()
     assert Path("src/inference/__init__.py").is_file()
 
     result = subprocess.run(

@@ -2,14 +2,17 @@
 
 | Checkout | Physical root | Responsibility |
 |---|---|---|
-| main | `/data/CoordExp` | Stable source integration and shared ownership policy |
+| main | `/data/CoordExp` | Stable source integration, annotation/data operations and shared ownership policy |
 | coordexp-infras | `/data/CoordExp/.worktrees/coordexp-infras` | Infrastructure development and its runs |
 | research-probes | `/data/CoordExp/.worktrees/research-probes` | Canonical research source, knowledge and runs |
-| research-probes-web-codex | `/data/CoordExp/.worktrees/research-probes-web-codex` | Separate research development checkout |
 
-These branches may differ. A document describes its local checkout, not whatever
-happens to be newest in a sibling. Validate the registered Project, canonical
-physical root, HEAD and dirty scope before modifying or running anything.
+These long-lived branches can diverge in both directions; they are not an automatic
+stable/dev/research release ladder. Promote a tested capability with its contracts
+and provenance, not an entire sibling merely because its commit is newer.
+Temporary worktrees have task-scoped ownership, not a permanent row in this map.
+A document describes its local checkout, not whatever is newest in a sibling.
+Validate the registered Project, canonical physical root, HEAD and dirty scope
+before modifying or running anything.
 Source integration and moving artifacts are separate decisions; neither rewrites
 the original producer nor authorizes a new model run.
 
