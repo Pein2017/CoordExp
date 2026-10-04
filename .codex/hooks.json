@@ -31,6 +31,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/data/CoordExp/.shared-memory/.venv/bin/shared-memory --root /data/CoordExp/.shared-memory hook --harness codex",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

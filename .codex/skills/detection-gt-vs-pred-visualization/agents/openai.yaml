@@ -1,4 +1,4 @@
 interface:
   display_name: "Detection Visualization"
-  short_description: "Render current per-row detection reviews"
-  default_prompt: "Use $detection-gt-vs-pred-visualization to render this run or comparison through the current shared renderer."
+  short_description: "Inspect saved detections with focused crop views"
+  default_prompt: "Use $detection-gt-vs-pred-visualization to render saved detections, open full-image and focused crop views, and report the visible errors with their original row identities."

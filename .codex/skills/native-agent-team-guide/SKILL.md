@@ -33,6 +33,12 @@ retry/relaunch limits, and the boundary requiring a lead or user decision. For
 exploration, name known entry paths or symbols and the uncertainty to resolve.
 Add budgets or other constants only when they affect execution.
 
+For registered shared-memory work, include recall/candidate-capture duties,
+availability of the worker's own caller context, and the designated consolidator
+in the brief. Follow [shared-memory](../shared-memory/SKILL.md) for the workflow
+and the lead-capture fallback when a native child lacks its own context; an
+inherited parent startup header is not the child's identity.
+
 For assignments changing process ownership or artifact production, finalization
 or readback behavior, use [full-pipeline-smoke](../full-pipeline-smoke/SKILL.md) for
 the first implementation checkpoint and its CPU/native evidence boundary.
