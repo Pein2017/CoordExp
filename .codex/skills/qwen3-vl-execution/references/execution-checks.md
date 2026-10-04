@@ -48,9 +48,11 @@ examples and uneven partitions, not just equal-sized batches or displayed loss.
 Packed-training owner:
 `openspec/specs/coordexp-infras-supervision-losses/spec.md`, `src/losses/`,
 `src/runtime/train_runtime.py`, `tests/losses/`, `tests/runtime/`.
-Research examples: `probes/dora_owner_learning/README.md` and
-`probes/dora_owner_learning/tests/test_native_learning.py` keep Source CE/RLOO
-and coordinate/full-action credit distinct. Their constants are profile-owned.
+For native research replay, the research checkout's
+`openspec/specs/coordexp-infras-research-probe-infra-base/spec.md` owns shared
+token-scoring semantics; `src/losses/token_scores.py` and
+`tests/losses/test_token_scores.py` exercise that boundary. Coordinate/full-action
+credit, objective reductions and constants remain with the scientific caller.
 
 ## Causal positions, padding and packing
 
@@ -66,8 +68,9 @@ budgets, terminal requests and result association. A pad token already inside a
 stored history is not necessarily disposable batch padding. Do not retokenize
 stored actions or infer terminal status merely by stripping token values.
 
-Owners: the Qwen manual's `Local Execution Boundaries`,
-`src/qwen/native.py`, `src/qwen/generation.py`, `src/qwen/positions.py`,
+Owners: `src/qwen/native.py`, `src/qwen/generation.py`, `src/qwen/positions.py`,
+the research checkout's native exact-replay/continuation requirements in
+`openspec/specs/coordexp-infras-research-probe-infra-base/spec.md`, and
 `openspec/specs/coordexp-infras-packing-forward/spec.md`.
 Counterexamples: `tests/qwen/test_native.py`, `tests/qwen/test_generation.py`,
 `tests/qwen/test_positions.py`, `tests/qwen/test_forward.py`.
@@ -99,8 +102,8 @@ tokens and EOS. Do not assume rendered strings concatenated and retokenized
 produce the same IDs as the stored history. Preserve image order, grids,
 resize policy and coordinate interpretation together.
 
-Owners: `src/templates/`, `src/qwen/encoding.py`, the Qwen manual's
-`Processor And Grid Rules`, and
+Owners: `src/templates/`, `src/qwen/encoding.py`, `src/qwen/images.py`,
+`tests/qwen/test_encoding.py`, `tests/qwen/test_image_encoding.py`, and
 `openspec/specs/coordexp-infras-data-template-encoding/spec.md`.
 One real encoded sample with relevant image/template boundaries is more useful
 than repeated synthetic strings. For an actual launch, validate effective

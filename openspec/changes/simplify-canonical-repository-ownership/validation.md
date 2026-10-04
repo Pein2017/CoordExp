@@ -56,3 +56,43 @@ five external links remain unverified. Its wider suite timed out at 240 seconds
 with failures/errors and no complete JUnit report; one missing historical-artifact
 failure was isolated. No broad passing claim follows from the targeted success.
 Parallel research commits and new coordinate-readout files were preserved.
+
+## Independent acceptance repairs, 2026-10-04
+
+The compatibility recommendation in this section was subsequently superseded
+by the user's explicit new-stack-only ruling. Current runtime migration is
+owned by the infrastructure change
+[`migrate-current-runtime-stack`](/data/CoordExp/.worktrees/coordexp-infras/openspec/changes/migrate-current-runtime-stack/proposal.md).
+Earlier test counts and acceptance remain historical observations.
+
+The subsequent user request authorized advisor consultation and corresponding
+repairs. Main retirement, infrastructure config consolidation and research test
+layout were independently accepted within their structural/CPU scope. A supported
+runtime regression blocked the five-slot-only FA2 candidate: infrastructure still
+declares and admits Transformers 4.57.1, whose producer returns four slots.
+Read-only Astra advice supported preserving both producer/consumer shapes without
+upgrading the admitted runtime. The repaired interface has 35 passing FA2 cases
+and a green actual-upstream four-slot counterexample. Its authoritative repair
+and acceptance remain in infrastructure's `align-fa2-capture-kernel-api` change;
+this main change does not own that runtime contract or its release qualification.
+
+Instruction maintenance aligns root/research AGENTS and the research-flow, Qwen
+execution, native-agent-team and inference-workflow references with current owners.
+It removes obsolete history/source-capture intake, missing checker/manual links
+and unconditional archived-state directions, and scopes main's val200 gate to its
+actual spec. Historical example records now use verified catalog/Git recovery;
+an absent readback output remains explicitly unverified-current. Non-decision
+exploratory working-diff identity remains distinct from clean-source admission.
+No new layout, state schema, scientific gate or imported OpenSpec skill is created.
+
+Four skill validators and current link/pointer checks pass. Research knowledge
+validation passes with 345 catalog entries and 170 claim references; five external
+links remain unvalidated. The concurrently advanced research HEAD 7a727f231 is
+preserved; only its AGENTS navigation is modified here. Main and infrastructure
+HEADs are unchanged. No staging, commit, dependency install, GPU execution,
+historical-receipt rewrite or broad suite rerun occurred. The earlier wider-suite
+failure/timeout boundaries remain in force.
+
+Instruction raw evidence is under
+`.local/repository-upgrade/independent-repair-01a1057d/`; FA2 evidence belongs to
+the same task-local directory under its physical infrastructure producer checkout.

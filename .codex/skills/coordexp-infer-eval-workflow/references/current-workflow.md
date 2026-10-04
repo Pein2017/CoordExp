@@ -43,6 +43,15 @@ Use the command's help for two-run comparison and row-selection options. Renderi
 
 ## Scope
 
-Tiny smoke runs establish mechanics only. The current Swift V1 local benchmark gate is the fixed val200 run with `debug.smoke: false`, valid scored provenance, and bbox mAP/mRecall output. Passing that gate supports only its declared validation scope; a full validation dataset or official test-dev run needs a separate request and contract.
+Tiny smoke runs establish mechanics only. Main's
+[Swift V1 benchmark spec](/data/CoordExp/openspec/specs/coordexp-infras-infer-benchmark-smoke/spec.md)
+owns its fixed val200 gate with `debug.smoke: false`, valid scored provenance,
+and bbox mAP/mRecall output. Apply that gate when working under that contract.
+The infrastructure checkout's
+[infra-base spec](/data/CoordExp/.worktrees/coordexp-infras/openspec/specs/infra-base/spec.md)
+owns its runtime qualification and evidence-scoped acceptance; resolve those
+requirements locally before making a runtime claim. Passing a selected gate
+supports only its declared scope; a full validation dataset or official test-dev
+run needs a separate request and contract.
 
 For artifact binding and eligibility, consult the selected checkout's evaluation contract and owning specs. For matcher, category, geometry, or physical-owner meaning, consult the selected checkout's interpretation/research owner. LVIS proxy analysis, Oracle-K, historical confidence post-processing, and official COCO submission are separate workflows; do not silently add them to this path.

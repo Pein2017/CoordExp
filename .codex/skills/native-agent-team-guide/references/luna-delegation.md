@@ -93,6 +93,21 @@ new ledger or capability benchmark to maintain this reference.
 
 ## Evidence anchors
 
-- [Three-loss delegation notes](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-22-coordinate-codebook-three-loss/delegation-notes.md): actual settings, original briefs, local corrections and parent responsibility.
-- [Accepted closeout](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-22-coordinate-codebook-three-loss/lead-results.md): successful real-entry checks and preserved artifact correction. No controlled prompt-effectiveness or high/max comparison was performed.
-- [Recurrence local-prefix results](/data/CoordExp/.worktrees/research-probes/research/experiments/2026-09-22-recurrence-local-prefix-phase/results.md): root's first repair missed the downstream-enrichment/hash defect; [independent accepted readback](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-checks/accepted-readback/prefix-readback.json) records all three stale producer bindings and their corrected final bindings.
+Both units are `tracking=distilled` in the canonical research
+[catalog](/data/CoordExp/.worktrees/research-probes/research/experiments/catalog.jsonl),
+with `continuation=unsupported_historical`. Their records are Git recovery handles,
+not live directories. In `/data/CoordExp/.worktrees/research-probes`, use
+`git show 108dede0154abfd90a54d18234d9e0bac780a3ba:<original-path>`:
+
+- `2026-09-22-coordinate-codebook-three-loss`: original paths
+  `research/experiments/2026-09-22-coordinate-codebook-three-loss/delegation-notes.md`
+  and `research/experiments/2026-09-22-coordinate-codebook-three-loss/lead-results.md`
+  retain settings, briefs, corrections, parent responsibility and accepted real-entry
+  checks. No controlled prompt-effectiveness or high/max comparison was performed.
+- `2026-09-22-recurrence-local-prefix-phase`: original path
+  `research/experiments/2026-09-22-recurrence-local-prefix-phase/results.md`
+  retains the downstream-enrichment/hash defect and repair account. Its recorded
+  output locator
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-22-recurrence-local-prefix-phase/lead-checks/accepted-readback/prefix-readback.json`
+  is missing locally as of 2026-10-04; the readback claim is historical, not freshly
+  verified output evidence. Recovery does not authorize continuation.

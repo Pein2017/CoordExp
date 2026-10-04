@@ -225,11 +225,13 @@ context reliability and responsibility changes rather than an iteration count.
      the evidence-bearing scientific contrast, or states that one is absent.
 
 6. **Close routing once.**
-   - Close from the owning accepted receipt/result to the unit's `state.json`.
+   - Close from the owning accepted receipt/result to a current unit's `state.json`.
      Update a question page only when belief changes, the story only when the
      research trajectory changes, and `research/index.md` only when the frontier
      or user boundary changes. Maintain catalog paths, not another status table.
-     Create a handoff only for a real transfer and archive it after integration.
+     Closed phases follow `research/CONVENTIONS.md` for topic/catalog distillation
+     and exact Git recovery. Create a handoff only for a real transfer and retire
+     redundant transport after integration under those recovery rules.
      Change durable project memory only on an explicit user request.
    - Route a reusable technical deficiency to its infrastructure owner with the
      exact failure and acceptance boundary. Link it from the research unit, but

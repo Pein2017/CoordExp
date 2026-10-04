@@ -12,6 +12,11 @@ the research base supports direct native execution; packed training and strict
 scored inference have different contracts. Do not move a research caller into
 either framework just to obtain a model or token scores.
 
+For runtime migration, follow [the project runtime contract](/data/CoordExp/AGENTS.md)
+and the selected checkout's dependency/admission owners. Migrate actual upstream
+callers and preserve token, image, position and likelihood semantics; historical
+interface receipts do not qualify the changed source.
+
 ## Load only the relevant knowledge
 
 - For architecture, processor/image grids, MRoPE, compact logits, cache or

@@ -9,7 +9,7 @@ record, decision update, or mechanism promotion.
 |---|---|---|
 | `$OUTPUT_ROOT/research/` | Executed artifacts, receipts, traces, metric primitives | Interpretation or current route choice |
 | `research/experiments/<unit-id>/unit.md` or exact preserved protocol | Evidence-tiered outline/protocol, frozen question and contrast | Live lifecycle updates or a growing execution notebook |
-| `research/experiments/<unit-id>/state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
+| A `tracking=current` unit's `state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
 | Accepted result and its immutable receipt | Observed outcomes, denominators, bounded verdict and evidence handles | Stable runtime/schema compatibility |
 | `research/questions/` and `research/story.md` | Competing explanations, evidence-linked beliefs, bounded mechanisms, route choices and research transitions | Implementation authorization or copied volatile status tables |
 | `research/alternatives.md` | Important unanswered ideas with predecessors and reopening conditions | A parallel result atlas or standing execution queue |
@@ -26,8 +26,9 @@ The whole repository serves one research topic. Use the flat research root:
 `index.md` for frontier plus routing, `story.md`, `glossary.md`,
 `alternatives.md`, `questions/`, and `experiments/catalog.jsonl` plus live units.
 Old OKF idea/decision/mechanism/archive buckets and the topic wrapper are retired.
-Valuable scientific distinctions enter question pages; original sources remain
-under `docs/history/`. No permanent compatibility alias or empty future category.
+Valuable scientific distinctions enter question pages; distilled catalog rows
+retain exact Git recovery handles under `research/CONVENTIONS.md`. No permanent
+compatibility alias or empty future category.
 
 The fast reading path is current context plus its state/result; the deeper path
 adds the story, relevant question pages and decisive original records. Preserve
@@ -36,12 +37,13 @@ to repeat all background. Before proposing a unit, identify its closest tested
 predecessor, remaining uncertainty, changed factor and reopening condition.
 
 `unit.md` is the proportionate design/protocol, frozen when execution begins.
-`state.json` is the current lifecycle owner. Accepted results own facts, while
-questions own interpretation. A review exists only for an actual claim/rerun
-risk. Handoffs are integrated transport and then archived, never live frontiers.
-Raw source provenance goes to `docs/history/`; maintained code and executed
+`state.json` is the lifecycle owner for a current catalog row. Accepted results
+own facts, while questions own interpretation. A review exists only for an actual
+claim/rerun risk. Handoffs are consumed transport, never live frontiers. Closed
+records follow the convention's topic/catalog distillation and exact Git recovery;
+do not recreate `docs/history/` or unit tombstones. Maintained code and executed
 artifacts retain their separate owners. Preserve exact path/hash dependencies
-or explicitly delimit archived-source versus executable-replay compatibility.
+and distinguish historical inspection from qualified executable continuation.
 
 ## New Unit Identity and Current State
 
@@ -50,10 +52,12 @@ role, evidence/authorization source and freeze identity when applicable. The
 protocol body owns the actual scientific contract. Do not embed independently
 maintained current lifecycle fields in a frozen launch snapshot.
 
-Use the state schema defined once in `research/CONVENTIONS.md`: lifecycle,
-evidence and scientific disposition are separate axes, with exact protocol,
-result and state-source paths, an as-of point, latest user boundary and next
-action. A paused task may have accepted evidence and an incomplete stage.
+Follow `research/CONVENTIONS.md` for current versus distilled catalog ownership.
+A `tracking=current` row points to its existing record root, reading entry and
+state; a `tracking=distilled` row needs no live directory and retains exact Git
+recovery with `unsupported_historical` continuation. Keep lifecycle, evidence
+and scientific disposition distinct. A paused task may have accepted evidence
+and an incomplete stage.
 Closure never implies mechanism or architecture promotion. A new grant must
 come from the current user, not from a stored `running` or authorization label.
 
@@ -314,11 +318,14 @@ Apply the gate as follows:
 Close a unit from the evidence owner outward:
 
 1. accept and preserve the result plus its immutable evidence receipt;
-2. update the unit's `state.json`, not a status field inside frozen `unit.md`;
+2. update a current unit's `state.json`, not a status field inside frozen `unit.md`;
+   when distilling a closed phase, follow `research/CONVENTIONS.md` for topic,
+   catalog and exact Git recovery rather than requiring a permanent live state;
 3. update the question page, story and `research/index.md` only when their respective
    belief, research trajectory or frontier/user-boundary meaning changes;
 4. maintain catalog references without copying result ledgers or volatile counts;
-5. use a handoff only for a real transfer, integrate its delta, then archive it.
+5. use a handoff only for a real transfer, integrate its delta, then retire
+   redundant transport under the research convention's recovery rules.
    Durable project-memory changes require an explicit user request.
 
 These surfaces may summarize the same decision, but they must not become
@@ -338,10 +345,11 @@ route authority.
 
 The research checkout's `docs/OUTPUT_STORAGE_POLICY.md` owns the source/artifact
 boundary. Output roots hold execution artifacts, not loose Python, shell scripts,
-Markdown, environments or vendor checkouts. Capture source bytes outside outputs
-with the maintained source-provenance operation, and record its returned path.
-Use an explicit hash-bound archive reader for historical evidence, never as a
-fallback to satisfy a new run's current-source checks.
+Markdown, environments or vendor checkouts. Decision-bearing current execution
+binds a clean Git commit/tree, explicit source paths and separate input/runtime
+identities under the research convention. Recover historical records through
+their catalog's exact Git handles; do not create dirty-source captures or use
+recovered code as a fallback for a new run's current-source checks.
 
 Resolve `OUTPUT_ROOT` to the physical outputs directory of the owning worktree
 using its `docs/OUTPUT_STORAGE_POLICY.md`; the shared `/data/CoordExp/outputs/`
@@ -363,7 +371,7 @@ execution.
 For exploratory evidence, retain only the compact facts needed to attribute and
 interpret the observation:
 
-- source commit or dirty-diff identity;
+- source commit or working-diff identity, plus explicit source paths;
 - checkpoint, resolved config, case/input, condition, and seed identities;
 - raw output or trace, parser/failure status, and request identifier;
 - representative smoke result and primary visual/metric primitive.
@@ -412,9 +420,10 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
 - Fail review on any unexplained local abbreviation, arm code, hypothesis code,
   metric symbol, or coined name.
 - From the verified research-probes checkout, run
-  `python -B scripts/research/check_research_knowledge.py check` for flat layout,
-  live links, catalog/state and preserved-source/Git identities, followed by
-  `python -B -m unittest discover -s tests/research -p 'test_research_knowledge.py'`.
+  `python -B -m scripts.check_research_knowledge check` for live links, catalog
+  schema, claim references and Git recovery hashes. The current catalog checker
+  tests are `tests/knowledge/test_distilled_catalog.py`; run them when changing
+  that behavior rather than the retired `tests/research` discovery command.
   The obsolete decision-graph checker is retired, not a second acceptance gate.
 - For changed source consumers, verify their actual CPU data-read/output behavior,
   including exclusion identities and fail-closed missing inputs. Keep historical

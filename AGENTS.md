@@ -55,6 +55,12 @@
 
 ## Runtime
 
+- Maintain the selected current stack and explicit configuration modes; retire
+  deprecated interfaces rather than adding old-stack compatibility. Dependency
+  declarations and exact-runtime admission are owned by the canonical infra
+  checkout's `pyproject.toml` and `src/artifacts/provenance.py`. Use each
+  checkout's local caller and qualification contract; a supported version or
+  historical receipt does not establish current execution qualification.
 - Before choosing run or report paths, read `docs/OUTPUT_STORAGE_POLICY.md`.
   Root `outputs/` is shared retention, not a branch-owned launch destination.
 
@@ -65,6 +71,8 @@
 
 ## Records
 
-- Put active investigations, interpretation, negative results, and continuation
-  context in `research/`; raw provenance belongs in `docs/history/`; create no
-  new `progress/` records.
+- Put scientific investigations, interpretation, negative results, and continuation
+  context in the canonical research checkout's `research/`. Its
+  `research/CONVENTIONS.md` owns topic/catalog distillation and exact Git recovery;
+  runtime artifacts retain their declared run owner. Follow `docs/RETENTION.md`
+  for documentation recovery; create no new `docs/history/` or `progress/` records.
