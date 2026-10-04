@@ -11,6 +11,16 @@ Persistent worker session `01a101ac-9ec8-7862-bdb6-38b9cd154673`
 `/root/coord_binding_reasoning` owns the scientific brief and interpretation
 support. No training is authorized.
 
+Source integration ruling: the user subsequently required development on the
+current codebase being migrated by session
+`01a1057d-b726-7683-9e3a-805749da7974`. Preserve that owner's concurrent changes
+and use the resulting current interfaces and runtime contract. The initial CPU
+candidate `cc9b23d7ada7809773a966a7562a3953154ca444` is not a frozen native base.
+Reconcile affected callers and qualify the final integrated source before release;
+do not revert migration changes, introduce legacy compatibility, or substitute
+an older isolated checkout. This changes source integration, not the scientific
+matrix, checkpoint, model-call allowance or stopping boundary.
+
 Question: does a one-bin coordinate input change produce a larger change in the
 remaining freely generated box, and how much of that change survives when native
 intermediate coordinates are restored? Separate a change in the conditional

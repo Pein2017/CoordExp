@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-box-continuity",
   "lifecycle": "planned",
-  "status": "WORKER_CPU_IMPLEMENTATION",
+  "status": "CPU_CANDIDATE_CURRENT_BASE_INTEGRATION",
   "evidence": "none",
   "scientific_status": "not_evaluated",
   "protocol": "research/experiments/2026-10-04-box-continuity/unit.md",
@@ -15,10 +15,24 @@
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/box-continuity",
-  "budget": {"requests": 13, "max_actions": 3390, "checkpoint_loads": 1, "gpus": 1, "optimizer_updates": 0},
+  "budget": {
+    "requests": 13,
+    "max_actions": 3390,
+    "checkpoint_loads": 1,
+    "gpus": 1,
+    "optimizer_updates": 0
+  },
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/transport/worker-assignment-01.json",
-  "next_action": "Worker implements and CPU-qualifies the frozen matrix; lead binds exact clean source and release before one native invocation.",
+  "next_action": "Worker reconciles current maintained interfaces; final CPU preparation and exact native release wait for source integration to settle.",
   "boundary": "Two within-box B16 sites and one preceding-row bottle site; finite selected contexts, no prevalence or training-objective claim.",
-  "job_state": "CPU_only_no_native_launch",
-  "not_authorized": ["Model call before exact lead release", "Training, warmup, retry, additional query, checkpoint selection or dose extension", "Historical evidence mutation, physical-FN claim or publication"]
+  "job_state": "CPU_integration_only_no_native_launch",
+  "not_authorized": [
+    "Model call before exact lead release",
+    "Training, warmup, retry, additional query, checkpoint selection or dose extension",
+    "Historical evidence mutation, physical-FN claim or publication"
+  ],
+  "source_owner_session": "01a1057d-b726-7683-9e3a-805749da7974",
+  "cpu_candidate_commit": "cc9b23d7ada7809773a966a7562a3953154ca444",
+  "cpu_qualification": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/cpu-qualification-01/qualification.json",
+  "source_requirement": "Use latest current codebase after concurrent migration; preserve owner changes; no older isolated base or legacy fallback."
 }

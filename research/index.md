@@ -14,7 +14,9 @@ advisor consultation:13 B16 requests, at most3390 actions, one model load and
 zero training. It compares one-bin input edits under free versus clamped corner
 continuations, plus one preceding-bottle edit, to distinguish direct conditional
 sensitivity from greedy feedback. CPU qualification precedes exact lead release;
-no native launch or scientific result is implied by the assignment.
+no native launch or scientific result is implied by the assignment. The first
+CPU candidate is implemented; the user requires final integration against the
+concurrent current-stack migration before native source is frozen.
 
 The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/results.md)
 is lead-accepted and closed:16 cached score requests/3226 actions, six exact
