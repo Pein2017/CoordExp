@@ -23,6 +23,8 @@ class VisualObject:
     source_bbox: tuple[Any, Any, Any, Any]
     source_coord_space: str
     source_coord_bins: tuple[Any, Any, Any, Any] | None = None
+    geometry_valid: bool = True
+    source_metadata: dict[str, Any] | None = None
 
     def to_manifest(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -35,6 +37,9 @@ class VisualObject:
         }
         if self.source_coord_bins is not None:
             payload["source_coord_bins"] = list(self.source_coord_bins)
+        payload["geometry_valid"] = self.geometry_valid
+        if self.source_metadata is not None:
+            payload["source_metadata"] = self.source_metadata
         return payload
 
 
@@ -48,6 +53,7 @@ class VisualRow:
     image_height: int
     gt: tuple[VisualObject, ...]
     pred: tuple[VisualObject, ...]
+    source_metadata: dict[str, Any] | None = None
 
     def gt_signature(self) -> tuple[Any, ...]:
         return (
@@ -73,7 +79,22 @@ class ArtifactRows:
     rows: tuple[VisualRow, ...]
 
 
-def load_visual_rows(run_dir_or_scored_jsonl: str | Path) -> ArtifactRows:
+def load_visual_rows(
+    run_dir_or_scored_jsonl: str | Path,
+    *,
+    input_format: str = "scored",
+    labels_json: str | Path | None = None,
+) -> ArtifactRows:
+    if input_format == "rollout":
+        from src.vis.rollout import load_rollout_rows
+
+        return load_rollout_rows(run_dir_or_scored_jsonl, labels_json=labels_json)
+    if input_format != "scored":
+        raise ArtifactContractError(
+            "visualization input format must be scored or rollout",
+            code="vis.input_format",
+            context={"input_format": input_format},
+        )
     artifact_dir, scored_path = resolve_artifact_input(run_dir_or_scored_jsonl)
     raw_path = artifact_dir / RAW_NAME
     _require_file(scored_path, code="vis.missing_scored_artifact")
@@ -244,6 +265,7 @@ def _gt_object(
         bbox_pixel_xyxy=tuple(float(value) for value in bbox_pixel),
         source_bbox=raw_bbox,
         source_coord_space="norm1000",
+        source_metadata=dict(obj),
     )
 
 
@@ -261,6 +283,7 @@ def _pred_object(obj: dict[str, Any], *, index: int, row_id: str) -> VisualObjec
         source_bbox=raw_bbox,
         source_coord_space="pixel",
         source_coord_bins=source_coord_bins,
+        source_metadata=dict(obj),
     )
 
 

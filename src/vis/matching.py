@@ -49,6 +49,7 @@ class MatchResult:
     missing_gt_indices: tuple[int, ...]
     fp_pred_indices: tuple[int, ...]
     duplicate_candidates: tuple[DuplicateCandidate, ...]
+    invalid_pred_indices: tuple[int, ...] = ()
 
     @property
     def matched_pred_indices(self) -> set[int]:
@@ -72,6 +73,7 @@ class MatchResult:
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "invalid_pred": len(self.invalid_pred_indices),
         }
 
     def to_manifest(self) -> dict[str, Any]:
@@ -80,6 +82,7 @@ class MatchResult:
             "matched_pairs": [match.to_manifest() for match in self.matches],
             "missing_gt_indices": list(self.missing_gt_indices),
             "fp_pred_indices": list(self.fp_pred_indices),
+            "invalid_pred_indices": list(self.invalid_pred_indices),
             "duplicate_candidates": [
                 candidate.to_manifest() for candidate in self.duplicate_candidates
             ],
@@ -95,6 +98,8 @@ def match_row(
     candidates: list[tuple[float, int, int]] = []
     for gt in row.gt:
         for pred in row.pred:
+            if not gt.geometry_valid or not pred.geometry_valid:
+                continue
             value = iou_xyxy(gt.bbox_pixel_xyxy, pred.bbox_pixel_xyxy)
             if (
                 gt.normalized_description == pred.normalized_description
@@ -117,9 +122,10 @@ def match_row(
     )
     return MatchResult(
         matches=tuple(matches),
-        missing_gt_indices=tuple(index for index in range(len(row.gt)) if index not in used_gt),
-        fp_pred_indices=tuple(index for index in range(len(row.pred)) if index not in used_pred),
+        missing_gt_indices=tuple(obj.index for obj in row.gt if obj.index not in used_gt),
+        fp_pred_indices=tuple(obj.index for obj in row.pred if obj.geometry_valid and obj.index not in used_pred),
         duplicate_candidates=tuple(duplicates),
+        invalid_pred_indices=tuple(obj.index for obj in row.pred if not obj.geometry_valid),
     )
 
 
@@ -132,6 +138,8 @@ def _duplicate_candidates(
     candidates: list[DuplicateCandidate] = []
     for left_index, left in enumerate(pred):
         for right in pred[left_index + 1 :]:
+            if not left.geometry_valid or not right.geometry_valid:
+                continue
             if left.normalized_description != right.normalized_description:
                 continue
             value = iou_xyxy(left.bbox_pixel_xyxy, right.bbox_pixel_xyxy)
