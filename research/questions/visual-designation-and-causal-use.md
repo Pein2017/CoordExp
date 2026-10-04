@@ -57,6 +57,26 @@ tolerance nor rehabilitates the failed cells, their raw probabilities or boxes.
 Final-boundary transfer remains a construction control. The unit is closed with
 partial evidence and no new inference, architecture or training grant.
 
+## Coordinate-conditioned regional dependence
+
+The accepted B16 cue/image contrast (catalog:2026-10-04-cued-visual-use)
+shows that supplying x1 does not make completion image-independent. At the
+same supplied bottle x1=186, target-region masking changes the first-free y1
+median distribution by TV0.5847/W1 20.22bins, versus background0.0330/0.168,
+and changes the complete box. The person control also retains target-region
+dependence. All12 cells and four exact native/cued reference anchors pass.
+
+A secondary comparison uses the same y1 role: the bottle's uncued x1 remains0
+across the three inputs, and only that preceding token differs from the cued
+triplet. Target-minus-background q changes from−0.2473 to−4.6358 after supplied
+186, while the background-minus-clean q effect remains about+0.0065. This
+supports coordinate-conditioned regional sensitivity and weakens an entirely
+image-independent cue-to-box lookup. A spatial-query interpretation is a
+hypothesis; prior visual state, spatial priors, nonlinear mixing and general
+visual susceptibility remain alternatives. Cue/region specificity is the next
+unresolved discriminator. No natural owner discovery, physical identity,
+attention path or training remedy is established.
+
 ## Training-only pre-row supervision
 
 The finite fixed-bank contrast (catalog:2026-10-03-pre-row-detection-aux) adds a differentiable class/joint-box head at the consumed object opener and discards that head at deployment. On the same18 training images and570 evaluation annotations, the real auxiliary/autograd path executed and losses fell, but the16-update endpoint did not improve ordinary coverage over the matched baseline. The saved owner sets contain207 shared,26 baseline-only and18 auxiliary-only assignments. Conditional realization improved in both arms on the same two of eight supplied-prefix targets, giving no auxiliary-specific advantage.

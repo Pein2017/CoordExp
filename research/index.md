@@ -8,16 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/unit.md)
-is the active successor under the user's autonomous-research grant. It tests
-whether the bottle completion unlocked by a supplied x1 depends on target-region
-pixels: two fixed histories, uncued versus designated-x1-cued, crossed with the
-same clean/target-masked/background-masked images (12 requests, maximum1530
-actions). Bottle is primary and person is a visual-use control. The final CPU
-package is [lead-accepted for one native release](experiments/2026-10-04-cued-visual-use/lead-ruling-01.md);
-native evidence remains unmeasured. This
-addresses an unresolved premise closer to owner entry before partitioning the
-normal person's residual/cache effect. No training is planned.
+The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/results.md)
+is lead-accepted and closed:12 B16 requests/1530 actions, four exact clean
+anchors and zero training. After the same supplied x1, target-region masking
+changes bottle and person first-free y1 distributions and complete boxes much
+more than the background perturbation. A secondary same-y1 comparison shows
+stronger bottle regional sensitivity after x1=186 than after native x1=0;
+this supports conditional regional dependence, not an identified attention path
+or natural owner recovery. All jobs are settled. Lead is evaluating a separate
+cue/region-specificity contrast under the user's autonomous-research grant;
+no additional invocation is available under the consumed release.
 
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
 is [closed with accepted partial evidence](experiments/2026-10-04-visual-state-localization/results.md).

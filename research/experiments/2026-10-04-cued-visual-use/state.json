@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-cued-visual-use",
-  "lifecycle": "ready",
-  "status": "NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "Unmeasured: does designated-x1-conditioned bottle completion depend on target-region pixels under the same literal history?",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "Target-region pixels affect designated-x1-cued first-free y1 and complete boxes in two selected native histories. Secondary same-y1 bottle comparison supports coordinate-conditioned regional sensitivity; natural entry and internal mechanism remain unresolved.",
   "protocol": "research/experiments/2026-10-04-cued-visual-use/unit.md",
   "state_source": "research/experiments/2026-10-04-cued-visual-use/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -14,8 +14,8 @@
   "initial_source_anchor": "ddeaf5536b2f97e18f81376d13663bd460860bf6",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use",
   "native_released": true,
-  "native_started": false,
-  "lead_accepted": false,
+  "native_started": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "budget": {
     "requests": 12,
@@ -34,8 +34,8 @@
     "image_conditions": 3,
     "clean_reference_anchors": 4
   },
-  "next_action": "Original Worker executes the exact released packet once and returns terminal evidence; Lead accepts the saved consumer and scientific interpretation under the existing autonomous grant.",
-  "job_state": "CPU jobs and writers settled; exact native release approved, launch not yet observed.",
+  "next_action": "No additional invocation under this consumed release. Lead is evaluating a separate cue/region-specificity contrast under the existing autonomous-research grant.",
+  "job_state": "Single invocation completed and all owned processes/GPU holders settled; source holder released. Worker package complete.",
   "boundary": "Conditional visual use in two selected B16 histories. Supplied x1 and partial literal history cannot establish natural physical recovery, prevalence, instance representation, or a training remedy. Cache-state localization is deferred.",
   "not_authorized": [
     "Any native invocation outside the exact new Lead release",
@@ -49,8 +49,24 @@
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/transport/worker-assignment-01.json",
   "worker_turn": "01a1087f-9d2f-7e32-ae2d-3be2d0fa7a10",
   "implementation_commit": "98afc295f1bb76debed8be23d1d006c8f7ead3fc",
-  "technical_acceptance": "lead-accepted-cpu",
-  "lead_ruling": "research/experiments/2026-10-04-cued-visual-use/lead-ruling-01.md",
+  "technical_acceptance": "lead-accepted-cpu-and-native",
+  "lead_ruling": "research/experiments/2026-10-04-cued-visual-use/results.md",
   "cpu_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/lead-consumer-check-01.json",
-  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/native-release-01.json"
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/native-release-01.json",
+  "result": "research/experiments/2026-10-04-cued-visual-use/results.md",
+  "native_acceptance": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/lead-native-acceptance-01.json",
+  "execution_source_revision": "fb05481a95278e3ac9eaec8ee0d754163a673199",
+  "actual_external_exit": 0,
+  "actual_producer_exit": 0,
+  "native_invocations": 1,
+  "source_holder_released": true,
+  "actual_counts": {
+    "acquired_requests": 12,
+    "completed_requests": 12,
+    "actions": 1530,
+    "forced_actions": 1476,
+    "free_actions": 54,
+    "checkpoint_loads": 1,
+    "optimizer_updates": 0
+  }
 }
