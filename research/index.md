@@ -8,6 +8,15 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/unit.md)
+is frozen for implementation and CPU qualification under the user's autonomous
+continuation grant. At one native B16 first-bottle prefix, two supplied x1 cues
+cross clean and two fixed regional masks: six requests, at most114 actions,
+one load and no training. The primary endpoint compares each mask's first-free
+y1 effect across cues. Native execution remains unreleased pending the exact
+qualified packet. The original worker owns implementation and technical
+execution; Lead owns release and scientific acceptance.
+
 The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/results.md)
 is lead-accepted and closed:12 B16 requests/1530 actions, four exact clean
 anchors and zero training. After the same supplied x1, target-region masking
@@ -15,9 +24,8 @@ changes bottle and person first-free y1 distributions and complete boxes much
 more than the background perturbation. A secondary same-y1 comparison shows
 stronger bottle regional sensitivity after x1=186 than after native x1=0;
 this supports conditional regional dependence, not an identified attention path
-or natural owner recovery. All jobs are settled. Lead is evaluating a separate
-cue/region-specificity contrast under the user's autonomous-research grant;
-no additional invocation is available under the consumed release.
+or natural owner recovery. All jobs are settled; no additional invocation is
+available under that consumed release.
 
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
 is [closed with accepted partial evidence](experiments/2026-10-04-visual-state-localization/results.md).

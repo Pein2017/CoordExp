@@ -1,0 +1,49 @@
+{
+  "unit_id": "2026-10-04-cue-region-specificity",
+  "lifecycle": "planned",
+  "status": "CPU_PACKAGE_FROZEN",
+  "evidence": "none",
+  "scientific_status": "Unmeasured prospective local transfer of cue-dependent regional selectivity to the current native first-bottle state.",
+  "protocol": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
+  "state_source": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
+  "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "worker_thread": "01a101ac-9ec8-7862-bdb6-38b9cd154673",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "xhigh",
+  "authority": "User on 2026-10-04 at 19:47 UTC authorized autonomous worthwhile research and exploration without further permission. Lead selects this finite successor; previous consumed releases remain immutable.",
+  "initial_source_anchor": "86bda794f6a417086936ee6437fa3f02da008777",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity",
+  "native_released": false,
+  "native_started": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "budget": {
+    "requests": 6,
+    "max_actions": 114,
+    "max_forced_actions": 90,
+    "max_free_actions": 24,
+    "checkpoint_loads": 1,
+    "gpus": 1,
+    "optimizer_updates": 0,
+    "producer_wall_seconds": 300,
+    "rss_bytes": 34359738368,
+    "cuda_allocated_bytes": 12884901888,
+    "retained_bytes": 67108864
+  },
+  "population": {
+    "selected_states": 1,
+    "coordinate_cues": [186, 495],
+    "image_conditions": ["clean", "mask-A", "mask-B"],
+    "historical_clean_anchors": 1
+  },
+  "next_action": "Original worker implements and qualifies the CPU package, then returns a final frozen candidate and unreleased native proposal for Lead's exact release.",
+  "job_state": "Frozen assignment ready; predecessor fully settled. No new native invocation.",
+  "boundary": "Within-mask first-free y1 effects across two supplied x1 cues in one selected native B16 history. Unequal region doses are not compared as equal interventions. No endogenous owner discovery, physical-FN recovery, population benefit or route localization is established.",
+  "not_authorized": [
+    "Native execution before the exact new Lead release",
+    "Model warmup, retry, extra request, training or checkpoint/runtime changes",
+    "Different cues, histories, images, region masks, fill rules or later teacher coordinates",
+    "Rewriting old artifacts or qualification receipts",
+    "Worker-selected successor or scientific acceptance"
+  ]
+}
