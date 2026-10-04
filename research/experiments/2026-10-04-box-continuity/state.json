@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-box-continuity",
   "lifecycle": "planned",
-  "status": "CPU_CANDIDATE_CURRENT_BASE_INTEGRATION",
+  "status": "WAITING_CURRENT_SOURCE_OWNER_SETTLEMENT",
   "evidence": "none",
   "scientific_status": "not_evaluated",
   "protocol": "research/experiments/2026-10-04-box-continuity/unit.md",
@@ -23,9 +23,9 @@
     "optimizer_updates": 0
   },
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/transport/worker-assignment-01.json",
-  "next_action": "Worker reconciles current maintained interfaces; final CPU preparation and exact native release wait for source integration to settle.",
+  "next_action": "After source-owner thread ends, read monitor decision once; reconcile latest integrated source and report, prepare fresh immutable packet, then release the already authorized frozen native matrix only if source/runtime/fidelity prerequisites hold.",
   "boundary": "Two within-box B16 sites and one preceding-row bottle site; finite selected contexts, no prevalence or training-objective claim.",
-  "job_state": "CPU_integration_only_no_native_launch",
+  "job_state": "No owned compute or native job; durable source-owner wake armed",
   "not_authorized": [
     "Model call before exact lead release",
     "Training, warmup, retry, additional query, checkpoint selection or dose extension",
@@ -34,5 +34,9 @@
   "source_owner_session": "01a1057d-b726-7683-9e3a-805749da7974",
   "cpu_candidate_commit": "cc9b23d7ada7809773a966a7562a3953154ca444",
   "cpu_qualification": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/cpu-qualification-01/qualification.json",
-  "source_requirement": "Use latest current codebase after concurrent migration; preserve owner changes; no older isolated base or legacy fallback."
+  "source_requirement": "Use latest current codebase after concurrent migration; preserve owner changes; no older isolated base or legacy fallback.",
+  "cpu_implementation_lead_accepted": true,
+  "cpu_consumer_acceptance": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/lead-cpu-consumer-check-01.json",
+  "current_source_integration": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/integration-01/integration-report.json",
+  "wake_monitor": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/source-owner-wake-01.json"
 }
