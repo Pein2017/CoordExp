@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-spatial-grid-transfer",
   "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION_READY",
+  "status": "CPU_IMPLEMENTATION_DISPATCHED",
   "evidence": "none",
   "scientific_status": "Unmeasured single-case transfer beyond the18-image optimization cohort; native unreleased.",
   "protocol": "research/experiments/2026-10-04-spatial-grid-transfer/unit.md",
@@ -43,7 +43,7 @@
     "maximum_first_bottle_x1_position": 64
   },
   "next_action": "Original Worker implements and qualifies CPU package; Root checks final consumer and presentation before exact one-shot native release.",
-  "job_state": "No new native invocation; predecessor jobs/source holders settled.",
+  "job_state": "One CPU package assigned to original Worker through verified turn/start; native unreleased. Direct ENTRY pending at dispatch capture.",
   "boundary": "Selection uses imageID/category count/exclusion only. One case outside documented optimization stages, not wholly unseen. All32 candidate slots and all baseline categories retained; Root physical ledger mandatory.",
   "not_authorized": [
     "Native before exact Root source/input/runtime release",
@@ -51,5 +51,8 @@
     "Changing shared source without specific assignment",
     "Rewriting historical evidence",
     "Worker scientific acceptance or successor selection"
-  ]
+  ],
+  "protocol_commit": "6269cdda6ff94627a6d40e42afd12183199582b9",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/transport/worker-assignment-01.json",
+  "worker_turn": "01a1094b-935b-7b01-afbd-c859af175bee"
 }
