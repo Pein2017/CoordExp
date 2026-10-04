@@ -35,7 +35,7 @@
     "clean_reference_anchors": 4
   },
   "next_action": "Original Worker implements and CPU-qualifies the frozen package; Lead checks its final consumer and issues an exact native release autonomously under the current user grant.",
-  "job_state": "No new package dispatched or native invocation started yet.",
+  "job_state": "Original Worker assignment submitted once and accepted as inProgress; awaiting direct ENTRY/CPU checkpoint. Native remains unreleased.",
   "boundary": "Conditional visual use in two selected B16 histories. Supplied x1 and partial literal history cannot establish natural physical recovery, prevalence, instance representation, or a training remedy. Cache-state localization is deferred.",
   "not_authorized": [
     "Native execution before an exact new Lead release",
@@ -44,5 +44,8 @@
     "New masks, images, cue values, corrected histories, or remaining teacher coordinates",
     "Changes to closed artifacts, original HOLD status, or historical qualification receipts",
     "Worker-selected successor research or physical-recovery claims"
-  ]
+  ],
+  "protocol_commit": "99f87a726a201ecea383dab3aa4b3e4f41224c51",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/transport/worker-assignment-01.json",
+  "worker_turn": "01a1087f-9d2f-7e32-ae2d-3be2d0fa7a10"
 }
