@@ -80,6 +80,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--baseline-receipt", type=Path, required=True)
+    parser.add_argument("--application-receipt", type=Path, required=True)
     return parser.parse_args(argv)
 
 
@@ -89,6 +91,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_path=args.config,
         output_dir=args.output_dir,
         receipt_path=args.receipt,
+        baseline_receipt_path=args.baseline_receipt,
+        application_receipt_path=args.application_receipt,
     )
     print(
         json.dumps(
@@ -108,10 +112,12 @@ def run_probe(
     output_dir: str | Path,
     receipt_path: str | Path,
     dependencies: ProbeDependencies | None = None,
+    baseline_receipt_path: str | Path | None = None,
+    application_receipt_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Execute one direct rank-local shard and publish a passed receipt last."""
 
-    deps = dependencies or _production_dependencies()
+    deps = dependencies or _production_dependencies(baseline_receipt_path=baseline_receipt_path, application_receipt_path=application_receipt_path)
     config_path = Path(config_path).expanduser().resolve()
     output_dir = Path(output_dir).expanduser().resolve()
     receipt_path = Path(receipt_path).expanduser().resolve()
@@ -515,7 +521,8 @@ def build_passed_receipt(
     }
 
 
-def _production_dependencies() -> ProbeDependencies:
+def _production_dependencies(*, baseline_receipt_path: str | Path | None, application_receipt_path: str | Path | None) -> ProbeDependencies:
+    from functools import partial
     from src.config.inference import load_infer_config
     from src.config.writer import write_resolved_config_artifacts
     from src.data import load_raw_examples
@@ -536,13 +543,13 @@ def _production_dependencies() -> ProbeDependencies:
         write_execution_model_artifact=_write_execution_model_artifact,
         run_shard=run_shard,
         validate_artifact_set=validate_scored_artifact_set,
-        session_opener=_open_probe_vllm_session,
+        session_opener=partial(_open_probe_vllm_session, baseline_receipt_path=baseline_receipt_path, application_receipt_path=application_receipt_path),
         inspect_process_cuda_binding=_inspect_process_cuda_binding,
         package_version=metadata.version,
     )
 
 
-def _open_probe_vllm_session(launch: Any) -> Any:
+def _open_probe_vllm_session(launch: Any, *, baseline_receipt_path: str | Path | None = None, application_receipt_path: str | Path | None = None) -> Any:
     """Open the real engine while preserving every already-qualified check."""
 
     from src.inference.vllm_backend import (
@@ -570,6 +577,8 @@ def _open_probe_vllm_session(launch: Any) -> Any:
     baseline = validate_vllm_runtime_qualification(
         launch=launch,
         engine_kwargs=baseline_engine_kwargs,
+        receipt_path=baseline_receipt_path,
+        application_receipt_path=application_receipt_path,
     )
     session = open_vllm_backend_session(
         launch,

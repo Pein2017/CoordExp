@@ -106,6 +106,7 @@ class FakeEvidenceModel:
     def get_rope_index(
         self,
         input_ids: torch.Tensor,
+        mm_token_type_ids: torch.Tensor,
         image_grid_thw: torch.Tensor,
         video_grid_thw: torch.Tensor | None,
         *,
@@ -114,6 +115,7 @@ class FakeEvidenceModel:
         self.rope_calls.append(
             {
                 "input_ids": input_ids.detach().clone(),
+                "mm_token_type_ids": mm_token_type_ids.detach().clone(),
                 "attention_mask": attention_mask.detach().clone(),
                 "image_grid_thw": image_grid_thw.detach().clone(),
                 "video_grid_thw": video_grid_thw,
@@ -373,6 +375,10 @@ def test_teacher_forced_evidence_builds_positions_at_use_and_returns_only_eviden
         [[1, 1, 1, 1]],
         [[1, 1, 1, 1, 1, 1]],
     ]
+    assert all(
+        torch.equal(call["mm_token_type_ids"], torch.zeros_like(call["input_ids"]))
+        for call in model.rope_calls
+    )
     assert len(model.forward_calls) == 2
     assert all(call["use_cache"] is False for call in model.forward_calls)
     assert all(call["return_dict"] is True for call in model.forward_calls)

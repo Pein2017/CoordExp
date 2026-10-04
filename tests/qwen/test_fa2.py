@@ -11,6 +11,7 @@ from src.packing.planner import plan_packed_sequences
 from src.qwen.fa2 import (
     Fa2VarlenPlan,
     build_fa2_varlen_plan,
+    capture_fa2_varlen_branch,
     validate_fa2_varlen_branch_evidence,
 )
 from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
@@ -314,6 +315,146 @@ def test_qwen_forward_runner_can_require_captured_fa2_branch_proof() -> None:
     assert exc_info.value.code == "qwen.fa2_branch_evidence_missing"
 
 
+@pytest.mark.parametrize("callable_processor", [False, True])
+def test_fa2_kernel_producer_consumer_preserves_shape_order_and_processor(
+    monkeypatch: pytest.MonkeyPatch,
+    callable_processor: bool,
+) -> None:
+    import transformers.modeling_flash_attention_utils as flash_utils
+
+    roles = ("flash", "flash_varlen", "pad", "unpad")
+    results = {role: object() for role in roles}
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+    producer_calls: list[tuple[Any, tuple[Any, ...], dict[str, Any]]] = []
+    argument = torch.zeros((2, 1, 4), dtype=torch.bfloat16)
+    marker = object()
+
+    def kernel(role: str) -> Any:
+        def execute(*args: Any, **kwargs: Any) -> Any:
+            calls.append((role, args, kwargs))
+            return results[role]
+
+        return execute
+
+    def process_kwargs(**kwargs: Any) -> dict[str, Any]:
+        return kwargs
+
+    processor = process_kwargs if callable_processor else object()
+    flash, varlen, pad, unpad = tuple(kernel(role) for role in roles)
+
+    def producer(implementation: Any, *args: Any, **kwargs: Any) -> tuple[Any, Any]:
+        producer_calls.append((implementation, args, kwargs))
+        return (flash, varlen, None, pad, unpad), processor
+
+    monkeypatch.setattr(flash_utils, "lazy_import_flash_attention", producer)
+    with capture_fa2_varlen_branch() as capture:
+        kernels, returned_processor = flash_utils.lazy_import_flash_attention(
+            "flash_attention_2", marker, marker=marker
+        )
+        wrapped_flash, wrapped_varlen, cache, wrapped_pad, wrapped_unpad = kernels
+        assert len(kernels) == 5
+        assert cache is None
+        assert returned_processor is processor
+        if callable_processor:
+            processed = returned_processor(max_seqlen_q=7, max_seqlen_k=11, marker=marker)
+            assert processed == {"max_seqlen_q": 7, "max_seqlen_k": 11, "marker": marker}
+            assert processed["marker"] is marker
+        for role, wrapped in zip(
+            roles, (wrapped_flash, wrapped_varlen, wrapped_pad, wrapped_unpad), strict=True
+        ):
+            assert wrapped(argument, marker=marker) is results[role]
+
+    assert producer_calls == [("flash_attention_2", (marker,), {"marker": marker})]
+    assert [role for role, _args, _kwargs in calls] == list(roles)
+    assert all(
+        args[0] is argument and kwargs["marker"] is marker for _, args, kwargs in calls
+    )
+    assert all(capture.observed[f"{role}_fn_called"] for role in roles)
+    assert flash_utils.lazy_import_flash_attention is producer
+
+
+@pytest.mark.parametrize("kernel_slots", [3, 4, 6])
+def test_fa2_unknown_kernel_tuple_rejects_before_execution_and_restores(
+    monkeypatch: pytest.MonkeyPatch,
+    kernel_slots: int,
+) -> None:
+    import transformers.modeling_flash_attention_utils as flash_utils
+
+    calls: list[tuple[Any, ...]] = []
+
+    def kernel(*args: Any, **kwargs: Any) -> None:
+        calls.append(args)
+        raise AssertionError("unsupported kernel tuple must be rejected before execution")
+
+    def producer(*args: Any, **kwargs: Any) -> tuple[Any, Any]:
+        return (kernel,) * kernel_slots, object()
+
+    monkeypatch.setattr(flash_utils, "lazy_import_flash_attention", producer)
+    with pytest.raises(QwenForwardContractError) as error:
+        with capture_fa2_varlen_branch():
+            flash_utils.lazy_import_flash_attention("flash_attention_2")
+
+    assert error.value.code == "qwen.fa2_kernel_tuple_unsupported"
+    assert error.value.context["kernel_slots"] == kernel_slots
+    assert calls == []
+    assert flash_utils.lazy_import_flash_attention is producer
+
+
+@pytest.mark.parametrize("has_cache_kernel", [False, True])
+def test_fa2_current_kernel_tuple_preserves_missing_cache_and_rejects_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    has_cache_kernel: bool,
+) -> None:
+    import transformers.modeling_flash_attention_utils as flash_utils
+
+    def producer(*args: Any, **kwargs: Any) -> tuple[Any, Any]:
+        kernels, process = fake_lazy_import_flash_attention(*args, **kwargs)
+        flash, varlen, cache, pad, unpad = kernels
+        return (flash, varlen, cache if has_cache_kernel else None, pad, unpad), process
+
+    monkeypatch.setattr(flash_utils, "lazy_import_flash_attention", producer)
+    with capture_fa2_varlen_branch():
+        kernels, _process = flash_utils.lazy_import_flash_attention("flash_attention_2")
+        assert len(kernels) == 5
+        if has_cache_kernel:
+            with pytest.raises(QwenForwardContractError) as error:
+                kernels[2]()
+            assert error.value.code == "qwen.fa2_kvcache_unsupported"
+        else:
+            assert kernels[2] is None
+    assert flash_utils.lazy_import_flash_attention is producer
+
+
+def test_fa2_capture_installed_consumer_preserves_packed_lengths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import transformers.modeling_flash_attention_utils as flash_utils
+
+    monkeypatch.setattr(
+        flash_utils, "lazy_import_flash_attention", fake_lazy_import_flash_attention
+    )
+    plan = build_fa2_varlen_plan(
+        plan_packed_sequences(_fake_examples(), global_max_length=32)[0]
+    )
+    q = torch.zeros((1, plan.segment_boundaries[-1], 1, 4), dtype=torch.bfloat16)
+    with capture_fa2_varlen_branch() as capture:
+        output = flash_utils._flash_attention_forward(
+            q, q, q, query_length=q.shape[1], is_causal=True,
+            attn_implementation="flash_attention_2", **plan.to_model_kwargs()
+        )
+    assert torch.equal(output, q)
+    evidence = capture.evidence_for_plan(plan)
+    assert evidence is not None
+    proof = validate_fa2_varlen_branch_evidence(
+        plan, evidence,
+        resolved_attention_implementation="flash_attention_2",
+        model_dtype="torch.bfloat16",
+    )
+    assert proof.observed_call["max_seqlen_q"] == plan.max_length_q
+    assert proof.observed_call["max_seqlen_k"] == plan.max_length_k
+    assert flash_utils.lazy_import_flash_attention is fake_lazy_import_flash_attention
+
+
 def _fake_examples() -> tuple["FakeEncodedExample", ...]:
     return (
         FakeEncodedExample(
@@ -417,7 +558,7 @@ class FakeQwenModelWithFa2Call(FakeQwenModel):
     def __call__(self, **kwargs: Any) -> Any:
         import transformers.modeling_flash_attention_utils as flash_utils
 
-        (flash_fn, flash_varlen_fn, _pad_fn, _unpad_fn), _process = (
+        (flash_fn, flash_varlen_fn, _cache_fn, _pad_fn, _unpad_fn), _process = (
             flash_utils.lazy_import_flash_attention("flash_attention_2")
         )
         del flash_fn
@@ -450,16 +591,23 @@ def fake_lazy_import_flash_attention(implementation: str | None = None) -> tuple
     ) -> torch.Tensor:
         return q
 
+    def fake_flash_with_kvcache_fn(*_args: Any, **_kwargs: Any) -> torch.Tensor:
+        raise AssertionError("packed-varlen capture must reject KV-cache execution first")
+
     def fake_pad_fn(q: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
         return q
 
     def fake_unpad_fn(q: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
         return q
 
-    def fake_process_flash_kwargs_fn(**_kwargs: Any) -> dict[str, Any]:
-        return {}
+    def fake_process_flash_kwargs_fn(**kwargs: Any) -> dict[str, Any]:
+        return {
+            key: kwargs[key]
+            for key in ("max_seqlen_q", "max_seqlen_k")
+            if key in kwargs
+        }
 
     return (
-        (fake_flash_fn, fake_flash_varlen_fn, fake_pad_fn, fake_unpad_fn),
+        (fake_flash_fn, fake_flash_varlen_fn, fake_flash_with_kvcache_fn, fake_pad_fn, fake_unpad_fn),
         fake_process_flash_kwargs_fn,
     )

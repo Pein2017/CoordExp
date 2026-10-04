@@ -354,8 +354,10 @@ generation behavior, parsing, or evaluator input rows.
 
 The runtime MUST record the installed vLLM version, model dtype, effective
 engine settings, execution-model identity, CUDA binding, process mode, and
-cleanup result. Version `0.14.1` SHALL remain the documented known-working
-version, but a version string, application-source hash, historical source
+cleanup result. Only the selected vLLM `0.29.0` release SHALL be supported;
+the installed local-version suffix SHALL remain recorded for runtime identity.
+Version support SHALL NOT establish executed model qualification. An
+application-source hash, historical source
 manifest, exact historical `gpu_memory_utilization`, exact historical
 `max_model_len`, or previously probed concurrency value MUST NOT by itself
 prevent engine construction.
@@ -366,8 +368,8 @@ contracts, or clean up its owned runtime. Historical qualification receipts
 MAY be inspected and recorded as matching, stale, missing, or unverified
 diagnostics, but MUST NOT authorize or reject ordinary inference.
 
-An unverified vLLM version MAY attempt policy-only inference. Raw-model
-likelihood tracing MUST fail for an unverified version unless a version-specific
+An unsupported vLLM release MUST fail before engine construction without a
+compatibility fallback. Raw-model likelihood tracing MUST fail unless a version-specific
 probe has established that raw logprobs are captured before the forcing
 processor. Aligned finite replay tokens alone MUST NOT assert that ordering.
 
@@ -392,9 +394,14 @@ processor. Aligned finite replay tokens alone MUST NOT assert that ordering.
 - **THEN** the run fails with the concrete current engine or decode error and
   MUST NOT publish completed top-level inference artifacts
 
-#### Scenario: Unqualified installed version
+#### Scenario: Unsupported installed version
 
-- **WHEN** the installed vLLM version has no accepted raw-logprob ordering probe
+- **WHEN** the installed vLLM release differs from the selected supported release
+- **THEN** both policy-only inference and raw-model tracing reject it before engine construction
+
+#### Scenario: Supported version without raw-ordering evidence
+
+- **WHEN** the supported installed vLLM version has no accepted raw-logprob ordering probe
 - **THEN** policy-only inference may attempt the current engine contracts
 - **AND** raw-model likelihood tracing fails before engine construction
 

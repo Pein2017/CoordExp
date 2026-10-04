@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
+from packaging.version import InvalidVersion, Version
+
 from pydantic import Field, StrictInt, ValidationError, model_validator
 
 from src.common.errors import ConfigContractError
@@ -17,7 +19,7 @@ from src.config.paths import get_nested, set_nested, validate_run_output_destina
 
 
 INFER_CONFIG_LOADER_VERSION = "coordexp-infras-infer-config-v1"
-KNOWN_WORKING_VLLM_VERSIONS = ("0.14.1",)
+SUPPORTED_VLLM_VERSIONS = ("0.29.0",)
 INFER_PATH_FIELDS = (
     "run.artifact_root",
     "model.base_model",
@@ -320,16 +322,18 @@ def _load_infer_config(path: str | Path, *, production_entry: bool) -> ResolvedI
 
 
 def inspect_vllm_runtime_version(*, observed_version: str) -> dict[str, Any]:
-    """Classify version provenance without substituting it for live execution."""
+    """Report API support separately from execution qualification."""
 
+    try:
+        release_version = Version(observed_version).public
+    except InvalidVersion:
+        release_version = None
     return {
         "observed_version": observed_version,
-        "status": (
-            "known_working"
-            if observed_version in KNOWN_WORKING_VLLM_VERSIONS
-            else "unverified"
-        ),
-        "known_working_versions": list(KNOWN_WORKING_VLLM_VERSIONS),
+        "release_version": release_version,
+        "status": "supported" if release_version in SUPPORTED_VLLM_VERSIONS else "unsupported",
+        "supported_versions": list(SUPPORTED_VLLM_VERSIONS),
+        "execution_qualification": "not_established",
     }
 
 

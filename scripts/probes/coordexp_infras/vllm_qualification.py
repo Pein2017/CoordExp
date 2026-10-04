@@ -35,9 +35,6 @@ if str(REPO_ROOT) not in sys.path:
 DEFAULT_CONFIG = Path(
     "configs/coordexp_infras/infer/wave7_real_base_single_smoke.yaml"
 )
-DEFAULT_RECEIPT = Path(
-    "src/inference/qualification_receipts/vllm-0.14.1-qualification.json"
-)
 STATIC_SOURCE_FILES = {
     "qwen3_vl": "model_executor/models/qwen3_vl.py",
     "model_config": "config/model.py",
@@ -45,8 +42,9 @@ STATIC_SOURCE_FILES = {
     "peft_helper": "lora/peft_helper.py",
     "llm_entrypoint": "entrypoints/llm.py",
     "sampling_params": "sampling_params.py",
-    "prompt_inputs": "inputs/data.py",
-    "multimodal_processing": "multimodal/processing.py",
+    "prompt_inputs": "inputs/llm.py",
+    "multimodal_processing": "multimodal/processing/processor.py",
+    "multimodal_processing_package": "multimodal/processing/__init__.py",
     "transformers_processor": "transformers_utils/processor.py",
     "v1_llm_engine": "v1/engine/llm_engine.py",
     "v1_engine_core": "v1/engine/core.py",
@@ -55,7 +53,8 @@ STATIC_SOURCE_FILES = {
 REQUIRED_LOADED_SOURCE_PATHS = {
     "vllm/model_executor/model_loader/default_loader.py",
     "vllm/model_executor/models/qwen3_vl.py",
-    "vllm/multimodal/processing.py",
+    "vllm/multimodal/processing/processor.py",
+    "vllm/multimodal/processing/__init__.py",
     "vllm/v1/executor/uniproc_executor.py",
     "vllm/v1/sample/ops/topk_topp_sampler.py",
     "vllm/v1/sample/sampler.py",
@@ -66,7 +65,7 @@ REQUIRED_LOADED_SOURCE_PATHS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--receipt", type=Path, default=DEFAULT_RECEIPT)
+    parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.70)
     parser.add_argument("--max-new-tokens", type=int, default=768)
     parser.add_argument("--max-model-len", type=int, default=2048)
@@ -92,6 +91,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     _validate_args(args)
+    from src.config.inference import inspect_vllm_runtime_version
+    version = inspect_vllm_runtime_version(observed_version=metadata.version("vllm"))
+    if version["status"] != "supported":
+        raise RuntimeError(f"unsupported vLLM runtime: {version}")
     if not args.worker:
         _run_parent(args)
         return
@@ -128,7 +131,7 @@ def _run_parent(args: argparse.Namespace) -> None:
         receipt = {
             "schema_version": 1,
             "created_at_utc": datetime.now(UTC).isoformat(),
-            "candidate_version": "0.14.1",
+            "candidate_version": metadata.version("vllm"),
             "status": "failed",
             "failure": {
                 "type": "MissingWorkerReceipt",
@@ -194,7 +197,7 @@ def _run_worker(args: argparse.Namespace) -> None:
             "argv": list(sys.argv),
         },
         "created_at_utc": datetime.now(UTC).isoformat(),
-        "candidate_version": "0.14.1",
+        "candidate_version": metadata.version("vllm"),
         "status": "running",
         "process": {
             **process_mode,

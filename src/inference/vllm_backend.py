@@ -201,14 +201,22 @@ class VLLMBackendSession:
     def _require_known_raw_replay_semantics(self) -> None:
         preflight = self._receipt.effective_settings.get("runtime_preflight")
         if not isinstance(preflight, Mapping):
-            return
+            if self._raw_replay_qualifier is not None:
+                return  # Explicit injected sessions own their qualification boundary.
+            raise RuntimeContractError("raw-model sampler semantics are unavailable", code="vllm_backend.raw_semantics_unverified")
         version = preflight.get("version")
-        if isinstance(version, Mapping) and version.get("status") == "unverified":
-            raise RuntimeContractError(
-                "raw-model likelihood semantics are unverified for this vLLM version",
-                code="vllm_backend.raw_replay_version_unverified",
-                context={"version": dict(version)},
-            )
+        if not isinstance(version, Mapping) or version.get("status") != "supported":
+            raise RuntimeContractError("raw-model likelihood semantics are unverified for this vLLM version", code="vllm_backend.raw_replay_version_unverified", context={"version": version})
+        from src.inference.vllm_forced_replay import verify_raw_logprob_semantics
+
+        semantics = preflight.get("raw_semantics")
+        if not isinstance(semantics, Mapping) or semantics.get("status") != "verified_cpu_sampler_ordering":
+            semantics = verify_raw_logprob_semantics()
+        if semantics.get("status") != "verified_cpu_sampler_ordering":
+            raise RuntimeContractError("raw-model sampler semantics are unverified", code="vllm_backend.raw_semantics_unverified")
+        settings = dict(self._receipt.effective_settings)
+        settings["runtime_preflight"] = {**dict(preflight), "raw_semantics": dict(semantics)}
+        self._receipt = replace(self._receipt, effective_settings=settings)
 
     def _close_owned_engine(self, engine: Any | None, *, scope: str) -> None:
         try:
@@ -1281,10 +1289,7 @@ def _close_vllm_engine(engine: Any | None) -> dict[str, object]:
         else:
             engine_core = getattr(llm_engine, "engine_core", None)
             shutdown = getattr(engine_core, "shutdown", None)
-            if callable(getattr(engine, "shutdown", None)):
-                shutdown = engine.shutdown
-                shutdown_interface = "engine.shutdown"
-            elif callable(shutdown):
+            if callable(shutdown):
                 shutdown_interface = "engine.llm_engine.engine_core.shutdown"
             else:
                 raise RuntimeContractError(

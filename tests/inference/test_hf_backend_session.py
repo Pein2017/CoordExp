@@ -647,6 +647,7 @@ class _RopeOwner:
     def get_rope_index(
         self,
         input_ids: torch.Tensor,
+        mm_token_type_ids: torch.Tensor,
         image_grid_thw: torch.Tensor,
         video_grid_thw: torch.Tensor | None,
         *,
@@ -655,6 +656,7 @@ class _RopeOwner:
         self.calls.append(
             {
                 "input_ids": input_ids,
+                "mm_token_type_ids": mm_token_type_ids,
                 "image_grid_thw": image_grid_thw,
                 "video_grid_thw": video_grid_thw,
                 "attention_mask": attention_mask,
@@ -687,6 +689,7 @@ def test_position_id_derivation_resolves_first_rope_owner_down_model_chain(
     assert position_ids.shape == (3, 1, 3)
     assert len(owner.calls) == 1
     assert owner.calls[0]["input_ids"] is input_ids
+    assert torch.equal(owner.calls[0]["mm_token_type_ids"], torch.zeros_like(input_ids))
 
 
 def _cyclic_wrapper_without_rope_owner() -> SimpleNamespace:

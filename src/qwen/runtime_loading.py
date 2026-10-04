@@ -190,9 +190,7 @@ def _model_identity(hf_config: Any) -> QwenModelIdentity:
             context={"config_class": type(hf_config).__name__},
         )
     hidden_size = getattr(text_config, "hidden_size", None)
-    dtype = getattr(hf_config, "torch_dtype", None)
-    if dtype is None:
-        dtype = getattr(hf_config, "dtype", None)
+    dtype = getattr(hf_config, "dtype", None)
     return QwenModelIdentity(
         config_class=type(hf_config).__name__,
         model_type=str(getattr(hf_config, "model_type", "")),

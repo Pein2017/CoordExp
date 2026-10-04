@@ -88,9 +88,7 @@ class ModelConfig(StrictConfigModel):
 
 class AdapterConfig(StrictConfigModel):
     type: Literal["dora"]
-    seed_mode: (
-        Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None
-    ) = None
+    seed_mode: Literal["initialize_new", "load_existing", "warm_start_expand_dora"]
     path: str | None = None
     source_adapter_path: str | None = None
     repaired_embedding_payload_path: str | None = None
@@ -124,15 +122,6 @@ class AdapterConfig(StrictConfigModel):
     @model_validator(mode="after")
     def _seed_mode_contract(self) -> "AdapterConfig":
         seed_mode = self.seed_mode
-        if seed_mode is None:
-            if (
-                self.source_adapter_path is not None
-                or self.repaired_embedding_payload_path is not None
-            ):
-                raise ValueError(
-                    "adapter source/payload seed paths require adapter.seed_mode: warm_start_expand_dora"
-                )
-            return self
         if seed_mode == "initialize_new":
             if self.path is not None:
                 raise ValueError(

@@ -272,6 +272,7 @@ def test_existing_dora_adapter_path_loads_as_trainable_dora(tmp_path: Path) -> N
 
     load_plan = _setup_plan(
         target_towers=("language",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -296,6 +297,7 @@ def test_existing_dora_adapter_load_accepts_peft_sorted_target_modules(
 
     load_plan = _setup_plan(
         target_towers=("language",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -331,6 +333,7 @@ def test_existing_dora_adapter_load_rejects_base_model_mismatch(
 
     load_plan = _setup_plan(
         target_towers=("language",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -362,6 +365,7 @@ def test_existing_dora_adapter_load_rejects_base_model_class_mismatch(
 
     load_plan = _setup_plan(
         target_towers=("language",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -382,6 +386,7 @@ def test_existing_dora_adapter_load_rejects_target_mismatch(tmp_path: Path) -> N
 
     load_plan = _setup_plan(
         target_towers=("vision",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -418,6 +423,7 @@ def test_existing_dora_adapter_load_rejects_lm_head_target(tmp_path: Path) -> No
 
     load_plan = _setup_plan(
         target_towers=("language",),
+        seed_mode="load_existing",
         adapter_path=str(adapter_dir),
         base_model_path=Path("/models/qwen-base"),
     )
@@ -708,15 +714,32 @@ class TinyLanguageOnlyModel(nn.Module):
         return self.model.language_model.q_proj(hidden)
 
 
+@pytest.mark.parametrize("seed_fields", [{}, {"seed_mode": None}])
+def test_adapter_config_requires_explicit_non_null_seed_mode(seed_fields: dict) -> None:
+    payload = {
+        "type": "dora",
+        "target_towers": ["language"],
+        "target_modules": "all_linear",
+        "rank": 2,
+        "alpha": 4,
+        "dropout": 0.0,
+        **seed_fields,
+    }
+    with pytest.raises(ValueError, match="seed_mode"):
+        AdapterConfig.model_validate(payload)
+
+
 def _setup_plan(
     *,
     target_towers: tuple[str, ...],
+    seed_mode: str = "initialize_new",
     adapter_path: str | None = None,
     base_model_path: Path | None = None,
     bias: str = "none",
 ) -> AdapterSetupPlan:
     adapter = AdapterConfig(
         type="dora",
+        seed_mode=seed_mode,
         path=adapter_path,
         target_towers=target_towers,
         target_modules="all_linear",

@@ -1,4 +1,4 @@
-"""Real processor parity with the pre-refactor two-image input receipt."""
+"""Current processor preserves the historical inputs and declares modality types."""
 
 from dataclasses import replace
 import hashlib
@@ -35,7 +35,7 @@ def context():
     return config, frontend.qwen, load_raw_examples(FIXTURE / "examples.jsonl")
 
 
-def test_real_generation_and_target_inputs_equal_frozen_old_receipt(context):
+def test_real_inputs_preserve_old_receipt_and_add_current_modality_types(context):
     config, components, rows = context
     expected = json.loads((FIXTURE / "expected_probe_inputs.json").read_text())["rows"]
     with patch.object(inputs, "render_example", wraps=inputs.render_example) as render, patch.object(
@@ -63,10 +63,17 @@ def test_real_generation_and_target_inputs_equal_frozen_old_receipt(context):
         assert entry.image.image_content_sha256 == golden["image_file_sha256"]
         assert target.supervised_token_spans[-1].token_ids == (golden["terminal_eos_id"],)
         assert target.ignored_token_spans[0].physical_token_start == target.supervised_token_spans[-1].physical_token_end
-        for key, tensor in batch.inputs.items():
-            if isinstance(tensor, torch.Tensor):
-                raw = tensor.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
-                assert {"shape": list(tensor.shape), "dtype": str(tensor.dtype), "sha256": hashlib.sha256(raw).hexdigest()} == golden["native_tensors"][key]
+        assert set(batch.inputs) == set(golden["native_tensors"]) | {"mm_token_type_ids"}
+        for key, tensor_receipt in golden["native_tensors"].items():
+            tensor = batch.inputs[key]
+            assert isinstance(tensor, torch.Tensor)
+            raw = tensor.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
+            assert {"shape": list(tensor.shape), "dtype": str(tensor.dtype), "sha256": hashlib.sha256(raw).hexdigest()} == tensor_receipt
+        modality_types = torch.zeros_like(batch.inputs["input_ids"])
+        modality_types[batch.inputs["input_ids"] == components.processor.image_token_id] = 1
+        modality_types[batch.inputs["input_ids"] == components.processor.video_token_id] = 2
+        assert batch.inputs["mm_token_type_ids"].dtype == modality_types.dtype
+        assert torch.equal(batch.inputs["mm_token_type_ids"], modality_types)
 
 
 def test_generation_only_is_lazy_and_has_no_target(context, monkeypatch):

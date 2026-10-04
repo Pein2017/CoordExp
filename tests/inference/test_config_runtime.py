@@ -494,22 +494,23 @@ def test_raw_model_logprob_is_opt_in(tmp_path: Path) -> None:
     assert enabled_config.config.artifacts.include_raw_model_logprob is True
 
 
-def test_vllm_version_preflight_classifies_without_authorizing_runtime() -> None:
+@pytest.mark.parametrize("version", ["0.29.0", "0.29.0+cu129"])
+def test_vllm_version_preflight_reports_support_without_authorizing_runtime(version: str) -> None:
     from src.config.inference import inspect_vllm_runtime_version
 
-    known = inspect_vllm_runtime_version(observed_version="0.14.1")
-    unverified = inspect_vllm_runtime_version(observed_version="0.14.2")
+    assert inspect_vllm_runtime_version(observed_version=version) == {
+        "observed_version": version, "release_version": "0.29.0", "status": "supported",
+        "supported_versions": ["0.29.0"], "execution_qualification": "not_established",
+    }
 
-    assert known == {
-        "observed_version": "0.14.1",
-        "status": "known_working",
-        "known_working_versions": ["0.14.1"],
-    }
-    assert unverified == {
-        "observed_version": "0.14.2",
-        "status": "unverified",
-        "known_working_versions": ["0.14.1"],
-    }
+
+@pytest.mark.parametrize("version", ["0.14.1", "0.29.1", "0.29.0rc1", "0.29.0.post1", "0.30.0", "invalid"])
+def test_vllm_version_preflight_rejects_retired_or_unpinned_release(version: str) -> None:
+    from src.config.inference import inspect_vllm_runtime_version
+    result = inspect_vllm_runtime_version(observed_version=version)
+    assert result["observed_version"] == version
+    assert result["status"] == "unsupported"
+    assert result["execution_qualification"] == "not_established"
 
 
 def test_debug_batch_size_one_requires_explicit_smoke(tmp_path: Path) -> None:

@@ -135,7 +135,7 @@ def test_passed_receipt_construction_is_deterministic_from_fake_artifacts(
     assert first["status"] == "passed"
     assert first["schema_version"] == 1
     assert first["version"] == probe.RECEIPT_VERSION
-    assert first["vllm_version"] == "0.14.1"
+    assert first["vllm_version"] == "0.29.0+cu129"
     assert first["max_num_seqs"] == 2
     assert first["request_ids"] == ["row-0", "row-1"]
     assert first["input_source"]["row_count"] == 2
@@ -285,7 +285,7 @@ def _fake_dependencies(
                 "torch_cuda_version": "12.8",
             },
         },
-        package_version=lambda name: "0.14.1" if name == "vllm" else "unknown",
+        package_version=lambda name: "0.29.0+cu129" if name == "vllm" else "unknown",
     )
 
 
@@ -385,7 +385,7 @@ def _write_fake_artifacts(
         "scored_artifact_materialized": True,
         "raw_model_logprob_status": "available",
         "backend_session": {
-            "backend_version": "0.14.1",
+            "backend_version": "0.29.0+cu129",
             "execution_model_identity": execution_model,
             "effective_settings": {
                 "batch_size": len(request_ids),

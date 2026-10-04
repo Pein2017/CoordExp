@@ -5,10 +5,17 @@ import re
 from typing import Any
 
 import pytest
+import torch
+
+from transformers import Qwen3VLConfig
+
+from transformers.image_processing_backends import TorchvisionBackend
+from transformers.tokenization_utils_tokenizers import TokenizersBackend
 
 from src.common.errors import EncodingContractError
 from src.config.loader import load_train_config
 from src.qwen.loading import load_qwen_components
+from src.qwen.runtime_loading import _model_identity
 from src.qwen.tokens import (
     DEFAULT_COORDINATE_TOKENS,
     DEFAULT_WRAPPER_TOKENS,
@@ -131,8 +138,10 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
     assert components.model_identity.tie_word_embeddings is True
     assert components.model_identity.text_vocab_size == 152670
     assert components.processor_identity.processor_class == "Qwen3VLProcessor"
-    assert components.processor_identity.tokenizer_class == "Qwen2TokenizerFast"
-    assert components.processor_identity.image_processor_class == "Qwen2VLImageProcessorFast"
+    assert components.processor_identity.tokenizer_class == "Qwen2Tokenizer"
+    assert components.processor_identity.image_processor_class == "Qwen2VLImageProcessor"
+    assert isinstance(components.tokenizer, TokenizersBackend)
+    assert isinstance(components.processor.image_processor, TorchvisionBackend)
     assert components.processor_identity.patch_size == 16
     assert components.processor_identity.merge_size == 2
     assert components.processor_identity.temporal_patch_size == 2
@@ -150,6 +159,21 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
     patch_receipt = artifact["runtime_patches"]["qwen3_vl_patch_embed_linearization"]
     assert patch_receipt["applied"] is False
     assert patch_receipt["reason"] == "model_not_loaded"
+
+
+
+@pytest.mark.parametrize("dtype", [None, torch.bfloat16])
+def test_model_identity_uses_current_dtype_without_deprecated_property(dtype: object) -> None:
+    class CurrentConfigOnly(Qwen3VLConfig):
+        @property
+        def torch_dtype(self) -> object:
+            raise AssertionError("deprecated torch_dtype property must not be read")
+
+    config = CurrentConfigOnly(dtype=dtype)
+
+    identity = _model_identity(config)
+
+    assert identity.config_dtype == (None if dtype is None else str(dtype))
 
 
 def test_production_prompt_examples_use_real_single_token_wrappers() -> None:

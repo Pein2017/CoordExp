@@ -187,11 +187,7 @@ def build_adapter_setup_plan(
         else Path(adapter_config.repaired_embedding_payload_path)
     )
     resolved_base_model_path = None if base_model_path is None else Path(base_model_path)
-    seed_mode = adapter_config.seed_mode
-    if seed_mode is None:
-        mode: AdapterSetupMode = "initialize_new" if adapter_path is None else "load_existing"
-    else:
-        mode = seed_mode
+    mode: AdapterSetupMode = adapter_config.seed_mode
     if mode == "warm_start_expand_dora":
         if source_adapter_path is None or repaired_embedding_payload_path is None:
             raise RuntimeContractError(

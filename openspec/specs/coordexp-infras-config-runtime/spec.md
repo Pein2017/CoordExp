@@ -62,10 +62,9 @@ chain. A second resolved YAML artifact MUST NOT be required.
 ### Requirement: Adapter Seed Mode Config Hierarchy
 
 Adapter config SHALL expose a stable seed-mode hierarchy under
-`adapter.type: dora`. If `adapter.seed_mode` is omitted, V1 MAY infer
-`initialize_new` when `adapter.path` is absent and `load_existing` when
-`adapter.path` is present for backward compatibility with earlier Swift
-configs. If `adapter.seed_mode` is explicit, `initialize_new` MUST reject
+`adapter.type: dora`. `adapter.seed_mode` MUST be explicit and non-null;
+omitted and null values MUST fail validation without path-based inference.
+`initialize_new` MUST reject
 adapter paths and source paths, `load_existing` MUST require `adapter.path` and
 reject source paths, and `warm_start_expand_dora` MUST require
 `adapter.source_adapter_path` plus `adapter.repaired_embedding_payload_path`
@@ -73,6 +72,11 @@ while rejecting `adapter.path`. The configured `adapter.target_towers` SHALL
 remain the authoritative set of required targets in all seed modes.
 
 #### Scenario: Fresh adapter seed mode configured
+
+- **WHEN** a training adapter omits `adapter.seed_mode` or supplies null
+- **THEN** config validation MUST reject it before setup, cache or model work
+
+#### Scenario: Explicit fresh adapter seed mode configured
 
 - **WHEN** `adapter.seed_mode: initialize_new` is configured
 - **THEN** config validation MUST reject `adapter.path`,

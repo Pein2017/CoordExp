@@ -14,38 +14,6 @@ from src.inference.backend import BackendLaunch
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_RECEIPT_ROOT = Path(__file__).resolve().with_name("qualification_receipts")
-QUALIFICATION_RECEIPT = _RECEIPT_ROOT / "vllm-0.14.1-qualification.json"
-APPLICATION_QUALIFICATION_RECEIPT = _RECEIPT_ROOT / (
-    "vllm-0.14.1-application-sources.json"
-)
-CONCURRENCY_QUALIFICATION_RECEIPT = QUALIFICATION_RECEIPT.with_name(
-    "vllm-0.14.1-concurrency4.json"
-)
-FORCED_REPLAY_SINGLE_QUALIFICATION_RECEIPT = QUALIFICATION_RECEIPT.with_name(
-    "vllm-0.14.1-forced-replay1.json"
-)
-FP32_QUALIFICATION_RECEIPT = _RECEIPT_ROOT / "vllm-0.14.1-fp32-qualification.json"
-FP32_CONCURRENCY_QUALIFICATION_RECEIPT = _RECEIPT_ROOT / (
-    "vllm-0.14.1-fp32-concurrency4.json"
-)
-FP32_FORCED_REPLAY_SINGLE_QUALIFICATION_RECEIPT = _RECEIPT_ROOT / (
-    "vllm-0.14.1-fp32-forced-replay1.json"
-)
-_QUALIFICATION_RECEIPTS = {
-    "bf16": QUALIFICATION_RECEIPT,
-    "fp32": FP32_QUALIFICATION_RECEIPT,
-}
-_CONCURRENCY_QUALIFICATION_RECEIPTS = {
-    "bf16": CONCURRENCY_QUALIFICATION_RECEIPT,
-    "fp32": FP32_CONCURRENCY_QUALIFICATION_RECEIPT,
-}
-_FORCED_REPLAY_QUALIFICATION_RECEIPTS = {
-    ("bf16", 1): FORCED_REPLAY_SINGLE_QUALIFICATION_RECEIPT,
-    ("bf16", 4): CONCURRENCY_QUALIFICATION_RECEIPT,
-    ("fp32", 1): FP32_FORCED_REPLAY_SINGLE_QUALIFICATION_RECEIPT,
-    ("fp32", 4): FP32_CONCURRENCY_QUALIFICATION_RECEIPT,
-}
 QUALIFICATION_PROBE_RELATIVE_PATH = Path(
     "scripts/probes/coordexp_infras/vllm_qualification.py"
 )
@@ -96,14 +64,14 @@ def inspect_vllm_operational_preflight(
             code="vllm_backend.execution_model_required",
         )
     _validate_operational_engine_settings(launch=launch, engine_kwargs=engine_kwargs)
-    application_path = (
-        APPLICATION_QUALIFICATION_RECEIPT
-        if application_receipt_path is None
-        else Path(application_receipt_path).expanduser().resolve()
-    )
+    version = inspect_vllm_runtime_version(observed_version=observed_version)
+    if version["status"] != "supported":
+        raise RuntimeContractError("vLLM runtime version is unsupported", code="vllm_backend.runtime_version_unsupported", context=version)
+    application_path = None if application_receipt_path is None else Path(application_receipt_path).expanduser().resolve()
     return {
         "status": "ready_for_engine_construction",
-        "version": inspect_vllm_runtime_version(observed_version=observed_version),
+        "version": version,
+        "raw_semantics": {"status": "unverified"},
         "execution_model": {
             "mode": launch.execution_model_identity.get("mode"),
             "composition_key": launch.execution_model_identity.get("composition_key"),
@@ -122,8 +90,9 @@ def inspect_vllm_operational_preflight(
         "engine_settings": dict(engine_kwargs),
         "process": dict(process_evidence or {"status": "validated"}),
         "cuda": dict(cuda_evidence or {"status": "validated"}),
-        "historical_application_sources": _inspect_historical_application_sources(
-            application_path
+        "historical_application_sources": (
+            {"status": "unavailable", "reason": "no_explicit_historical_receipt"}
+            if application_path is None else _inspect_historical_application_sources(application_path)
         ),
     }
 
@@ -149,9 +118,7 @@ def inspect_vllm_raw_replay_preflight(
             context={"missing_fields": missing},
         )
 
-    selected = receipt_path or _FORCED_REPLAY_QUALIFICATION_RECEIPTS.get(
-        (launch.model_dtype, launch.batch_size)
-    )
+    selected = receipt_path
     if selected is None:
         historical: dict[str, object] = {
             "status": "unavailable",
@@ -271,15 +238,11 @@ def validate_vllm_runtime_qualification(
     path = _select_qualification_receipt(
         launch=launch,
         explicit_path=receipt_path,
-        receipts=_QUALIFICATION_RECEIPTS,
         kind="runtime",
     )
-    concurrency_path = _select_qualification_receipt(
-        launch=launch,
-        explicit_path=concurrency_receipt_path,
-        receipts=_CONCURRENCY_QUALIFICATION_RECEIPTS,
-        kind="concurrency",
-    )
+    concurrency_path = None
+    if engine_kwargs.get("max_num_seqs") != 1:
+        concurrency_path = _select_qualification_receipt(launch=launch, explicit_path=concurrency_receipt_path, kind="concurrency")
     try:
         raw = path.read_bytes()
         payload = json.loads(raw)
@@ -292,7 +255,7 @@ def validate_vllm_runtime_qualification(
         ) from exc
     if not isinstance(payload, dict) or payload.get("status") != "passed":
         _fail("status", payload.get("status") if isinstance(payload, dict) else None)
-    if payload.get("candidate_version") != "0.14.1":
+    if inspect_vllm_runtime_version(observed_version=str(payload.get("candidate_version", "")))["status"] != "supported":
         _fail("candidate_version", payload.get("candidate_version"))
     _validate_qualification_probe(payload.get("probe"))
     _validate_runtime_evidence(payload)
@@ -408,268 +371,16 @@ def validate_vllm_runtime_qualification(
     return result
 
 
-def validate_vllm_forced_replay_qualification(
-    *,
-    launch: BackendLaunch,
-    processor_identity: Mapping[str, object],
-    receipt_path: str | Path | None = None,
-    baseline_receipt_path: str | Path | None = None,
-) -> dict[str, object]:
-    """Bind raw generation replay to the executed forced-decode probe."""
-
-    selected_path = receipt_path or _FORCED_REPLAY_QUALIFICATION_RECEIPTS.get(
-        (launch.model_dtype, launch.batch_size)
-    )
-    if selected_path is None:
-        raise RuntimeContractError(
-            "vLLM raw replay concurrency has no executed qualification",
-            code="vllm_backend.raw_replay_qualification_max_num_seqs",
-            context={
-                "observed": launch.batch_size,
-                "qualified": sorted(
-                    batch
-                    for dtype, batch in _FORCED_REPLAY_QUALIFICATION_RECEIPTS
-                    if dtype == launch.model_dtype
-                ),
-                "model_dtype": launch.model_dtype,
-            },
-        )
-    path = Path(selected_path).resolve()
-    baseline_path = _select_qualification_receipt(
-        launch=launch,
-        explicit_path=baseline_receipt_path,
-        receipts=_QUALIFICATION_RECEIPTS,
-        kind="runtime",
-    )
-    try:
-        raw = path.read_bytes()
-        payload = json.loads(raw)
-        baseline_sha256 = hashlib.sha256(baseline_path.read_bytes()).hexdigest()
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeContractError(
-            "vLLM forced-replay qualification receipt is unavailable",
-            code="vllm_backend.raw_replay_qualification_receipt",
-            context={"path": str(path)},
-            cause=exc,
-        ) from exc
-    if not isinstance(payload, Mapping) or payload.get("status") != "passed":
-        _fail_raw_replay(
-            "status", payload.get("status") if isinstance(payload, Mapping) else None
-        )
-    if payload.get("version") != "coordexp-infras-vllm-concurrency-qualification-v1":
-        _fail_raw_replay("version", payload.get("version"))
-    if payload.get("vllm_version") != "0.14.1":
-        _fail_raw_replay("vllm_version", payload.get("vllm_version"))
-    if (
-        payload.get("max_num_seqs") != launch.batch_size
-        or payload.get("request_count") != launch.batch_size
-    ):
-        _fail_raw_replay(
-            "max_num_seqs",
-            {
-                "launch": launch.batch_size,
-                "receipt": payload.get("max_num_seqs"),
-                "request_count": payload.get("request_count"),
-            },
-        )
-
-    runtime = payload.get("runtime_qualification")
-    baseline = runtime.get("baseline") if isinstance(runtime, Mapping) else None
-    if not isinstance(baseline, Mapping) or baseline.get("receipt_sha256") != baseline_sha256:
-        _fail_raw_replay(
-            "runtime_qualification.baseline.receipt_sha256",
-            baseline.get("receipt_sha256") if isinstance(baseline, Mapping) else None,
-        )
-    application_path = _application_receipt_path(
-        baseline_receipt_path=baseline_path,
-        explicit_path=None,
-    )
-    try:
-        application_sha256 = hashlib.sha256(application_path.read_bytes()).hexdigest()
-    except OSError as exc:
-        raise RuntimeContractError(
-            "vLLM application qualification receipt is unavailable",
-            code="vllm_backend.raw_replay_qualification_receipt",
-            context={"path": str(application_path)},
-            cause=exc,
-        ) from exc
-    _validate_nested_application_qualification(
-        baseline,
-        expected_receipt_sha256=application_sha256,
-        fail=_fail_raw_replay,
-    )
-
-    probe_path = (
-        Path(__file__).resolve().parents[2]
-        / "scripts"
-        / "probes"
-        / "coordexp_infras"
-        / "vllm_concurrency.py"
-    )
-    observed_probe_sha256 = _sha256_file(probe_path)
-    if payload.get("probe_source_sha256") != observed_probe_sha256:
-        raise RuntimeContractError(
-            "vLLM forced-replay qualification probe has drifted",
-            code="vllm_backend.raw_replay_qualification_source_drift",
-            context={
-                "path": str(probe_path),
-                "expected": payload.get("probe_source_sha256"),
-                "observed": observed_probe_sha256,
-            },
-        )
-    _validate_config_sources(payload.get("config"))
-
-    execution = launch.execution_model_identity
-    source = execution.get("source_identity") if isinstance(execution, Mapping) else None
-    base = source.get("base") if isinstance(source, Mapping) else None
-    base_fingerprint = base.get("fingerprint") if isinstance(base, Mapping) else None
-    receipt_execution = payload.get("execution_model")
-    qualified_base = (
-        receipt_execution.get("source_base_snapshot_fingerprint")
-        if isinstance(receipt_execution, Mapping)
-        else None
-    )
-    if not isinstance(qualified_base, str) or base_fingerprint != qualified_base:
-        raise RuntimeContractError(
-            "execution model does not derive from the forced-replay-qualified base",
-            code="vllm_backend.raw_replay_qualification_model_family",
-            context={
-                "expected_base_fingerprint": qualified_base,
-                "observed_base_fingerprint": base_fingerprint,
-            },
-        )
-
-    replay = payload.get("raw_replay")
-    settings = replay.get("settings") if isinstance(replay, Mapping) else None
-    rows = replay.get("rows") if isinstance(replay, Mapping) else None
-    if not isinstance(settings, Mapping) or settings.get("status") != "completed":
-        _fail_raw_replay("raw_replay.settings.status", settings)
-    if settings.get("logprobs_mode") != "raw_logprobs":
-        _fail_raw_replay(
-            "raw_replay.settings.logprobs_mode", settings.get("logprobs_mode")
-        )
-    if settings.get("max_num_seqs") != launch.batch_size:
-        _fail_raw_replay(
-            "raw_replay.settings.max_num_seqs",
-            settings.get("max_num_seqs"),
-        )
-    replay_qualification = settings.get("qualification")
-    if (
-        not isinstance(replay_qualification, Mapping)
-        or replay_qualification.get("status") != "passed"
-        or replay_qualification.get("evidence") != "executed_by_this_receipt"
-        or replay_qualification.get("probe_source_sha256")
-        != payload.get("probe_source_sha256")
-        or replay_qualification.get("source_base_snapshot_fingerprint")
-        != qualified_base
-    ):
-        _fail_raw_replay("raw_replay.settings.qualification", replay_qualification)
-    if not isinstance(rows, list) or not rows:
-        _fail_raw_replay("raw_replay.rows", rows)
-    if replay.get("row_evidence_sha256") != _sha256_json(rows):
-        _fail_raw_replay(
-            "raw_replay.row_evidence_sha256", replay.get("row_evidence_sha256")
-        )
-    row_map: dict[str, dict[str, object]] = {}
-    for row in rows:
-        if not isinstance(row, Mapping) or row.get("status") != "verified":
-            _fail_raw_replay("raw_replay.rows[].status", row)
-        row_id = row.get("row_id")
-        if not isinstance(row_id, str) or not row_id or row_id in row_map:
-            _fail_raw_replay("raw_replay.rows[].row_id", row_id)
-        row_map[row_id] = {
-            key: value for key, value in row.items() if key != "row_id"
-        }
-    if (
-        settings.get("request_count") != len(rows)
-        or settings.get("row_evidence_sha256") != _sha256_json(row_map)
-    ):
-        _fail_raw_replay("raw_replay.settings.row_evidence_sha256", settings)
-
-    qualified_processor = settings.get("forced_logits_processor")
-    if replay_qualification.get("processor_source_sha256") != (
-        qualified_processor.get("source_sha256")
-        if isinstance(qualified_processor, Mapping)
-        else None
-    ):
-        _fail_raw_replay("raw_replay.settings.qualification", replay_qualification)
-    for field in ("module", "qualname", "source_sha256"):
-        qualified = (
-            qualified_processor.get(field)
-            if isinstance(qualified_processor, Mapping)
-            else None
-        )
-        if processor_identity.get(field) != qualified:
-            raise RuntimeContractError(
-                "forced-replay processor differs from executed qualification",
-                code="vllm_backend.raw_replay_qualification_processor_drift",
-                context={
-                    "field": field,
-                    "expected": qualified,
-                    "observed": processor_identity.get(field),
-                },
-            )
-    qualified_path = _portable_processor_source_path(qualified_processor)
-    observed_path = _portable_processor_source_path(processor_identity)
-    if qualified_path != observed_path:
-        raise RuntimeContractError(
-            "forced-replay processor differs from executed qualification",
-            code="vllm_backend.raw_replay_qualification_processor_drift",
-            context={
-                "field": "repo_relative_path",
-                "expected": qualified_path,
-                "observed": observed_path,
-            },
-        )
-    return {
-        "status": "passed",
-        "receipt_path": str(path),
-        "receipt_sha256": hashlib.sha256(raw).hexdigest(),
-        "candidate_version": payload["vllm_version"],
-        "model_dtype": launch.model_dtype,
-        "source_base_snapshot_fingerprint": qualified_base,
-        "processor_source_sha256": processor_identity["source_sha256"],
-        "qualified_request_count": len(rows),
-    }
 
 
-def _portable_processor_source_path(value: object) -> str | None:
-    if not isinstance(value, Mapping):
-        return None
-    relative = value.get("repo_relative_path")
-    if isinstance(relative, str) and relative:
-        return relative
-    source_path = value.get("source_path")
-    if not isinstance(source_path, str) or not source_path:
-        return None
-    normalized = source_path.replace("\\", "/")
-    marker = "/src/"
-    if marker in normalized:
-        return "src/" + normalized.split(marker, 1)[1]
-    return Path(normalized).name
 
 
 def _select_qualification_receipt(
-    *,
-    launch: BackendLaunch,
-    explicit_path: str | Path | None,
-    receipts: Mapping[str, Path],
-    kind: str,
+    *, launch: BackendLaunch, explicit_path: str | Path | None, kind: str,
 ) -> Path:
-    if explicit_path is not None:
-        return Path(explicit_path).resolve()
-    path = receipts.get(launch.model_dtype)
-    if path is None:
-        raise RuntimeContractError(
-            "vLLM model dtype has no executed qualification receipt",
-            code="vllm_backend.qualification_dtype",
-            context={
-                "kind": kind,
-                "observed": launch.model_dtype,
-                "qualified": sorted(receipts),
-            },
-        )
-    return path.resolve()
+    if explicit_path is None:
+        raise RuntimeContractError("fresh qualification receipt must be supplied explicitly", code="vllm_backend.qualification_receipt", context={"kind": kind})
+    return Path(explicit_path).expanduser().resolve()
 
 
 def _validate_concurrency_qualification(
@@ -695,7 +406,7 @@ def _validate_concurrency_qualification(
         _fail_concurrency("status", payload.get("status") if isinstance(payload, Mapping) else None)
     if payload.get("version") != "coordexp-infras-vllm-concurrency-qualification-v1":
         _fail_concurrency("version", payload.get("version"))
-    if payload.get("vllm_version") != "0.14.1":
+    if inspect_vllm_runtime_version(observed_version=str(payload.get("vllm_version", "")))["status"] != "supported":
         _fail_concurrency("vllm_version", payload.get("vllm_version"))
 
     observed_max = engine_kwargs.get("max_num_seqs")
@@ -1054,11 +765,7 @@ def _application_receipt_path(
 ) -> Path:
     if explicit_path is not None:
         return Path(explicit_path).expanduser().resolve()
-    if baseline_receipt_path.resolve() in {
-        path.resolve() for path in _QUALIFICATION_RECEIPTS.values()
-    }:
-        return APPLICATION_QUALIFICATION_RECEIPT.resolve()
-    return baseline_receipt_path.with_name("vllm-0.14.1-application-sources.json")
+    raise RuntimeContractError("fresh application qualification receipt must be supplied explicitly", code="vllm_backend.application_qualification_receipt")
 
 
 def _validate_application_sources(path: Path) -> dict[str, object]:
@@ -1236,13 +943,5 @@ def _fail_concurrency(field: str, value: object) -> None:
     raise RuntimeContractError(
         "vLLM concurrency qualification receipt is invalid",
         code="vllm_backend.concurrency_qualification_receipt",
-        context={"field": field, "value": value},
-    )
-
-
-def _fail_raw_replay(field: str, value: object) -> None:
-    raise RuntimeContractError(
-        "vLLM forced-replay qualification receipt is invalid",
-        code="vllm_backend.raw_replay_qualification_invalid",
         context={"field": field, "value": value},
     )

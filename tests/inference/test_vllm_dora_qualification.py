@@ -288,3 +288,16 @@ def test_failed_entry_preserves_partial_evidence_and_closes_owned_children():
         assert receipt['child_settlement']['settled'] and receipt['child_settlement']['exitcode'] == 0
         assert receipt['distributed_settlement'] == 'destroyed'
         assert not (Path('/proc')/str(receipt['child_settlement']['pid'])).exists()
+
+
+def test_qualification_static_source_owners_exist_in_selected_stack() -> None:
+    import importlib.util
+    import runpy
+    from pathlib import Path
+
+    probe_path = Path(__file__).resolve().parents[2] / "scripts/probes/coordexp_infras/vllm_qualification.py"
+    probe = runpy.run_path(str(probe_path))
+    package_root = Path(importlib.util.find_spec("vllm").origin).parent
+    missing = [relative for relative in probe["STATIC_SOURCE_FILES"].values() if not (package_root / relative).is_file()]
+    assert missing == []
+    assert probe["STATIC_SOURCE_FILES"]["prompt_inputs"] == "inputs/llm.py"
