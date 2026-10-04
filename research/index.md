@@ -9,13 +9,15 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/unit.md)
-is frozen for CPU implementation under the user's autonomous continuation grant.
-Thirty-two predetermined x1 midpoints query the same clean native bottle prefix;
-one short historical anchor brings the maximum to33 requests/627 actions, one
-B16 load and zero training. Query selection uses no GT coordinates. Root will
-inspect all candidates and the saved baseline's14 unique bottle geometries,
-separating physical entity support from geometry and duplicate/unsupported costs.
-Native execution remains unreleased; the original worker owns the CPU package.
+has a [lead-accepted CPU package and one native release](experiments/2026-10-04-spatial-candidate-grid/lead-ruling-01.md)
+under the user's autonomous continuation grant. Thirty-two predetermined x1
+midpoints query the same clean native bottle prefix; one short historical anchor
+brings the maximum to33 requests/627 actions, one B16 load and zero training.
+Query selection uses no GT coordinates. The original worker owns the single
+native invocation and saved-data galleries. Root then inspects all32 candidates
+and the saved baseline's14 unique bottle geometries, separating physical entity
+support from geometry and duplicate/unsupported costs. Native behavior and the
+primary new-entity count remain unmeasured.
 
 The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/results.md)
 is lead-accepted and closed: six B16 requests/114 actions, exact historical A
