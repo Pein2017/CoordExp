@@ -31,14 +31,15 @@
   },
   "companion_boundary": "1000-coordinate FP32 shadow of existing final hidden states; no decoder pass or feedback; unsupported shadow HOLD does not automatically invalidate untouched primary contrast.",
   "source_requirement": "Current canonical integrated source; preserve unrelated changes and exact release qualification.",
-  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-preflight-02.json",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-assignment-01.json",
   "next_action": "Worker implements frozen unit and qualifies CPU entry/consumer; Root binds exact clean source/input/runtime release before one native invocation.",
-  "job_state": "Worker CPU-only preflight submitted; no native calls released",
+  "job_state": "Original worker reconciled and protocol-ready implementation assignment delivered; CPU qualification in progress, native not released",
   "not_authorized": [
     "Training or architecture change",
     "Native model call before exact lead release",
     "Retry, extra decoder query, precision-switched generation, successor probe",
     "Physical-recovery credit for supplied coordinates or teacher paths"
   ],
-  "boundary": "Selected B16 supplied histories: two labeled bottles in351017 and one normal person in13348; conditional box completion and teacher-path margins, not population prevalence, natural physical recovery, training efficacy or full-scene enumeration."
+  "boundary": "Selected B16 supplied histories: two labeled bottles in351017 and one normal person in13348; conditional box completion and teacher-path margins, not population prevalence, natural physical recovery, training efficacy or full-scene enumeration.",
+  "preflight_report": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/preflight-01/inspection.json"
 }
