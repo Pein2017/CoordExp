@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-cued-visual-use",
-  "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION",
+  "lifecycle": "ready",
+  "status": "NATIVE_RELEASED",
   "evidence": "none",
   "scientific_status": "Unmeasured: does designated-x1-conditioned bottle completion depend on target-region pixels under the same literal history?",
   "protocol": "research/experiments/2026-10-04-cued-visual-use/unit.md",
@@ -13,7 +13,7 @@
   "authority": "On 2026-10-04 at 19:47 UTC the user authorized Lead to autonomously recommend and advance worthwhile research and exploration while the user sleeps, without further permission. Lead selects this bounded successor; previous consumed releases and failed artifacts remain immutable.",
   "initial_source_anchor": "ddeaf5536b2f97e18f81376d13663bd460860bf6",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use",
-  "native_released": false,
+  "native_released": true,
   "native_started": false,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
@@ -34,11 +34,11 @@
     "image_conditions": 3,
     "clean_reference_anchors": 4
   },
-  "next_action": "Original Worker implements and CPU-qualifies the frozen package; Lead checks its final consumer and issues an exact native release autonomously under the current user grant.",
-  "job_state": "Original Worker assignment submitted once and accepted as inProgress; awaiting direct ENTRY/CPU checkpoint. Native remains unreleased.",
+  "next_action": "Original Worker executes the exact released packet once and returns terminal evidence; Lead accepts the saved consumer and scientific interpretation under the existing autonomous grant.",
+  "job_state": "CPU jobs and writers settled; exact native release approved, launch not yet observed.",
   "boundary": "Conditional visual use in two selected B16 histories. Supplied x1 and partial literal history cannot establish natural physical recovery, prevalence, instance representation, or a training remedy. Cache-state localization is deferred.",
   "not_authorized": [
-    "Native execution before an exact new Lead release",
+    "Any native invocation outside the exact new Lead release",
     "Extra model calls, warmups or retries under the initial one-invocation release",
     "Training, checkpoint or runtime changes, residual or cache intervention",
     "New masks, images, cue values, corrected histories, or remaining teacher coordinates",
@@ -47,5 +47,10 @@
   ],
   "protocol_commit": "99f87a726a201ecea383dab3aa4b3e4f41224c51",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/transport/worker-assignment-01.json",
-  "worker_turn": "01a1087f-9d2f-7e32-ae2d-3be2d0fa7a10"
+  "worker_turn": "01a1087f-9d2f-7e32-ae2d-3be2d0fa7a10",
+  "implementation_commit": "98afc295f1bb76debed8be23d1d006c8f7ead3fc",
+  "technical_acceptance": "lead-accepted-cpu",
+  "lead_ruling": "research/experiments/2026-10-04-cued-visual-use/lead-ruling-01.md",
+  "cpu_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/lead-consumer-check-01.json",
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cued-visual-use/native-release-01.json"
 }

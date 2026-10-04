@@ -13,8 +13,9 @@ is the active successor under the user's autonomous-research grant. It tests
 whether the bottle completion unlocked by a supplied x1 depends on target-region
 pixels: two fixed histories, uncued versus designated-x1-cued, crossed with the
 same clean/target-masked/background-masked images (12 requests, maximum1530
-actions). Bottle is primary and person is a visual-use control. CPU implementation
-precedes an exact Lead native release; no new native call has started. This
+actions). Bottle is primary and person is a visual-use control. The final CPU
+package is [lead-accepted for one native release](experiments/2026-10-04-cued-visual-use/lead-ruling-01.md);
+native evidence remains unmeasured. This
 addresses an unresolved premise closer to owner entry before partitioning the
 normal person's residual/cache effect. No training is planned.
 
