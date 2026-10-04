@@ -8,15 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [owner-entry/localization probe](experiments/2026-10-04-owner-entry-localization/unit.md)
-is the sole active unit. The user authorized the original Worker Session to
-implement and execute 10 B16 requests, at most 841 actions, one model load and
-zero training. It separates a missed bottle's entry selection from completion
-after a supplied x1, with another real bottle cue and a normal person control.
-A coordinate-only FP32 shadow uses at most 40 existing hidden states and never
-feeds decoding. The CPU package is lead-accepted; one exact native invocation
-is released to the original Worker. Native fidelity and scientific results
-remain pending.
+The [owner-entry/localization probe](experiments/2026-10-04-owner-entry-localization/results.md)
+is lead-accepted and closed after10 B16 requests/841 actions, two exact native
+controls and zero training. Supplying a missed bottle's x1 produces the same
+approximately localized box under native and corrected first-person histories;
+a distinct bottle cue produces a different localized box. Uncued entry still
+selects x1=0 under both histories. These are conditional completions after an
+informative cue, not natural physical recovery or proof of visual causal use.
+The coordinate-only FP32 shadow changes some local winners but leaves bottle
+entry unresolved. Exact teacher-coordinate deficits remain even for the normal
+localized person. All jobs are settled; no unit or successor is scheduled.
 
 The [box-continuity probe](experiments/2026-10-04-box-continuity/results.md)
 is lead-accepted and closed after13 B16 requests/3390actions, three exact natural

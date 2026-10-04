@@ -54,6 +54,20 @@ coverage or physical-recovery evidence. The unit is closed; a new intervention
 would need a separate matched contrast rather than treating this as a general
 history-insensitivity result.
 
+## Supplied entry versus conditional localization
+
+The accepted B16 probe (catalog:2026-10-04-owner-entry-localization) finds that
+x1=186 yields an approximately localized bottle box under both native and
+corrected first-person histories, whereas both uncued rows miss all bottle
+annotations. A different real bottle's x1 produces different free y1/width/height
+near that annotation, weakening a fixed-box translation account. The cue itself
+contains spatial information; neither visual causal use nor natural recovery is
+identified. Later exact teacher coordinates also retain ranking deficits, so
+entry is not established as the only obstacle. The bounded
+[results](../experiments/2026-10-04-owner-entry-localization/results.md) separate
+four cued rows, three uncued rows and three wholly supplied teacher paths. The
+unit is closed with no further execution scheduled.
+
 ## Reopening condition
 
 Classify the decision-relevant unresolved behavior from retained evidence before changing the learning problem; this does not require adjudicating every unmatched proposal. Separate conditional underfit, natural access, harmful continuation and incumbent loss. A failed fixed dose is not a general negative; a proposal for more dose or refresh is not evidence that it will work. [Research entry](../index.md) owns the current frontier; the proposed recurrence discriminator is not a frozen protocol or launch grant.

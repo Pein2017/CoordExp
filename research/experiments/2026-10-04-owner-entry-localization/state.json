@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-owner-entry-localization",
-  "lifecycle": "ready",
-  "status": "NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "not_evaluated",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_COMPLETED_DIAGNOSTIC",
+  "evidence": "accepted",
+  "scientific_status": "conditional_localization_after_supplied_x1_observed_selected_native_entry_unresolved_fp32_shadow_does_not_rescue_entry",
   "protocol": "research/experiments/2026-10-04-owner-entry-localization/unit.md",
   "state_source": "research/experiments/2026-10-04-owner-entry-localization/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -12,7 +12,7 @@
   "worker_effort": "xhigh",
   "authority": "User authorized continued implementation and execution of the proposed bounded owner-entry/localization probe by the original Worker Session on2026-10-04; zero training.",
   "native_released": true,
-  "lead_accepted": false,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "initial_source_anchor": "092fc7af631ea09e74bb9a9cf565ff652f1b8b58",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization",
@@ -33,8 +33,8 @@
   "source_requirement": "Current canonical integrated source; preserve unrelated changes and exact release qualification.",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-assignment-01.json",
   "layout_dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-layout-01.json",
-  "next_action": "Original Worker executes exactly native-release-01.json once, preserves terminal evidence and returns for Lead scientific acceptance.",
-  "job_state": "CPU package lead-accepted; exact release prepared for original worker, invocation not yet started",
+  "next_action": "None scheduled. Frozen unit complete; no automatic training or successor query.",
+  "job_state": "complete_exit0_native_and_supervisor_settled_source_holder_released",
   "not_authorized": [
     "Training or architecture change",
     "Native model call before exact lead release",
@@ -48,5 +48,40 @@
     "source_commit": "3f5725abc61444cfac61ccbbc2f95ac1fa92cb77",
     "receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/lead-cpu-acceptance-01.json"
   },
-  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-release-01.json"
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-release-01.json",
+  "result": "research/experiments/2026-10-04-owner-entry-localization/results.md",
+  "companion_status": "complete_coordinate_only_no_feedback",
+  "native_output": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-01",
+  "native_acceptance": {
+    "status": "lead-accepted",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/lead-consumer-check-01.json",
+    "execution_commit": "530d2c3fec7232aa25b2b5fa1db88e2e655d6ade",
+    "readback_sha256": "d65a4e8f6dd855085fcd06b532067d783e859e257755ed9c7f8a8eeb04f5bf01",
+    "requests": 10,
+    "generated_actions": 841,
+    "forced_actions": 807,
+    "free_actions": 34,
+    "checkpoint_loads": 1,
+    "natural_fidelity_controls": "2of2 full-budget token and incoming median winner exact;255 actions",
+    "denominators": {
+      "observed": {
+        "teacher_path": 3,
+        "uncued": 3,
+        "x1_cued": 4
+      },
+      "prescribed": {
+        "teacher_path": 3,
+        "uncued": 3,
+        "x1_cued": 4
+      }
+    },
+    "shadow_states": 40,
+    "optimizer_updates": 0,
+    "external_seconds": 100.45983892679214,
+    "producer_seconds": 98.77801162004471,
+    "resource_excess": [],
+    "blocking_counterexamples": [],
+    "settlement": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-01-settlement.json",
+    "command_exit": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-01-owner-invocation.json"
+  }
 }

@@ -116,6 +116,16 @@ unowned region, not established physical progress. Soft-target versus exact-CE
 training remains untested. See the bounded
 [results](../experiments/2026-10-04-box-continuity/results.md); the unit is closed.
 
+The accepted same-hidden-state companion (catalog:2026-10-04-owner-entry-localization)
+changes raw/median coordinate winners in14/40 and10/40 captured slots, including
+repeated prefixes, using detached separate FP32 base/delta products. All raw
+changes originate at native ties. Bottle x1 remains0 under both tested histories,
+with the target still far below the winner. This establishes a local numerical
+readout effect but does not explain away that entry failure. The companion has
+no decoding feedback, full-vocabulary FP32 normalizer or new trajectory; see
+[results](../experiments/2026-10-04-owner-entry-localization/results.md). The
+conditional box evidence belongs to [greedy compilation](greedy-compilation.md).
+
 Reopen only for a matched improvement in fitting cost, old-owner preservation or transfer, or a discriminating readout mechanism. Do not repeat small-panel perfect-fit demonstrations as evidence of generalization. The corrected coordinate-order branch is closed; a legal-box objective is not an owner-enumeration objective.
 
 ## Provenance
