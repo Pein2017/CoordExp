@@ -8,6 +8,14 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [single-case spatial-grid transfer](experiments/2026-10-04-spatial-grid-transfer/unit.md)
+is frozen for CPU implementation; native execution remains unreleased. Image25394
+was selected by minimum ID among17 validation images with at least10 bottle
+annotations, excluding the18 optimization images. The finite contrast uses one
+fresh ordinary baseline, then32 unchanged queries only if its first native bottle
+header reaches the prescribed early boundary. Root will compare every candidate
+against all baseline categories; evaluation/pretraining exposure remains unknown.
+
 The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/results.md)
 is lead-accepted and closed. Exhaustive assistant visual inspection of32
 predetermined queries and14 baseline geometries confirms nine distinct additional
