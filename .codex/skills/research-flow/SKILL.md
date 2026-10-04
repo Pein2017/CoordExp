@@ -19,6 +19,10 @@ The convention is the single layout/maintenance owner; this Skill routes to it.
 For source/artifact placement, read that checkout's `docs/OUTPUT_STORAGE_POLICY.md`.
 Keep maintained code out of `outputs/`; source captures and historical recovery
 follow that owner rather than turning saved run directories into module libraries.
+Before creating or assigning probe implementation, follow that checkout's
+`probes/README.md#implementation-placement` and record the chosen package/module
+and test paths in the existing unit or assignment. That section owns probe code
+layout; the flat research knowledge layout below does not prescribe code layout.
 
 All primary readers are agents. Fast catch-up is `research/index.md` plus the
 current unit state/result; deep catch-up adds `story.md`, relevant question pages
