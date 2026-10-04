@@ -8,13 +8,15 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/unit.md)
-is active under the user's bounded diagnostic grant: CPU B0/B16 coordinate-row
-geometry plus16 cached score requests on three selected images, at most3226
-actions and zero training. Exact natural-prefix fidelity gates the dependent
-history interventions. It asks whether nearby coordinate distinctions survive
-actual computation; no mechanistic conclusion or further training is authorized
-by the diagnostic alone.
+The [coordinate readout audit](experiments/2026-10-04-coordinate-readout-audit/results.md)
+is lead-accepted and closed:16 cached score requests/3226 actions, six exact
+natural-fidelity controls and zero training. All1000 coordinate rows remain
+distinct at B0/B16; adjacent similarity barely changes, and a one-bin input
+change can switch a neighboring output winner. B0 given the same B16 histories
+also produces the selected zero-width/reversed-coordinate decisions. Raw-score
+ties and normalization affect local winners, but do not identify a unique cause.
+The result supports conditional score competition, not global row collapse,
+instance-binding attribution or free-loop escape. No further unit is scheduled.
 
 The [first-row history cross](experiments/2026-10-03-first-row-history-cross/lead-ruling-02.md)
 is lead-accepted and closed. Four requests/292actions with exact native-history

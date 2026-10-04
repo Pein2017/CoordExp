@@ -89,6 +89,18 @@ Accepted overnight synthesis (catalog:2026-09-23-sustained-coordinate-legality) 
 
 ## Current reopening boundary
 
+The accepted B0/B16 diagnostic (catalog:2026-10-04-coordinate-readout-audit)
+finds1000 distinct coordinate rows even after runtime BF16 input addition;
+adjacent similarity changes little across training. A one-bin change in a normal
+row switches the actual neighboring x2 winner, while a selected zero-width x2
+stays fixed despite nonzero score changes. B0 under the same supplied B16
+histories also makes the selected invalid decisions. Exact row collapse is
+rejected; global functional competence and a unique instance/slot cause are not
+established. Actual raw-score ties and median-dependent winner changes leave
+finite-precision and small-margin effects unresolved. The bounded
+[results](../experiments/2026-10-04-coordinate-readout-audit/results.md) separate
+these decisions from free continuation, physical recovery and training benefit.
+
 Reopen only for a matched improvement in fitting cost, old-owner preservation or transfer, or a discriminating readout mechanism. Do not repeat small-panel perfect-fit demonstrations as evidence of generalization. The corrected coordinate-order branch is closed; a legal-box objective is not an owner-enumeration objective.
 
 ## Provenance

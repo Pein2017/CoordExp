@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-coordinate-readout-audit",
-  "lifecycle": "planned",
-  "status": "CPU_LEAD_ACCEPTED_AWAITING_CLEAN_SOURCE",
-  "evidence": "none",
-  "scientific_status": "diagnostic_pending",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_COMPLETED_DIAGNOSTIC",
+  "evidence": "accepted",
+  "scientific_status": "global_row_collapse_rejected_contextual_readout_sensitivity_demonstrated_unique_cause_unresolved",
   "protocol": "research/experiments/2026-10-04-coordinate-readout-audit/unit.md",
   "state_source": "research/experiments/2026-10-04-coordinate-readout-audit/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -11,8 +11,8 @@
   "worker_agent": "/root/coord_readout_impl",
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "xhigh",
-  "native_released": false,
-  "lead_accepted": false,
+  "native_released": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit",
   "budget": {
@@ -22,7 +22,7 @@
     "gpus": 1,
     "optimizer_updates": 0
   },
-  "next_action": "Bind clean source and run real CPU preparation, then exact native release; preserve concurrent unowned documentation/test-layout changes",
+  "next_action": "None scheduled. Unit closed after static audit and exact16cell diagnostic; no automatic training or follow-on query.",
   "boundary": "Three selected images; saved B0/B16; static rows and exact cached score diagnostics with natural fidelity controls",
   "not_authorized": [
     "Native model call before exact lead release",
@@ -30,5 +30,32 @@
     "Historical evidence mutation, physical-FN claim or publication"
   ],
   "cpu_implementation_lead_accepted": true,
-  "cpu_qualification": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/cpu-qualification-01/qualification.json"
+  "cpu_qualification": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/cpu-qualification-01/qualification.json",
+  "job_state": "complete_exit0_process_settled",
+  "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/native-release-01.json",
+  "native_output": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/native-01",
+  "result": "research/experiments/2026-10-04-coordinate-readout-audit/results.md",
+  "native_acceptance": {
+    "status": "lead-accepted",
+    "consumer_evidence": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/lead-consumer-check-01.json",
+    "command_exit": "outputs/research/physical-fn-recovery/2026-10-04/coordinate-readout-audit/native-01-exit.json",
+    "execution_commit": "8506ad07ef787665eacf088c6e4055eed86d38c3",
+    "readback_sha256": "f0d09e403fdcb9590f2a00ee5910f6ea15b4cb4061f4dcd79e6717d3ddea2db3",
+    "requests": 16,
+    "generated_actions": 3226,
+    "checkpoint_loads": 2,
+    "natural_fidelity_controls": "6of6 every-action token and policy-argmax exact",
+    "pre_edit_score_identity_controls": [
+      "B16/zero-width--1/7511",
+      "B16/zero-width-+1/7511",
+      "B16/normal--1/13348",
+      "B16/normal-+1/13348",
+      "B16/copy--1/351017",
+      "B16/copy-+1/351017",
+      "B16/trusted-row/13348"
+    ],
+    "optimizer_updates": 0,
+    "seconds": 341.11851508915424,
+    "blocking_counterexamples": []
+  }
 }
