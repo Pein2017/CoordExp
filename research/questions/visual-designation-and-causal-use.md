@@ -34,6 +34,29 @@ Reopening is justified by a new discriminating contrast: correct versus source-s
 
 The accepted visual-instance-binding contrast (catalog:2026-09-21-visual-instance-binding) finds differentiated A/N region dependence at three admitted recurrence states and one matched control. This downgrades the tested visual-aliasing hypothesis on finite row support. Joint-corner and full-row separation can depend on supplied candidate coordinates, so the evidence does not prove distinct native x1 owner selection, a general instance representation, or a pretraining cause. The accompanying spatial-progress hypothesis (catalog:2026-09-21-spatial-progress-gate) remains untested after technical qualification failure. Neither a new internal binding architecture nor further model work is authorized.
 
+## Current-token transport with clean receiver context
+
+The B16 visual-state contrast (catalog:2026-10-04-visual-state-localization)
+adds a bounded transport observation on two fixed native pre-x1 histories.
+Target-region masking moves an already-localized person box away from its
+annotation, while a matched background perturbation keeps it nearby. Its median
+target-minus-zero score changes by−18.2966 under target masking, but only−0.0451
+when the postblock2 current-token residual is transplanted into a clean receiver.
+A separately adjudicated postblock13 median-score contrast is−9.3218. This shows
+substantial transport at the middle interface in that receiver context, not
+where visual information originated or the location of a unique fault. Clean
+prefix KV can reintroduce visual context; distributed state and nonlinear mixing
+remain alternatives. Endpoint0 is a distant reference, not the person's actual
+new winner. The bottle's native entry stays0 under the admitted interventions.
+
+The original native run remains technical HOLD with18 admitted cells out of20:
+two raw GPU/CPU compact normalizers differ by one FP32 ULP. All clean/no-op/final
+controls pass. The additional middle evidence uses exact, unchanged median
+vectors and a dependency-separated CPU calculation; it neither relaxes a
+tolerance nor rehabilitates the failed cells, their raw probabilities or boxes.
+Final-boundary transfer remains a construction control. The unit is closed with
+partial evidence and no new inference, architecture or training grant.
+
 ## Training-only pre-row supervision
 
 The finite fixed-bank contrast (catalog:2026-10-03-pre-row-detection-aux) adds a differentiable class/joint-box head at the consumed object opener and discards that head at deployment. On the same18 training images and570 evaluation annotations, the real auxiliary/autograd path executed and losses fell, but the16-update endpoint did not improve ordinary coverage over the matched baseline. The saved owner sets contain207 shared,26 baseline-only and18 auxiliary-only assignments. Conditional realization improved in both arms on the same two of eight supplied-prefix targets, giving no auxiliary-specific advantage.

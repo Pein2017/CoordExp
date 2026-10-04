@@ -9,17 +9,17 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
-is the sole active unit, CPU-qualified and [released once](experiments/2026-10-04-visual-state-localization/lead-ruling-01.md)
-to the original Worker. Two fixed B16 pre-x1 states contrast failed bottle entry with an
-already-localized person. Target-region and matched background perturbations
-provide donors for current-token residual transplants at three fixed boundaries;
-the clean receiver retains its own prefix KV cache. The package measures signed
-changes in coordinate competition and actual short continuations, not a unique
-fault layer or natural recovery. The cap is20 requests/2550 actions, one B16 load,
-one GPU and zero training. Root accepted the CPU consumer and final prepared-mask
-galleries; native numerical fidelity and scientific outcomes remain pending.
-[State](experiments/2026-10-04-visual-state-localization/state.json) owns execution
-status and the stop boundary.
+is [closed with accepted partial evidence](experiments/2026-10-04-visual-state-localization/results.md).
+One B16 invocation acquired20 requests/2550 actions;18 cells passed, while two
+raw GPU/CPU normalizer discrepancies left the original run in technical HOLD.
+All clean/no-op/final controls passed. A separate exact median-score adjudication
+uses unchanged saved vectors without repairing the failed cells or rerunning the
+model. In the person case, target-region masking strongly changes the selected
+box and score competition; its early current-token transplant into a clean
+receiver carries little endpoint effect, while its middle transplant carries
+a substantial effect. The clean receiver KV remains available, so this does
+not identify a unique origin or faulty layer. Bottle entry stays unresolved.
+All jobs are settled; no model retry, repair or successor is scheduled.
 
 The [owner-entry/localization probe](experiments/2026-10-04-owner-entry-localization/results.md)
 is lead-accepted and closed after10 B16 requests/841 actions, two exact native
