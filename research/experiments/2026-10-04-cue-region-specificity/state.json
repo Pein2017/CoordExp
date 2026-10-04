@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-cue-region-specificity",
-  "lifecycle": "ready",
-  "status": "NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "Unmeasured prospective local transfer of cue-dependent regional selectivity to the current native first-bottle state.",
+  "lifecycle": "closed",
+  "status": "LEAD_ACCEPTED_CLOSED",
+  "evidence": "accepted",
+  "scientific_status": "Supplied x1 changes which regional perturbation most affects the next y1 decision in one native B16 history. Conditional regional selectivity is qualified; endogenous discovery and physical recovery remain unmeasured.",
   "protocol": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
   "state_source": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -14,8 +14,8 @@
   "initial_source_anchor": "86bda794f6a417086936ee6437fa3f02da008777",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity",
   "native_released": true,
-  "native_started": false,
-  "lead_accepted": false,
+  "native_started": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "budget": {
     "requests": 6,
@@ -43,8 +43,8 @@
     ],
     "historical_clean_anchors": 1
   },
-  "next_action": "Original worker executes exactly one released invocation, preserves automatic consumer and external terminal evidence, settles owned jobs and reports directly. Lead accepts final consumer and bounded scientific interpretation.",
-  "job_state": "CPU package settled and accepted. One native release approved; launch not yet observed. Source held through invocation settlement.",
+  "next_action": "No further invocation under this consumed release. Lead selects a separately frozen candidate-generation contrast under the continuing autonomous-research grant.",
+  "job_state": "One native invocation complete; owned processes and GPU holders settled, source holder released, worker package stopped.",
   "boundary": "Within-mask first-free y1 effects across two supplied x1 cues in one selected native B16 history. Unequal region doses are not compared as equal interventions. No endogenous owner discovery, physical-FN recovery, population benefit or route localization is established.",
   "not_authorized": [
     "Native execution before the exact new Lead release",
@@ -57,8 +57,24 @@
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/transport/worker-assignment-01.json",
   "worker_turn": "01a108c8-0619-7992-b322-da6d091e79f0",
   "implementation_commit": "fba87ef7658f4b4ffbdbc9aa9727aa916da50d10",
-  "technical_acceptance": "lead-accepted-cpu",
-  "lead_ruling": "research/experiments/2026-10-04-cue-region-specificity/lead-ruling-01.md",
+  "technical_acceptance": "lead-accepted-cpu-and-native",
+  "lead_ruling": "research/experiments/2026-10-04-cue-region-specificity/results.md",
   "cpu_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/lead-consumer-check-01.json",
-  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/native-release-01.json"
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/native-release-01.json",
+  "result": "research/experiments/2026-10-04-cue-region-specificity/results.md",
+  "native_acceptance": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/lead-native-acceptance-01.json",
+  "execution_source_revision": "0c09bfc3775477e6b90ae98e398471a220921b7f",
+  "actual_external_exit": 0,
+  "actual_producer_exit": 0,
+  "native_invocations": 1,
+  "source_holder_released": true,
+  "actual_counts": {
+    "acquired_requests": 6,
+    "completed_requests": 6,
+    "actions": 114,
+    "forced_actions": 90,
+    "free_actions": 24,
+    "checkpoint_loads": 1,
+    "optimizer_updates": 0
+  }
 }

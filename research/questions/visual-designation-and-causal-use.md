@@ -73,9 +73,28 @@ triplet. Target-minus-background q changes from−0.2473 to−4.6358 after suppl
 supports coordinate-conditioned regional sensitivity and weakens an entirely
 image-independent cue-to-box lookup. A spatial-query interpretation is a
 hypothesis; prior visual state, spatial priors, nonlinear mixing and general
-visual susceptibility remain alternatives. Cue/region specificity is the next
-unresolved discriminator. No natural owner discovery, physical identity,
+visual susceptibility remained alternatives at that point. No natural owner discovery, physical identity,
 attention path or training remedy is established.
+
+The accepted cue/region-specificity contrast
+(catalog:2026-10-04-cue-region-specificity) supplies that next local discriminator.
+At the same native bottle prefix, cues186/495 show opposite regional preferences:
+mask A changes first-free-y1 TV by0.5847/0.0485, while mask B changes it by
+0.0325/0.4753. Each within-mask comparison holds the image perturbation fixed;
+only the supplied x1 differs. The new native-history B-clean box is
+`[495,375,552,648]`; B masking moves its completion away from the B reference.
+All six requests and the historical A anchor pass.
+
+Changing the coordinate therefore changes which regional visual information
+affects the next coordinate. Fresh attention, access to prior image state and
+nonlinear spatial conditioning remain viable mechanisms. The externally supplied
+cue may create the designation rather than reveal a selected endogenous owner.
+Unequal, mixed-context masks do not establish equal-dose object importance.
+The practical unresolved step is obtaining useful proposals without GT-derived
+cue coordinates, while separately accounting for entity support, geometry,
+duplicates and unsupported output. Conditional selectivity itself is now
+qualified at this selected native state; another mask contrast is not required
+to restate that result.
 
 ## Training-only pre-row supervision
 

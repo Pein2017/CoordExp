@@ -8,14 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/unit.md)
-is [CPU accepted and released once](experiments/2026-10-04-cue-region-specificity/lead-ruling-01.md)
-under the user's autonomous continuation grant. At one native B16 first-bottle prefix, two supplied x1 cues
-cross clean and two fixed regional masks: six requests, at most114 actions,
-one load and no training. The primary endpoint compares each mask's first-free
-y1 effect across cues. Native effects remain unmeasured. The original worker
-owns the exact one-shot invocation and terminal/process settlement; Lead owns
-final consumer and scientific acceptance.
+The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/results.md)
+is lead-accepted and closed: six B16 requests/114 actions, exact historical A
+anchor and zero training. Changing supplied x1 from186 to495 changes which
+regional mask most affects the same first-free y1 decision. Within-mask cue
+preferences are D_A0.5362 and D_B0.4427; the new B-clean native-history completion
+overlaps its geometric reference. This establishes conditional regional
+selectivity at one state, not endogenous discovery or natural physical recovery.
+All jobs are settled. Lead is selecting a separate finite test of candidate
+generation without GT-derived cue coordinates under the user's autonomous grant;
+the existing native release is consumed.
 
 The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/results.md)
 is lead-accepted and closed:12 B16 requests/1530 actions, four exact clean
