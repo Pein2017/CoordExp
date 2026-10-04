@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -371,6 +372,20 @@ def test_expected_rendered_snapshot_matches_real_renderer() -> None:
     rendered = [render_example(example, resolved.config.template) for example in examples]
 
     actual = rendered_examples_snapshot(rendered, image_root=FIXTURE)
+    # Reconstruct the named renderer identity independently of its helper.
+    template = resolved.config.template
+    for example in rendered:
+        fingerprint_payload = {
+            "assistant_format": template.assistant_format,
+            "object_field_order": template.object_field_order,
+            "object_ordering": template.object_ordering,
+            "prompt_text": example.prompt_text,
+            "renderer": "coordexp-infras-template-v1",
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        assert example.template_fingerprint == fingerprint
     expected_path = FIXTURE / "expected_rendered.json"
     assert expected_path.exists()
     assert actual == json.loads(expected_path.read_text(encoding="utf-8"))

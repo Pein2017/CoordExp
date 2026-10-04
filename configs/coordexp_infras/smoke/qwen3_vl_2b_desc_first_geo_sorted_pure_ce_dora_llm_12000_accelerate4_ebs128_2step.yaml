@@ -19,6 +19,7 @@ model:
       wrapper_tokens: default_object_box_wrappers
 
 adapter:
+  seed_mode: initialize_new
   type: dora
   target_towers:
     - language

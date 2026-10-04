@@ -160,9 +160,17 @@ def capture_fa2_varlen_branch() -> Any:
         **kwargs: Any,
     ) -> tuple[Any, Any]:
         observed["lazy_import_implementations"].append(implementation)
-        (flash_fn, flash_varlen_fn, pad_fn, unpad_fn), process_flash_kwargs_fn = (
-            original_lazy_import(implementation, *args, **kwargs)
+        kernels, process_flash_kwargs_fn = original_lazy_import(
+            implementation, *args, **kwargs
         )
+        kernel_slots = len(kernels)
+        if kernel_slots != 5:
+            raise QwenForwardContractError(
+                "FA2 capture requires a five-slot kernel tuple",
+                code="qwen.fa2_kernel_tuple_unsupported",
+                context={"kernel_slots": kernel_slots},
+            )
+        flash_fn, flash_varlen_fn, flash_with_kvcache_fn, pad_fn, unpad_fn = kernels
 
         def wrapped_flash_fn(*flash_args: Any, **flash_kwargs: Any) -> Any:
             observed["flash_fn_called"] = True
@@ -178,6 +186,12 @@ def capture_fa2_varlen_branch() -> Any:
             )
             return flash_varlen_fn(*flash_args, **flash_kwargs)
 
+        def reject_kvcache_execution(*cache_args: Any, **cache_kwargs: Any) -> Any:
+            raise QwenForwardContractError(
+                "KV-cache attention cannot establish a packed-varlen proof",
+                code="qwen.fa2_kvcache_unsupported",
+            )
+
         def wrapped_pad_fn(*pad_args: Any, **pad_kwargs: Any) -> Any:
             observed["pad_fn_called"] = True
             return pad_fn(*pad_args, **pad_kwargs)
@@ -190,6 +204,7 @@ def capture_fa2_varlen_branch() -> Any:
             (
                 wrapped_flash_fn,
                 wrapped_flash_varlen_fn,
+                None if flash_with_kvcache_fn is None else reject_kvcache_execution,
                 wrapped_pad_fn,
                 wrapped_unpad_fn,
             ),

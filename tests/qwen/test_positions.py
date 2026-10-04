@@ -287,9 +287,16 @@ def _call_upstream_get_rope_index(
     components: object,
 ) -> torch.Tensor:
     fake_model = SimpleNamespace(config=components.config)
+    fake_model.get_vision_position_ids = Qwen3VLModel.get_vision_position_ids.__get__(
+        fake_model
+    )
+    ids = torch.tensor([list(input_ids)], dtype=torch.long)
+    mm_token_type_ids = torch.zeros_like(ids)
+    mm_token_type_ids[ids == components.config.image_token_id] = 1
     position_ids, _ = Qwen3VLModel.get_rope_index(
         fake_model,
-        input_ids=torch.tensor([list(input_ids)], dtype=torch.long),
+        input_ids=ids,
+        mm_token_type_ids=mm_token_type_ids,
         image_grid_thw=torch.tensor(image_grids, dtype=torch.long),
         video_grid_thw=None,
         attention_mask=None,

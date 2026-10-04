@@ -96,3 +96,23 @@ failure/timeout boundaries remain in force.
 Instruction raw evidence is under
 `.local/repository-upgrade/independent-repair-01a1057d/`; FA2 evidence belongs to
 the same task-local directory under its physical infrastructure producer checkout.
+
+## Current-stack companion migration, 2026-10-04
+
+The user's explicit retirement of backward compatibility supersedes the earlier
+dual-FA2 recommendation. Main's local FA2 capture requires five slots, Qwen
+identity/RoPE fixtures use the selected current API, dtype identity reads the
+current attribute, and training adapter mode is explicit. Twenty-four main YAML
+files retain the same effective adapter setup; old runtime/config receipts are
+not rewritten. The renderer snapshot correction is independently explained by
+the existing renderer-name change and preserves all non-fingerprint fields.
+
+One larger offline CPU invocation at unchanged HEAD52d7dd204 exited0:
+**1922 passed,1 skipped,3 explicit live-environment exclusions**. Source/test/config
+diffs stayed unchanged during the run. The exclusions and previous external
+data/application qualification boundary remain visible; no whole-live release
+claim follows. Local evidence and cross-checkout limits are retained in
+[the migration validation](/data/CoordExp/.worktrees/coordexp-infras/openspec/changes/migrate-current-runtime-stack/validation.md).
+Migration instruction maintenance adds a current-stack owner pointer and replaces
+the training spec's implicit Swift seed rule; generic integrity and scientific
+semantics remain. No staging, commit, GPU execution or scientific launch occurred.

@@ -97,7 +97,7 @@ def test_dora_setup_plan_records_initialization_receipt_after_gate_passes() -> N
 
 
 def test_dora_setup_plan_records_existing_adapter_identity_after_gate_passes() -> None:
-    adapter = _adapter_config(path="/tmp/adapter")
+    adapter = _adapter_config(path="/tmp/adapter", seed_mode="load_existing")
     evidence = AdapterSourceGateEvidence(
         dora_source_study_passed=True,
         dora_probe_passed=True,
@@ -298,9 +298,11 @@ def _adapter_config(
     path: str | None,
     *,
     target_towers: tuple[str, ...] = ("language",),
+    seed_mode: str = "initialize_new",
 ) -> AdapterConfig:
     return AdapterConfig(
         type="dora",
+        seed_mode=seed_mode,
         path=path,
         target_towers=target_towers,
         target_modules="all_linear",

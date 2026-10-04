@@ -154,7 +154,7 @@ def test_three_level_inheritance_required_and_path_origins(tmp_path: Path) -> No
         {
             "extends": "../../base.yaml",
             "model": {"logits_memory_budget_bytes": 4_000_000_000},
-            "adapter": {"path": "adapters/demo"},
+            "adapter": {"seed_mode": "load_existing", "path": "adapters/demo"},
             "data": {
                 "train": {"path": "data/train.jsonl"},
                 "eval": {"path": "data/eval.jsonl"},
@@ -911,6 +911,7 @@ def _minimal_config() -> dict[str, Any]:
         },
         "adapter": {
             "type": "dora",
+            "seed_mode": "initialize_new",
             "target_towers": ["language"],
             "target_modules": "all_linear",
             "rank": 8,
