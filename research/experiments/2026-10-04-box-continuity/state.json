@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-box-continuity",
-  "lifecycle": "planned",
-  "status": "WAITING_CURRENT_SOURCE_OWNER_SETTLEMENT",
+  "lifecycle": "ready",
+  "status": "NATIVE_RELEASED",
   "evidence": "none",
   "scientific_status": "not_evaluated",
   "protocol": "research/experiments/2026-10-04-box-continuity/unit.md",
@@ -11,7 +11,7 @@
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "xhigh",
   "authority": "User authorized advisor consultation, lead-selected next probe, and existing Worker Session implementation and execution on 2026-10-04; zero training.",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/box-continuity",
@@ -23,9 +23,9 @@
     "optimizer_updates": 0
   },
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/transport/worker-assignment-01.json",
-  "next_action": "After source-owner thread ends, read monitor decision once; reconcile latest integrated source and report, prepare fresh immutable packet, then release the already authorized frozen native matrix only if source/runtime/fidelity prerequisites hold.",
+  "next_action": "Worker runs the exact release once, saves consumer and terminal/resource/source evidence, then returns for lead acceptance. No retry or successor.",
   "boundary": "Two within-box B16 sites and one preceding-row bottle site; finite selected contexts, no prevalence or training-objective claim.",
-  "job_state": "No owned compute or native job; durable source-owner wake armed",
+  "job_state": "Single native invocation released; worker launch pending",
   "not_authorized": [
     "Model call before exact lead release",
     "Training, warmup, retry, additional query, checkpoint selection or dose extension",
@@ -38,5 +38,9 @@
   "cpu_implementation_lead_accepted": true,
   "cpu_consumer_acceptance": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/lead-cpu-consumer-check-01.json",
   "current_source_integration": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/integration-01/integration-report.json",
-  "wake_monitor": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/source-owner-wake-01.json"
+  "wake_monitor": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/source-owner-wake-01.json",
+  "final_cpu_preparation": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/prepared-04/admission-receipt.json",
+  "integrated_runtime_commit": "2e444da87783c7ce3bf81f405ce275ca3adc3104",
+  "native_release_packet": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-release-01.json",
+  "native_output": "outputs/research/physical-fn-recovery/2026-10-04/box-continuity/native-01"
 }
