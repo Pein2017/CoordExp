@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-spatial-candidate-grid",
   "lifecycle": "planned",
-  "status": "CPU_PACKAGE_FROZEN",
+  "status": "CPU_IMPLEMENTATION_DISPATCHED",
   "evidence": "none",
   "scientific_status": "Unmeasured fixed spatial-query candidate recipe. Root visual entity and geometry accounting is required after technical execution.",
   "protocol": "research/experiments/2026-10-04-spatial-candidate-grid/unit.md",
@@ -34,14 +34,16 @@
     "selected_states": 1,
     "grid_candidates": 32,
     "grid_formula": "((2*j+1)*1000)//64 for j in range(32)",
-    "image_conditions": ["original clean"],
+    "image_conditions": [
+      "original clean"
+    ],
     "historical_short_anchors": 1,
     "saved_baseline_complete_bottle_occurrences": 307,
     "saved_baseline_unique_bottle_geometries": 14,
     "saved_baseline_unavailable_censored_tail": 1
   },
   "next_action": "Original worker implements and qualifies source, actual CPU fixture lifecycle and complete saved-data galleries; returns final frozen candidate and unreleased native proposal. Root later owns all32 candidate and14 baseline-geometry visual judgments.",
-  "job_state": "Frozen CPU assignment ready; predecessor settled. No new native invocation.",
+  "job_state": "Original worker CPU assignment accepted by turn/start; awaiting direct ENTRY. Native unreleased. Root visual ledger remains required after technical package.",
   "boundary": "GT-coordinate-free query selection on one full-label training image with a supplied native bottle prefix. Candidate entity support, geometry, duplicates, unsupported and ambiguous cases remain separate; no natural physical-FN recovery, generalization or complete physical recall claim.",
   "not_authorized": [
     "Native execution before exact new Lead release",
@@ -50,5 +52,8 @@
     "GT-derived cue selection, nearest-GT designated targets, query filtering, grid refinement, snapping or sequential feedback",
     "Rewriting historical artifacts, qualification receipts or successful native exits",
     "Worker physical-identity acceptance, scientific closure or successor selection"
-  ]
+  ],
+  "protocol_commit": "a916dfc9d393063745cf7adfccac09d4919cb0c6",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/transport/worker-assignment-01.json",
+  "worker_turn": "01a10902-65ff-7720-8cf3-21c3bcc3dd59"
 }
