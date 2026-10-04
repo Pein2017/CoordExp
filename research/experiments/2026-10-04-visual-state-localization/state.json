@@ -1,0 +1,53 @@
+{
+  "unit_id": "2026-10-04-visual-state-localization",
+  "lifecycle": "planned",
+  "status": "CPU_IMPLEMENTATION",
+  "evidence": "none",
+  "scientific_status": "not_evaluated",
+  "protocol": "research/experiments/2026-10-04-visual-state-localization/unit.md",
+  "state_source": "research/experiments/2026-10-04-visual-state-localization/unit.md",
+  "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "worker_thread": "01a101ac-9ec8-7862-bdb6-38b9cd154673",
+  "worker_model": "gpt-6.1-sol",
+  "worker_effort": "xhigh",
+  "authority": "User authorized preparation and dispatch of the next decoder-state localization package to the original Worker on 2026-10-04, then explicitly delegated sample and object-role selection to Lead. The existing CPU qualification and exact Lead native-release workflow continues.",
+  "native_released": false,
+  "lead_accepted": false,
+  "user_scientific_acceptance": false,
+  "initial_source_anchor": "c60d5d905b7463f1ee069875cd3a336d957c3030",
+  "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization",
+  "budget": {
+    "requests": 20,
+    "max_actions": 2550,
+    "checkpoint_loads": 1,
+    "gpus": 1,
+    "optimizer_updates": 0,
+    "producer_wall_seconds": 900,
+    "rss_bytes": 34359738368,
+    "cuda_allocated_bytes": 12884901888,
+    "retained_bytes": 67108864
+  },
+  "population": {
+    "selected_decoder_states": 2,
+    "image_conditions_per_state": 3,
+    "residual_boundaries": 3,
+    "damaged_donor_transplants": 12,
+    "clean_donor_noop_controls": 2
+  },
+  "selected_cases": [
+    {"image_id": 351017, "annotation_id": -4947389372712316, "role": "failed first-bottle entry", "action": 14},
+    {"image_id": 13348, "annotation_id": 191150, "role": "already-localized person control", "action": 231}
+  ],
+  "source_requirement": "Use current canonical source and maintained helpers; preserve unrelated work and closed receipts. Bind exact clean source/input/runtime before native release.",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/visual-state-localization/transport/worker-assignment-01.json",
+  "next_action": "Original Worker implements and qualifies the real CPU entry/consumer and prepares frozen masks; Root checks the CPU candidate and gallery before exact native release.",
+  "job_state": "Original worker reconciled idle; Lead accepted the frozen protocol and prepared the bounded CPU implementation assignment; native not released",
+  "boundary": "Two selected B16 pre-x1 states. Same-position current-token residual transplantation with receiver KV retained measures transport of a specified visual perturbation effect; it does not identify a unique fault layer, full visual mediation, natural physical recovery or population prevalence.",
+  "not_authorized": [
+    "Research model/tensor load or GPU call before exact Lead release",
+    "Training, architecture or runtime change",
+    "Outcome-based mask, fill, sample or layer tuning; retries, warmups, extra queries or successor units",
+    "Post-x1 privileged-state donation as evidence about pre-x1 selection",
+    "Physical-recovery or unique mechanism claims from supplied prefixes and residual transport"
+  ]
+}

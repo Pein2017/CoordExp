@@ -8,6 +8,19 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
+The [visual-state transport probe](experiments/2026-10-04-visual-state-localization/unit.md)
+is the sole new unit, authorized for preparation and dispatch to the original
+Worker. Two fixed B16 pre-x1 states contrast failed bottle entry with an
+already-localized person. Target-region and matched background perturbations
+provide donors for current-token residual transplants at three fixed boundaries;
+the clean receiver retains its own prefix KV cache. The package measures signed
+changes in coordinate competition and actual short continuations, not a unique
+fault layer or natural recovery. The cap is20 requests/2550 actions, one B16 load,
+one GPU and zero training. CPU qualification and the prepared-mask gallery come
+before Root's exact native release; no native invocation is released yet.
+[State](experiments/2026-10-04-visual-state-localization/state.json) owns execution
+status and the stop boundary.
+
 The [owner-entry/localization probe](experiments/2026-10-04-owner-entry-localization/results.md)
 is lead-accepted and closed after10 B16 requests/841 actions, two exact native
 controls and zero training. Supplying a missed bottle's x1 produces the same
@@ -17,7 +30,7 @@ selects x1=0 under both histories. These are conditional completions after an
 informative cue, not natural physical recovery or proof of visual causal use.
 The coordinate-only FP32 shadow changes some local winners but leaves bottle
 entry unresolved. Exact teacher-coordinate deficits remain even for the normal
-localized person. All jobs are settled; no unit or successor is scheduled.
+localized person. Its jobs are settled and this unit remains closed.
 
 The [box-continuity probe](experiments/2026-10-04-box-continuity/results.md)
 is lead-accepted and closed after13 B16 requests/3390actions, three exact natural
