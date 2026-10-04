@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-owner-entry-localization",
-  "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION",
+  "lifecycle": "ready",
+  "status": "NATIVE_RELEASED",
   "evidence": "none",
   "scientific_status": "not_evaluated",
   "protocol": "research/experiments/2026-10-04-owner-entry-localization/unit.md",
@@ -11,7 +11,7 @@
   "worker_model": "gpt-6.1-sol",
   "worker_effort": "xhigh",
   "authority": "User authorized continued implementation and execution of the proposed bounded owner-entry/localization probe by the original Worker Session on2026-10-04; zero training.",
-  "native_released": false,
+  "native_released": true,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
   "initial_source_anchor": "092fc7af631ea09e74bb9a9cf565ff652f1b8b58",
@@ -33,8 +33,8 @@
   "source_requirement": "Current canonical integrated source; preserve unrelated changes and exact release qualification.",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-assignment-01.json",
   "layout_dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/transport/worker-layout-01.json",
-  "next_action": "Worker implements frozen unit and qualifies CPU entry/consumer; Root binds exact clean source/input/runtime release before one native invocation.",
-  "job_state": "Original worker reconciled and protocol-ready implementation assignment delivered; CPU qualification in progress, native not released",
+  "next_action": "Original Worker executes exactly native-release-01.json once, preserves terminal evidence and returns for Lead scientific acceptance.",
+  "job_state": "CPU package lead-accepted; exact release prepared for original worker, invocation not yet started",
   "not_authorized": [
     "Training or architecture change",
     "Native model call before exact lead release",
@@ -42,5 +42,11 @@
     "Physical-recovery credit for supplied coordinates or teacher paths"
   ],
   "boundary": "Selected B16 supplied histories: two labeled bottles in351017 and one normal person in13348; conditional box completion and teacher-path margins, not population prevalence, natural physical recovery, training efficacy or full-scene enumeration.",
-  "preflight_report": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/preflight-01/inspection.json"
+  "preflight_report": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/preflight-01/inspection.json",
+  "cpu_package_acceptance": {
+    "status": "lead-accepted",
+    "source_commit": "3f5725abc61444cfac61ccbbc2f95ac1fa92cb77",
+    "receipt": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/lead-cpu-acceptance-01.json"
+  },
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/owner-entry-localization/native-release-01.json"
 }
