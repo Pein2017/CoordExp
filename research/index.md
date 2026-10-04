@@ -9,13 +9,13 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/unit.md)
-is frozen for implementation and CPU qualification under the user's autonomous
-continuation grant. At one native B16 first-bottle prefix, two supplied x1 cues
+is [CPU accepted and released once](experiments/2026-10-04-cue-region-specificity/lead-ruling-01.md)
+under the user's autonomous continuation grant. At one native B16 first-bottle prefix, two supplied x1 cues
 cross clean and two fixed regional masks: six requests, at most114 actions,
 one load and no training. The primary endpoint compares each mask's first-free
-y1 effect across cues. Native execution remains unreleased pending the exact
-qualified packet. The original worker owns implementation and technical
-execution; Lead owns release and scientific acceptance.
+y1 effect across cues. Native effects remain unmeasured. The original worker
+owns the exact one-shot invocation and terminal/process settlement; Lead owns
+final consumer and scientific acceptance.
 
 The [cued visual-use contrast](experiments/2026-10-04-cued-visual-use/results.md)
 is lead-accepted and closed:12 B16 requests/1530 actions, four exact clean

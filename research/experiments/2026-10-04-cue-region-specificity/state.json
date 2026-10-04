@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-cue-region-specificity",
-  "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION_DISPATCHED",
+  "lifecycle": "ready",
+  "status": "NATIVE_RELEASED",
   "evidence": "none",
   "scientific_status": "Unmeasured prospective local transfer of cue-dependent regional selectivity to the current native first-bottle state.",
   "protocol": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
@@ -13,7 +13,7 @@
   "authority": "User on 2026-10-04 at 19:47 UTC authorized autonomous worthwhile research and exploration without further permission. Lead selects this finite successor; previous consumed releases remain immutable.",
   "initial_source_anchor": "86bda794f6a417086936ee6437fa3f02da008777",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity",
-  "native_released": false,
+  "native_released": true,
   "native_started": false,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
@@ -43,8 +43,8 @@
     ],
     "historical_clean_anchors": 1
   },
-  "next_action": "Original worker implements and qualifies the CPU package, then returns a final frozen candidate and unreleased native proposal for Lead's exact release.",
-  "job_state": "Original worker CPU assignment accepted by turn/start; awaiting direct ENTRY. Native remains unreleased.",
+  "next_action": "Original worker executes exactly one released invocation, preserves automatic consumer and external terminal evidence, settles owned jobs and reports directly. Lead accepts final consumer and bounded scientific interpretation.",
+  "job_state": "CPU package settled and accepted. One native release approved; launch not yet observed. Source held through invocation settlement.",
   "boundary": "Within-mask first-free y1 effects across two supplied x1 cues in one selected native B16 history. Unequal region doses are not compared as equal interventions. No endogenous owner discovery, physical-FN recovery, population benefit or route localization is established.",
   "not_authorized": [
     "Native execution before the exact new Lead release",
@@ -55,5 +55,10 @@
   ],
   "protocol_commit": "6a4c154d297765018e5f29b2cb7d95a23c79b389",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/transport/worker-assignment-01.json",
-  "worker_turn": "01a108c8-0619-7992-b322-da6d091e79f0"
+  "worker_turn": "01a108c8-0619-7992-b322-da6d091e79f0",
+  "implementation_commit": "fba87ef7658f4b4ffbdbc9aa9727aa916da50d10",
+  "technical_acceptance": "lead-accepted-cpu",
+  "lead_ruling": "research/experiments/2026-10-04-cue-region-specificity/lead-ruling-01.md",
+  "cpu_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/lead-consumer-check-01.json",
+  "native_release": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/native-release-01.json"
 }
