@@ -1,7 +1,7 @@
 {
   "unit_id": "2026-10-04-cue-region-specificity",
   "lifecycle": "planned",
-  "status": "CPU_PACKAGE_FROZEN",
+  "status": "CPU_IMPLEMENTATION_DISPATCHED",
   "evidence": "none",
   "scientific_status": "Unmeasured prospective local transfer of cue-dependent regional selectivity to the current native first-bottle state.",
   "protocol": "research/experiments/2026-10-04-cue-region-specificity/unit.md",
@@ -32,12 +32,19 @@
   },
   "population": {
     "selected_states": 1,
-    "coordinate_cues": [186, 495],
-    "image_conditions": ["clean", "mask-A", "mask-B"],
+    "coordinate_cues": [
+      186,
+      495
+    ],
+    "image_conditions": [
+      "clean",
+      "mask-A",
+      "mask-B"
+    ],
     "historical_clean_anchors": 1
   },
   "next_action": "Original worker implements and qualifies the CPU package, then returns a final frozen candidate and unreleased native proposal for Lead's exact release.",
-  "job_state": "Frozen assignment ready; predecessor fully settled. No new native invocation.",
+  "job_state": "Original worker CPU assignment accepted by turn/start; awaiting direct ENTRY. Native remains unreleased.",
   "boundary": "Within-mask first-free y1 effects across two supplied x1 cues in one selected native B16 history. Unequal region doses are not compared as equal interventions. No endogenous owner discovery, physical-FN recovery, population benefit or route localization is established.",
   "not_authorized": [
     "Native execution before the exact new Lead release",
@@ -45,5 +52,8 @@
     "Different cues, histories, images, region masks, fill rules or later teacher coordinates",
     "Rewriting old artifacts or qualification receipts",
     "Worker-selected successor or scientific acceptance"
-  ]
+  ],
+  "protocol_commit": "6a4c154d297765018e5f29b2cb7d95a23c79b389",
+  "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/cue-region-specificity/transport/worker-assignment-01.json",
+  "worker_turn": "01a108c8-0619-7992-b322-da6d091e79f0"
 }
