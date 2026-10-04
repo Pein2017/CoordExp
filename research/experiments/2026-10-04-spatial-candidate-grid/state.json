@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-spatial-candidate-grid",
-  "lifecycle": "planned",
-  "status": "CPU_LEAD_ACCEPTED_NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "Unmeasured fixed spatial-query candidate recipe. Root visual entity and geometry accounting is required after technical execution.",
+  "lifecycle": "closed",
+  "status": "CLOSED_LEAD_ACCEPTED",
+  "evidence": "accepted",
+  "scientific_status": "Assistant visual ledger confirms9 distinct additional bottle identities among32 fixed query candidates on one full-label training image. Candidate support, geometry, uncertainty and unsupported/category costs remain separate; no natural detector/FN or transfer claim.",
   "protocol": "research/experiments/2026-10-04-spatial-candidate-grid/unit.md",
   "state_source": "research/experiments/2026-10-04-spatial-candidate-grid/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -14,8 +14,8 @@
   "initial_source_anchor": "872b1026337c215806e80eb2f50c3038977f9b7d",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid",
   "native_released": true,
-  "native_started": false,
-  "lead_accepted": false,
+  "native_started": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "budget": {
     "requests": 33,
@@ -42,8 +42,8 @@
     "saved_baseline_unique_bottle_geometries": 14,
     "saved_baseline_unavailable_censored_tail": 1
   },
-  "next_action": "Original worker executes the exact newly released native invocation once, then saved-data galleries; Root subsequently adjudicates all32 candidates and14 baseline geometries.",
-  "job_state": "CPU jobs settled; one native invocation authorized by lead-ruling-01.md. Exact release config and delivery receipt bind execution source. Native not yet observed launched.",
+  "next_action": "Unit closed. Root may select a separately bounded successor under continuing user authority; this consumed release authorizes no further model work.",
+  "job_state": "Native and CPU gallery commands exited0; all owned processes/groups settled, source holder released; no remaining worker writers.",
   "boundary": "GT-coordinate-free query selection on one full-label training image with a supplied native bottle prefix. Candidate entity support, geometry, duplicates, unsupported and ambiguous cases remain separate; no natural physical-FN recovery, generalization or complete physical recall claim.",
   "not_authorized": [
     "Native execution before exact new Lead release",
@@ -61,5 +61,19 @@
   "lead_ruling": "research/experiments/2026-10-04-spatial-candidate-grid/lead-ruling-01.md",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-candidate-01.json",
   "lead_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/lead-consumer-check-01.json",
-  "cpu_evidence": "CPU fixtures qualified; native and physical-entity outcome unmeasured"
+  "cpu_evidence": "CPU fixtures qualified; native and physical-entity outcome unmeasured",
+  "native_completed": true,
+  "native_release_consumed": true,
+  "visual_ledger_lead_accepted": true,
+  "visual_ledger": "research/experiments/2026-10-04-spatial-candidate-grid/visual-ledger.json",
+  "execution_source": "e6dda6de37ddb320145abb2aaa97e971027b1657",
+  "primary_new_physical_entities": 9,
+  "primary_candidate_denominator": 32,
+  "native_invocations": 1,
+  "remaining_native_authority": 0,
+  "actual_requests": 33,
+  "actual_actions": 627,
+  "actual_forced_actions": 494,
+  "actual_free_actions": 133,
+  "result": "research/experiments/2026-10-04-spatial-candidate-grid/results.md"
 }

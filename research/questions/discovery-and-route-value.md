@@ -77,6 +77,26 @@ recursive self-improvement. This is not a general self-training impossibility;
 a new teacher or objective needs its own discriminating contrast. See the
 [accepted results](../experiments/2026-09-27-iterative-positive-recovery/results.md).
 
+## Fixed coordinate queries as candidate support
+
+The accepted spatial-grid unit (catalog:2026-10-04-spatial-candidate-grid) uses32
+predetermined x1 values at one B16 native bottle prefix on a full-label training
+image. Exhaustive assistant visual inspection confirms nine distinct additional
+bottle identities beyond the saved native baseline. Five have annotation IoU
+below0.5. The baseline's partial upper-left silhouettes remain ambiguous, not
+physically empty; the nine identities occupy visibly separate locations.
+
+The cost is explicit:13 slots contain definite bottle support, but four do not
+resolve a single identity; three depict non-bottles, seven have ambiguous
+category and nine lack an identifiable supporting entity. One box is invalid.
+All32 slots remain accounted for. No physical duplicate is confirmed among the
+nine credited identities, while duplication across unresolved candidates remains
+unknown. This finite rule shows that exact GT-derived cue coordinates are not
+necessary for every useful candidate in that state. It does not demonstrate
+held-out transfer, ordinary greedy recovery, or safe learning targets. Separate
+candidate selection/verification, transfer and full-policy realization before
+promoting this external query recipe into a training or deployment claim.
+
 ## Provenance
 
 Catalog IDs resolve through [the existing catalog](../experiments/catalog.jsonl), which retains original evidence labels, artifact locators and exact Git recovery paths. Detailed source records are recoverable at `108dede0154abfd90a54d18234d9e0bac780a3ba`. Historical entries are unsupported for continuation; recovery is not execution qualification.

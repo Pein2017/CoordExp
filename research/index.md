@@ -8,16 +8,16 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/unit.md)
-has a [lead-accepted CPU package and one native release](experiments/2026-10-04-spatial-candidate-grid/lead-ruling-01.md)
-under the user's autonomous continuation grant. Thirty-two predetermined x1
-midpoints query the same clean native bottle prefix; one short historical anchor
-brings the maximum to33 requests/627 actions, one B16 load and zero training.
-Query selection uses no GT coordinates. The original worker owns the single
-native invocation and saved-data galleries. Root then inspects all32 candidates
-and the saved baseline's14 unique bottle geometries, separating physical entity
-support from geometry and duplicate/unsupported costs. Native behavior and the
-primary new-entity count remain unmeasured.
+The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/results.md)
+is lead-accepted and closed. Exhaustive assistant visual inspection of32
+predetermined queries and14 baseline geometries confirms nine distinct additional
+bottle identities on one full-label training image. Thirteen slots have definite
+bottle support (four with unresolved single identity), three depict non-bottles,
+seven have ambiguous category and nine have no identifiable supporting entity;
+one box is numerically invalid. Five of the nine credited identities have
+annotation IoU below0.5. This is a supplied-cue candidate recipe, not natural
+detector recovery or held-out transfer. All33 native requests/627 actions passed,
+with one B16 load and zero training; jobs are settled and the release consumed.
 
 The [cue/region-specificity contrast](experiments/2026-10-04-cue-region-specificity/results.md)
 is lead-accepted and closed: six B16 requests/114 actions, exact historical A

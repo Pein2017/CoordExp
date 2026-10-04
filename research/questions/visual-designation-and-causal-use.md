@@ -90,11 +90,13 @@ affects the next coordinate. Fresh attention, access to prior image state and
 nonlinear spatial conditioning remain viable mechanisms. The externally supplied
 cue may create the designation rather than reveal a selected endogenous owner.
 Unequal, mixed-context masks do not establish equal-dose object importance.
-The practical unresolved step is obtaining useful proposals without GT-derived
-cue coordinates, while separately accounting for entity support, geometry,
-duplicates and unsupported output. Conditional selectivity itself is now
-qualified at this selected native state; another mask contrast is not required
-to restate that result.
+The subsequent fixed-grid candidate result (catalog:2026-10-04-spatial-candidate-grid)
+partly resolves the practical proposal step without GT-derived cue coordinates
+on the same training image. Its complete physical/geometry/cost interpretation
+belongs to [discovery and route value](discovery-and-route-value.md#fixed-coordinate-queries-as-candidate-support).
+Transfer, reliable candidate selection and ordinary-policy realization remain
+open. Conditional selectivity itself is qualified at this selected native state;
+another mask contrast is not required to restate that result.
 
 ## Training-only pre-row supervision
 

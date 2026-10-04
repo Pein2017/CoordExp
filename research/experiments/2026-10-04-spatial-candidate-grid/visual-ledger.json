@@ -1,0 +1,1817 @@
+{
+  "schema": "spatial-grid-root-visual-ledger-v1",
+  "unit_id": "2026-10-04-spatial-candidate-grid",
+  "created_utc": "2026-10-04T23:22:29.329502+00:00",
+  "adjudicator": "Root01a1016a-c440-77e2-b258-f3e8f860ede7",
+  "adjudication_type": "assistant visual evidence; not user/human ground truth",
+  "execution_source": "e6dda6de37ddb320145abb2aaa97e971027b1657",
+  "readback": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/readback.json",
+    "sha256": "a444d3d3e504ef0af5a172e427bae42291e0b346cbfcb9a1cfc788e44a66af54"
+  },
+  "gallery_index": {
+    "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/index.json",
+    "sha256": "e1b1dc927e0a1d7fc04457198f5b6ca39b65c7f296da9ba1b4a33e42aafcc7cf"
+  },
+  "primary": {
+    "requested_candidates": 32,
+    "confirmed_distinct_new_bottle_entities": 9,
+    "entity_ids": [
+      "B06",
+      "B08",
+      "B12",
+      "B13",
+      "B14",
+      "B16",
+      "B17",
+      "B20",
+      "B22"
+    ],
+    "conditions": [
+      "grid-06",
+      "grid-08",
+      "grid-12",
+      "grid-13",
+      "grid-14",
+      "grid-16",
+      "grid-17",
+      "grid-20",
+      "grid-22"
+    ],
+    "meaning": "Conservative count of definite additional visual bottle identities represented by this fixed supplied-cue recipe relative to the saved baseline; not a statistical lower confidence bound or complete physical census."
+  },
+  "cost_accounting": {
+    "entity_category_support_counts": {
+      "ambiguous": 7,
+      "no_identifiable_supporting_entity": 9,
+      "definite_bottle": 13,
+      "definite_non_bottle_entity": 3
+    },
+    "definite_bottle_support_but_single_identity_unresolved": 4,
+    "category_or_single_identity_unresolved": 11,
+    "confirmed_physical_duplicates_among_credited": 0,
+    "global_physical_duplicate_count": null,
+    "duplicate_limit": "Zero confirmed duplicates among credited identities does not establish zero duplicate burden in unresolved candidates.",
+    "numeric_invalid": 1,
+    "complete_valid": 31,
+    "incomplete_or_held": 0,
+    "unsupported_repeated_background_slots": [
+      "grid-27",
+      "grid-28",
+      "grid-29",
+      "grid-30",
+      "grid-31"
+    ],
+    "credited_entities_with_max_annotation_iou_below_0_5": 5
+  },
+  "visual_method": {
+    "full_clean_scene_actually_opened": true,
+    "all32_native_context_images_actually_opened": true,
+    "all14_baseline_context_images_actually_opened": true,
+    "baseline_view_reuse": "Native baseline PNGs verified byte-identical to the actual historical-baseline views already inspected in CPU gallery.",
+    "identity_rule": "Visual cap/neck/body continuity and distinct scene position; annotation IDs, IoU and renderer colors did not define identity.",
+    "multi_object_rule": "No credit for all objects merely because a box contains several. Four definite-bottle-support slots remain unresolved and get no primary credit.",
+    "focused_independent_review": "Astra coord_binding_reasoning opened all9 proposed credited crops and fullscene; no counterexample. It specifically confirmed distinct13/14 necks, closed-top cylindrical bottle16, and substantially occluded but identifiable20. Root retained final judgments."
+  },
+  "candidates": [
+    {
+      "condition": "grid-00",
+      "query_index": 0,
+      "supplied_x1": 15,
+      "original_box_norm1000": [
+        15,
+        0,
+        21,
+        79
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "Narrow strip of the same neck-like silhouettes behind foreground hair as the baseline; neither bottle category nor individual correspondence is certain.",
+      "geometry_assessment": "Very narrow partial strip; mostly background/occlusion.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "unresolved_with_baseline_top_left_supports",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "baseline-00..13"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-00.json",
+        "sha256": "80fa1542074feccefb97ab408b8da72e33d62cd16fa7bd41c1afc8171b77190e"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-00.json",
+        "sha256": "91da8d33bb79d7dbaf09ac7e1cd2119bbbd72a511f7cbd068de56ab4fcdcb09c"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-00.png",
+        "sha256": "7635a9a84271c4b8de3666baeed594fac76e18385ec62a632f371a85b614571c"
+      }
+    },
+    {
+      "condition": "grid-01",
+      "query_index": 1,
+      "supplied_x1": 46,
+      "original_box_norm1000": [
+        46,
+        0,
+        109,
+        99
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "Foreground hair and a shelf edge occupy the box; no identifiable bottle supports it.",
+      "geometry_assessment": "Unrelated hair/background region.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-01.json",
+        "sha256": "6b8b494e5024a9e2bcbd83d930b75e9b7ee3245030e22a55309694c654748f2f"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-01.json",
+        "sha256": "c617d1ef35409acc7b8a68b38231d2230f23d60239ce73539e845b438fb3d5b8"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-01.png",
+        "sha256": "d7a32cb73ca9d530e194800cba2d37a1a1cc420bb80b2703a8745077b4c6266a"
+      }
+    },
+    {
+      "condition": "grid-02",
+      "query_index": 2,
+      "supplied_x1": 78,
+      "original_box_norm1000": [
+        78,
+        0,
+        112,
+        53
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The box covers hair and the shelf edge without a visible bottle outline.",
+      "geometry_assessment": "Unrelated hair/background region.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-02.json",
+        "sha256": "a8ddae4f13a25e49d6c65b425e2f868be00e92921be38e6622b5a613011b3115"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-02.json",
+        "sha256": "7ede4ae1da5995c64b50fa907f7690f7c65cba218c836095a6ab778856930c05"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-02.png",
+        "sha256": "dddd6a82dedb244b321f8aef7c3118d9ce19f0ca8c2895130ebfa7bbc9adcd4e"
+      }
+    },
+    {
+      "condition": "grid-03",
+      "query_index": 3,
+      "supplied_x1": 109,
+      "original_box_norm1000": [
+        109,
+        0,
+        109,
+        44
+      ],
+      "native_status": "completed",
+      "outcome": "complete_invalid_geometry",
+      "numeric_geometry_valid": false,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The original directed line lies over hair; no visible bottle is identified.",
+      "geometry_assessment": "Invalid zero width; the original endpoints are retained.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": null,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-03.json",
+        "sha256": "51e37209c3e7a2eb8a9d69cf0ad1db5f1e096cb2bce84a8905efa71e5ed65787"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-03.json",
+        "sha256": "1a7f8dde082dfa5d626b0720cbb82f40627cadc70c2cad2ca0767efd6113798a"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-03.png",
+        "sha256": "26e9a698e258aa7f55d9d2e1c109cda47bf656ba51959d1023dea014719e4442"
+      }
+    },
+    {
+      "condition": "grid-04",
+      "query_index": 4,
+      "supplied_x1": 140,
+      "original_box_norm1000": [
+        140,
+        0,
+        171,
+        38
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "Top-edge bright label-like fragment, shelf and hair; no sufficient outline identifies a bottle.",
+      "geometry_assessment": "Partial fragment at the image border with extra background.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-04.json",
+        "sha256": "6729f011c2664c60afce2fe30262f1a8f9ad4ef8be1ca63a453ae59634d3030d"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-04.json",
+        "sha256": "51a26ca19fa116421f602c1e42bba8b030bb2ce5e96058feaf948c5187d396a0"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-04.png",
+        "sha256": "32d5972ac0423fa3a633a6d8e940f94108cbefc7dea05351b77efb8ecf0cc8ee"
+      }
+    },
+    {
+      "condition": "grid-05",
+      "query_index": 5,
+      "supplied_x1": 171,
+      "original_box_norm1000": [
+        171,
+        30,
+        202,
+        107
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "Visible dark bottle neck and an adjacent neck fragment are present, but the box combines partial shapes and occlusion; a single intended identity is unresolved.",
+      "geometry_assessment": "Partial and misaligned; multiple potential bottle identities.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "local adjacent bottle fragments"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.439465124683773,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-05.json",
+        "sha256": "6f1b79625035668c5f0ac865fe2186421c0f5fdedd0313b48201a056e6b204db"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-05.json",
+        "sha256": "fe9224943f3e03e44a7f0951ab15f714a684be0bedca3679f8868e1006449324"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-05.png",
+        "sha256": "8a50f3db776f18f7b881cbfc5eae5eae094a54eb4f4cde6266058f19563eb09d"
+      }
+    },
+    {
+      "condition": "grid-06",
+      "query_index": 6,
+      "supplied_x1": 203,
+      "original_box_norm1000": [
+        203,
+        31,
+        226,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The pale-capped bottle has a visible narrow neck, shoulder and large light label behind the left foreground head; it is a distinct bottle.",
+      "geometry_assessment": "Partially occluded lower body; coherent visible neck/body region.",
+      "physical_entity_id": "B06",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.7182823682498374,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-06.json",
+        "sha256": "9b3a3c6b54247e1c43b3d2aaa065fdb42aba439d95db684f99c86e896d1c27b7"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-06.json",
+        "sha256": "dd52b696e62d0b927c0a6f57065bf6f731dedf7f6d451c3aa89d65205a792a1e"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-06.png",
+        "sha256": "2db93423d81778cf86a5fbe32ce0821e76fb7791db7b6061ee022aed340a6933"
+      }
+    },
+    {
+      "condition": "grid-07",
+      "query_index": 7,
+      "supplied_x1": 234,
+      "original_box_norm1000": [
+        234,
+        0,
+        258,
+        93
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_non_bottle_entity",
+      "visible_evidence_reason": "The selected vertical structure is a shelf support/post, not a bottle.",
+      "geometry_assessment": "Segment of a shelf support, with surrounding wall.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.013895321908290875,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-07.json",
+        "sha256": "020cd211f8ed789372e8fc5d0182c4ff534d67da1a21634f7d2beb5550a403ce"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-07.json",
+        "sha256": "73b05142731e2e4279cac61cc28446ae9aa00875f067b93eaacad6d7857df51d"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-07.png",
+        "sha256": "1b3901f401c97a8f6a1002db6adbe0fd3d5bc8d2d5ea7373dd264ad49361b953"
+      }
+    },
+    {
+      "condition": "grid-08",
+      "query_index": 8,
+      "supplied_x1": 265,
+      "original_box_norm1000": [
+        265,
+        85,
+        279,
+        153
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "A separate brown bottle with a rounded cap, green/light neck band and sloping shoulder is visible left of the rear bottle cluster.",
+      "geometry_assessment": "A narrow strip clips the body width; neck and shoulder still identify one bottle.",
+      "physical_entity_id": "B08",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.44361602982292636,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-08.json",
+        "sha256": "a1f35b5ebade294e68a08007939e738184708ba8f0def41edfef99d337eb2fb1"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-08.json",
+        "sha256": "cc2fca24a59e44155e941fd37651feed734a1845f30facca94da3c1e527eeb3c"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-08.png",
+        "sha256": "b2c677b95177366fbea540926372a9b40f16634c9b04f5e09c535e08bb71ac7c"
+      }
+    },
+    {
+      "condition": "grid-09",
+      "query_index": 9,
+      "supplied_x1": 296,
+      "original_box_norm1000": [
+        296,
+        0,
+        311,
+        22
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "A bright rectangular top-edge fragment may be a label or shelf material; the bottle outline and identity are not visible.",
+      "geometry_assessment": "Cropped top-edge fragment only.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-09.json",
+        "sha256": "4726adc5034d293e523434487c80a52f61025da73f5e36bacc49de87485a16b2"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-09.json",
+        "sha256": "ad4a8a74838fc331f03d1a38387b100cb2dc8897571a4d14e503ea8ad13cdac7"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-09.png",
+        "sha256": "e62464d90350c25443a7592dd80f59ba4490d20c64942094771e2b2a4e96e763"
+      }
+    },
+    {
+      "condition": "grid-10",
+      "query_index": 10,
+      "supplied_x1": 328,
+      "original_box_norm1000": [
+        328,
+        62,
+        336,
+        123
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The thin strip crosses partial neck/body material among adjacent bottles; bottle support exists but one owner cannot be separated confidently.",
+      "geometry_assessment": "Thin, misaligned strip among multiple adjacent bottles.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "local adjacent bottle fragments"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.2613333333333333,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-10.json",
+        "sha256": "b569b6da7db74125158d7422cdd45ff800ac31d787b2922272f84a42bda29a93"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-10.json",
+        "sha256": "6d1f07bc2a05ccc1792a91f56d08b6d8b730e46ec0ecc01c67fb43e52d0efaab"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-10.png",
+        "sha256": "f2ceed896ce890e901c832a2c3f659bafc04c7dab4eefdf8837741fcaf0617bc"
+      }
+    },
+    {
+      "condition": "grid-11",
+      "query_index": 11,
+      "supplied_x1": 359,
+      "original_box_norm1000": [
+        359,
+        62,
+        375,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The box spans portions of neighboring bottle necks and bodies; it does not resolve one physical bottle.",
+      "geometry_assessment": "Partial coverage straddling adjacent bottles.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "local adjacent bottle fragments"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.3528773072747014,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-11.json",
+        "sha256": "4e28fa2c22518f959391f7d5c1007270ce7814ee7ec4e80017c959db985416b5"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-11.json",
+        "sha256": "b00c9b91e256d2a182f2e2e6e058f3f88f8041aa924d7afaf3891342ba2d2751"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-11.png",
+        "sha256": "de8f31b542b126bb069ade910806dec68fbda9e835be7bd0e1cb319da046e9d2"
+      }
+    },
+    {
+      "condition": "grid-12",
+      "query_index": 12,
+      "supplied_x1": 390,
+      "original_box_norm1000": [
+        390,
+        415,
+        419,
+        572
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "One dark wine bottle with a gold-toned cap, clear shoulders and a white rectangular body label stands behind the tabletop menu.",
+      "geometry_assessment": "Most visible neck and body are enclosed; slight edge clipping.",
+      "physical_entity_id": "B12",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.7720287881735071,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-12.json",
+        "sha256": "58191ef77368bc2ca4502b358b8b174ab2ed13eb36ad7e9265bb8bb00c9c6d01"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-12.json",
+        "sha256": "8ec0e858c57458e49b24fed7c1794dc7848b37845d5d411e04b08e7c44758646"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-12.png",
+        "sha256": "a90c7114fa856d5d202e975ba1f793489d03254f6b8825d870f064992c668500"
+      }
+    },
+    {
+      "condition": "grid-13",
+      "query_index": 13,
+      "supplied_x1": 421,
+      "original_box_norm1000": [
+        421,
+        0,
+        452,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The left tall bottle of a pair has its own dark cap and long neck above a rounded body.",
+      "geometry_assessment": "Extra shelf/background above; lower body truncated.",
+      "physical_entity_id": "B13",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.48032021347565046,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-13.json",
+        "sha256": "5df54a2f1a34ad651d38ed12da5ccb81fe6fb8f20a1a7987866835a08cf07108"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-13.json",
+        "sha256": "10dd915f71c870a3e26cd1146c9d7065c821820b491afc0edc1fbf9b7410fcf5"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-13.png",
+        "sha256": "f1f3f2aef13372a3d2037a708a334f280773c1b8625d03a076327a455aae3d58"
+      }
+    },
+    {
+      "condition": "grid-14",
+      "query_index": 14,
+      "supplied_x1": 453,
+      "original_box_norm1000": [
+        453,
+        0,
+        472,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The right member of that pair has a distinct reddish/brown cap and separate long neck/shoulder, different from B13.",
+      "geometry_assessment": "Left edge and lower body clipped; much background above.",
+      "physical_entity_id": "B14",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.41226789067389946,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-14.json",
+        "sha256": "df5bcf31cb78ed844b3b5c1f7ae124250cbcc296dc50e115ea4cfe7afbbc8b06"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-14.json",
+        "sha256": "937932888c9bf2a5b0b8c8303b5913fdadd23d9b0963103409fd13a3122861a4"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-14.png",
+        "sha256": "94ab927c96eea40cad3c930e762ad1b84692ed402a7fae886f302eff997f0c74"
+      }
+    },
+    {
+      "condition": "grid-15",
+      "query_index": 15,
+      "supplied_x1": 484,
+      "original_box_norm1000": [
+        484,
+        377,
+        528,
+        457
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "Overlapping clear glassware and silver bottle-cap regions do not identify one bottle in this short upper fragment.",
+      "geometry_assessment": "Partial, multiple overlapping transparent objects; possible relation to B16 unresolved.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "B16 or surrounding glassware"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.16815637791329044,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-15.json",
+        "sha256": "d29c892688d3d7abff737864f54cf84671652b58324b2cb3b32f3d007b89599f"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-15.json",
+        "sha256": "5be7efa361229c03a14cf5def6fb8a57e50129d68ae3a61be0e353fb10598695"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-15.png",
+        "sha256": "1076d7ac138873e573d987e001b3673f9a24fd88b77e22e411237524225cbd55"
+      }
+    },
+    {
+      "condition": "grid-16",
+      "query_index": 16,
+      "supplied_x1": 515,
+      "original_box_norm1000": [
+        515,
+        377,
+        559,
+        638
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "A closed silver top connects to a continuous transparent cylindrical body and base on the table, distinct from the surrounding open stemmed glasses.",
+      "geometry_assessment": "Lateral clipping and foreground overlap, with most vertical extent represented.",
+      "physical_entity_id": "B16",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.38525624842211564,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-16.json",
+        "sha256": "9b50a7e7682843f504fac31d9caa081c1455fd14785c47506763729c4fa3af8f"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-16.json",
+        "sha256": "8c674f5d07e3734d1f2387141c78d84b1b54a90b8551467bedfdbb57599d1e9c"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-16.png",
+        "sha256": "f4c198431fa13c827f8bfc8dd77936ffd67f226b6cdff0c3bc3368885e608563"
+      }
+    },
+    {
+      "condition": "grid-17",
+      "query_index": 17,
+      "supplied_x1": 546,
+      "original_box_norm1000": [
+        546,
+        38,
+        566,
+        154
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "One dark bottle with a red neck covering and bright vertical body label stands immediately left of the rear man's head.",
+      "geometry_assessment": "Coherent visible neck and body; small border/context errors.",
+      "physical_entity_id": "B17",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.7868098159509203,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-17.json",
+        "sha256": "2f70ddc65e3e47f36943e97109aba1d2894d9952b165f52fe3feb080d02fe227"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-17.json",
+        "sha256": "69ef414238e67c4e1cdb6d4f85d9af854dc3d0e66d9c68a3d2ef1a5beb2eb997"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-17.png",
+        "sha256": "8af08eecdaf1b2e0bc4471a715d89f6a98799c4c247405c043c3547b596a1cf3"
+      }
+    },
+    {
+      "condition": "grid-18",
+      "query_index": 18,
+      "supplied_x1": 578,
+      "original_box_norm1000": [
+        578,
+        325,
+        618,
+        396
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_non_bottle_entity",
+      "visible_evidence_reason": "The shape is the bowl and open rim of a stemmed wine glass, not a bottle.",
+      "geometry_assessment": "Upper glass bowl only; stem/base omitted.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [
+        -2366940353771858
+      ],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-18.json",
+        "sha256": "5155c3713bf49539c57524ec3be84b06fb94f77de14dd2cfd8425a69d9a90533"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-18.json",
+        "sha256": "41bb921db225c55b1b117b6fdc2f805dfb7d21517b3b094a7adb5893cad4d4d4"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-18.png",
+        "sha256": "552f2e187a52f667f0be60dd9d9eaf8cc73cd597ffeb6414f8ee058b7c5ca789"
+      }
+    },
+    {
+      "condition": "grid-19",
+      "query_index": 19,
+      "supplied_x1": 609,
+      "original_box_norm1000": [
+        609,
+        28,
+        625,
+        93
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "Pale vertical shapes above the rear man's hair are too blurred and occluded to establish a definite bottle identity.",
+      "geometry_assessment": "Mostly occluded body and uncertain neck/background boundary.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "occluded neck-like shapes"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.35804701627486435,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-19.json",
+        "sha256": "4227e1f876a65a8257b52aa913dedc541e57a0215b907c2aaa6507f25425b4d8"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-19.json",
+        "sha256": "caa2ce62a674e0c61c1cac25dd7bcff46b93b336ee2080abb2dc8805ad1136e1"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-19.png",
+        "sha256": "8ce18dc4c4a39bf0b59d437aa312287473711b462d723c1995bb7f001c5ba8de"
+      }
+    },
+    {
+      "condition": "grid-20",
+      "query_index": 20,
+      "supplied_x1": 640,
+      "original_box_norm1000": [
+        640,
+        21,
+        663,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "An exposed neck/cap and narrow visible bottle side immediately beside the rear man's head identify one bottle distinct from the adjacent broad-label pair.",
+      "geometry_assessment": "Heavy body occlusion; weakest-resolution credited case, not a full-extent box claim.",
+      "physical_entity_id": "B20",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.575671045117076,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-20.json",
+        "sha256": "f0f23087c0dbee2b8a48970930c2248ebe1e85de23ab95889d68021ad6589deb"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-20.json",
+        "sha256": "c4710828456ce738198095894e2c8c018ad2c505ab3102859e1a6d88cbd6d373"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-20.png",
+        "sha256": "1e8d6eed6e5c8a14b16c3417b5bf95de10f3367825981fcdb45696a953ed4099"
+      }
+    },
+    {
+      "condition": "grid-21",
+      "query_index": 21,
+      "supplied_x1": 671,
+      "original_box_norm1000": [
+        671,
+        46,
+        693,
+        153
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "The box crosses the two broad light-label bottles; multiple visible caps/body surfaces prevent assigning one unambiguous identity.",
+      "geometry_assessment": "Straddles neighboring bottle bodies and label regions.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "broad-label bottle pair"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.39194139194139194,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-21.json",
+        "sha256": "5bde2854c1cb12aa2d23bdc04ecd0506151ffeb46ea077434a27e69f6e543525"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-21.json",
+        "sha256": "95faeba6520fcf1ddec4a629459c834f6e44211458acbde3d9942ac8f1262719"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-21.png",
+        "sha256": "a3c8e6d3ecdedd5f3778722f62683a075753e1083b53d8e21ba3a7c77366de94"
+      }
+    },
+    {
+      "condition": "grid-22",
+      "query_index": 22,
+      "supplied_x1": 703,
+      "original_box_norm1000": [
+        703,
+        0,
+        718,
+        127
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_bottle",
+      "visible_evidence_reason": "A separate slim dark bottle with a red cap and bright vertical reflection/body patch stands immediately left of the right shelf post.",
+      "geometry_assessment": "Extra background above; partial body width but identifiable single bottle.",
+      "physical_entity_id": "B22",
+      "physical_correspondence": "definite_distinct_entity_from_baseline_and_other_credited_candidates",
+      "baseline_correspondence": "definite_absence_in_saved_baseline: separately located visible bottle, outside extreme-top-left supports",
+      "primary_new_entity_credit": true,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.4475587703435805,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-22.json",
+        "sha256": "8a1589e2b88bd5e39012859a7471530ba7fe95fb028014aa3eb2d32012d3985d"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-22.json",
+        "sha256": "28dce81c6679d309f5692988ce4a868dea813e978574db4850835616da8003af"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-22.png",
+        "sha256": "cdf5f458d6de7ad221a336df194937b959c9f339890bc656cccb2ff6ced8860c"
+      }
+    },
+    {
+      "condition": "grid-23",
+      "query_index": 23,
+      "supplied_x1": 734,
+      "original_box_norm1000": [
+        734,
+        357,
+        778,
+        552
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "definite_non_bottle_entity",
+      "visible_evidence_reason": "An open wine-glass bowl, stem and foot are plainly visible in front of the right man.",
+      "geometry_assessment": "Broadly follows the wine glass, with some bowl clipping; wrong supplied category.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-23.json",
+        "sha256": "61d0e2a1a1207301ac18d41e9b0d754c66dab7de40906be9b783e6a7837ab7b6"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-23.json",
+        "sha256": "0fa4b010e94db5bfd07437831bd9aa423326375c782de2e4c37b44ba24fba381"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-23.png",
+        "sha256": "33f34d8f6d03a4125296a6ee5985df3e80ac62758e753e9e016e8f9cf648c0c9"
+      }
+    },
+    {
+      "condition": "grid-24",
+      "query_index": 24,
+      "supplied_x1": 765,
+      "original_box_norm1000": [
+        765,
+        405,
+        802,
+        510
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "Dark upright reflective objects beneath the right man's chin overlap the wine glass; their category and individual boundaries remain uncertain.",
+      "geometry_assessment": "Occluded tops and overlapping neighboring objects.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "grid-25 or neighboring objects"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-24.json",
+        "sha256": "5adc34fe25d78a5c35199bc35070d67d86c2507bc7490fda7659a8316accddf2"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-24.json",
+        "sha256": "175fdd62db75f47bc71d57923dde50ff996c4fbb184d1da420c69b60f4be8316"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-24.png",
+        "sha256": "cde429e707cba1dde22260d467c1e96bfd5ee3823c40af27f4dc2de0209e31c6"
+      }
+    },
+    {
+      "condition": "grid-25",
+      "query_index": 25,
+      "supplied_x1": 796,
+      "original_box_norm1000": [
+        796,
+        406,
+        829,
+        484
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "ambiguous",
+      "visible_evidence_reason": "A dark reflective fragment under the chin and beside the shirt lacks a visible neck/opening that would establish bottle category.",
+      "geometry_assessment": "Partial, substantially occluded object fragment; relation to grid24 unresolved.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [
+        "grid-24 or neighboring objects"
+      ],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-25.json",
+        "sha256": "ef1e22cacc49b8514d4164f228f7cb5f8cc2ce524b13f5b46fd03753a8be0691"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-25.json",
+        "sha256": "70424956b88cd9ba69b54b5e5777e8720b0e6030eb2ad47b6379d5cb17069896"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-25.png",
+        "sha256": "9e95f4b2d65a79a1fa8873e8e99d4843226464408808b7eb5217456366c7d4e4"
+      }
+    },
+    {
+      "condition": "grid-26",
+      "query_index": 26,
+      "supplied_x1": 828,
+      "original_box_norm1000": [
+        828,
+        405,
+        829,
+        477
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The one-bin-wide strip follows the shirt/collar boundary; no identifiable bottle supports it.",
+      "geometry_assessment": "Numerically valid but about one source pixel wide; unrelated edge.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-26.json",
+        "sha256": "d555c33fed27cb115a6156aa71ba04c35b3a8db61be8ecf7720c4ae598a37e4c"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-26.json",
+        "sha256": "7e69789b7f4804d46edadce1f8fea3f90fb91323a76c96f1cd6a78dde5e8070e"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-26.png",
+        "sha256": "a9b17ef1f939b7db2095cb8d8e891820b490b24a06c18c71648d2992eaf43173"
+      }
+    },
+    {
+      "condition": "grid-27",
+      "query_index": 27,
+      "supplied_x1": 859,
+      "original_box_norm1000": [
+        859,
+        0,
+        999,
+        259
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "Dark background panels and a fragment of the right man's hair occupy the box; no bottle is visible.",
+      "geometry_assessment": "Large background region ending at the image boundary.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-27.json",
+        "sha256": "85dc6f73b7a6d3d6b9940d80206c1525381b8a42938026a2c3eec33fa9952e2b"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-27.json",
+        "sha256": "bfc29bba041b19ce976d110012c7a8baea1eeb74a353e66fa25e5a7146bef130"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-27.png",
+        "sha256": "c029edfb823e2d5b1190ae07d88043cb1b9d23aedb1429c49fd68a2499a1d415"
+      }
+    },
+    {
+      "condition": "grid-28",
+      "query_index": 28,
+      "supplied_x1": 890,
+      "original_box_norm1000": [
+        890,
+        0,
+        999,
+        259
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The box encloses dark background paneling above the shoulder without an identifiable bottle.",
+      "geometry_assessment": "Background region nested within grid27; not a physical bottle duplicate.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-28.json",
+        "sha256": "4d2a03c2d3527801bfdc759f0ffa355b450523129d7bacd138916da198908237"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-28.json",
+        "sha256": "3872e2aeb81f8c63a749331e662374051c8574f08768e8f4c0207cab16544af9"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-28.png",
+        "sha256": "0a4d30c8208bfa6e12c9da6f3c894c6242875aa8cb607782f174cd42f4574d82"
+      }
+    },
+    {
+      "condition": "grid-29",
+      "query_index": 29,
+      "supplied_x1": 921,
+      "original_box_norm1000": [
+        921,
+        0,
+        999,
+        259
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "Only dark background paneling and a shoulder-edge fragment are visible.",
+      "geometry_assessment": "Background region nested within grid27/28.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-29.json",
+        "sha256": "6649ad16e044569a02678312580727366d61d626eb05b62bccd548b87762dc58"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-29.json",
+        "sha256": "c0daeb9e576cd5ae48868c9fbcb86370e2749d69ea375ae41befb7b02d758d36"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-29.png",
+        "sha256": "b3d7fd524ff83c2b542db4fdf72a8fd6c3d57f6693044830ff4bb61336bfe9f6"
+      }
+    },
+    {
+      "condition": "grid-30",
+      "query_index": 30,
+      "supplied_x1": 953,
+      "original_box_norm1000": [
+        953,
+        0,
+        999,
+        255
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The selected region is dark wall/panel background above the shirt, with no bottle outline.",
+      "geometry_assessment": "Background strip extending to the right image border.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-30.json",
+        "sha256": "af6356cd00a05372787f1e8fe413fcf042264dcce07bb533d40a2b8d1b99b7f2"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-30.json",
+        "sha256": "2c7509186a1b31e0b85b899fd83c64c70f95bb8517e3eb0a6453585ccd3e14f7"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-30.png",
+        "sha256": "83fb9f59f6fed89a9fdad4067da5d39e0c66ce50668a329f08e22566a19d5a98"
+      }
+    },
+    {
+      "condition": "grid-31",
+      "query_index": 31,
+      "supplied_x1": 984,
+      "original_box_norm1000": [
+        984,
+        0,
+        999,
+        255
+      ],
+      "native_status": "completed",
+      "outcome": "complete_valid",
+      "numeric_geometry_valid": true,
+      "entity_category_support": "no_identifiable_supporting_entity",
+      "visible_evidence_reason": "The thin right-edge region contains dark panel background; no bottle is identified.",
+      "geometry_assessment": "Narrow background strip at the right image boundary.",
+      "physical_entity_id": null,
+      "physical_correspondence": "unresolved_or_not_applicable",
+      "baseline_correspondence": "no_primary_identity_credit",
+      "primary_new_entity_credit": false,
+      "confirmed_duplicate_of": null,
+      "unresolved_links": [],
+      "max_bottle_annotation_iou_geometric_context_only": 0.0,
+      "x1_annotation_coincidences_posthoc": [],
+      "record": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/grid-31.json",
+        "sha256": "2e45fa7bb63611dc62fa22b947e8619ca4fdec441831eb67d3b46902c7c3e248"
+      },
+      "gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-31.json",
+        "sha256": "028629eca3a435d606dd66de7300ac6fc6f8f854a6e0727ee06a5588a6ee733b"
+      },
+      "actually_opened_context_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/grid-31.png",
+        "sha256": "43c794e3d8839c7c3dd00285e8877730ee86e815025a7522290872717f1e4717"
+      }
+    }
+  ],
+  "baseline": [
+    {
+      "id": "baseline-00",
+      "box": [
+        0,
+        0,
+        23,
+        86
+      ],
+      "multiplicity": 2,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-00.json",
+        "sha256": "bc9d030e2cd330b291542a7a7a74e8a4c92663ea516c01e3a7fad784335ff46b"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-00.png",
+        "sha256": "a4f31cdc4a9fd28b9562d2bf3b40c76faa1f9e02aadda2f9a028873f5aaf11a2"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-00.json",
+        "sha256": "0b65249db49f8c344b1c298f5a81860ddb9b88b140070ec0d155f9bad53fb998"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-00.png",
+        "sha256": "a4f31cdc4a9fd28b9562d2bf3b40c76faa1f9e02aadda2f9a028873f5aaf11a2"
+      }
+    },
+    {
+      "id": "baseline-01",
+      "box": [
+        0,
+        0,
+        29,
+        70
+      ],
+      "multiplicity": 2,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-01.json",
+        "sha256": "7be96962eb9573b9f40afff422bcc558676c6fd768b82f1cef9f101ecd7d5343"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-01.png",
+        "sha256": "ffab54c4995f973b1e59482e618ebf6908b439ba44831053751b1e31eae94ab7"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-01.json",
+        "sha256": "56bcb1a086d3ef0bdd03092a34b96922fbd180635af95f5c2d8868e56b302e6d"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-01.png",
+        "sha256": "ffab54c4995f973b1e59482e618ebf6908b439ba44831053751b1e31eae94ab7"
+      }
+    },
+    {
+      "id": "baseline-02",
+      "box": [
+        0,
+        0,
+        36,
+        70
+      ],
+      "multiplicity": 2,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-02.json",
+        "sha256": "de7cfb974e6a78dada428414da7446310f1e961b83f692ea3b680a26774835ef"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-02.png",
+        "sha256": "48c36aa29bcae91f58dc8b2be63a3dc4393506a13f35151d4251101a9f1b1a01"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-02.json",
+        "sha256": "e063be59538055c3bf82bfccb9e377ee118ab68f70171129032fb05e946938b9"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-02.png",
+        "sha256": "48c36aa29bcae91f58dc8b2be63a3dc4393506a13f35151d4251101a9f1b1a01"
+      }
+    },
+    {
+      "id": "baseline-03",
+      "box": [
+        0,
+        0,
+        38,
+        70
+      ],
+      "multiplicity": 1,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-03.json",
+        "sha256": "45f421c0460213236c392536b5f466bb9b8bb67f2191d851ebedaa7941d68149"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-03.png",
+        "sha256": "8979976f0014b16c3e964b485bf3856f385e7a50f923393190b59008dc014032"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-03.json",
+        "sha256": "2ddb5d03439f362af3c7cd90863340b07bc8d3852c87b7e4b8c60719e1b7ba68"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-03.png",
+        "sha256": "8979976f0014b16c3e964b485bf3856f385e7a50f923393190b59008dc014032"
+      }
+    },
+    {
+      "id": "baseline-04",
+      "box": [
+        0,
+        0,
+        47,
+        70
+      ],
+      "multiplicity": 1,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-04.json",
+        "sha256": "0ff9c3779be2f075a4f77dc8fbd2ea89d370a1878c647c81ec33e487b3bbc3d6"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-04.png",
+        "sha256": "c5cd3bed95b31128da757f3b78777c5101dab76175dab65dd74c977f59b268aa"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-04.json",
+        "sha256": "88b4621c81eafd557f8472efb86008dbe6560fdce1b0e80bc1d4f104bcef965f"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-04.png",
+        "sha256": "c5cd3bed95b31128da757f3b78777c5101dab76175dab65dd74c977f59b268aa"
+      }
+    },
+    {
+      "id": "baseline-05",
+      "box": [
+        0,
+        0,
+        47,
+        61
+      ],
+      "multiplicity": 3,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-05.json",
+        "sha256": "7cb1fca877c5db83d9a3b0e9cb9e396da2073f71e72a786fb740e48203559d7e"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-05.png",
+        "sha256": "29106c0908cd2da1273a8a52011b9cf58434928111ed02161b7857a1490a4f4a"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-05.json",
+        "sha256": "608c4e89481373c75518331b50d4a91edd815d3898b1e2a4f7ba23a66655e1c8"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-05.png",
+        "sha256": "29106c0908cd2da1273a8a52011b9cf58434928111ed02161b7857a1490a4f4a"
+      }
+    },
+    {
+      "id": "baseline-06",
+      "box": [
+        0,
+        0,
+        47,
+        62
+      ],
+      "multiplicity": 1,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-06.json",
+        "sha256": "a0566cc9209d95cf01db3554a9e6145f7927fc990fa9ba545a27d367568ef3e5"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-06.png",
+        "sha256": "ef190493d21975ac47da0f3789ea18ba5a08705792ac909b7f35f7ad705b1564"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-06.json",
+        "sha256": "f4ff753fb4600c6e02cee151f2e6ddb0952be95a0e2ec6817df042ff386cb1ec"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-06.png",
+        "sha256": "ef190493d21975ac47da0f3789ea18ba5a08705792ac909b7f35f7ad705b1564"
+      }
+    },
+    {
+      "id": "baseline-07",
+      "box": [
+        0,
+        0,
+        53,
+        61
+      ],
+      "multiplicity": 5,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-07.json",
+        "sha256": "a94771733cf630802902dcd3b45935989f4250f5e257dbdf29a862dcc04e496a"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-07.png",
+        "sha256": "dd47225c78b761a0641f9a637f5d346b1f68ad39d09352ed00c9c4496ace7dc4"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-07.json",
+        "sha256": "5b073fe774a23877d1eeb7b0eea91552c21b3631ad4211217efcf3f0a1059eca"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-07.png",
+        "sha256": "dd47225c78b761a0641f9a637f5d346b1f68ad39d09352ed00c9c4496ace7dc4"
+      }
+    },
+    {
+      "id": "baseline-08",
+      "box": [
+        0,
+        0,
+        53,
+        53
+      ],
+      "multiplicity": 12,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-08.json",
+        "sha256": "d27cb04655008c91f6e784dca52fff878fa75a49e47af49433244d28eff296df"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-08.png",
+        "sha256": "735706f4da72ae1b257788c329b2afc08d8a35c0a42375ca653d0d9e40f1c19d"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-08.json",
+        "sha256": "502b334ddf83bdeda02099e7ddc4e523f04ff18427facac5402e57ff350cbf03"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-08.png",
+        "sha256": "735706f4da72ae1b257788c329b2afc08d8a35c0a42375ca653d0d9e40f1c19d"
+      }
+    },
+    {
+      "id": "baseline-09",
+      "box": [
+        0,
+        0,
+        47,
+        53
+      ],
+      "multiplicity": 3,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-09.json",
+        "sha256": "5267dd2c040ff325ccb933949cf78d03bdde6d0fdca854c2bce6ee0aad12f28b"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-09.png",
+        "sha256": "c25470fa32b5a0debc05317dc4c33fc2f355084ed5a0891f88e5fcb72c425e1f"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-09.json",
+        "sha256": "be9cb66dc255d9a82b1d5a5fd294ef86b59b67eb4a11c33302a75e1026d9acf6"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-09.png",
+        "sha256": "c25470fa32b5a0debc05317dc4c33fc2f355084ed5a0891f88e5fcb72c425e1f"
+      }
+    },
+    {
+      "id": "baseline-10",
+      "box": [
+        0,
+        0,
+        53,
+        69
+      ],
+      "multiplicity": 18,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-10.json",
+        "sha256": "67e362493ee8a56e5b7f375c447bd145c49471c3a37f1bb66265d886fdf8775c"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-10.png",
+        "sha256": "dab175c2c9c7fc776e63bf48921f081ef2baafb5be8d0b9be903b26763cf0a55"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-10.json",
+        "sha256": "7341a2fc3a958eb66e9ca1a14ec134c2df6ab520e915388a7f7dbc43a2f3262e"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-10.png",
+        "sha256": "dab175c2c9c7fc776e63bf48921f081ef2baafb5be8d0b9be903b26763cf0a55"
+      }
+    },
+    {
+      "id": "baseline-11",
+      "box": [
+        0,
+        0,
+        47,
+        69
+      ],
+      "multiplicity": 36,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-11.json",
+        "sha256": "0ccdd14965cc2936cac09e3759defb4c4b31d0840dab8cec0087bbc1e338ed0a"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-11.png",
+        "sha256": "c029ba4f06dc86653e4f351f79e0aab0d34237e4c607fb0fb5d3b783939ccb6d"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-11.json",
+        "sha256": "0ec1f1e1810e23a646e87f855014dd0089bd3e3c441c5b993115c4d95d202ba8"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-11.png",
+        "sha256": "c029ba4f06dc86653e4f351f79e0aab0d34237e4c607fb0fb5d3b783939ccb6d"
+      }
+    },
+    {
+      "id": "baseline-12",
+      "box": [
+        0,
+        0,
+        38,
+        69
+      ],
+      "multiplicity": 120,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-12.json",
+        "sha256": "fb57e2edc313369e1334d7a1f2294d5d6b1144ab59db4cf57e121c3f1e2a13ab"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-12.png",
+        "sha256": "cbb547a8485f73f61949d169a5c5e838e9b9883902a5c9f74b1d98235fd1c8fa"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Several dark upright neck-like silhouettes appear against the yellow shelf behind foreground hair. Bottle bodies are occluded; this partial multi-shape region does not resolve a definite single bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "top-left background and partial silhouettes; multiple potential entities; body extent unavailable"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-12.json",
+        "sha256": "9c23cce74758fcca5612af728e0104a990c207cf0b2537de4e8523eddff04422"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-12.png",
+        "sha256": "cbb547a8485f73f61949d169a5c5e838e9b9883902a5c9f74b1d98235fd1c8fa"
+      }
+    },
+    {
+      "id": "baseline-13",
+      "box": [
+        0,
+        0,
+        6,
+        69
+      ],
+      "multiplicity": 101,
+      "manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-13.json",
+        "sha256": "34ed5e517b3c051980a94975760dc73690a8da386db2cb8b0bee1b5bb08144d7"
+      },
+      "opened_image": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/cpu-slice-02/cpu-positive/gallery/baseline-13.png",
+        "sha256": "6de09ab45103960eccf9b1fbf9d28c89c33a9e29b9f1ac8b79e8af6b53d6c832"
+      },
+      "entity_category_support": "ambiguous",
+      "visible_reason": "Narrow left-edge sliver alongside neck-like silhouettes, shelf and foreground hair; insufficient visible shape for a definite bottle identity.",
+      "geometry": {
+        "numeric_valid": true,
+        "assessment": "extremely narrow partial sliver"
+      },
+      "physical_correspondence": "unresolved within the same small top-left patch",
+      "definite_individual_identity": null,
+      "native_gallery_manifest": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-13.json",
+        "sha256": "9028f693d95a9517ffb292e08ea3df8ee6f602648ca4497a4c0f7aee2551be0e"
+      },
+      "native_image_identical_to_actually_opened": {
+        "path": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-candidate-grid/native-01/gallery/baseline-13.png",
+        "sha256": "6de09ab45103960eccf9b1fbf9d28c89c33a9e29b9f1ac8b79e8af6b53d6c832"
+      }
+    }
+  ],
+  "baseline_occurrences": 307,
+  "baseline_unique_display_geometries": 14,
+  "baseline_unavailable_tail": {
+    "box": null,
+    "censored": true,
+    "char_end": 35071,
+    "char_start": 35014,
+    "coord_token_spans": [],
+    "generated_order": 308,
+    "object_span_id": "rule-stability:B:16:greedy:351017:span-308",
+    "positions": [
+      3079,
+      3080,
+      3081,
+      3082,
+      3083
+    ],
+    "raw_span_sha256": "fa10535589935fdb54ed47a93d0e1b685b39264d991ff357393f62900b22f23d",
+    "raw_span_text": "<|object_ref_start|>bottle<|object_ref_end|><|box_start|>",
+    "raw_text": "<|object_ref_start|>bottle<|object_ref_end|><|box_start|>",
+    "reason": "malformed_object_span",
+    "row_id": "rule-stability:B:16:greedy:351017",
+    "row_index": 0,
+    "schema_spans": [
+      {
+        "char_end": 35034,
+        "char_start": 35014,
+        "text": "<|object_ref_start|>"
+      },
+      {
+        "char_end": 35058,
+        "char_start": 35040,
+        "text": "<|object_ref_end|>"
+      },
+      {
+        "char_end": 35071,
+        "char_start": 35058,
+        "text": "<|box_start|>"
+      }
+    ],
+    "status": "unavailable_censored",
+    "token_ids": [
+      151646,
+      65,
+      62118,
+      151647,
+      151648
+    ]
+  },
+  "baseline_limit": "Do not claim the baseline is physically empty. Partial neck-like silhouettes remain ambiguous; no absolute baseline bottle census is assigned.",
+  "claim_limits": [
+    "One full-label training image and one native bottle prefix.",
+    "Query-coordinate selection only is GT-coordinate-free; category and first-person history are supplied.",
+    "32 independent conditional continuations are an explicit query recipe, not one ordinary greedy trajectory.",
+    "Box accuracy, natural physical-FN reduction, preservation under training, and generalization are unmeasured.",
+    "No saved output is automatically admitted as ground truth or a training target."
+  ]
+}
