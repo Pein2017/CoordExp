@@ -1,12 +1,11 @@
 # Task-local navigation
 
-Start from the exact path, command, artifact or question named by the task.
-Resolve this checkout's physical root, HEAD and dirty scope. For code, use the
-real entrypoint, exact-checkout CodeGraph, source and focused tests; do not read
-a mandatory stack of overview documents before working.
+Start from the task's actual path, command, artifact or scientific question.
+[Research conventions](../research/CONVENTIONS.md) own knowledge and evidence;
+[probe placement](../probes/README.md#implementation-placement) owns source/test
+layout. Current runtime behavior belongs to this checkout's source and stable
+specs, not a sibling. Historical retrieval follows [RETENTION](RETENTION.md).
 
-[Docs](README.md) contains long-lived reasoning, not runtime inventories.
-Stable compatibility semantics use the local `openspec/specs/` owner. Research
-interpretation uses the owning `research/` question and its evidence. Historical
-detail uses [explicit recovery](RETENTION.md), not a second active codebase.
-Preserve unrelated changes. Synthetic tests do not prove real-model behavior.
+Shared instruction ownership, harness loading and local Python integration have
+one owner: `/data/CoordExp/docs/AGENT_INDEX.md`. Project routing is in `../AGENTS.md`;
+do not duplicate shared doctrine or use memory as a second scientific frontier.

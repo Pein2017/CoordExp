@@ -1,61 +1,24 @@
 schema: spec-driven
 
 context: |
-  This checkout is the canonical research-probes worktree at
-  /data/CoordExp/.worktrees/research-probes. main and coordexp-infras are separate
-  versioned checkouts with their own source and contracts, not an automatic
-  stable/dev/research release ladder. docs/BRANCH_AND_WORKTREE_POLICY.md owns
-  this boundary. Cross-checkout promotion requires an explicit scoped decision;
-  no sibling retirement or new worktree follows from this context.
-
-  New research directions use ordinary probes/<direction> packages with current
-  questions and consumers. src/ owns reusable execution and integrity mechanics;
-  tests/probes/ owns probe contracts, with other tests following their source
-  owner. No tag or admission is a prerequisite for ordinary exploration; use
-  strict binding, journal or admission where the actual execution contract needs
-  it. Do not weaken a released source gate to accommodate development changes.
-
-  research/questions/ owns distilled scientific arguments; research/experiments/
-  owns bounded units, evidence and conclusions. docs/ holds stable architecture,
-  conventions and provenance, not source/API mirrors or experiment logs.
-  openspec/specs/ owns stable compatibility-sensitive behavior contracts.
-  openspec/changes/<change>/ is the sole local workspace for bounded changes
-  that benefit from durable proposal, design, tasks, implementation,
-  verification, and archive state.
-
-  Implement dependency-ordered slices with explicit write ownership and real
-  consumer checks. The lead accepts each slice; independent review is bounded
-  to an explicitly requested or decision-bearing risk, not an automatic round
-  after every change. Detail only the active implementation work.
-
-  Protect semantic alignment across data, images, geometry, ordering,
-  templates, tokens, packing, forward behavior, losses, metrics, configs,
-  caches, and artifacts. Exact training-state resume is not a current promise.
-
-  User priority order:
-  1. accuracy and precision;
-  2. training and overall system efficiency;
-  3. simplicity and low implementation overhead;
-  4. scalability and future extension.
+  This is canonical research-probes at /data/CoordExp/.worktrees/research-probes.
+  Read /data/CoordExp/.codex/AGENTS.md if not already loaded for authority,
+  research/engineering discipline and bounded review. Project routing is in
+  AGENTS.md; /data/CoordExp/docs/AGENT_INDEX.md owns local environment and
+  CoordExp design priorities. Siblings are separate versioned checkouts.
+  probes/README.md owns source/test placement; research/CONVENTIONS.md owns
+  knowledge, evidence and current-source qualification. Scientific questions,
+  cohorts, metrics and stop rules remain with the research unit, not reusable
+  infrastructure or a second OpenSpec evidence ledger. Ordinary exploration
+  needs no new tag/admission machinery; released source gates remain intact.
+  Exact training-state resume is not a current promise.
 
 rules:
-  proposal:
-    - State the user-visible problem, intended outcome, scope, non-goals, protected semantics, and expected contract impact.
-    - Separate current evidence, proposed behavior, implementation direction, and deferred work.
-    - Do not use historical blueprints, decision logs, lifecycle registries, super-power plans, or archived changes as current authority.
-    - Name user-owned decisions only when they alter research meaning, compatibility, supported runtime behavior, or significant cost.
   specs:
-    - Encode only verifiable stable behavior changes using capability-named specs and concrete scenarios.
-    - Do not invent normative deltas for internal refactors whose observable contracts remain unchanged.
-    - Preserve image, geometry, token, packing, loss, metric, cache, and artifact identity end to end.
+    - Encode observable compatibility-sensitive behavior, not experimental hypotheses or verdicts; do not invent spec deltas for an internal refactor.
+    - Preserve the owning image, geometry, token, packing, objective, metric and artifact semantics.
   design:
-    - Name the concept and owner, current caller knowledge, proposed interface, hidden implementation, dependencies, failure modes, and observable receipts.
-    - Prefer deep modules, explicit dependencies, tests through interfaces, and replacement with deletion over pass-through layers or speculative frameworks.
-    - For consequential seams, compare meaningfully different designs before selecting one.
-    - Keep historical implementation machinery and compatibility paths visibly separate from canonical behavior.
+    - Identify the scientific owner separately from reusable source/consumer contracts; compare consequential alternatives without prescribing a fixed agent topology.
   tasks:
-    - Use dependency-ordered tracer-bullet slices that each leave a verifiable working state; use expand-contract only for genuinely wide mechanical refactors.
-    - Add or identify the interface-level failing test or executed probe before changing production behavior when feasible.
-    - Include replacement and deletion tasks so old caller knowledge and superseded paths do not remain layered underneath the new design.
-    - End each wave with targeted tests, relevant runtime or performance probes, OpenSpec validation, residue checks, and separate standards and intent-contract audit verdicts.
-    - Do not begin the next wave while the current gate has unresolved P0 or P1 findings.
+    - Use dependency-ordered verifiable slices and include removal of replaced paths; detail only the active work.
+    - Use the user contract's proportional validation and bounded review rather than automatic standards/intent audit rounds for every wave.
