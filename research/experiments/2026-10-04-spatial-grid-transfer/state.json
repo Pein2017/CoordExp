@@ -1,11 +1,11 @@
 {
   "unit_id": "2026-10-04-spatial-grid-transfer",
-  "lifecycle": "planned",
-  "status": "CPU_LEAD_ACCEPTED_NATIVE_RELEASED",
-  "evidence": "none",
-  "scientific_status": "CPU integrity/presentation accepted; native fidelity, first bottle entrance and physical transfer remain unmeasured.",
+  "lifecycle": "closed",
+  "status": "CLOSED_LEAD_ACCEPTED",
+  "evidence": "accepted",
+  "scientific_status": "Zero confirmed new physical bottle identities among32 fixed queries on predetermined image25394.21 slots resolve to16 existing baseline bottle identities;7 uncertain and4 non-bottle slots retained. Conditional localization observed outside documented optimization cohort; no positive incremental or population-generalization claim.",
   "protocol": "research/experiments/2026-10-04-spatial-grid-transfer/unit.md",
-  "state_source": "research/experiments/2026-10-04-spatial-grid-transfer/unit.md",
+  "state_source": "research/experiments/2026-10-04-spatial-grid-transfer/results.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
   "worker_thread": "01a101ac-9ec8-7862-bdb6-38b9cd154673",
   "worker_model": "gpt-6.1-sol",
@@ -14,8 +14,8 @@
   "initial_source_anchor": "cc05d55bc206c36c55dc28126ab7619775539b62",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer",
   "native_released": true,
-  "native_started": false,
-  "lead_accepted": false,
+  "native_started": true,
+  "lead_accepted": true,
   "user_scientific_acceptance": false,
   "budget": {
     "requests": 34,
@@ -42,8 +42,8 @@
     "grid_candidates": 32,
     "maximum_first_bottle_x1_position": 64
   },
-  "next_action": "Bind exact clean-source native release and dispatch one invocation plus saved-data gallery to original Worker; Root then owns complete visual ledger.",
-  "job_state": "All CPU jobs settled and source holders released; native has not started.",
+  "next_action": "Unit closed and release consumed. Root stops fixed-grid expansion after bounded saved-reference audit; ordinary-policy entry and candidate validation remain separate unresolved questions.",
+  "job_state": "Native/gallery both exited0; all owned jobs settled and source holder released. Root opened all79 individual views and completed ledger.",
   "boundary": "Selection uses imageID/category count/exclusion only. One case outside documented optimization stages, not wholly unseen. All32 candidate slots and all baseline categories retained; Root physical ledger mandatory.",
   "not_authorized": [
     "Native before exact Root source/input/runtime release",
@@ -60,5 +60,39 @@
   "lead_ruling": "research/experiments/2026-10-04-spatial-grid-transfer/lead-ruling-01.md",
   "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/cpu-candidate-01.json",
   "lead_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/lead-consumer-check-01.json",
-  "cpu_evidence": "30 selected nodes qualified; final consumer and presentation lead-accepted. Native/physical outcomes unmeasured."
+  "cpu_evidence": "30 selected nodes qualified; CPU consumer and presentation lead-accepted at the earlier ruling. CPU evidence alone made no native or physical claim; terminal outcomes are recorded separately below.",
+  "visual_ledger": "research/experiments/2026-10-04-spatial-grid-transfer/visual-ledger.json",
+  "native_execution_source": "5db603de2db5b40742ca6deb4c0634c732b4f17f",
+  "native_release_consumed": true,
+  "lead_native_acceptance": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/lead-native-acceptance-01.json",
+  "primary": {
+    "new_distinct_physical_bottle_entities": 0,
+    "candidate_slots": 32,
+    "resolved_bottle_slots_with_baseline_counterpart": 21,
+    "distinct_resolved_bottle_identities": 16,
+    "uncertain_slots": 7,
+    "non_bottle_slots": 4
+  },
+  "native_summary": {
+    "requests": 34,
+    "generated_actions": 1169,
+    "forced_actions": 558,
+    "free_actions": 611,
+    "baseline_actions": 478,
+    "baseline_occurrences": 48,
+    "baseline_display_groups": 47,
+    "first_bottle_x1_position": 16,
+    "checkpoint_loads": 1,
+    "optimizer_updates": 0,
+    "native_exit": 0,
+    "gallery_exit": 0
+  },
+  "posthoc_reference_audit": {
+    "source_bottle_references": 13,
+    "definite_baseline_counterparts": 12,
+    "unresolved_individual": 1,
+    "confirmed_missed_reference_bottles": 0,
+    "additional_model_requests": 0
+  },
+  "result": "research/experiments/2026-10-04-spatial-grid-transfer/results.md"
 }

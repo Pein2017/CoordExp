@@ -8,14 +8,18 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 
 ## Current decision
 
-The [single-case spatial-grid transfer](experiments/2026-10-04-spatial-grid-transfer/unit.md)
-is CPU lead-accepted, with one native invocation released and not yet started.
-Image25394
-was selected by minimum ID among17 validation images with at least10 bottle
-annotations, excluding the18 optimization images. The finite contrast uses one
-fresh ordinary baseline, then32 unchanged queries only if its first native bottle
-header reaches the prescribed early boundary. Root will compare every candidate
-against all baseline categories; evaluation/pretraining exposure remains unknown.
+The [single-case spatial-grid transfer](experiments/2026-10-04-spatial-grid-transfer/results.md)
+is lead-accepted and closed with **zero confirmed new bottle identities** beyond
+the fresh baseline on predetermined image25394. All32 queries and47 baseline
+category/geometry views were inspected:21 query slots resolve to16 existing
+bottle identities, four depict non-bottles and seven retain category/identity/
+correspondence uncertainty. Conditional localization occurs outside the18-image
+optimization cohort, but this case shows no incremental benefit. A bounded
+post-hoc reference check finds12 baseline counterparts and one unresolved rack
+identity among13 source-bottle regions; physical completeness remains unknown.
+All34 requests/1,169 actions passed, with one B16 load and zero training; jobs
+settled and the release is consumed. Root stops expanding this fixed-grid branch.
+The negative does not identify memorization or isolate image from history.
 
 The [fixed spatial-candidate grid](experiments/2026-10-04-spatial-candidate-grid/results.md)
 is lead-accepted and closed. Exhaustive assistant visual inspection of32
