@@ -1,48 +1,23 @@
 schema: spec-driven
 
 context: |
-  Main owns integrated CoordExp source and annotation/data operations. Resolve
-  the exact checkout and current code; sibling branches can have different
-  capabilities. docs/BRANCH_AND_WORKTREE_POLICY.md owns checkout boundaries.
-
-  docs/README.md routes long-lived design knowledge, not API inventories.
-  Current interfaces belong to source, typed configs and executable contracts.
-  openspec/specs/ owns stable compatibility-sensitive behavior contracts.
-  openspec/changes/<change>/ is the sole local workspace for bounded changes
-  that benefit from durable proposal, design, tasks, implementation,
-  verification, and archive state.
-
-  Protect semantic alignment across data, images, geometry, ordering,
-  templates, tokens, packing, forward behavior, losses, metrics, configs,
-  caches, and artifacts. Exact training-state resume is not a current promise.
-
-  User priority order:
-  1. accuracy and precision;
-  2. training and overall system efficiency;
-  3. simplicity and low implementation overhead;
-  4. scalability and future extension.
+  Main owns stable source integration and annotation/data operations.
+  docs/BRANCH_AND_WORKTREE_POLICY.md owns checkout boundaries;
+  docs/OUTPUT_STORAGE_POLICY.md owns shared assets and run destinations.
+  Read /data/CoordExp/.codex/AGENTS.md if not already loaded for user authority,
+  research/engineering discipline and review policy. docs/AGENT_INDEX.md owns
+  local environment integration and the CoordExp design-priority order.
+  Current behavior belongs to this checkout's source, typed configs and tests;
+  openspec/specs/ owns stable compatibility. Research evidence and meaning
+  remain with canonical research-probes. Exact training-state resume is not
+  a current promise. Do not replace these owners with historical plans.
 
 rules:
-  proposal:
-    - State the user-visible problem, intended outcome, scope, non-goals, protected semantics, and expected contract impact.
-    - Separate current evidence, proposed behavior, implementation direction, and deferred work.
-    - Do not use historical blueprints, decision logs, lifecycle registries, legacy repo-local super-power plans, or archived changes as current authority; installed Superpowers artifacts remain non-normative execution aids.
-    - Name user-owned decisions only when they alter research meaning, compatibility, supported runtime behavior, or significant cost.
   specs:
-    - Encode only verifiable stable behavior changes using capability-named specs and concrete scenarios.
-    - Do not invent normative deltas for internal refactors whose observable contracts remain unchanged.
-    - Preserve image, geometry, token, packing, loss, metric, cache, and artifact identity end to end.
+    - Encode observable stable behavior only; internal refactors without behavior changes should not invent normative deltas.
+    - Preserve the owning data, geometry, token, packing, loss, metric, cache and artifact contracts end to end.
   design:
-    - Name the concept and owner, current caller knowledge, proposed interface, hidden implementation, dependencies, failure modes, and observable receipts.
-    - Prefer deep modules, explicit dependencies, tests through interfaces, and replacement with deletion over pass-through layers or speculative frameworks.
-    - For consequential seams, compare meaningfully different designs before selecting one.
-    - Keep historical implementation machinery and compatibility paths visibly separate from canonical behavior.
+    - Name each changed owner and real caller/consumer; compare consequential alternatives without mandating a fixed agent topology.
   tasks:
-    - Split a change when pending work spans independently testable subsystems; each resulting change must leave working, verifiable software on its own.
-    - Use dependency-ordered tracer-bullet slices that each leave a verifiable working state; use expand-contract only for genuinely wide mechanical refactors.
-    - Make the first implementation wave retire the top conclusion-changing execution risks through the smallest real-entry and production-shaped vertical slice.
-    - For distributed, cache, artifact, or long-running work, declare measurable bounds for calls, passes, collectives, wall time, RSS, workers, payload size, finalization, and recovery before scaling.
-    - Add or identify the interface-level failing test or executed probe before changing production behavior when feasible.
-    - Include replacement and deletion tasks so old caller knowledge and superseded paths do not remain layered underneath the new design.
-    - End routine waves with targeted tests, relevant runtime or performance probes, OpenSpec validation, and residue checks. Use at most one independent auditor for a frozen decision-bearing surface; after accepted fixes, re-review only those findings and materially changed evidence.
-    - Do not begin the next wave while the current gate has unresolved P0 or P1 findings.
+    - Use dependency-ordered, independently verifiable slices and include retirement of replaced paths.
+    - Follow the user contract's proportional validation and bounded review; do not add automatic parallel audit verdicts for every wave.

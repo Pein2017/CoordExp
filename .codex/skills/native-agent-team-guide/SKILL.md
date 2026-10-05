@@ -1,92 +1,87 @@
 ---
 name: native-agent-team-guidance
-description: Coordinate authorized temporary native agent teams through bounded assignments, peer coordination, reports, and durable job handoffs.
+description: Coordinate authorized native workers and real handoffs, including package continuation, consumer acceptance and durable external jobs.
 ---
 
 # Native Agent Team Guide
 
-Use only when native delegation is authorized; this skill grants no authority to
-create agents or launch research. The lead owns decomposition, user questions,
-shared decisions and acceptance. A `research-worker-main` may implement or
-delegate only within its package; it cannot schedule the research program.
-Execution agents own bounded packages. Create a root or persistent thread only
-when the user explicitly asks; use [lead-worker](../lead-worker/SKILL.md) for
-that persistent-worker path.
+User authority, model preferences and final acceptance belong to the
+[user contract](../../AGENTS.md#agent-topology-and-delegation). This skill owns
+worker mechanics. Persistent transport additionally uses
+[lead-worker](../lead-worker/SKILL.md); no skill creates delegation or launch grants.
 
 ## Assign and choose the team
 
-Reconcile existing workers first. Give each semantic surface one owner and one
-writer; parallelize independent outcomes that can be checked through their real
-consumer. Reuse a worker while its assignment and context remain reliable;
-reconcile changed ownership, inputs, permissions and acceptance before resuming.
-Deeper nesting needs a concrete benefit and authorization.
+Reconcile existing workers and owners. Reuse reliable context; choose topology
+from actual dependencies and integration cost, not fixed layers. Deeper nesting
+needs a concrete benefit and authorization. Resolve supported model/effort and
+fork settings from the current tool schema; full-history forks may disallow
+setting overrides. Verify actual settings against global model routing.
 
-Choose topology and `fork_turns` from dependencies, isolation and integration
-cost. Follow global [model routing](../../AGENTS.md#model-routing) for role
-authority and defaults; resolve supported model IDs and efforts from the live
-tool schema, and set overrides only when the chosen fork supports them.
+Bind the package to outcome/non-goals, physical checkout and owned paths,
+authority, source/input identities, dependencies, actual consumer/schema,
+acceptance evidence, return target, authorized next actions, retry/relaunch limits
+and stop boundary. Add constants only when they affect execution. An exploration
+brief names entrypoints and the uncertainty, not a speculative implementation.
 
-Brief the outcome and non-goals, cwd and owned paths, permissions, authoritative
-source and input identities, dependencies, real consumer/schema and acceptance
-evidence, output format, next steps the worker may take without another reply,
-retry/relaunch limits, and the boundary requiring a lead or user decision. For
-exploration, name known entry paths or symbols and the uncertainty to resolve.
-Add budgets or other constants only when they affect execution.
+For the experimental shared-memory MCP, name recall/candidate duties and the
+consolidator. Follow [its skill](../shared-memory/SKILL.md): a child needs its own
+real caller context. Otherwise it returns source-linked candidate content for
+lead capture, never submitting under an inherited parent identity.
 
-For registered shared-memory work, include recall/candidate-capture duties,
-availability of the worker's own caller context, and the designated consolidator
-in the brief. Follow [shared-memory](../shared-memory/SKILL.md) for the workflow
-and the lead-capture fallback when a native child lacks its own context; an
-inherited parent startup header is not the child's identity.
+## Coordinate and continue
 
-For assignments changing process ownership or artifact production, finalization
-or readback behavior, use [full-pipeline-smoke](../full-pipeline-smoke/SKILL.md) for
-the first implementation checkpoint and its CPU/native evidence boundary.
-These are worker-owned technical checks, with no extra lead approval stage.
+Use the current harness's native assignment/message/observation contract. Message
+delivery is not proof of a started turn. Peers may coordinate facts and dependencies
+inside their packages, not grant authority or change shared meaning. Agree ownership
+before overlapping writes and reconcile external jobs after interruption.
 
-## Coordinate and return
+Workers own routine implementation, technical checks, repair/recheck and continuation
+through already-authorized results within the package's resource, compatibility,
+retry and stop bounds. A failed check alone needs no lead signoff or arbitrary
+repair-count ceiling. Preserve frozen identities and meaningful checks; escalate
+changes to research meaning, scope, material cost or stop rules. Continue unaffected
+work and report decision-bearing failures with evidence, impact and a next step.
 
-Agents may coordinate directly on facts and dependencies inside their ownership.
-They cannot grant permissions or change shared contracts. Agree ownership before
-overlapping writes; return scope, meaning or architecture changes to the lead.
-For native agents, `send_message` queues information but does not start a turn;
-use `followup_task` to assign or resume an idle/interrupted worker, not for a
-status check. After interruption, reconcile the roster and any external process:
-interrupting an agent does not stop its job.
-
-Follow [global checkpoint and waiting rules](../../AGENTS.md#checkpoints-and-waiting).
-Report decision-bearing failures promptly with evidence, impact and a next step;
-there is no default repair-count ceiling. Continue unaffected work.
+Checkpoint at a decision, first production-shaped result, acceptance or material
+rework risk, not every phase. For changed process/artifact ownership, use
+[full-pipeline-smoke](../full-pipeline-smoke/SKILL.md) for the earliest real
+caller-to-terminal-consumer slice; CPU lifecycle evidence does not prove native
+model/distributed behavior. Logs should retain raw evidence while observations
+use bounded relevant intervals, exit status and terminal artifacts.
 
 ## Correct the brief
 
-After a demonstrated semantic misunderstanding, clarify the governing invariant
-and a counterexample, or take over the coupled work. Increasing effort alone
-does not correct the brief.
+After a demonstrated semantic misunderstanding, clarify the invariant and a
+counterexample or take over tightly coupled work. More effort alone is not a fix.
 
-Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with
-changed paths, source/input/runtime/artifact identities, relevant command exit
-statuses, structured results and raw-evidence pointers, consumer checks,
-unresolved questions and job state. Reuse evidence only for unchanged identities
-and acceptance targets. The lead verifies the stable candidate at its final
-consumer or decision-bearing boundary and alone marks it `lead-accepted`;
-user-owned decisions require separate `user-accepted` evidence. Worker
-self-acceptance and transport completion are not acceptance.
+Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with changed
+paths, source/input/runtime/artifact identities, actual exit statuses, structured
+checks, raw-evidence pointers, consumer coverage, unresolved questions and job state.
+The lead reuses unchanged package checks and verifies the final consumer/decision
+boundary before `lead-accepted`; user-owned decisions need `user-accepted` evidence.
+A worker's technical acceptance is not final scientific acceptance.
 
 ## Durable job handoff
 
-Keep one owner and one live invocation. Hand off the exact command/run identity,
-process/session, stable logs and results, saved completed units, terminal success
-and failure signals, completed checks, responsible job owner and direct return
-route. Before root ends its turn, verify the producer survives agent return,
-completed units are saved, both terminal outcomes are signaled, and the return
-route works. The job owner
-inspects terminal artifacts and reports directly to root; a launch or agent
-return is not completion. If no return route works, disclose the gap, retain
-explicit ownership, and do not promise an automatic notification. Reconcile
-ownership before replacement and never rerun completed units.
+A handoff is transport, not a new owner or inherited authority. Use it for a real
+transfer, machine boundary or unreliable context, not simply a new phase. Inline
+is default unless the task requests a durable destination. Link the current
+objective, ruling, decisive evidence, superseded routes/reopening conditions,
+next action/stop boundary and minimum reading path. Include only recovery-critical
+checkout/dirty scope, config/checkpoint/artifacts, commands and pending checks.
 
-For an already authorized frozen probe, bind the assignment to the
-[Frozen Probe Execution Packet](../research-flow/references/probe-execution-packet.md).
-When a Luna brief crosses configuration, caller or artifact-consumer boundaries,
-use the worked [Luna delegation examples](references/luna-delegation.md).
+For a live external job, carry exact run/command identity, process/session,
+completed units, logs/results, terminal success and failure signals, job owner
+and direct return route. Verify survival after agent return, persistence and
+return delivery before promising continuation. If the route is unavailable,
+retain explicit ownership and disclose it. Reconcile before replacement; never
+rerun completed units or assume agent interruption stopped an external process.
+
+## Conditional resources
+
+- Already authorized research execution: [frozen probe packet](../research-flow/references/probe-execution-packet.md).
+- Briefs crossing configuration/caller/consumer seams: [Luna examples](references/luna-delegation.md).
+- Requested acceptance-cost comparisons: [routing evidence](references/evidence-workflow.md),
+  backed by `scripts/routing_evidence.py` and its tests. These receipts are not
+  mandatory for ordinary delegation and cannot establish a global model ranking.

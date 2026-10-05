@@ -1,105 +1,35 @@
 ---
 name: git-hygiene
-description: Choose and verify the CoordExp worktree, or safely stage, commit, split, synchronize, publish, or retire repository work while preserving unrelated edits and credentials.
+description: Perform explicitly authorized CoordExp Git integration, publication or worktree retirement with retained source/artifact ownership.
 ---
 
-# Git Hygiene
+# CoordExp Git Operations
 
-Keep commits logical and scoped. Dirty changes from parallel work are expected;
-never stage, rewrite, or revert unrelated files.
+General Git safety belongs to the [user contract](../../AGENTS.md#authority-and-scope).
+Use the current harness's exact commit/staging/verification contract; this skill
+does not prescribe a competing staging loop or authorize commit, push or worktree
+creation merely because cleanup was requested.
 
-## Bind The Checkout
+For checkout choice, integration or lifecycle, read the selected checkout's
+`docs/BRANCH_AND_WORKTREE_POLICY.md` (the cross-checkout owner is
+`/data/CoordExp/docs/BRANCH_AND_WORKTREE_POLICY.md`). Bind the physical tree,
+current HEAD, dirty ownership and exact operation/destination. Do not assume
+newer siblings form a release ladder. Keep changes in explicit logical batches,
+with reviewed diffs and proportionate checks; preserve unrelated index/worktree
+state and leave secrets, heavy assets and runtime links out of Git.
 
-1. Inspect the repository root, current branch and status, and `git worktree
-   list` before editing or publishing.
-2. Use the user-named checkout or the smallest current owner from repository
-   guidance. Work in place only for narrow reversible work with no ownership
-   conflict; otherwise isolate it in a worktree from the authorized base.
-3. Confirm the absolute worktree and branch before changing files. Keep heavy
-   data, models, caches, outputs, and runtime links outside Git. Add a shared
-   link only when the target is validated and the path is absent; never replace
-   an existing path or stage the link.
-4. Keep symbol indexes and commands bound to that absolute checkout. Reactivate
-   a code index after changing roots, and verify the task in the same checkout.
+Before authorized publication, verify remote/upstream identity and divergence;
+synchronize only through the authorized integration route. Keep credentials out
+of argv, remotes and output. A failed check or ambiguous branch ownership is not
+permission to rewrite history or silently include another file.
 
-Stop on an ambiguous base, overlapping dirty ownership, or a requested move to
-a different checkout until ownership is resolved.
+For retirement, also read `docs/OUTPUT_STORAGE_POLICY.md` and the applicable
+retention/research convention. Merged commits or a clean status do not prove
+research knowledge, untracked artifacts or active consumers are preserved. Bind
+recoverable refs and verified recovery before deleting the exact authorized
+worktree; inspect remaining branch refs separately. No broad pruning or automatic
+worktree isolation.
 
-## Preflight
-
-1. Inspect status, current branch, worktrees, remotes, upstream, and
-   ahead/behind state.
-2. Resolve the user-authorized file set and intended publication boundary.
-3. Confirm credential sources are ignored and untracked without printing their
-   contents.
-4. Stop when remote identity, branch ownership, secret status, or requested
-   scope is ambiguous.
-
-## Commit Loop
-
-1. Inspect unstaged and staged diffs.
-2. Partition the authorized changes into explicit logical batches. A batch may
-   contain several files for one intent—feature, fix, test, documentation,
-   config, formatting, or generated artifact—but do not force unrelated
-   intents into one commit.
-3. Process the batches one at a time. For each batch, stage only its explicit
-   paths (or stage interactively), leaving later and ambiguous work unstaged.
-4. Reinspect the complete staged patch and run whitespace checks before each
-   commit.
-5. Run the smallest meaningful verification for that batch's staged scope.
-6. Commit that batch with an imperative message, record its commit and
-   verification receipt, and confirm the remaining dirty set before starting
-   the next batch.
-
-One authorized task may therefore produce multiple commits. Do not use
-`git add .`, `git add -A`, or an equivalent whole-tree stage in a dirty
-checkout unless the user explicitly authorized the complete remaining tree as
-one batch. Stop after a failed verification, an ownership conflict, or an
-unclassified path; do not silently fold it into the next batch.
-
-Give each verification command one owner and retain its live process or session
-handle. Before retrying a slow or broad check, prove the earlier invocation
-exited; never run overlapping copies of the same suite.
-
-Completion requires every intended batch to have a commit whose patch matches
-that batch's intent, contains no unrelated work or secrets, and has an
-explicit verification receipt. Report the ordered batch list, commits,
-verification, and any intentionally remaining dirty paths.
-
-## Synchronize And Push
-
-Synchronization means integrate upstream changes before publication, not
-push-only.
-
-1. Confirm or establish the intended upstream.
-2. Fetch, then inspect ahead/behind/diverged state.
-3. If behind or diverged, choose rebase or merge according to branch policy and
-   user authority; preserve local work before integration.
-4. Push only when the branch is current with upstream or the user approved a
-   different integration plan.
-
-For HTTPS personal-access-token workflows, use a temporary credential helper
-that reads an ignored local credential source. Disable terminal prompts and
-never place credentials in remotes, command arguments, commit messages, PR
-bodies, logs, or tracked files. Skip network operations that have no work.
-
-## Worktree And Destructive Boundaries
-
-- Before deleting branches or worktrees, compare metadata with real directories
-  and inspect uncommitted work plus ahead/behind state.
-- Retire a worktree only after its work is merged or explicitly discarded,
-  durable artifacts are preserved, and its status is clean.
-- For a worktree carrying research or documentation history, verify its content
-  is absorbed by the retained owner. Clean status or merged commits alone do not
-  prove this; preserve unabsorbed sources under the owning retention policy with
-  a recoverable ref and verified manifest before removal.
-- After removing a worktree, inspect its remaining branch refs separately and
-  retire only those covered by the authorized cleanup scope.
-- Dry-run metadata pruning before applying it.
-- A stale worktree marker or lock error is evidence to investigate, not proof
-  that deletion is safe.
-- History rewrite, force push, hard reset, destructive cleanup, and branch
-  creation require explicit user scope.
-
-Report the exact checkout and branch, changes and verification, commits created,
-fetch/integration/push state, remaining dirt, and merge or retirement state.
+Report exact checkout/branch, scoped changes, verification, any commits and
+publication/integration/retirement actually performed, and intentionally retained
+dirty work. An invocation of this skill is not itself a request to publish.

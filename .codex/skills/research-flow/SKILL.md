@@ -1,298 +1,71 @@
 ---
 name: research-flow
-description: Lead or close a bounded CoordExp research investigation while preserving one active estimand and separating scientific, technical, and archival status.
+description: Lead, interpret or close a bounded CoordExp research investigation with explicit scientific versus technical evidence boundaries.
 ---
 
 # Research Flow
 
-Use this skill when the durable product is **research knowledge** rather than
-current-behavior documentation, production code, or an ordinary audit.
+Use when the durable product is research knowledge, not ordinary code or a generic
+review. Resolve the registered canonical research base at
+`/data/CoordExp/.worktrees/research-probes`; the checkout hosting this skill is not
+necessarily that base.
 
-## Agent catch-up and knowledge maintenance
+## Choose the current owner
 
-Resolve the registered research base independently of the Skill's installation
-checkout. The expected base is `research-probes` at
-`/data/CoordExp/.worktrees/research-probes`; verify the runtime identity/path.
-Read its `research/index.md` and `research/CONVENTIONS.md` through that Project,
-not by copying its research tree into the checkout hosting this Skill.
-The convention is the single layout/maintenance owner; this Skill routes to it.
-For source/artifact placement, read that checkout's `docs/OUTPUT_STORAGE_POLICY.md`.
-Keep maintained code out of `outputs/`; source captures and historical recovery
-follow that owner rather than turning saved run directories into module libraries.
-Before creating or assigning probe implementation, follow that checkout's
-`probes/README.md#implementation-placement` and record the chosen package/module
-and test paths in the existing unit or assignment. That section owns probe code
-layout; the flat research knowledge layout below does not prescribe code layout.
+Read the base's `research/index.md` and the relevant unit/result. Its
+`research/CONVENTIONS.md` owns layout, catalog, distillation and current-source
+qualification. `probes/README.md#implementation-placement` owns source/test
+placement; the local storage policy owns output roots. Do not recreate those
+rules here or copy the research tree into the skill-hosting checkout.
 
-All primary readers are agents. Fast catch-up is `research/index.md` plus the
-current unit state/result; deep catch-up adds `story.md`, relevant question pages
-and decisive sources. Before recommending a new direction or creating a unit,
-search `research/experiments/catalog.jsonl` and read the closest decisive results,
-including successful baselines and limiting counterexamples. Give one compact
-predecessor recap: what is settled; what remains unresolved; what this proposal
-changes; and which possible outcomes change the next decision. Check the proposal
-against the user's ultimate objective, not only a convenient intermediate metric.
-Name replication, scale checks and execution qualification as such; do not
-present them as a new algorithmic discriminator. Reuse settled evidence unless
-the new task crosses its stated boundary. If the incremental question is unclear,
-resolve it in discussion before expanding preparation or compute. Keep the recap
-in the existing discussion/unit rather than a second checklist or review chain;
-continuation within an unchanged contract reuses it without full-history rereads.
+Before proposing a direction, search `research/experiments/catalog.jsonl` and
+read the closest supporting result and limiting counterexample. State what is
+settled, the remaining uncertainty, what changes now and which outcomes change
+the next decision. Replication, scale checks and execution qualification are not
+new algorithmic discriminators. Reuse still-applicable evidence instead of
+expanding preparation or compute without an incremental question.
 
-The entire repository serves this research topic. Knowledge lives directly in
-`research/`, with no topic/program wrapper. Its `index.md` combines frontier and
-routing; `story.md`, `glossary.md`, `alternatives.md`, `questions/` and
-`experiments/` have the roles defined once in the convention. Retire old OKF,
-idea/decision/mechanism/archive buckets; tested ideas enter their question and
-catalog, while genuinely unresolved sparks keep explicit reopening conditions.
-Do not recreate old-path aliases or an empty placeholder category.
-Frozen protocol, current `state.json`,
-accepted results, question-oriented synthesis and historical transport have
-separate roles. A historical `running` field or old compute grant is not live
-state or permission. Handoffs are consumed transport, not permanent frontiers.
-Do not append every run to the current context or duplicate full result tables
-across routers. Preserve raw intake byte-faithfully until its owner verifies an
-exact recovery path. Closed records follow the research base's
-`research/CONVENTIONS.md` and `docs/OUTPUT_STORAGE_POLICY.md` for Git recovery
-and distillation. Check path/hash-bound consumers before relocating code or records.
+## Bind a research step
 
-## Authority
+Open theoretical discussion may remain exploratory. Before an executed probe or
+training step, freeze the existing unit's question and contrast:
 
-- Current operator guidance owns current behavior.
-- Stable specifications own compatibility-sensitive contracts.
-- The active research record owns ideas, investigations, mechanisms,
-  decisions, negative results, and continuation context.
-- The research unit owns its question, contrast, population, conditioning,
-  estimand, evidence, claim, and stop rule. A named infrastructure owner owns
-  reusable runtime, instrumentation, identity, persistence, and recovery
-  behavior. Neither owner's acceptance closes the other.
-- Historical records are provenance; legacy progress archives receive no new
-  records.
-- Research worktree lifecycle, return or migration of knowledge and maintained
-  code, and retirement are owned by the current research base's
-  `docs/BRANCH_AND_WORKTREE_POLICY.md`. Resolve that owner before acting; follow
-  its preservation distinctions rather than imposing a blanket records-only
-  return. Do not restate lifecycle rules here or substitute the root production
-  policy for the research-base policy.
-- Reviews, handoffs, packets, and memory route to owners but do not become
-  authority.
+`From anchor A, does intervention X change outcome Y under gate Z?`
 
-Use `audit-review` for correctness findings, `model-diagnosis` for abnormal
-behavior, the owning code/config/runtime path for a reproducible mechanical
-failure, `coordexp-infer-eval-workflow` for run operations, and `git-hygiene`
-for repository publication.
+The [research contract](references/research-graph-contract.md) owns scientific
+alignment, evidence tiers, semantic deltas, denominator/conditioning distinctions,
+mechanism promotion and closeout. Read the sections implicated by the task.
+Do not restate its full checklist in a launch packet or make a diagnostic proxy
+decision-owning unless the unit and user-approved stop rule say so. An auxiliary
+diagnostic may run after/alongside the frozen primary contrast, not silently
+replace its critical path. Required identity and interpretability checks remain.
 
-These skills answer different questions, not successive mandatory approvals.
-Reuse evidence closing the same phase/target/risk; changing skills does not
-restart the review budget. When delegation is worthwhile, use
-`native-agent-team-guidance` for roles, model/effort, and message flow. Package
-owners integrate their work; the lead verifies the decision-bearing boundary
-rather than repeating every internal check. Model capability never substitutes
-for evidence or grants research authority.
+For an already frozen worker package, use the
+[probe execution packet](references/probe-execution-packet.md), reusing the unit
+rather than creating duplicate state. For difficult proxy-to-outcome boundaries,
+read [alignment examples](references/research-alignment-examples.md).
 
-## Unresolved decisions across tasks
+## Interpret and close
 
-For work whose unresolved decisions span tasks, use the existing question page
-or owning OpenSpec design to keep the destination and next decision visible.
-Apply this only when a short current-state note is insufficient; follow the
-research base's conventions rather than creating another map or ticket system.
+Report scientific disposition separately from technical validity and infrastructure
+follow-up. Natural, forced-prefix, teacher-forced and retrieval-conditioned
+observations support different claims. Invalid/unexecuted/missing evidence does
+not establish a scientific negative; valid empty outputs retain the protocol's
+score. A repaired derived evaluator may reuse unaffected raw execution only under
+the research contract's feedback and identity conditions.
 
-- Keep precise unresolved questions with their actual blockers and the evidence
-  or user ruling that resolves them. The lead chooses the next unblocked question.
-- Keep in-scope uncertainties that cannot yet be phrased precisely separate from
-  actionable questions; expand them only as evidence makes the question clear.
-- Keep explicitly excluded work with its reason and reopening condition. It does
-  not silently become the next task when current work completes.
-- Record each decision once at its owner. Indexes hold a short gist and link;
-  briefs carry only the relevant decision and evidence pointers. When a decision
-  changes, revisit affected dependents rather than regenerating the whole plan.
+Close from the accepted result/receipt outward under the research convention:
+current state, catalog, then only changed question beliefs, story or frontier.
+Keep one metric-bearing machine receipt, not parallel prose ledgers. Reusable
+technical defects go to their infrastructure owner; research meaning stays with
+the unit. Historical records and old grants never become current launch authority.
 
-Use the existing glossary to resolve overloaded research terms before dependent
-work. Record a settled term there; keep a consequential trade-off's rationale
-in its owning research record or OpenSpec design, not a duplicate ADR by default.
-This planning note is complete when the next decision, its owner and evidence
-path are clear; it does not require enumerating every future branch or changing
-frozen experimental records.
+For research OpenSpec completion, read
+[receipt-grounded closeout](references/openspec-closeout.md) before changing
+checkboxes. Archive remains separately authorized. Use the experimental
+[shared-memory MCP](../shared-memory/SKILL.md) under the user-wide capture and
+reviewed-publication grant; it is not Codex automatic memories and never replaces
+the research owner. A real transfer uses native-team handoff, not a new frontier.
 
-## Active-contract gate
-
-Open theoretical exploration may produce candidate models, conditional predictions,
-and unresolved questions without selecting an intervention yet. Apply the
-[mechanistic reasoning guidance](../../AGENTS.md#mechanistic-research-reasoning);
-the execution contract below becomes necessary when moving to a probe or training step.
-
-Before executing a probe or training step, freeze one current sentence:
-
-```text
-From anchor A, does intervention X change decision outcome Y under gate Z?
-```
-
-Bind it to immutable checkpoint/config/input identities, intervention boundary
-and provenance, evaluation/owner ledger, acceptance level, explicit user resource
-limits if any, and stop rule. Existing unit/config/receipts may hold this contract; do not create
-a duplicate packet. Bind prefix identity when conditioning or replay depends
-on it. Exact-token identity is a replay/provenance diagnostic unless the unit
-explicitly makes exact replay the estimand.
-
-For a worker implementing or running an already frozen probe, use the
-[Frozen Probe Execution Packet](references/probe-execution-packet.md). It binds
-the technical handoff without transferring research meaning or adding another
-review or launch gate.
-
-An auxiliary proxy, null, mechanism diagnostic, or gradient screen is
-decision-owning only when the active contract explicitly names it and its stop
-rule is user-authorized. Otherwise run it after or alongside the frozen primary
-contrast, never on its critical path: failure, infeasibility, or ambiguity closes
-only that diagnostic branch. This does not weaken the input, identity,
-mechanical-validity, safety, or evidence-interpretability gates required by the
-primary contrast.
-
-A change to checkpoint family or ordering, conditioning surface, intervention
-sequence, acceptance/debt policy, architecture, claim, critical path, or stop
-rule is a phase reset. Close or detach the old contract and create a fresh unit
-or continuation packet before execution; do not let old terms silently acquire
-new meanings. Choose continuation or handoff under
-[Durability and efficiency](../../AGENTS.md#durability-and-efficiency), based on
-context reliability and responsibility changes rather than an iteration count.
-
-## Work
-
-1. **Bound the source and product.**
-   - Record exact roots, worktrees, date window, globs, artifacts, and whether
-     the result is raw intake, migration, synthesis, a research unit, or a
-     decision packet.
-   - Classify the requested product as research knowledge, infrastructure
-     behavior, or a linked pair. Give a linked pair two explicit owners rather
-     than one blended status.
-   - Complete when scope cannot silently expand.
-
-2. **Preserve provenance before interpretation.**
-   - Keep source path, checkout, content identity, and divergence visible.
-   - For cross-worktree unions, distinguish identical content, new paths, and
-     same-path divergent content before cleanup.
-   - Complete when every retained claim can be traced to a source.
-
-3. **Synthesize into an owning surface.**
-   - Build a reading path rather than mirroring raw notes.
-   - Separate planned protocol, executed evidence, interpretation, decision,
-     mechanism promotion, and implementation authorization.
-   - For executed work, state scientific disposition separately from
-     mechanical validity and infrastructure follow-up.
-   - Distinguish observations, hypotheses, and supported inferences. When
-     interpreting a mechanism or choosing the next experiment, name the
-     strongest remaining alternative and cheapest discriminating evidence;
-     do not expand this into a mandatory mechanism matrix.
-   - For research units, apply
-     [Research Graph and Unit Contract](references/research-graph-contract.md).
-   - Complete when one tracked unit/result/question owns the current statement.
-
-4. **Resolve semantic deltas.**
-   - Compare the originating question and approved route with any later change
-     to cohort, predicate, estimand, control, claim, stop rule, critical path,
-     or material cost.
-   - Record old versus new, reason, claim/evidence/cost impact, authorization,
-     and detached work.
-   - Record decision-owning outcome, intervention or proxy, final evaluation,
-     transfer assumption, preservation risk, and signal supply.
-   - Compare natural versus forced or teacher-forced conditioning,
-     precondition or admission versus conditional realization, and source
-     population versus eligible, executed, and analyzable denominators.
-   - Use [Research Alignment Examples](references/research-alignment-examples.md)
-     only when the boundary is unclear.
-   - Complete when derived constraints are either authorized or explicitly
-     labeled proposals.
-
-5. **Gate evidence on both axes.**
-   - On the research axis, verify the declared question, contrast, denominator,
-     conditioning, evaluation surface, and permitted claim.
-   - On the infrastructure axis, verify inputs, geometry and token boundaries,
-     runtime identity, intervention consumption, serialization, persistence,
-     and readback required by that contrast.
-   - Treat oracle, forced-prefix, teacher-forced, retrieval, and mechanics-smoke
-     observations as evidence only for their exact surface. Do not promote them
-     to natural behavior or trainability without an explicit transfer test.
-   - Do not interpret technical-invalid, unexecuted, or missing-support cases
-     as scientific negatives unless the frozen protocol explicitly measures
-     that failure as an outcome. Unknown/unmatched cases have only the meaning
-     assigned by the frozen protocol: neutrality does not authorize dropping
-     rows, changing denominators, or forcing zero gradient. Reward-neutral is
-     not necessarily gradient-neutral; valid empty/dropped model outputs may
-     be real zero-score outcomes rather than technical failures.
-   - Bound a technical failure to the affected evidence/contrast. For a
-     derived-evaluation-only defect, complete retained raw evidence may support
-     a new versioned evaluation after verifying execution was unaffected and
-     the repaired evaluator preserves the frozen semantics. Preserve the old
-     invalid evaluation; missing raw evidence or affected model execution
-     requires a fresh affected run. Never silently rehabilitate old metrics.
-     A green infrastructure check proves mechanics only.
-   - Complete when every verdict names both the accepted mechanical path and
-     the evidence-bearing scientific contrast, or states that one is absent.
-
-6. **Close routing once.**
-   - Close from the owning accepted receipt/result to a current unit's `state.json`.
-     Update a question page only when belief changes, the story only when the
-     research trajectory changes, and `research/index.md` only when the frontier
-     or user boundary changes. Maintain catalog paths, not another status table.
-     Closed phases follow `research/CONVENTIONS.md` for topic/catalog distillation
-     and exact Git recovery. Create a handoff only for a real transfer and retire
-     redundant transport after integration under those recovery rules.
-     Change durable project memory only on an explicit user request.
-   - Route a reusable technical deficiency to its infrastructure owner with the
-     exact failure and acceptance boundary. Link it from the research unit, but
-     do not move cohort, intervention, estimand, threshold, or claim ownership
-     into infrastructure.
-   - Promote current behavior to operator guidance or stable contracts only
-     through their own authorized change.
-   - Complete when no live router points at superseded transport or provenance.
-
-   Keep one machine-readable iteration receipt authoritative. Human records
-   link to it and summarize the decision; do not duplicate volatile counters or
-   ledgers across multiple prose surfaces. Update broad routers at a promoted
-   anchor or final closeout, not after every attempted update.
-
-7. **Verify the product.**
-   - Check tracked scope, links, source counts, lifecycle state, artifact
-     attribution, nested denominators, technical-failure accounting, and that
-     the verdict does not exceed its evidence.
-   - Complete when the reading path is coherent and the authority boundary is
-     explicit.
-
-## Research OpenSpec Closeout
-
-When closing, retiring, or preparing to archive a research-owned OpenSpec
-change, read [Receipt-Grounded Closeout](references/openspec-closeout.md) before
-changing checkboxes. Literal task conditions and immutable receipts govern
-completion; archive authorization remains separate.
-
-## Conditional Branches
-
-- For sequential interventions or mutable runners, apply the conditional
-  execution checks in [Research Graph and Unit Contract](references/research-graph-contract.md).
-  Do not require prefix or rollback machinery for unrelated static work.
-- For raw Markdown union collection, preserve a manifest and byte-faithful
-  snapshots before synthesis.
-- For supervisor or independent-model packets, make the packet
-  decision-focused and keep reviewer output advisory.
-- For knowledge migration, use the research base's `research/CONVENTIONS.md`:
-  flat root entry, question/story synthesis, source manifest and targeted
-  retrieval. Keep metadata light; do not retrofit historical protocols merely
-  to satisfy a schema or introduce an app-specific wiki framework.
-- For executed units, keep durable artifacts under the owning output root and
-  record immutable run identity once comparison requires it.
-- Before support expansion or a mechanism matrix, require CPU-discoverable
-  receipt/write-read checks, one minimal real end-to-end mechanics smoke, and
-  then the smallest decision-bearing scientific pilot. Do not let in-memory
-  outputs or helper-only tests stand in for durable end-to-end evidence.
-- For long-running work, apply the [agent contract's checkpoint policy](../../AGENTS.md#checkpoints-and-waiting)
-  when an attempt fails or a decision changes, and its
-  [review policy](../../AGENTS.md#acceptance-and-review) when choosing further
-  verification. Keep research-specific evidence and scope in their owning unit.
-- Report launch, anomaly, decision-bearing result, and closure. Do not turn
-  command liveness, buffered logs, or routine receipt reads into a second
-  status stream.
-
-## Report
-
-State source boundary, created or updated owners, raw versus synthesized
-material, scientific disposition, infrastructure disposition, authority
-caveats, verification, unresolved gaps, and next continuation point.
+Return the changed knowledge owner, actual evidence and its limits, scientific
+and infrastructure dispositions, unresolved decision and next discriminator.

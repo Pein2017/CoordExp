@@ -1,110 +1,33 @@
 ---
 name: model-innovation-risk-audit
-description: Audit whether a high-risk CoordExp mechanism could silently fail in config, data, execution, scale, artifacts, objectives, decoding, or evaluation before costly implementation, launch, or interpretation.
+description: Audit silent CoordExp mechanism-fidelity mismatches across config, model/loss, decoding and evidence before costly work or promotion.
 ---
 
-# Model Innovation Risk Audit
+# Scientific Fidelity Lens
 
-Run a read-only **contract gate** for mismatches that can pass a smoke and still
-train or evaluate a different mechanism. Use `model-diagnosis` when an existing
-behavioral symptom is the main question.
-Use `qwen3-vl-execution` for routine forward, replay, template, or loss
-implementation; reading its technical checks does not invoke this risk gate.
+Use the common [decision audit](../audit-review/SKILL.md) procedure once. This
+entry supplies specialized failure knowledge, not another launch gate or review
+budget. Ordinary forward/replay implementation uses `qwen3-vl-execution`; an
+existing model symptom uses `model-diagnosis`.
 
-Do not invoke the full gate merely because a pilot is new. For an exploratory
-first observation, protect checkpoint/config/input identity, the declared
-factor, semantic alignment, actual path execution, objective wiring when
-training, and raw output attribution. Escalate when silent drift can reverse the
-observation or the evidence is being promoted.
+Compare intended mechanism, authored/resolved config, actual executable owners,
+emitted artifacts and permitted claim. Mark each implicated seam `matched`,
+`mismatched` or `unproven`; do not present absence of evidence as a proven defect.
 
-This gate tests mechanism fidelity; `audit-review` tests whether evidence
-supports a decision, and `research-flow` owns the scientific question and
-interpretation. They are not three mandatory approvals. Share closed findings
-and the phase/target/risk review budget. Use `native-agent-team-guidance` for
-delegation only when useful, not a separate routing or mandatory-review policy.
+Load only the needed reference:
 
-## Gate Timing
+- [Risk taxonomy](references/risk-taxonomy.md): concrete config, geometry,
+  token/stop, loss, precision, distributed, scale and artifact counterexamples.
+- [Scientific admission](references/scientific-admission-checklist.md): derived
+  labels, policy replay, joined evidence, packing or public load/creation paths.
+- [Contract diff](references/contract-diff.md) or [report template](references/report-template.md):
+  only when a standalone artifact is requested.
 
-Run one risk gate before broad costly implementation. Repeat it on a frozen
-pre-launch target only when implementation materially changes an unresolved
-risk, the execution shape, or the evidence claim. Do not run a full risk audit
-for every routine wave or after a localized fix whose owning risk and evidence
-did not change.
-
-Before implementation, freeze the contract/input identities and record the
-relevant conclusion-changing invariants, executable owners, minimal
-counterexamples, and closing evidence. A few rows in the existing unit suffice;
-no separate matrix artifact or exhaustive category coverage is required.
-Freeze the actual implementation/artifact version before any independent review. Use
-[scientific-admission-checklist.md](references/scientific-admission-checklist.md)
-when the mechanism derives semantic labels, joins multiple artifacts, replays
-policy evidence, uses packing, or exposes public construction/load paths.
-
-Before tracing the full contract, name the smallest set of risks that could
-invalidate the architecture, the cheapest production-shaped discriminator for
-each, and the first irreversible boundary. If the primary predicate or execution
-shape is structurally impossible, stop there instead of hardening the rest of
-the system.
-
-## Gate
-
-1. **Write the minimal contract diff.**
-   - Compare intended behavior, authored config, resolved config/schema,
-     executable data/model/loss/decode/eval objects, emitted artifacts, and
-     evidence claim.
-   - Complete when each relevant layer is `matched`, `mismatched`, or `unproven`.
-     Do not present an unproven requirement as a demonstrated defect; name its
-     discriminator and block only if the decision or a required gate needs it.
-
-2. **Identify executable owners.**
-   - Trace who actually controls tokenizer/template, data and collator,
-     trainable groups, forward and loss, optimizer/scheduler/distributed
-     behavior, decode/parser/eval, and artifact side effects.
-   - Inspect installed source or run a tiny executable probe when upstream owns
-     the semantics.
-   - Complete when mocks or plans are no longer standing in for the owner.
-
-3. **Probe the fragile seam.**
-   - Prefer one real encoded sample, collated batch, deterministic formula or
-     logits probe, resolved config, JSONL/image scan, manifest check, or targeted
-     smoke.
-   - For objectives, verify support, masks, denominators, raw and weighted
-     terms, finite precision, gradient path, and logged names only where the
-     claim depends on them.
-   - Complete when the suspected silent mismatch is proved, falsified, or
-     localized.
-
-   If several findings are instances of one invariant (for example, direct
-   construction, deserialization, and reload bypassing the same admission
-   rule), direct the implementation owner to repair and test the shared choke
-   point once. This read-only gate does not authorize the repair or a separate
-   review cycle for every equivalent bypass.
-
-4. **Return a launch decision.**
-   - Report `promote`, `hold`, `rerun gate`, or `needs user decision` with the
-     smallest evidence that would change it.
-   - `promote` is an evidence-supported recommendation, not authority to launch,
-     implement, publish, or change the scientific contract.
-   - Do not inflate severity or harden exploratory infrastructure without a
-     demonstrated conclusion-changing failure.
-   - Do not block a bounded pilot on arbitrary in-process object tampering
-     unless that path is reachable in the declared runtime, crosses a durable
-     evidence boundary, or can change the decision-owning result.
-   - Complete when claim scope and runtime evidence support the verdict.
-
-## Report
-
-Lead with decision-changing findings, then only the contract diff, checks,
-questions, verification, and residual risk needed to support the verdict.
-Each finding needs an evidence handle and explicit decision impact. Distinguish
-P0/P1 defects from unproven gates; P2 and empty severity sections are not quotas.
-
-Load only when needed:
-
-- [risk-taxonomy.md](references/risk-taxonomy.md) for failure classes;
-- [scientific-admission-checklist.md](references/scientific-admission-checklist.md)
-  for derived labels, policy replay, joined artifacts, packing, and review
-  budget;
-- [contract-diff.md](references/contract-diff.md) for a standalone contract
-  table;
-- [report-template.md](references/report-template.md) for a durable report.
+Protect the declared factor, checkpoint/config/input identity, actual path
+execution, training objective wiring and raw attribution even in a small pilot.
+Do not demand the full taxonomy for every novel probe. Before broad costly work,
+resolve the few risks that can invalidate the architecture through their actual
+caller/consumer; stop early on a structurally impossible primary predicate.
+For topology, persistence or scale evidence use `full-pipeline-smoke` only for
+the unresolved real seam. Return the bounded finding and smallest discriminator
+through audit-review; recommendations do not grant execution authority.

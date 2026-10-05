@@ -263,7 +263,7 @@ not as an additional scientific arm.
 
 An **independent advanced-model reviewer** is a capable model or agent outside
 the primary implementation and internal-audit chain. Use
-`native-subagents-guidance` for task-shaped routing; the provider and effort
+[native-agent-team-guidance](../../native-agent-team-guide/SKILL.md) for task-shaped routing; the provider and effort
 are not part of the scientific contract. The reviewer supplies criticism and advice.
 The research lead remains responsible for the final decision.
 
@@ -310,8 +310,9 @@ Apply the gate as follows:
 8. Preserve the request and responses as provenance. Create or update the
    concrete unit's `review.md` only when the review changes a claim, rerun gate,
    launch decision, or next discriminator. Update the owning question/current
-   context only if its meaning changes; update durable project memory only on
-   an explicit user request.
+   context only if its meaning changes. Experimental shared-memory MCP capture
+   and reviewed publication follow the [user-wide grant](../../../AGENTS.md#durability-and-efficiency)
+   and [store workflow](../../shared-memory/SKILL.md), not Codex automatic memories.
 
 ## Closeout Consistency Gate
 
@@ -326,7 +327,9 @@ Close a unit from the evidence owner outward:
 4. maintain catalog references without copying result ledgers or volatile counts;
 5. use a handoff only for a real transfer, integrate its delta, then retire
    redundant transport under the research convention's recovery rules.
-   Durable project-memory changes require an explicit user request.
+   Experimental shared-memory MCP changes follow the user-wide capture and
+   reviewed-publication grant and its store workflow; other memory systems do
+   not inherit that permission.
 
 These surfaces may summarize the same decision, but they must not become
 independent authorities. Keep one current frontier, link to the owning result,

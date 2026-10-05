@@ -1,78 +1,20 @@
-# CoordExp Project Contract
+# CoordExp main
 
-> User-wide orchestration is loaded first from
-> `/data/CoordExp/.codex/AGENTS.md`. This file adds CoordExp-specific rules for
-> this tree; a nested `AGENTS.md` specializes them, while a sibling
-> `AGENTS.override.md` replaces that directory's `AGENTS.md`.
+Main owns stable source integration, annotation/data operations and shared
+ownership policy. Sibling worktrees are separate versioned capabilities, not an
+automatic release ladder.
 
-## Authority
+If the user-wide contract is not already present in context, read
+`/data/CoordExp/.codex/AGENTS.md` once. This entry adds only local routing.
 
-- Shared agent configuration lives under `/data/CoordExp/.codex`; do not depend
-  on `/root` state.
-- When ownership is unclear, use `/data/CoordExp/docs/AGENT_INDEX.md`; give each
-  decision and write surface one current owner. Reviews, memories, handoffs,
-  and historical worktrees are evidence, not authority.
-- The user also owns research meaning and compatibility.
+Read the relevant owner when the task crosses its boundary:
 
-## Research
+- Checkout selection or integration: `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+- Run/report paths, shared assets or retirement: `docs/OUTPUT_STORAGE_POLICY.md`.
+  Root `outputs/` is selected shared retention, not a branch-run destination.
+- Agent configuration/loading or local Python environment: `docs/AGENT_INDEX.md`.
+- Scientific records: canonical research-probes `research/CONVENTIONS.md`;
+  ordinary documentation recovery uses `docs/RETENTION.md`.
 
-- Act as an independent research collaborator: question decision-relevant
-  assumptions, disagree when evidence warrants it, and propose falsifiable
-  alternative explanations ranked by the cheapest discriminating evidence.
-- Separate observation, hypothesis, inference, and speculation. Investigate
-  autonomously within the agreed scope without changing research meaning,
-  architecture, material cost, claims, or stop rules; converge when the
-  question is answered rather than opening an unbounded research program.
-- Keep data, geometry, order, prompts, tokens, objectives, metrics, artifacts,
-  and claims aligned.
-- Before costly research or launch, state the question, contrast,
-  decision-owning outcome, strongest alternative, primary evidence, and stop
-  rule. Bind claims to config, checkpoint, artifact root, counters, metrics,
-  and evidence scope.
-- Use the shortest evidence path: plumbing smoke is not model-quality evidence,
-  decision-bearing or cited results must be reproducible, and exploratory
-  probes should not be overbuilt.
-
-## Development
-
-- OpenSpec owns scope, research meaning, compatibility, and completion for its
-  changes. Superpowers is an on-demand execution toolbox; its artifacts link to
-  rather than restate the owning change.
-- Here, test-first is required only for faults, fail-closed paths, bug fixes,
-  and frozen-contract refactors: reproduce bugs first and characterize frozen
-  contracts first. Prefer fail-fast validation for probes, glue, config, and
-  fast-failure code; the user-wide load-bearing-test requirement still applies.
-- Guard silent-corruption surfaces such as masking, supervision positions,
-  loss accounting, and parity with invariants and golden fixtures; probe-tier
-  work gets no RED/GREEN ceremony.
-- Before broad implementation or costly launch, retire conclusion-changing
-  execution risks with the smallest production-shaped vertical slice; leaf
-  tests and mocks do not close real-entry, distributed, scale, persistence,
-  finalization, or downstream-consumer risk.
-- Before scaling data, ranks, or GPUs, declare and measure relevant bounds for
-  model forwards, collective order, cache or materialization passes, wall time,
-  RSS, workers, artifact payload, and finalizer or consumer behavior.
-
-## Runtime
-
-- Maintain the selected current stack and explicit configuration modes; retire
-  deprecated interfaces rather than adding old-stack compatibility. Dependency
-  declarations and exact-runtime admission are owned by the canonical infra
-  checkout's `pyproject.toml` and `src/artifacts/provenance.py`. Use each
-  checkout's local caller and qualification contract; a supported version or
-  historical receipt does not establish current execution qualification.
-- Before choosing run or report paths, read `docs/OUTPUT_STORAGE_POLICY.md`.
-  Root `outputs/` is shared retention, not a branch-owned launch destination.
-
-- Follow the user-wide default `ms` Conda execution policy unless the named
-  artifact explicitly requires another runtime.
-- Shared GPU activity and dirty changes are expected; adapt only after a
-  concrete OOM or operational conflict, and preserve unrelated work.
-
-## Records
-
-- Put scientific investigations, interpretation, negative results, and continuation
-  context in the canonical research checkout's `research/`. Its
-  `research/CONVENTIONS.md` owns topic/catalog distillation and exact Git recovery;
-  runtime artifacts retain their declared run owner. Follow `docs/RETENTION.md`
-  for documentation recovery; create no new `docs/history/` or `progress/` records.
+Runtime behavior belongs to this checkout's source, typed configs and stable
+`openspec/specs/`, not a sibling's current implementation or historical receipt.

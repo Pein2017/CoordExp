@@ -1,66 +1,29 @@
 ---
 name: workflow-self-distillation
-description: Use only when the user explicitly invokes $workflow-self-distillation to distill repeated Codex work, memories, sessions, or preferences into the smallest durable owner, or promote a validated worktree skill into CODEX_HOME.
+description: Use only on explicit invocation to promote repeated work or a validated worktree skill into its smallest durable shared owner.
 ---
 
 # Workflow Self-Distillation
 
-Turn repeated work into one **durable owner**, not another policy layer.
+This explicit-only entry owns promotion, not another skill-authoring framework.
+Use the installed skill-creator for structure, resources and validation.
 
-## Ownership
+Collect concrete recurrence or high-cost failure evidence from the requested
+scope, normally the recent 30 days. Search existing skills, documentation and
+current source owners before adding a rule. Keep session counts, model results
+and experimental conclusions at their research owner, not permanent context.
 
-- `$CODEX_HOME/skills` is the single authority for skills stable across
-  CoordExp worktrees.
-- A worktree-local skill is an experimental delta. Promote it only after real
-  use, structural validation, and a fresh-context positive and boundary test.
-- Promotion merges the complete self-contained skill folder into CODEX_HOME.
-  After promotion, revise the global owner; keep a local copy only while it
-  carries an explicit experimental delta.
-- Preserve official or vendor-managed ownership instead of importing historical
-  generated variants.
+Classify each candidate as extend an existing owner, script/reference, metadata,
+new skill or skip. It must change decisions or execution, have stable reusable
+knowledge and a meaningful output/stop boundary, and not merely repeat general
+agent competence. Show the shortlist and rationale before an unrequested write;
+existing explicit maintenance authorization covers its agreed scope.
 
-## Distill
+A worktree skill is an experimental delta. Promotion into `$CODEX_HOME/skills`
+requires real use, structural validation and a fresh-context positive/boundary
+test. Merge the complete self-contained package into its single shared owner;
+retain a local copy only for an explicit ongoing experimental delta. Preserve
+external/vendor ownership instead of importing generated variants.
 
-1. **Collect current evidence.**
-   - Start with the user's brief, then recent tasks, memories, rollout summaries,
-     Git history, and existing assets. Prefer a 30-day window unless the user
-     gives another.
-   - Classify personal/repo-local, official/plugin-managed, generated/vendor,
-     and local-wrapper provenance.
-   - Complete when the candidate and its frequency have concrete handles.
-
-2. **Find the existing owner.**
-   - Inventory skills and metadata, docs, scripts, hooks, agents, and
-     automations. Search prior consolidation or retirement decisions.
-   - Do not remove or merge official/plugin-managed assets without explicit
-     scope.
-   - Complete when overlap and the narrowest owner are known.
-
-3. **Apply the candidate test.**
-   - Keep only work that recurs or is predictably costly, has stable inputs and a
-     checkable output or stop condition, changes behavior, and is not already
-     covered.
-   - Keep session-specific counts, model facts, or experiment conclusions in
-     their owning unit or disclosed reference.
-   - Complete when each candidate is `create`, `extend`, `script/reference`,
-     `metadata/docs`, or `skip` with a reason.
-
-4. **Show the shortlist before editing.**
-   - Report evidence and dates, frequency/confidence, recommended form, and why
-     it earns its context or maintenance cost.
-   - Create or revise assets only after user authorization.
-   - Complete when scope and exclusions are explicit.
-
-5. **Validate the behavior.**
-   - Run structural validation and forward-test one positive trigger plus one
-     near-miss in fresh context. Do not leak the intended answer.
-   - Complete when invocation, process, and boundary behavior are supported.
-
-Prefer an expressive interface or executable script over repeated examples.
-Keep each meaning in one place and disclose branch-specific reference behind a
-clear pointer.
-
-## Report
-
-List changed or proposed owners, deliberate skips, verification, and unresolved
-evidence gaps.
+Report promoted/changed owners, deliberate skips and actual verification.
+Never turn a one-off fix into a universal guardrail without supporting evidence.
