@@ -10,6 +10,15 @@ User authority, model preferences and final acceptance belong to the
 worker mechanics. Persistent transport additionally uses
 [lead-worker](../lead-worker/SKILL.md); no skill creates delegation or launch grants.
 
+Choose topology before tools. A requested independent lead/worker pair uses
+ordinary sessions through `lead-worker`; do not replace it with subagents.
+For authorized child agents, use the current harness's declared tools:
+Codex native agent tools, or Pi Web's `Agent`, `get_subagent_result`, and
+`steer_subagent` when enabled. Pi Web control tools must be called directly,
+not inside codemode. Pi Web's `Agent(resume=...)` continues a child owned by
+the same parent; it does not message arbitrary independent sessions. Do not
+assume a terminal Pi installation exposes Pi Web's extensions.
+
 ## Assign and choose the team
 
 Reconcile existing workers and owners. Reuse reliable context; choose topology

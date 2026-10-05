@@ -19,7 +19,8 @@ knowledge and a meaningful output/stop boundary, and not merely repeat general
 agent competence. Show the shortlist and rationale before an unrequested write;
 existing explicit maintenance authorization covers its agreed scope.
 
-A worktree skill is an experimental delta. Promotion into `$CODEX_HOME/skills`
+A worktree skill is an experimental delta. Promotion into the shared local
+skill owner at `/data/CoordExp/.codex/skills` (loaded by Codex and configured Pi)
 requires real use, structural validation and a fresh-context positive/boundary
 test. Merge the complete self-contained package into its single shared owner;
 retain a local copy only for an explicit ongoing experimental delta. Preserve

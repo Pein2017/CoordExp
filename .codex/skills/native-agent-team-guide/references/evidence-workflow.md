@@ -22,7 +22,7 @@ collected; do not rescan full sessions just to fill a receipt.
    the task's output scope. Worker self-report alone is not acceptance.
 3. Refresh the summary when new relevant evidence could change a route, or when
    the user requests it. Pass explicit task directories or files; do not scan all
-   of CODEX_HOME, memory or the repository by default. Summaries are disposable;
+   of Codex/Pi session stores, memory or the repository by default. Summaries are disposable;
    use a caller-owned output directory, not one shared writable global report.
 4. Change a route preference only after inspecting comparable acceptance and
    cost evidence. One run is an observation, not a default. Include scope,
@@ -97,8 +97,10 @@ Each attempt has these required fields:
   attributable briefing, review and integration not already billed as worker
   takeover. Runtime includes billed resources, not elapsed time alone.
 - `cost_source`: receipt/ledger path and dated rate provenance, or explicit
-  explanation of missing costs. Use codex-usage-ledger when necessary; do not
-  recreate its token/pricing parser here. Reasoning is included in output.
+  explanation of missing costs. For Codex receipts, use codex-usage-ledger when
+  necessary; it does not parse Pi sessions. Use a verified Pi accounting source
+  or leave costs unknown rather than feeding Pi JSONL to that parser. Do not
+  recreate token/pricing parsers here. Reasoning is included in output.
 
 One accepted task needs a final accepted attempt; earlier attempts cannot also
 be accepted. A task later invalidated can retain its historical accepted attempt.

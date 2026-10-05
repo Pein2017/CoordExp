@@ -1,6 +1,8 @@
-# Same-host worker transport
+# Codex same-host worker transport
 
-Read this only when the App tool is absent or lacks the required capability.
+This helper uses Codex app-server protocols, not Pi. Read this only when the
+Codex App tool is absent or lacks the required capability. For Pi Web use
+[Pi independent-session transport](pi-transport.md).
 The [lead-worker skill](../SKILL.md) owns authorization, roles and acceptance.
 
 ### Create and start a requested worker

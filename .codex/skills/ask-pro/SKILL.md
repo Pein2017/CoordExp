@@ -5,7 +5,7 @@ description: Prepare copy-ready prompts and identified shared Notion readings fo
 
 # Ask Pro
 
-Prepare a consultation for the user to paste into the GPT-pro web UI; the user returns Pro’s answer for assessment. The user has confirmed web GPT-pro can access shared Notion; use that access without re-proving it for each consultation. This does not imply access to every page, this machine, repository, local artifacts, or Codex’s private conversation. Never invoke a model or submit the prompt automatically.
+Prepare a consultation for the user to paste into the GPT-pro web UI; the user returns Pro’s answer for assessment. The user has confirmed web GPT-pro can access shared Notion; use that access without re-proving it for each consultation. This does not imply access to every page, this machine, repository, local artifacts, or the current Codex/Pi conversation. Never invoke a model or submit the prompt automatically.
 
 ## When to use
 
@@ -14,10 +14,10 @@ Use or suggest this skill when difficult inference, mathematics, competing expla
 ## Build the prompt and reading context
 
 - State the objective, decision or open question, current bottleneck, and constraints that could change the answer. Define specialized terms and notation.
-- Separate the user’s relevant original ideas (quote them faithfully and label them as the user’s) from Codex’s evidence-based synthesis. Preserve uncertainty; do not upgrade suggestions into facts.
+- Separate the user’s relevant original ideas (quote them faithfully and label them as the user’s) from the preparing assistant’s evidence-based synthesis. Preserve uncertainty; do not upgrade suggestions into facts.
 - Supply decision-bearing substance from authoritative evidence: relevant computations or code, assumptions, data and metric definitions, contrasts, results, failures, counterexamples, quantities, denominators, and limits. Include negative evidence. The prompt and explicitly identified Notion readings may jointly supply this context; focus the prompt on the actual question, critical constraints, and material updates not yet on Notion instead of duplicating entire pages. Paths, hashes, commits, and receipt IDs are provenance, not evidence; inline needed local evidence absent from the readings and never ask Pro to inspect local files or recall the private conversation.
 - For an ongoing investigation with prior results, consult its maintained catalog and current evidence owners for the closest supporting and counterexample results, not just recent updates. In the prompt or explicitly assigned Notion readings, identify what is already answered, what differs now, and the incremental question.
-- Distinguish observation, hypothesis, interpretation, and unknown. State what was tested, what was only proposed or mechanically checked, Codex’s current judgment, and the strongest alternative. Do not invent missing evidence.
+- Distinguish observation, hypothesis, interpretation, and unknown. State what was tested, what was only proposed or mechanically checked, the preparing assistant’s current judgment, and the strongest alternative. Do not invent missing evidence.
 - For mechanisms, show computations, assumptions, conditional consequences, and predictions beyond those used to construct the explanation. Compare the strongest alternative and name the cheapest discriminator. A toy model establishes possibility or derivation only; transfer to the real system needs evidence. Ask which causal links are supported versus assumed, including whether a representation is merely present or probe-readable versus used and updated during generation.
 - Invite Pro to disagree, offer counterexamples or derivations, and say when evidence cannot decide. Seek a checkable conclusion or prioritized discriminator, not a generic survey or unranked experiment list. Use equations only when they clarify the reasoning.
 

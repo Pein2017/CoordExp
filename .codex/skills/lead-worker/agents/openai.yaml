@@ -1,4 +1,4 @@
 interface:
   display_name: "Lead / Worker"
-  short_description: "Lead decisions with user-selected worker execution"
-  default_prompt: "Use $lead-worker to keep discussion and acceptance with the research lead and dispatch bounded execution to the designated worker. Ask for worker model and effort when unspecified; preserve explicit user choices and report decision-bearing events promptly."
+  short_description: "Independent Codex or Pi Web lead/worker sessions"
+  default_prompt: "Use $lead-worker to keep discussion and acceptance with the lead and dispatch bounded execution to a designated independent Codex or Pi Web session. Choose the matching transport; do not substitute a subagent. Ask for worker model and effort when unspecified; preserve explicit user choices and report decision-bearing events promptly."

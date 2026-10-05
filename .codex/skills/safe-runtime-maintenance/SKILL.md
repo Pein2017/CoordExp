@@ -6,10 +6,10 @@ description: Audit and, only with explicit authorization, stop confirmed orphane
 # Safe Runtime Maintenance
 
 Use for a requested cleanup of stale headless processes or one-time caches in
-the CoordExp environment. It protects active Codex, research, GPU, test,
+the CoordExp environment. It protects active Codex/Pi sessions, research, GPU, test,
 service, and user-data surfaces.
 
-Do not use it for broad `/tmp` or `.codex` cleanup, ambiguous workers, model or
+Do not use it for broad `/tmp`, `.codex` or `.pi` cleanup, ambiguous workers, model or
 research data, or a deletion the user has not explicitly authorized. A request
 to "clean up" authorizes an audit, not a signal or deletion.
 
@@ -22,7 +22,7 @@ to "clean up" authorizes an audit, not a signal or deletion.
 2. Return each target as `preserve`, `eligible with authorization`, or
    `needs user direction`, with the evidence behind it. PPID 1, age, size,
    deleted cwd, or no GPU use alone never establishes staleness.
-3. Preserve active or ambiguous Codex, research, training, pytest, service,
+3. Preserve active or ambiguous Codex/Pi sessions, research, training, pytest, service,
    daemon, SQLite/WAL/SHM, receipt, and user-data surfaces. A zombie child of
    an active parent is not an individual kill target.
 
