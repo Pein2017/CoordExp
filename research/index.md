@@ -9,7 +9,8 @@ the evidence contract. Implementation entrypoints are in [probes](../probes/READ
 ## Current decision
 
 The [single-case spatial-grid transfer](experiments/2026-10-04-spatial-grid-transfer/unit.md)
-is frozen for CPU implementation; native execution remains unreleased. Image25394
+is CPU lead-accepted, with one native invocation released and not yet started.
+Image25394
 was selected by minimum ID among17 validation images with at least10 bottle
 annotations, excluding the18 optimization images. The finite contrast uses one
 fresh ordinary baseline, then32 unchanged queries only if its first native bottle

@@ -1,9 +1,9 @@
 {
   "unit_id": "2026-10-04-spatial-grid-transfer",
   "lifecycle": "planned",
-  "status": "CPU_IMPLEMENTATION_DISPATCHED",
+  "status": "CPU_LEAD_ACCEPTED_NATIVE_RELEASED",
   "evidence": "none",
-  "scientific_status": "Unmeasured single-case transfer beyond the18-image optimization cohort; native unreleased.",
+  "scientific_status": "CPU integrity/presentation accepted; native fidelity, first bottle entrance and physical transfer remain unmeasured.",
   "protocol": "research/experiments/2026-10-04-spatial-grid-transfer/unit.md",
   "state_source": "research/experiments/2026-10-04-spatial-grid-transfer/unit.md",
   "lead_thread": "01a1016a-c440-77e2-b258-f3e8f860ede7",
@@ -13,7 +13,7 @@
   "authority": "Continuing user2026-10-04 19:47UTC autonomous worthwhile research grant. Root selected this finite transfer unit; prior releases consumed.",
   "initial_source_anchor": "cc05d55bc206c36c55dc28126ab7619775539b62",
   "output_root": "/data/CoordExp/.worktrees/research-probes/outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer",
-  "native_released": false,
+  "native_released": true,
   "native_started": false,
   "lead_accepted": false,
   "user_scientific_acceptance": false,
@@ -42,8 +42,8 @@
     "grid_candidates": 32,
     "maximum_first_bottle_x1_position": 64
   },
-  "next_action": "Original Worker implements and qualifies CPU package; Root checks final consumer and presentation before exact one-shot native release.",
-  "job_state": "One CPU package assigned to original Worker through verified turn/start; native unreleased. Direct ENTRY pending at dispatch capture.",
+  "next_action": "Bind exact clean-source native release and dispatch one invocation plus saved-data gallery to original Worker; Root then owns complete visual ledger.",
+  "job_state": "All CPU jobs settled and source holders released; native has not started.",
   "boundary": "Selection uses imageID/category count/exclusion only. One case outside documented optimization stages, not wholly unseen. All32 candidate slots and all baseline categories retained; Root physical ledger mandatory.",
   "not_authorized": [
     "Native before exact Root source/input/runtime release",
@@ -54,5 +54,11 @@
   ],
   "protocol_commit": "6269cdda6ff94627a6d40e42afd12183199582b9",
   "dispatch_receipt": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/transport/worker-assignment-01.json",
-  "worker_turn": "01a1094b-935b-7b01-afbd-c859af175bee"
+  "worker_turn": "01a1094b-935b-7b01-afbd-c859af175bee",
+  "cpu_lead_accepted": true,
+  "implementation_commit": "dae68372281a9fe0edb3ee3f73590d797eeebaca",
+  "lead_ruling": "research/experiments/2026-10-04-spatial-grid-transfer/lead-ruling-01.md",
+  "cpu_candidate": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/cpu-candidate-01.json",
+  "lead_consumer_check": "outputs/research/physical-fn-recovery/2026-10-04/spatial-grid-transfer/lead-consumer-check-01.json",
+  "cpu_evidence": "30 selected nodes qualified; final consumer and presentation lead-accepted. Native/physical outcomes unmeasured."
 }
