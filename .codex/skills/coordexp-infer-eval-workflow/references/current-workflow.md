@@ -4,7 +4,7 @@ Use this reference for the maintained Swift inference, scoring, detection-evalua
 
 ## Choose the output owner
 
-Read the selected checkout's `docs/OUTPUT_STORAGE_POLICY.md` before setting a destination. New runs belong to their producer's physical output root:
+Read the selected checkout's `docs/storage-ownership.md` before setting a destination. New runs belong to their producer's physical output root:
 
 - Research Probes: `/data/CoordExp/.worktrees/research-probes/outputs`
 - Infrastructure runs: `/data/CoordExp/.worktrees/coordexp-infras/outputs`

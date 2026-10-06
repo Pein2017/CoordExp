@@ -1,7 +1,7 @@
 # Visual Genome (VG)
 
 This folder documents how to prepare **Visual Genome** into the CoordExp
-JSONL contract (`docs/data/CONTRACT.md`) using the unified public-data
+JSONL [data contract](../../docs/data/contract.md) using the unified public-data
 runner (`public_data/run.sh`).
 
 We support two closely related dataset flavors:
@@ -45,6 +45,24 @@ separately:
 ./public_data/run.sh vg validate --preset rescale_32_768_bbox
 ```
 
+Downloads can resume partial files; existing payloads are checked against the
+declared checksums. `download -- --skip-images` is annotation-only preparation,
+not a trainable image dataset. Raw and resized image stores both consume disk.
+
+Conversion clips boxes to pixel bounds and writes image paths relative to the
+raw JSONL root. To retain filtering/conversion statistics, add `--stats-json`:
+
+```bash
+./public_data/run.sh vg convert -- --objects-version 1.2.0 \
+  --stats-json public_data/vg/raw/convert_stats.json
+```
+
+For one-record visual QA, use `public_data/scripts/visualize_jsonl_bbox_poly.py
+--help`, then select an exact JSONL row and an owned output path. This examines
+stored geometry; it does not establish dataset or model quality. Coordinate
+normalization, collapsed-box handling and the no-double-normalization boundary
+are explained by [the conversion README](../scripts/README.md).
+
 ## Outputs (runner layout)
 
 For `vg` and `vg_ref` (both migrated paths), the runner follows the standard layout described
@@ -67,9 +85,11 @@ in `public_data/README.md`:
 
 Optional max-object filter is off by default. Enable per run:
 ```bash
-PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
+PUBLIC_DATA_MAX_OBJECTS=60 ./public_data/run.sh vg coord --preset rescale_32_768_bbox
 ```
-This appends canonical suffix `_max60`.
+Run the canonical `all` or `rescale` stages first. Filtering applies only at the
+`coord` stage and appends canonical suffix `_max60`; it drops oversized records
+rather than truncating their object lists.
 
 ## Config-first defaults
 

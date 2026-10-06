@@ -18,5 +18,5 @@ dataset identities are separate. Clean source is necessary for some execution
 claims but is not a guarantee of reproducible model numerics.
 
 Executable contracts live in local source/tests and stable OpenSpecs. Scientific
-claims live at their research evidence owner. [Documentation](RETENTION.md) keeps
+claims live at their research evidence owner. [Documentation](documentation.md) keeps
 lasting reasons and distinctions, not duplicated implementation detail.

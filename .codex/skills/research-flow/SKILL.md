@@ -13,7 +13,7 @@ necessarily that base.
 ## Choose the current owner
 
 Read the base's `research/index.md` and the relevant unit/result. Its
-`research/CONVENTIONS.md` owns layout, catalog, distillation and current-source
+`research/conventions.md` owns layout, catalog, distillation and current-source
 qualification. `probes/README.md#implementation-placement` owns source/test
 placement; the local storage policy owns output roots. Do not recreate those
 rules here or copy the research tree into the skill-hosting checkout.
@@ -32,7 +32,7 @@ training step, freeze the existing unit's question and contrast:
 
 `From anchor A, does intervention X change outcome Y under gate Z?`
 
-The [research contract](references/research-graph-contract.md) owns scientific
+The [research contract](references/research-contract.md) owns scientific
 alignment, evidence tiers, semantic deltas, denominator/conditioning distinctions,
 mechanism promotion and closeout. Read the sections implicated by the task.
 Do not restate its full checklist in a launch packet or make a diagnostic proxy
@@ -56,7 +56,11 @@ the research contract's feedback and identity conditions.
 
 Close from the accepted result/receipt outward under the research convention:
 current state, catalog, then only changed question beliefs, story or frontier.
-Keep one metric-bearing machine receipt, not parallel prose ledgers. Reusable
+Absorb decision-bearing ruling/review conditions into the owning result before
+retiring redundant coordination files; preserve frozen originals and actual
+consumer identities. Keep `unit.md` and scale the document set to the question,
+not a mandatory package per run. Keep one metric-bearing machine receipt,
+not parallel prose ledgers. Reusable
 technical defects go to their infrastructure owner; research meaning stays with
 the unit. Historical records and old grants never become current launch authority.
 
@@ -65,7 +69,9 @@ For research OpenSpec completion, read
 checkboxes. Archive remains separately authorized. Use the experimental
 [shared-memory MCP](../shared-memory/SKILL.md) under the user-wide capture and
 reviewed-publication grant; it is not Codex automatic memories and never replaces
-the research owner. A real transfer uses native-team handoff, not a new frontier.
+the research owner. User prompt-based handoff remains supported; link the
+current owner and next action instead of copying the frontier. Agent/job
+transfers additionally use the native-team handoff contract.
 
 Return the changed knowledge owner, actual evidence and its limits, scientific
 and infrastructure dispositions, unresolved decision and next discriminator.

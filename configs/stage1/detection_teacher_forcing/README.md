@@ -1,9 +1,10 @@
-# Stage-1 Detection Teacher Forcing
+# Historical Stage-1 detection teacher forcing
 
-`stage1_research_teacher_forcing` is the canonical public pipeline id for
-retained compact Stage-1 detection teacher-forcing configs.
+The retained compact configs use pipeline ID `stage1_research_teacher_forcing`
+and objective ID `research_teacher_forcing`. These identify the former compact
+schema; they do not designate this checkout's current training route.
 
 Historical `recursive_detection_ce` configs have been quarantined under
 `configs/archive/detection_scene_clean_break/stage1/` by the clean-break cleanup
-gate. New canonical configs should be authored under this directory and should
-use `objective.id: research_teacher_forcing`.
+gate. See the [config router](../../README.md) for maintained profiles and the
+qualification required for explicit legacy reproduction.

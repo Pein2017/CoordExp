@@ -4,7 +4,7 @@ description: Session-backed Markdown synthesis and an exact deletion boundary fo
 type: investigation
 role: archival-synthesis
 authority: non_normative_research
-status: active
+status: completed_historical_disposition
 updated: 2026-08-29
 ---
 
@@ -17,20 +17,22 @@ worktrees remain authoritative for scientific meaning, and
 The native Validation-200 benchmark had no separate worktree copy; its
 decision-bearing Markdown is preserved here before deleting its raw root.
 
-## Decision
+## Completed disposition on 2026-08-29
 
-Delete non-Image2299 raw outputs after this packet and the deletion manifest
-are written. Keep only:
+The authorized pass deleted non-Image2299 raw outputs after writing this packet
+and its exact deletion manifest. Its retention exceptions were:
 
 1. roots explicitly bound to or produced by the Image2299 worktree;
 2. roots with live process/file handles at deletion time;
 3. the eight-coordinate closeout because Image2299 explicitly consumes its
    `four-coordinate-xy/checkpoints/step-2444` checkpoint (the whole small root
    is retained this pass to avoid splitting a provenance bundle); and
-4. canonical Markdown records, which live outside `outputs/research/`.
+4. canonical Markdown records, which lived outside `outputs/research/`.
 
-The deletion manifest is generated from the live tree immediately before the
-mutation. A path not listed there is not deleted.
+The manifest bound the live tree immediately before that mutation. A path not
+listed there was not deleted. This is a historical deletion boundary, not
+current permission to repeat it or a current inventory of active dependencies.
+The [deletion receipt](deletion-receipt.md) records the completed pass.
 
 ## Reading path
 

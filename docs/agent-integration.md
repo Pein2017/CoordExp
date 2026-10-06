@@ -12,7 +12,7 @@ Current source/typed configs/tests own behavior, stable OpenSpec specs own
 compatibility, and canonical research owns scientific evidence and interpretation.
 
 For substantial change management use local OpenSpec. Do not duplicate its plans
-in agent handoffs or memory. Documentation recovery follows [RETENTION](RETENTION.md).
+in agent handoffs or memory. Documentation ownership and recovery follow [the shared policy](documentation.md).
 
 ## Loading and skill maintenance
 

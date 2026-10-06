@@ -2,10 +2,10 @@ schema: spec-driven
 
 context: |
   Main owns stable source integration and annotation/data operations.
-  docs/BRANCH_AND_WORKTREE_POLICY.md owns checkout boundaries;
-  docs/OUTPUT_STORAGE_POLICY.md owns shared assets and run destinations.
+  docs/checkout-ownership.md owns checkout boundaries;
+  docs/storage-ownership.md owns shared assets and run destinations.
   Read /data/CoordExp/.codex/AGENTS.md if not already loaded for user authority,
-  research/engineering discipline and review policy. docs/AGENT_INDEX.md owns
+  research/engineering discipline and review policy. docs/agent-integration.md owns
   local environment integration and the CoordExp design-priority order.
   Current behavior belongs to this checkout's source, typed configs and tests;
   openspec/specs/ owns stable compatibility. Research evidence and meaning

@@ -2,6 +2,9 @@
 
 When closing, retiring, or preparing to archive a research-owned OpenSpec
 change, reconcile the literal task condition before changing a checkbox.
+Use the existing task/result record for that reconciliation; do not create a
+parallel receipt table, closeout diary or source snapshot just for documentation.
+Document organization and retirement follow the canonical research conventions.
 
 1. For every affected task, record its exact wording, the immutable receipt
    path and identity, the exact receipt field (including nested evidence), and

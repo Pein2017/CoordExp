@@ -1,5 +1,9 @@
 # Standalone COCO Refinement Wave 1 Bootstrap Receipt
 
+Historical evidence for the dated code/runtime boundary recorded below. Status,
+process identities and gate instructions describe that event; they are not a
+current service inventory or authorization for another launch or operator action.
+
 ## Status
 
 **Passed on 2026-07-17.** This receipt attests one fresh and one idempotent

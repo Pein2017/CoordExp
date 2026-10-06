@@ -2,7 +2,7 @@
 
 This folder contains a **small, reproducible** pipeline to download the official
 COCO 2017 images + annotations and convert them into CoordExp's JSONL contract:
-`docs/data/CONTRACT.md`.
+[the data contract](../../docs/data/contract.md).
 
 Outputs live under:
 - `public_data/coco/raw/` (downloaded artifacts + converted JSONL)

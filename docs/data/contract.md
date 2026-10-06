@@ -21,7 +21,7 @@ A checksum establishes identity, not availability or recoverability. A maintaine
 input needs a verified copy or a dependency-complete regeneration route; commands
 copied from retired source are not that route. See the checkout's
 [public-data provenance owner](../../manifests/public_data_provenance/README.md)
-and [storage policy](../OUTPUT_STORAGE_POLICY.md).
+and [storage policy](../storage-ownership.md).
 
 Packing changes physical layout, not the intended supervision. Preserve causal
 isolation, span alignment, loss selection and normalization. Exact implementation

@@ -23,7 +23,7 @@ parity, resource cleanup and scientific efficacy establish different claims.
 Expensive model experiments require their own explicit scope and resource budget.
 
 Keep compatibility-sensitive behavior in its existing spec and executable tests.
-Use [the asset policy](../RETENTION.md) for documentation: preserve durable design
+Use [the asset policy](documentation.md) for documentation: preserve durable design
 reasons, not duplicate implementation inventories. Source and CodeGraph provide
 the detailed map. An internal refactor does not create a new compatibility
 contract merely because it changes file paths.

@@ -1,13 +1,14 @@
-# Shared Latest Detection Overlays
+# Historical shared detection overlays
 
-This directory contains authoring snippets for latest compact detection configs
-that parse through `DetectionTrainingConfig`.
+These retained snippets document the former compact `DetectionTrainingConfig`
+schema. They are historical authoring examples; current main routing is owned
+by [the config README](../../../../README.md).
 
 Quarantined legacy/comparator launch configs under
 `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
 are preserved for historical inspection and do not extend these snippets. Edits here do not affect production or smoke launch
-configs until their `extends` chains are migrated. New canonical compact
-teacher-forcing configs belong under
+configs until their `extends` chains are migrated. At that historical boundary,
+compact teacher-forcing profiles lived under
 `configs/stage1/detection_teacher_forcing/`.
 
 Detection owns these top-level sections:

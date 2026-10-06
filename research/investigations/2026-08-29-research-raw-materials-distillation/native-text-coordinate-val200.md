@@ -27,5 +27,7 @@ reconstructable.
 ## Raw disposition
 
 The 1.6G root was mostly raw JSONL/token traces and per-run metadata. This
-Markdown preserves prompt/template identity, metrics, truncation counts,
-duplicate audit, and interpretation. The output root is `DISTILL-DELETE`.
+Markdown preserves the prompt/template correction, the two reported mAP values,
+the repetition observation and their interpretation. The deleted traces and
+their detailed per-row audits are not preserved here. The historical disposition
+was `DISTILL-DELETE`.

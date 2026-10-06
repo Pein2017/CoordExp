@@ -52,7 +52,7 @@ not a permanent exception in the shared-asset store. Never publish credentials.
 Keep a payload only for a named current consumer or a specific necessary
 reproduction. Extract useful implementation and reasoning into their real owners;
 do not transfer whole retired trees into a new ignored directory and call that
-cleanup. Ordinary documentation retirement uses [Git recovery](RETENTION.md),
+cleanup. Ordinary documentation retirement uses [Git recovery](documentation.md),
 not a new source-snapshot or archive directory. The finite historical extras
 sealed by that migration are evidence, not a new intake destination.
 

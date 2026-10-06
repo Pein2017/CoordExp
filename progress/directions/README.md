@@ -1,61 +1,23 @@
----
-doc_id: progress.directions.index
-layer: progress
-doc_type: router
-status: legacy-router
-domain: research-history
-summary: Router for historical research directions and Stage-2 design lineage.
-tags: [progress, directions, stage1, stage2]
-updated: 2026-06-15
----
+# Retained directions evidence
 
-# Directions Index
+Read the [current research questions](/data/CoordExp/.worktrees/research-probes/research/index.md)
+for present interpretation. These originals retain distinct measurements or design
+assumptions listed below. Their proposed runs and old paths are historical, not
+a current execution queue. No new records belong here.
 
-Use this legacy folder only when the main question is:
+| Source | Independent retained use |
+|---|---|
+| [EM-like self-context](stage2_emish_set_supervision_v1.md) | Original soft/ST gradient and matching/masking assumptions, including rejection of stop-neutral training. |
+| [Clean-prefix correction](stage2_clean_prefix_v2.md) | Separates neutral unmatched objects from duplicate-certified first-divergence unlikelihood. |
+| [K2 anchor/explorer triage](full_idea_v3.md) | Locked implementation assumptions, including unsupported objects becoming dead targets. |
+| [K4 partial-positive triage](full_idea_v4.md) | Selected, supported-shielded and cluster-demoted supervision remain distinct. |
+| [Subset-conditioned multi-positive entries](full_idea_v5.md) | Anti-stop/completeness assumptions, balance alternatives, branch gradients and approximate compute claims. |
+| [Row-conditioned visual coverage](2026-06-05_row_conditioned_visual_coverage.md) | Visual-feature painting/re-prefill proposal plus prototype history: inactive hook discovered, prompt-mismatched launch stopped. |
+| [Segment-aware packing proposal](2026-06-07_segment_aware_packing_infra.md) | Unexecuted physical-budget versus logical-supervision design, sidecar ownership and required numerical parity. |
+| [Prefix-denoising contract](prefix_denoising_sft_v1.md) | Constructive noise, CE/sparse-KL denominators, teacher-quality, cache and isolation assumptions beyond later outcome synthesis. |
 
-- which historical design note explains an older Stage-1 or Stage-2 line?
-- how did the repo move from clean-prefix v2 to later pseudo-positive directions?
-- what old source idea shaped Stage-1 set-continuation / multi-positive training?
-- which older direction note is still worth reading versus only keeping for lineage?
-
-Prefer `docs/` and `openspec/specs/` for the current contract, and `research/`
-for new research directions. Use `progress/directions/` only for the legacy
-historical why.
-
-## Legacy Entry Point
-
-- [full_idea_v5.md](full_idea_v5.md)
-  - legacy Stage-1 set-continuation direction note
-  - old source research note for subset-conditioned full-entry multi-positive supervision
-
-## Legacy Draft Direction Notes
-
-- [2026-06-07_segment_aware_packing_infra.md](2026-06-07_segment_aware_packing_infra.md)
-  - segment-aware packing infrastructure direction; draft/provenance only until promoted into current packing docs
-- [2026-06-05_row_conditioned_visual_coverage.md](2026-06-05_row_conditioned_visual_coverage.md)
-  - row-conditioned visual coverage research direction; historical branch provenance, not current training guidance
-- [prefix_denoising_sft_v1.md](prefix_denoising_sft_v1.md)
-  - prefix-denoising SFT V1 branch provenance from `codex/prefix-denoising-sft`; not current main guidance until the matching code/config surface lands
-
-## Historical Direction Notes
-
-- [full_idea_v4.md](full_idea_v4.md)
-  - superseded Stage-1 + Stage-2 pseudo-positive direction summary
-  - useful for design lineage and K=4 context, not current training guidance
-
-- [full_idea_v3.md](full_idea_v3.md)
-  - K=2 triage-posterior direction that bridges v2 to the later pseudo-positive line
-- [stage2_clean_prefix_v2.md](stage2_clean_prefix_v2.md)
-  - clean-prefix Channel-B framing that replaced the earlier generic unmatched-negative view
-
-## Historical Origin
-
-- [stage2_emish_set_supervision_v1.md](stage2_emish_set_supervision_v1.md)
-  - long-form historical origin note for the earliest EM-ish Stage-2 design
-
-## Key Components
-
-- Stage-1 as the language-of-boxes foundation
-- Stage-2 clean-prefix partitioning and duplicate handling
-- triage-posterior rollout views (`K=2` lineage)
-- pseudo-positive anchor/explorer support and `K=4` evolution
+These designs disagree. V1 rejects stop-neutral training after recorded length
+inflation, while v5 proposes weaker terminal supervision. V2 leaves generic
+unmatched objects neutral, while v3 broadens negative treatment through its
+unsupported/dead rule. Preserve these alternatives as historical assumptions.
+The visual-coverage smoke history does not establish a model-quality gain.

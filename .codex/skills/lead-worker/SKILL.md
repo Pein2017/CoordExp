@@ -38,7 +38,7 @@ decision. For exploration, name known paths or symbols and the uncertainty to
 resolve. Add budgets only when material.
 
 Bind storage ownership separately from transport. For CoordExp, consult
-`/data/CoordExp/docs/OUTPUT_STORAGE_POLICY.md`: a durable protocol/report belongs
+`/data/CoordExp/docs/storage-ownership.md`: a durable protocol/report belongs
 to its existing research or change owner; a disposable message file belongs in
 task-owned `.local/scratch/`; a machine receipt belongs to the owning worktree's
 `outputs/`. Root `outputs/` is selected shared retention, not a default assignment

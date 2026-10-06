@@ -74,7 +74,7 @@ For a dataset id `<ds>`:
 
 Image paths in JSONL are a contract requirement: they MUST be relative. Legacy
 preset JSONLs resolve them from the JSONL directory; Phase 1 view JSONLs
-resolve them from the declared image store (`docs/data/CONTRACT.md`).
+resolve them from the declared image store ([data contract](../docs/data/contract.md)).
 
 ## Phase 1 View Layout (COCO 1024)
 
@@ -277,7 +277,7 @@ Details, rationale, and output paths:
 - `public_data/lvis/README.md`
 
 ## JSONL Contract (Produced Here)
-See `docs/data/CONTRACT.md` for the authoritative schema.
+See the [data contract](../docs/data/contract.md) for the authoritative schema.
 
 Produced records look like:
 ```json

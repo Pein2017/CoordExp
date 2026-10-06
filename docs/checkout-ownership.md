@@ -23,5 +23,5 @@ Validate the exact descendant before authorized integration and recheck canonica
 HEAD, dirty state and holders immediately before adoption.
 
 Runs write to their owning physical worktree. Root `outputs/` is not a fallback
-run directory. See [storage](OUTPUT_STORAGE_POLICY.md). Historical sessions and
+run directory. See [storage](storage-ownership.md). Historical sessions and
 receipts retain their original provenance; stale UI metadata is not Git truth.

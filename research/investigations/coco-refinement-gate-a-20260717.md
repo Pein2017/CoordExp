@@ -1,5 +1,9 @@
 # Standalone COCO Refinement Gate A Receipt
 
+Historical evidence for the dated code/runtime boundary recorded below. Status,
+process identities and gate instructions describe that event; they are not a
+current service inventory or authorization for another launch or operator action.
+
 ## Status
 
 **Running for operator UAT on 2026-07-17.** The isolated lightweight service is

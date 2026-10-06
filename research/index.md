@@ -1,32 +1,31 @@
-# Research
+# Main research and source records
 
-This root tree preserves the earlier OKF-style research bundle tracked in
-`main`. Its records remain source material; their location here does not make
-them current, and it does not make them invalid or obsolete.
+Current scientific questions, results, interpretation and research runs have one
+owner: [canonical research-probes](/data/CoordExp/.worktrees/research-probes/research/index.md).
+Main owns stable source integration and annotation/data operations, not a
+parallel active research program. Its exact implementation remains in source,
+typed configs/tests and local OpenSpec; [docs](../docs/README.md) explains durable
+boundaries.
 
-The maintained research source, current interpretation, records, and run owner
-is the canonical Research Probes worktree at
-`/data/CoordExp/.worktrees/research-probes/research/`. Start with that tree's
-`index.md` for current work and status. The raw worktree intake at
-the [sealed worktree-union snapshot](../docs/RETENTION.md) is also
-historical source material. Use this root tree for explicit source review or
-when a current owner links to a retained record. Do not infer a record's status
-from age alone.
+## Retained reading uses
 
-## Retained source routes
+[Local investigations](investigations/index.md) retain named annotation,
+qualification and source-review evidence. Their event-time labels and commands
+are historical, not a launch grant or a current support matrix.
+The [original technical draft](ideas/patent-materials-019ff130/original-draft.md)
+is retained verbatim for explicit source review, not a new scientific claim.
+Do not add new ideas, mechanism summaries or archive inboxes to this tree.
 
-- [Ideas](ideas/)
-- [Original patent draft](ideas/patent-materials-019ff130/original-draft.md): verbatim retained technical material, not a new scientific claim
-- [Investigations](investigations/)
-- [Mechanisms](mechanisms/)
-- [Archive](archive/)
+The prefix-denoising question, its conditions and bounded diagnostic results
+now live at [greedy compilation](/data/CoordExp/.worktrees/research-probes/research/questions/greedy-compilation.md#prefix-denoising-unresolved-does-not-mean-untried).
+Its original three units already have exact source recovery in the canonical
+catalog; duplicate main/infra reading packages are not maintained.
 
-These directories preserve the former root research organization. New
-maintained research records belong in the canonical Research Probes worktree.
-Current code and operator behavior remain in `docs/`; stable compatibility
-contracts remain in `openspec/`.
+## Recovery boundary
 
-Historical references in this retained source tree keep their original paths.
-For removed docs, read that path from the sealed Git snapshot described in
-`docs/RETENTION.md`; it is not a current filesystem dependency or a claim of
-current implementation support. New research belongs to Research Probes.
+Git records committed originals at their original paths. The existing local
+[documentation seal](../docs/documentation.md#existing-closed-documentation-recovery)
+covers only its declared old docs, not every research record or formerly
+untracked file. A recorded artifact locator is not an availability or rerun
+claim. Retained original sources keep their identity; absorbed coordination and
+duplicate navigation do not need redirects or another archive.

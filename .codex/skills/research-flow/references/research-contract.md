@@ -1,4 +1,4 @@
-# Research Graph and Unit Contract
+# Research interpretation and unit contract
 
 Use this reference when creating a new investigation, experiment unit, result
 record, decision update, or mechanism promotion.
@@ -12,38 +12,23 @@ record, decision update, or mechanism promotion.
 | A `tracking=current` unit's `state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
 | Accepted result and its immutable receipt | Observed outcomes, denominators, bounded verdict and evidence handles | Stable runtime/schema compatibility |
 | `research/questions/` and `research/story.md` | Competing explanations, evidence-linked beliefs, bounded mechanisms, route choices and research transitions | Implementation authorization or copied volatile status tables |
-| `research/alternatives.md` | Important unanswered ideas with predecessors and reopening conditions | A parallel result atlas or standing execution queue |
+| The relevant research question | Important unanswered ideas with predecessors and reopening conditions | A parallel result atlas or standing execution queue |
 | Named infrastructure source, tests, and change | Reusable execution, instrumentation, identity, persistence, recovery, and mechanical acceptance | Cohorts, interventions, estimands, thresholds, scientific outcomes, or claims |
 | `openspec/` | Stable reusable implementation and compatibility contracts | Hypotheses, cohorts, thresholds, or scientific verdicts |
 
-## Flat Research Root and Reading Path
+## Document organization
 
-The registered research base's `research/CONVENTIONS.md` owns the layout and
-maintenance contract. Resolve that Project first; the Skill's installation
-checkout is not automatically the research base. Begin at `research/index.md`.
+The registered canonical research base's
+[research conventions](/data/CoordExp/.worktrees/research-probes/research/conventions.md)
+own document roles, layout, current/distilled catalog entries, naming, handoff
+and retirement. Begin at its `research/index.md`; the Skill installation checkout
+is not automatically the research base. Do not maintain another layout here.
 
-The whole repository serves one research topic. Use the flat research root:
-`index.md` for frontier plus routing, `story.md`, `glossary.md`,
-`alternatives.md`, `questions/`, and `experiments/catalog.jsonl` plus live units.
-Old OKF idea/decision/mechanism/archive buckets and the topic wrapper are retired.
-Valuable scientific distinctions enter question pages; distilled catalog rows
-retain exact Git recovery handles under `research/CONVENTIONS.md`. No permanent
-compatibility alias or empty future category.
-
-The fast reading path is current context plus its state/result; the deeper path
-adds the story, relevant question pages and decisive original records. Preserve
-ideas, counterexamples and exact source handles rather than forcing every file
-to repeat all background. Before proposing a unit, identify its closest tested
-predecessor, remaining uncertainty, changed factor and reopening condition.
-
-`unit.md` is the proportionate design/protocol, frozen when execution begins.
-`state.json` is the lifecycle owner for a current catalog row. Accepted results
-own facts, while questions own interpretation. A review exists only for an actual
-claim/rerun risk. Handoffs are consumed transport, never live frontiers. Closed
-records follow the convention's topic/catalog distillation and exact Git recovery;
-do not recreate `docs/history/` or unit tombstones. Maintained code and executed
-artifacts retain their separate owners. Preserve exact path/hash dependencies
-and distinguish historical inspection from qualified executable continuation.
+Before proposing a unit, identify its closest tested predecessor, remaining
+uncertainty, changed factor and reopening condition. Preserve ideas,
+counterexamples and independent evidence rather than repeating all background.
+A frozen protocol retains its source-time identity; current state/result pointers
+and accepted interpretation belong to their actual consumers.
 
 ## New Unit Identity and Current State
 
@@ -52,7 +37,7 @@ role, evidence/authorization source and freeze identity when applicable. The
 protocol body owns the actual scientific contract. Do not embed independently
 maintained current lifecycle fields in a frozen launch snapshot.
 
-Follow `research/CONVENTIONS.md` for current versus distilled catalog ownership.
+Follow `research/conventions.md` for current versus distilled catalog ownership.
 A `tracking=current` row points to its existing record root, reading entry and
 state; a `tracking=distilled` row needs no live directory and retains exact Git
 recovery with `unsupported_historical` continuation. Keep lifecycle, evidence
@@ -320,13 +305,14 @@ Close a unit from the evidence owner outward:
 
 1. accept and preserve the result plus its immutable evidence receipt;
 2. update a current unit's `state.json`, not a status field inside frozen `unit.md`;
-   when distilling a closed phase, follow `research/CONVENTIONS.md` for topic,
+   when distilling a closed phase, follow `research/conventions.md` for topic,
    catalog and exact Git recovery rather than requiring a permanent live state;
 3. update the question page, story and `research/index.md` only when their respective
    belief, research trajectory or frontier/user-boundary meaning changes;
 4. maintain catalog references without copying result ledgers or volatile counts;
-5. use a handoff only for a real transfer, integrate its delta, then retire
-   redundant transport under the research convention's recovery rules.
+5. use a handoff for a user-requested fresh-session prompt or actual transfer;
+   integrate decision-bearing deltas and retire redundant transport under the
+   research convention's recovery rules.
    Experimental shared-memory MCP changes follow the user-wide capture and
    reviewed-publication grant and its store workflow; other memory systems do
    not inherit that permission.
@@ -346,7 +332,7 @@ route authority.
 
 ## Artifact Root
 
-The research checkout's `docs/OUTPUT_STORAGE_POLICY.md` owns the source/artifact
+The research checkout's `docs/storage-ownership.md` owns the source/artifact
 boundary. Output roots hold execution artifacts, not loose Python, shell scripts,
 Markdown, environments or vendor checkouts. Decision-bearing current execution
 binds a clean Git commit/tree, explicit source paths and separate input/runtime
@@ -355,7 +341,7 @@ their catalog's exact Git handles; do not create dirty-source captures or use
 recovered code as a fallback for a new run's current-source checks.
 
 Resolve `OUTPUT_ROOT` to the physical outputs directory of the owning worktree
-using its `docs/OUTPUT_STORAGE_POLICY.md`; the shared `/data/CoordExp/outputs/`
+using its `docs/storage-ownership.md`; the shared `/data/CoordExp/outputs/`
 root is not the default for branch-owned runs. Use:
 
 ```text
@@ -417,7 +403,8 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
 
 ## Minimal Verification
 
-- Resolve all local Markdown links.
+- Verify current Agent/skill/consumer routes and key evidence links. Distinguish
+  historical locators from live links rather than rebuilding every old path.
 - Parse declared new metadata, especially current state JSON; do not impose
   a new lifecycle schema on frozen historical frontmatter.
 - Fail review on any unexplained local abbreviation, arm code, hypothesis code,
@@ -434,7 +421,8 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
 - Check current-state/result consistency, including accepted-but-incomplete or
   paused outcomes. Historical snapshot status is not a competing live status;
   old next-step language must not bypass the current state and user boundary.
-- Verify referenced artifact receipts/hashes when available.
+- Check bound artifact identities at changed consumers or expensive/irreplaceable
+  evidence boundaries; do not repeatedly hash unchanged sources or ordinary docs.
 - Run `git diff --check` on touched files.
 
 Do not retrofit all historical units to a new schema. Knowledge integrity

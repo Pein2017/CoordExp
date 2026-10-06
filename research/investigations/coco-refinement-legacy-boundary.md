@@ -1,5 +1,9 @@
 # Standalone COCO Refinement Legacy Boundary
 
+Historical evidence for the dated code/runtime boundary recorded below. Status,
+process identities and gate instructions describe that event; they are not a
+current service inventory or authorization for another launch or operator action.
+
 ## Status
 
 This receipt freezes the rollback boundary accepted for the standalone

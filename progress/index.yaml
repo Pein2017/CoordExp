@@ -3,7 +3,7 @@ updated: 2026-06-20
 
 entrypoints:
   human: progress/README.md
-  agent: docs/catalog.yaml
+  agent: docs/README.md
 
 policy:
   status: deprecated-legacy-archive
@@ -13,9 +13,8 @@ policy:
   rule: Read progress only for legacy provenance, then migrate or synthesize useful material into research. Do not create new progress records.
 
 legacy_read_order:
-  - docs/PROJECT_CONTEXT.md
-  - docs/SYSTEM_OVERVIEW.md
-  - the relevant current docs router under docs/
+  - docs/README.md
+  - research/index.md
   - progress/README.md
   - progress/directions/README.md
   - the specific category router and note relevant to the question
@@ -39,9 +38,6 @@ groups:
     - progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
     - progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
     - progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
-    - progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
-    - progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
-    - progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
     - progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     - progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
     - progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
@@ -62,19 +58,14 @@ groups:
     - progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
     - progress/diagnostics/2026-04-22_raw_text_decode_bias_mechanism_findings.md
     - progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
-    - progress/diagnostics/2026-04-20_raw_text_and_coord_family_decision_summary.md
     - progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
     - progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
-    - progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
     - progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
     - progress/diagnostics/2026-04-15_cxcy_logw_logh_retrained_performance_analysis.md
     - progress/diagnostics/2026-04-17_cxcywh_quickcheck_val200.md
     - progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md
-    - progress/diagnostics/2026-03-17_stage2_2b_fn_factor_artifact_guide.md
     - progress/diagnostics/2026-03-16_stage2_2b_stage1_vs_aonly_prefix_fn_hypotheses_plan.md
-    - progress/diagnostics/2026-03-17_stage2_2b_prefix_random_order_followup.md
     - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
-    - progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
     - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md
     - progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md
     - progress/diagnostics/2026-03-05_stage2_near_duplication.md
@@ -89,15 +80,12 @@ groups:
     - progress/diagnostics/2026-02-25_stage2_channel_a_coord_loss.md
     - progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md
     - progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md
-    - progress/diagnostics/2026-03-11_visualization_tools_index.md
   audits:
     - progress/audits/README.md
     - progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
     - progress/audits/2026-06-01_detection_scene_cleanup_validation.md
     - progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md
     - progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md
-    - progress/audits/2026-05-20_repository_stewardship_audit.md
-    - progress/audits/2026-05-19_openspec_reactivation_audit.md
     - progress/audits/2026-05-03_type_schema_architecture_audit.md
     - progress/audits/2026-01-22_stage1_softce_logging.md
     - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
@@ -116,20 +104,8 @@ groups:
     - progress/benchmarks/2026-02-01_stage2_channel_a_infer_eval.md
     - progress/benchmarks/2026-03-11_stage2_oracle_k_first200.md
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
-  explorations:
-    - progress/explorations/README.md
-    - progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
-    - progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md
-    - progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
-    - progress/explorations/2026-05-31_grid_anchor_pending_record.md
-    - progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
-    - progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md
-    - progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
-    - progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
-    - progress/explorations/2026-01-26_stage2_infrastructure.md
-  handoffs:
-    - progress/handoffs/README.md
-    - progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md
+  explorations: []
+  handoffs: []
   pretrain:
     - progress/pretrain/README.md
     - progress/pretrain/stage1_foundation.md
@@ -171,11 +147,6 @@ notes:
     kind: direction
     status: legacy-superseded
     summary: Superseded Stage-1 plus Stage-2 pseudo-positive direction summary; preserve for design lineage and K=4 context, not current training guidance.
-  - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
-    title: Docs/Progress OKF Upgrade Alignment
-    kind: alignment-decision
-    status: legacy-decision
-    summary: Alignment decision for renaming progress to research, preserving docs and openspec authority boundaries, and adopting the ideas/investigations/mechanisms OKF-style hierarchy.
   - path: progress/diagnostics/README.md
     title: Diagnostics Index
     kind: router
@@ -196,21 +167,6 @@ notes:
     kind: diagnostic-synthesis
     status: legacy-router
     summary: Consolidated June 12 pre-onset branch covering coordinate-basin precursor drift, rank-moving residual selectors, matched-pair sign splits, and Layer 16/head-8 route-content evidence.
-  - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
-    title: June 10-12 Diagnostics Consolidation Summary
-    kind: consolidation-summary
-    status: legacy-router
-    summary: Source-to-merged-document map and loss-check method for the June 10-12 diagnostics consolidation.
-  - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
-    title: Prefix-Denoising Branch-Isolation Repair
-    kind: launch-health
-    status: legacy-branch-provenance
-    summary: Post-audit prefix-denoising branch-isolation repair and focused verification on codex/prefix-denoising-sft; branch evidence only until the code/config surface lands in main.
-  - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
-    title: Prefix-Denoising SFT V1 Launch-Health Smoke
-    kind: launch-health
-    status: legacy-superseded-branch-evidence
-    summary: Original tiny prefix-denoising launch-health smoke, superseded by the 2026-06-15 branch-isolation repair note.
   - path: progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     title: Hard-CE Coordinate-Logit And Embedding Locality Diagnosis
     kind: diagnostic-study
@@ -316,11 +272,6 @@ notes:
     kind: diagnostic-study
     status: legacy-mechanism-evidence
     summary: Diagnostic-only synthesis for the small-object duplication offline cluster, unifying the protocol, broad harness, and crowded deep-dive as duplicate evidence rather than duplicate-burst UL launch guidance.
-  - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
-    title: Stage-1 Coordinate-Basin Duplication Mechanism
-    kind: mechanism-summary
-    status: legacy-mechanism-evidence
-    summary: Diagnostic-only mechanism evidence for Stage-1 coordinate-basin duplication; keep it as failure analysis, not active anti-duplication training guidance.
   - path: progress/benchmarks/stage1_2b_val200_leaderboard.md
     title: Stage-1 2B Val200 Detection Leaderboard
     kind: dashboard
@@ -361,63 +312,13 @@ notes:
     kind: benchmark-study
     status: legacy-reference
     summary: Checkpoint-selection probe for the new 2B mixed-objective adapter on val200 detection.
-  - path: progress/explorations/README.md
-    title: Explorations Index
-    kind: router
-    status: legacy-router
-    summary: Router for architecture, infrastructure, and implementation-planning explorations.
-  - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
-    title: Coord-Repel Stage-1 SFT Design Decisions
-    kind: exploration
-    status: legacy-branch-provenance
-    summary: Coord-repel Stage-1 design decision record imported from the conservative-design worktree.
   - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
     title: Prefix-Denoising SFT V1 Audit
     kind: audit
     status: legacy-branch-provenance
     summary: Read-only design and plan audit for codex/prefix-denoising-sft; branch-scoped evidence only until the prefix-denoising surface lands in main.
-  - path: progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md
-    title: Codebase Refactoring Program Kickoff
-    kind: exploration
-    status: legacy-decision-record
-    summary: "Initial refactoring-program decisions: formal worktree, current standard-SFT launch prep protection, recursive-detection / ET-RMP preservation, and lifecycle-registry first slice."
-  - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
-    title: Grid Anchor Compact Detection Pending Record
-    kind: exploration
-    status: legacy-reference
-    summary: Pending/deprecated grid-anchor compact-detection record; use as historical design evidence.
-  - path: progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
-    title: Stage-2 Residual-Set Self-Prefix / UL Redesign Decisions
-    kind: exploration
-    status: legacy-decision-record
-    summary: Stage-2 residual-set self-prefix and UL redesign decision record.
-  - path: progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md
-    title: Unified Teacher-Forcing Objective Architecture Decisions
-    kind: exploration
-    status: legacy-decision-record
-    summary: Unified teacher-forcing objective architecture discussion and decision record.
-  - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
-    title: Training Infrastructure Architecture Decisions
-    kind: exploration
-    status: legacy-reference
-    summary: Architecture decision record from the 2026-05-15 training infrastructure audit and grill-me loop, including duplicate-negative training and adjacent-repulsion removal, training-time EOS hack removal with diagnostics retained, and staged Hungarian replacement.
-  - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
-    title: Runtime Refactor Architecture Program (2026-03-19)
-    kind: exploration
-    status: legacy-exploration
-    summary: Consolidated architecture diagnosis and completion checkpoint for the March 2026 runtime refactor program.
   - path: progress/pretrain/README.md
     title: Pretrain Index
     kind: router
     status: legacy-router
     summary: Router for Stage-1 foundation history and early pretraining evidence.
-  - path: progress/handoffs/README.md
-    title: Handoffs Index
-    kind: router
-    status: legacy-router
-    summary: Router for historical continuation notes preserved as branch or experiment provenance.
-  - path: progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md
-    title: Packed Gaussian SFT Retrain Handoff
-    kind: handoff
-    status: legacy-handoff
-    summary: Optional handoff imported from the fully-compact 2x2 ablation worktree for retrain provenance.

@@ -1,28 +1,11 @@
----
-doc_id: progress.pretrain.index
-layer: progress
-doc_type: router
-status: legacy-router
-domain: research-history
-summary: Router for Stage-1 foundation history and early pretraining evidence.
-tags: [progress, pretrain, stage1]
-updated: 2026-04-23
----
+# Retained pretrain evidence
 
-# Pretrain Index
+Read the [current research questions](/data/CoordExp/.worktrees/research-probes/research/index.md)
+for present interpretation. These originals retain distinct measurements or design
+assumptions listed below. Their proposed runs and old paths are historical, not
+a current execution queue. No new records belong here.
 
-Use this legacy folder only when the main question is:
-
-- what did Stage-1 originally optimize for?
-- which early pretraining results shaped later Stage-1 or Stage-2 choices?
-
-Prefer `docs/training/STAGE1_OBJECTIVE.md` for the current Stage-1 contract and
-`research/` for new interpretation. Use `progress/pretrain/` only for legacy
-setup and early empirical context.
-
-## Legacy Contents
-
-- [stage1_foundation.md](stage1_foundation.md)
-  - historical Stage-1 foundation note for coord-token SFT and distribution supervision
-- [2026-01-26_stage1_ablation.md](2026-01-26_stage1_ablation.md)
-  - early ablation results that informed later Stage-1 setup choices
+| Source | Independent retained use |
+|---|---|
+| [Stage-1 foundation](stage1_foundation.md) | Historical distribution-only objective and rejected decoded-geometry alternatives: assumptions behind early results. |
+| [Early Stage-1 ablation](2026-01-26_stage1_ablation.md) | Corrected accumulation measurements and initialization choice; the patch-resolution-floor explanation remained untested. |

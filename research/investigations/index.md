@@ -1,17 +1,25 @@
-# Investigations
+# Main investigations and source review
 
-Bounded analysis, ablation, diagnosis, checkpoint surgery, trained-model
-behavior study, and post-analysis work.
+These are source-time records, not a second current research queue. New scientific
+questions and interpretation belong to
+[research-probes](/data/CoordExp/.worktrees/research-probes/research/index.md).
+Main's annotation/data implementation remains local.
 
-Use `investigations/` for synthesized cross-cutting analysis. Put individual
-experiment/probe units under the owning investigation's `experiments/`
-subtree.
+[Label Studio commit-gate evidence](label-studio-coco-refinement-commit-gate/)
+and the neighboring COCO refinement investigations retain their specific
+acceptance context; use current source/specs before implementation decisions.
+June autoregressive-binding studies are absorbed into canonical
+[history and stopping](/data/CoordExp/.worktrees/research-probes/research/questions/history-repetition-stopping.md#earlier-local-visual-path-evidence-not-a-contradictory-universal-law),
+including the selected controls, proxy denominators and exact original-source
+recovery. Their historical architecture suggestions are not execution rules.
 
-## Current Investigations
+The [August raw-material distillation](2026-08-29-research-raw-materials-distillation/)
+records which old evidence was retained or removed. It is not an inbox for new
+material. Current change-management rules belong to the user contract and local
+OpenSpec, rather than a second architecture-review instruction layer.
 
-- [Docs vs MCP Authority Boundary](docs-vs-mcp-authority/)
-- [Autoregressive Binding Template Study](autoregressive-binding-template-study/)
-- [coordexp-infras Physical Length](coordexp-infras-physical-length/)
-- [Label Studio COCO Refinement Commit Gate](label-studio-coco-refinement-commit-gate/)
-- [Research raw-material distillation (2026-08-29)](2026-08-29-research-raw-materials-distillation/)
-- [OpenSpec and Superpowers architecture review (2026-09-16)](2026-09-16-openspec-superpowers-architecture.md)
+Physical-length observations are absorbed into
+[runtime/evidence](/data/CoordExp/.worktrees/research-probes/research/questions/runtime-and-evidence.md).
+The earlier docs-versus-discovery distinction now belongs to
+[documentation policy](../../docs/documentation.md), without a stale tool-status
+snapshot or duplicated mandatory reading chain.

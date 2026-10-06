@@ -1,5 +1,9 @@
 # Standalone COCO Refinement Wave 1 Gate
 
+Historical evidence for the dated code/runtime boundary recorded below. Status,
+process identities and gate instructions describe that event; they are not a
+current service inventory or authorization for another launch or operator action.
+
 ## Verdict
 
 **Passed at commit `c94f66da` on 2026-07-17.** OpenSpec task 1.9 has no

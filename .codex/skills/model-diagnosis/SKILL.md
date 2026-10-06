@@ -36,10 +36,10 @@ silent newly wired contract mismatch.
    - Aggregate failure families before sampling examples.
    - Complete when the visible failure has a bounded unit and onset.
 
-   For detection symptoms, read the selected checkout's
-   `docs/eval/INTERPRETATION.md` when matcher, label/geometry, annotation or
-   denominator meaning is uncertain (maintained research copy:
-   [metric interpretation](/data/CoordExp/.worktrees/research-probes/docs/eval/INTERPRETATION.md)).
+   For detection symptoms, read the canonical
+   [metric interpretation](/data/CoordExp/.worktrees/research-probes/docs/eval/interpretation.md)
+   when matcher, label/geometry, annotation or denominator meaning is uncertain;
+   verify implementation against the selected checkout's evaluator/source.
    A parser-valid unmatched row is not the same failure as malformed output;
    this distinction changes the plausible intervention.
 

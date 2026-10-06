@@ -246,13 +246,23 @@ Commit `60a0b25a12861785cb319c580fcba7ef7fc02471` touches the following exact ex
 - `2026-08-25-image2299-xy-step1-delta-backtracking`
 - `2026-08-25-image2299-xy-two-edge-debt-repayment`
 
-The currently truly uncommitted 2026-08-26 experiment directories in `/data/CoordExp/.worktrees/image2299-mechanism-microscope` are:
+At the 2026-08-26 recovery snapshot, the truly uncommitted experiment directories
+in `/data/CoordExp/.worktrees/image2299-mechanism-microscope` were:
 
 - `2026-08-26-image2299-full-root-detached-margin/` (`unit.md` untracked)
 - `2026-08-26-image2299-set-level-compilation/` (`unit.md` untracked)
 
-This is a live Git-status statement, not an attribution of ownership or readiness. Separate modified tracked files outside these two directories are not reclassified as 2026-08-26 experiment directories.
+This is historical Git-status evidence, not current state or an attribution of
+ownership or readiness. Separate modified tracked files outside these two
+directories were not reclassified as 2026-08-26 experiment directories.
 
 ## Recovery boundary
 
 No existing Notion page was edited. No model was loaded and no training, inference, evaluator replay, or scientific probe was run. Hashing, source inspection, and Git/path-state checks were read-only.
+
+The corresponding handoff requested only bounded writeback to the existing
+Notion ontology: restore source provenance, split geometry steering from owner
+selection and retrospective readout from future causal use, and preserve
+Inconclusive/HOLD boundaries. It did not authorize a new ontology, research
+promotion, training or probes. This manifest preserves the source-backed claims
+and limitations; that completed transfer prompt is no longer a separate owner.

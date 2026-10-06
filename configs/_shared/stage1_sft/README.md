@@ -13,7 +13,7 @@ including:
 - `custom.object_field_order`
 - `custom.extra.prompt_variant`
 
-Compact detection configs must not extend those legacy overlays. Detection
-detection uses `DetectionTrainingConfig` and top-level `data`, `prompt`,
-`detection_template`, `token_rows`, `objective`, `packing`, `evaluation`, and
-`validation` sections instead.
+The former compact detection config family used a separate
+`DetectionTrainingConfig` schema and could not extend these overlays.
+These are historical authoring boundaries; see the [config router](../../README.md)
+for this checkout's maintained training surface and qualification boundary.

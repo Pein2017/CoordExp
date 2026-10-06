@@ -22,7 +22,7 @@ consumers deliberately before retirement; do not silently change regenerated
 samples or reintroduce the old model stack.
 
 Use this checkout's source, typed configuration and tests for current behavior.
-`docs/BRANCH_AND_WORKTREE_POLICY.md` owns checkout boundaries and
-`docs/OUTPUT_STORAGE_POLICY.md` owns artifacts and explicit transfers.
+`docs/checkout-ownership.md` owns checkout boundaries and
+`docs/storage-ownership.md` owns artifacts and explicit transfers.
 Git history supplies obsolete command implementations; this directory is not
 their archive.

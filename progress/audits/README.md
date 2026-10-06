@@ -1,48 +1,22 @@
----
-doc_id: progress.audits.index
-layer: progress
-doc_type: router
-status: legacy-router
-domain: research-history
-summary: Router for structured audit notes and decision-focused reviews.
-tags: [progress, audits, review]
-updated: 2026-06-15
----
+# Retained audit evidence
 
-# Audits Index
+These original audits are historical technical evidence, not current gates or
+run instructions. Read current [documentation](../../docs/README.md) and
+[research questions](/data/CoordExp/.worktrees/research-probes/research/index.md)
+first. Retention is limited to the independent uses below.
 
-Use this legacy folder only when the main question is:
+| Source | Independent evidence use |
+|---|---|
+| [Stage-1 SoftCE accounting](2026-01-22_stage1_softce_logging.md) | Accumulation-dependent train/eval logging counterexample; loss-only A100 timings distinguish full-vocabulary gate cost from SoftCE cost. Proposed W1 removal was not measured. |
+| [Channel-A coordinate loss](2026-02-25_stage2_channel_a_coord_loss.md) | The observed run contradicts the proposed F1-down/AP-up diagnosis: F1 improved while AP stayed roughly flat; A1 coordinate diagnostics were absent. Keeps the exact run, step table and final-softctx versus A1 loss distinction. |
+| [Type/schema audit](2026-05-03_type_schema_architecture_audit.md) | Bounded encoded-cache acceptance and unresolved static-packing/prediction/state follow-ups. Typed internal records preserved serialized keys; the broad audit was not exhaustive implementation closure. |
+| [Instance-Gaussian implementation audit](2026-05-14-instance-trie-gaussian-post-implementation-audit.md) | Candidate sidecar causality, teacher-candidate consistency and ignored-tau rejection before model smoke; distinguishes this successor from IoU/CIoU-Gibbs. |
+| [Instance-Gaussian smoke](2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md) | Target-shape, tiny and DDP8 measurements, including candidate sharpening and resource cost; four-step readiness does not establish free-rollout quality. |
+| [DetectionScene source checkpoint](2026-05-31_detection_scene_clean_break_archive_checkpoint.md) | Exact pre-replacement Git identity used by the following classification and validation records. |
+| [DetectionScene classification](2026-05-31_detection_scene_phase0_surface_classification.md) | Original replacement-before-deletion contract, including private bridges, strict versus salvage outputs and unchanged artifact names; interprets the validation's allowed leftovers. |
+| [DetectionScene validation](2026-06-01_detection_scene_cleanup_validation.md) | Actual narrow caller/config checks, skips and classified leftovers after the clean break; preserves the boundary of what passed. |
+| [Prefix-denoising plan audit](2026-06-14_prefix_denoising_sft_v1_audit.md) | Concrete sidecar and packed-isolation counterexamples, quantization-induced small-box exclusion, reversed skip-rate fallback, and unequal-denominator risk. A coherent objective did not qualify its implementation. |
 
-- what did a focused audit conclude about a training or logging surface?
-- which historical review note drove a later config or implementation correction?
-
-Prefer `research/` for new mechanism work, failure investigation, audits, or
-decision records. Use `progress/audits/` only to reconstruct old audit
-provenance.
-
-## Legacy Contents
-
-- Prefix-denoising branch audit:
-  - [2026-06-14_prefix_denoising_sft_v1_audit.md](2026-06-14_prefix_denoising_sft_v1_audit.md)
-    - read-only design/plan audit for `codex/prefix-denoising-sft`; branch-scoped evidence, not current main contract
-- DetectionScene clean-break cleanup gates:
-  - [2026-06-01_detection_scene_cleanup_validation.md](2026-06-01_detection_scene_cleanup_validation.md)
-    - cleanup and validation gate after DetectionScene archive/classification work
-  - [2026-05-31_detection_scene_phase0_surface_classification.md](2026-05-31_detection_scene_phase0_surface_classification.md)
-    - Phase 0 surface classification for keep/quarantine/delete decisions
-  - [2026-05-31_detection_scene_clean_break_archive_checkpoint.md](2026-05-31_detection_scene_clean_break_archive_checkpoint.md)
-    - archive checkpoint record for the clean-break transition
-- [2026-05-20_repository_stewardship_audit.md](2026-05-20_repository_stewardship_audit.md)
-  - repository structure diagnosis, cleanup candidates, and long-term governance rules
-- [2026-05-19_openspec_reactivation_audit.md](2026-05-19_openspec_reactivation_audit.md)
-  - historical OpenSpec validation cleanup and active-change triage before trie-marginal planning
-- [2026-05-14-instance-trie-gaussian-post-implementation-audit.md](2026-05-14-instance-trie-gaussian-post-implementation-audit.md)
-  - concluded implementation-contract audit for Instance-Trie Gaussian SoftCE before target-shape audit and smoke
-- [2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md](2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md)
-  - concluded smoke and DDP8 preflight behavior audit for Instance-Trie Gaussian SoftCE launch readiness
-- [2026-05-03_type_schema_architecture_audit.md](2026-05-03_type_schema_architecture_audit.md)
-  - historical type-system and schema-boundary audit for raw domain containers
-- [2026-01-22_stage1_softce_logging.md](2026-01-22_stage1_softce_logging.md)
-  - historical audit of Stage-1 SoftCE logging, scaling, and efficiency
-- [2026-02-25_stage2_channel_a_coord_loss.md](2026-02-25_stage2_channel_a_coord_loss.md)
-  - historical audit / decision note for Channel-A coord-loss behavior
+Current ownership and governance are maintained in
+[documentation](../../docs/documentation.md), [storage](../../docs/storage-ownership.md)
+and [engineering principles](../../docs/engineering-principles.md).
