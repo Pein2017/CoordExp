@@ -23,8 +23,10 @@ from typing import Any, Protocol
 
 from src.common.errors import DataContractError, RuntimeContractError
 from src.data import iter_raw_examples
-from src.label_studio_coco_refinement.models import Split, WorkingRow
-
+from src.working_dataset.models import (
+    Split,
+    WorkingRow,
+)
 
 PUBLISHER_VERSION = "coco-refinement-dataset-publisher-v1"
 RECEIPT_NAME = "training.publish.receipt.json"

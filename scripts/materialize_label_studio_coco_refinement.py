@@ -17,10 +17,10 @@ from src.label_studio_coco_refinement.materialize import (  # noqa: E402
     ProjectTaskIndexSourceIdentityResolver,
     WorkingCoordMaterializer,
 )
-from src.label_studio_coco_refinement.models import (  # noqa: E402
+from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
 )
-from src.label_studio_coco_refinement.store import (  # noqa: E402
+from src.working_dataset.store import (  # noqa: E402
     WorkingDatasetStore,
 )
 

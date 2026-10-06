@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from src.common.errors import DataContractError
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement import editor_policy
 from src.label_studio_coco_refinement.editor_policy import (
     ACCESSIBLE_HIGH_CONTRAST_PALETTE,
@@ -21,6 +20,9 @@ from src.label_studio_coco_refinement.editor_policy import (
     derive_visual_policy,
     editor_policy_golden_vectors,
     search_coco80_classes,
+)
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
 )
 
 

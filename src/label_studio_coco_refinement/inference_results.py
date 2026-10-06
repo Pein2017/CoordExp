@@ -13,23 +13,23 @@ from urllib.parse import urlsplit
 
 from src.common.errors import DataContractError
 from src.inference.parsing import ParseRow, parse_compact_object_box_closed
-from src.label_studio_coco_refinement.categories import (
-    COCO80_CATEGORIES,
-    COCO80_REGISTRY,
-    Coco80Registry,
-)
 from src.label_studio_coco_refinement.geometry import (
     norm1000_bbox_to_label_studio_xywh,
 )
 from src.label_studio_coco_refinement.roi_transform import (
     CROP_EDGE_CONVENTION,
-    InverseMapping,
     PAD_VALUE_RGB,
     PIXEL_EDGE_CONVENTION,
     RESAMPLER,
     ROI_TRANSFORM_ID,
+    InverseMapping,
     RoiLetterboxTransform,
     RoiTransformError,
+)
+from src.working_dataset.categories import (
+    COCO80_CATEGORIES,
+    COCO80_REGISTRY,
+    Coco80Registry,
 )
 
 

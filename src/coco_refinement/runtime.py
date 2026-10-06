@@ -20,7 +20,6 @@ from typing import Any, Protocol
 
 from PIL import Image, UnidentifiedImageError
 
-from src.common.errors import DataContractError, RuntimeContractError
 from src.coco_refinement.bootstrap import (
     DEFAULT_RUNTIME_RELATIVE,
     BootstrapSourceContract,
@@ -40,28 +39,36 @@ from src.coco_refinement.preflight import (
     run_launch_preflight,
 )
 from src.coco_refinement.repository import SqliteDraftRepository
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+from src.common.errors import DataContractError, RuntimeContractError
 from src.label_studio_coco_refinement.runtime import (
     BatchCoordinator,
     BatchResultObserver,
     RefinementRuntime,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
+    _parse_jsonl_line,
+    _validate_source_row,
+    canonical_json,
+    sha256_file,
+)
+from src.working_dataset.models import (
+    WorkingRow,
+)
+from src.working_dataset.records import (
     BatchRequest,
     BatchResult,
     BatchStatus,
     ValidationError,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
     _bootstrap_image_sha256,
-    _parse_jsonl_line,
     _validate_selected_source,
-    _validate_source_row,
     _working_image_locator,
-    canonical_json,
-    sha256_file,
 )
-from src.label_studio_coco_refinement.models import WorkingRow
-
 
 HEALTH_RECEIPT_NAME = "runtime-health.json"
 _SPLITS = ("train", "val")

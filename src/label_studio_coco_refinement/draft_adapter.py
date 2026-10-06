@@ -16,9 +16,15 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from src.common.errors import DataContractError
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY, Coco80Registry
 from src.label_studio_coco_refinement.geometry import label_studio_xywh_to_norm1000
-from src.label_studio_coco_refinement.store import semantic_hash, sha256_json
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+    Coco80Registry,
+)
+from src.working_dataset.codec import (
+    semantic_hash,
+    sha256_json,
+)
 
 
 class DraftContractError(ValueError):

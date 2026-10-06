@@ -13,15 +13,17 @@ from src.coco_refinement.bootstrap import (
     BootstrapSourceContract,
     _native_region,
     bootstrap_workspace,
-    resume_workspace,
     resolve_indexed_image,
+    resume_workspace,
 )
 from src.coco_refinement.canonical import canonicalize_objects
 from src.label_studio_coco_refinement import project as legacy_project
-from src.label_studio_coco_refinement.store import (
-    ManifestDriftError,
+from src.working_dataset.codec import (
     canonical_json,
     sha256_file,
+)
+from src.working_dataset.records import (
+    ManifestDriftError,
 )
 
 

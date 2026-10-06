@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-import re
 from typing import Any, Protocol
 
-from src.common.errors import RuntimeContractError
 from src.coco_refinement.models import Split
 from src.coco_refinement.repository import SqliteDraftRepository
+from src.common.errors import RuntimeContractError
 from src.label_studio_coco_refinement.runtime import (
     AuthenticatedPrincipal,
     BatchStatusReceipt,
     DraftCatalogError,
     NoEligibleDraftsError,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.records import (
     BatchStatus,
     CommitConflictError,
     RecoveryError,
@@ -24,9 +24,10 @@ from src.label_studio_coco_refinement.store import (
     StoreError,
     StoreStateSnapshot,
     ValidationError,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
 )
-
 
 LOCAL_OPERATOR = "local-operator"
 _BATCH_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")

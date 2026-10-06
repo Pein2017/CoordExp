@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-import pytest
 
 from src.coco_refinement.adapters import (
     SqliteDraftCatalog,
@@ -29,17 +29,18 @@ from src.label_studio_coco_refinement.runtime import (
     WorkerHealth,
     WorkerState,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.codec import (
+    canonical_json,
+    sha256_file,
+)
+from src.working_dataset.records import (
     BatchRequest,
     BatchStatus,
     CommitConflictError,
     RecoveryError,
     StoreBusyError,
     ValidationError,
-    canonical_json,
-    sha256_file,
 )
-
 
 HOST = "127.0.0.1:9141"
 ORIGIN = f"http://{HOST}"

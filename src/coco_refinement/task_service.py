@@ -14,7 +14,6 @@ from uuid import NAMESPACE_URL, uuid5
 
 from PIL import Image, UnidentifiedImageError
 
-from src.common.errors import RuntimeContractError
 from src.coco_refinement.bootstrap import resolve_indexed_image
 from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.models import CanonicalDraft, NativeObject, Split
@@ -27,14 +26,18 @@ from src.coco_refinement.repository import (
     SqliteDraftRepository,
     TaskDraftState,
 )
-from src.label_studio_coco_refinement.store import (
+from src.common.errors import RuntimeContractError
+from src.label_studio_coco_refinement.geometry import pixel_xyxy_to_norm1000
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.records import (
     DraftRestore,
     StoreError,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
 )
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-from src.label_studio_coco_refinement.geometry import pixel_xyxy_to_norm1000
-
 
 MAX_TASK_PAGE = 200
 

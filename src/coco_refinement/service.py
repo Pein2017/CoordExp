@@ -11,7 +11,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.common.errors import DataContractError, RuntimeContractError
 from src.coco_refinement.commit_service import CommitService, CommitServiceError
 from src.coco_refinement.focus_service import FocusQueueService, FocusQueueServiceError
 from src.coco_refinement.http_security import (
@@ -34,8 +33,10 @@ from src.coco_refinement.task_service import (
     TaskService,
     TaskServiceError,
 )
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-
+from src.common.errors import DataContractError, RuntimeContractError
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 _STATIC_ROOT = FileSystemPath(__file__).with_name("static")
 _STATIC_RESPONSE_HEADERS = {

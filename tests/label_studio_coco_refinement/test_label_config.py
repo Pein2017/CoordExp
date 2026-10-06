@@ -4,13 +4,15 @@ from xml.etree import ElementTree
 
 import pytest
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.label_config import (
     build_label_config,
     label_config_fingerprint,
     validate_label_config,
 )
 from src.label_studio_coco_refinement.project import ProjectContractError
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 
 def test_fixed_config_contains_only_bbox_controls_and_canonical_coco80() -> None:

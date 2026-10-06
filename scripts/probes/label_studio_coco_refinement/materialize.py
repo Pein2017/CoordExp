@@ -18,8 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.data import iter_raw_examples  # noqa: E402
-from src.data.examples import thaw_json  # noqa: E402
+import src.training.pipeline as training_pipeline  # noqa: E402
 from src.config.models import (  # noqa: E402
     DataAugmentationConfig,
     DataConfig,
@@ -28,27 +27,32 @@ from src.config.models import (  # noqa: E402
     TemplateConfig,
     TemplatePromptConfig,
 )
-from src.label_studio_coco_refinement.categories import (  # noqa: E402
-    COCO80_REGISTRY,
-)
+from src.data import iter_raw_examples  # noqa: E402
+from src.data.examples import thaw_json  # noqa: E402
 from src.label_studio_coco_refinement.materialize import (  # noqa: E402
     OPERATOR_RECEIPT_NAME,
     ProjectTaskIndexSourceIdentityResolver,
     WorkingCoordMaterializer,
 )
-from src.label_studio_coco_refinement.models import (  # noqa: E402
+from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
 )
-from src.label_studio_coco_refinement.store import (  # noqa: E402
-    BootstrapSpec,
-    CommitRequest,
-    DraftSaveReceipt,
-    WorkingDatasetStore,
+from src.working_dataset.categories import (  # noqa: E402
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (  # noqa: E402
     semantic_hash,
     sha256_file,
     sha256_json,
 )
-import src.training.pipeline as training_pipeline  # noqa: E402
+from src.working_dataset.records import (  # noqa: E402
+    BootstrapSpec,
+    CommitRequest,
+    DraftSaveReceipt,
+)
+from src.working_dataset.store import (  # noqa: E402
+    WorkingDatasetStore,
+)
 
 FIXTURE = (
     REPO_ROOT

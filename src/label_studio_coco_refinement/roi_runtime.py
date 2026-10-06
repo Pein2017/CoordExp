@@ -63,9 +63,10 @@ from src.label_studio_coco_refinement.roi_transform import (
     ROI_TRANSFORM_ID,
     RoiLetterboxTransform,
 )
-from src.label_studio_coco_refinement.store import InferenceReceiptLink
 from src.qwen.images import QWEN_IMAGE_PROCESSOR_KWARGS
-
+from src.working_dataset.records import (
+    InferenceReceiptLink,
+)
 
 RECEIPT_STORE_SCHEMA = "coordexp-roi-receipt-chain-v2"
 RECEIPT_RECORD_SCHEMA = "coordexp-roi-attempt-record-v2"

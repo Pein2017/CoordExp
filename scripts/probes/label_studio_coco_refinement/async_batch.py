@@ -23,8 +23,17 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY  # noqa: E402
-from src.label_studio_coco_refinement.store import (  # noqa: E402
+import src.working_dataset.store as store_module  # noqa: E402
+from src.working_dataset.categories import (  # noqa: E402
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (  # noqa: E402
+    canonical_json,
+    semantic_hash,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (  # noqa: E402
     AuthoritativeDraftIdentity,
     BatchMember,
     BatchRequest,
@@ -34,14 +43,10 @@ from src.label_studio_coco_refinement.store import (  # noqa: E402
     DraftRestore,
     DraftSaveReceipt,
     InferenceReceiptLink,
-    WorkingDatasetStore,
-    canonical_json,
-    semantic_hash,
-    sha256_file,
-    sha256_json,
 )
-import src.label_studio_coco_refinement.store as store_module  # noqa: E402
-
+from src.working_dataset.store import (  # noqa: E402
+    WorkingDatasetStore,
+)
 
 CANONICAL_SOURCE = (
     REPO_ROOT / "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl"
@@ -179,6 +184,10 @@ def _code_identity() -> dict[str, Any]:
     store = Path(store_module.__file__).resolve()
     return {
         "git_head": _git_output("rev-parse", "HEAD"),
+        "dataset_core": {
+            str(path.relative_to(REPO_ROOT)): sha256_file(path)
+            for path in sorted(store.parent.glob("*.py"))
+        },
         "store": {
             "path": str(store),
             "sha256": sha256_file(store),

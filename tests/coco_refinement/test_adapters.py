@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from collections.abc import Mapping
 from dataclasses import replace
-import json
 from pathlib import Path
-import sqlite3
 
 import pytest
 from PIL import Image
@@ -30,7 +30,12 @@ from src.label_studio_coco_refinement.runtime import (
     DraftCatalogRequest,
     RefinementRuntime,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.codec import (
+    canonical_json,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (
     BatchMember,
     BatchRequest,
     BatchResult,
@@ -40,11 +45,7 @@ from src.label_studio_coco_refinement.store import (
     CommitStatus,
     DraftSaveReceipt,
     InferenceReceiptLink,
-    canonical_json,
-    sha256_file,
-    sha256_json,
 )
-
 
 PROJECT_ID = "coco-refinement:train"
 PRINCIPAL = "local-operator"

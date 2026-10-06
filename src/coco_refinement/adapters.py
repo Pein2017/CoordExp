@@ -6,7 +6,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from src.common.errors import CoordExpError, RuntimeContractError
 from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.models import CanonicalDraft, DraftSnapshotBinding
 from src.coco_refinement.repository import (
@@ -14,12 +13,16 @@ from src.coco_refinement.repository import (
     SqliteDraftRepository,
     TerminalTaskCommit,
 )
+from src.common.errors import CoordExpError, RuntimeContractError
 from src.label_studio_coco_refinement.runtime import (
     AuthoritativeDraftSnapshot,
     DraftCatalogCapture,
     DraftCatalogRequest,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.codec import (
+    sha256_json,
+)
+from src.working_dataset.records import (
     AuthoritativeDraftIdentity,
     BatchRequest,
     BatchResult,
@@ -29,7 +32,6 @@ from src.label_studio_coco_refinement.store import (
     CommitStatus,
     DraftSaveReceipt,
     InferenceReceiptLink,
-    sha256_json,
 )
 
 

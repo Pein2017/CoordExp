@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
-from dataclasses import replace
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 
 import src.label_studio_coco_refinement.project as project_module
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.geometry import norm1000_bbox_to_label_studio_xywh
 from src.label_studio_coco_refinement.label_config import (
     build_label_config,
@@ -28,6 +27,9 @@ from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
 )
 from src.label_studio_coco_refinement.project import (
+    RUNTIME_ROOT,
+    SHARED_IMAGE_ROOT,
+    SOURCE_CONTRACTS,
     BootstrapAction,
     CanonicalJsonArrayFingerprint,
     FrozenTaskImport,
@@ -35,13 +37,11 @@ from src.label_studio_coco_refinement.project import (
     LiveTaskSetAttestation,
     ManifestDriftError,
     ProjectContractError,
-    RUNTIME_ROOT,
-    SHARED_IMAGE_ROOT,
-    SOURCE_CONTRACTS,
     RuntimeLayout,
     Split,
     TaskIdentity,
     assert_manifest_matches,
+    bind_bootstrap_task_index_fingerprints,
     build_instance_bootstrap_manifest,
     build_split_project_plan,
     compare_manifests,
@@ -57,15 +57,19 @@ from src.label_studio_coco_refinement.project import (
     validate_immutable_row_fields,
     validate_source_row,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.records import (
     BOOTSTRAP_TASK_INDEX_BUILD_KEY,
     BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
     BOOTSTRAP_TASK_INDEX_SHA256_KEY,
     BOOTSTRAP_TASK_MANIFEST_KEY,
     BootstrapSpec,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -1125,6 +1129,7 @@ def test_store_manifest_derives_exact_schema_v3_bootstrap_binding(
                 "task_manifest": plan.task_manifest.fingerprint,
             },
         ),
+        task_index_binder=bind_bootstrap_task_index_fingerprints,
         annotation_verifier=dependency,
         inference_receipt_resolver=dependency,
     )

@@ -16,7 +16,10 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
 
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.codec import (
+    semantic_hash,
+)
+from src.working_dataset.records import (
     BatchEnqueueReceipt,
     BatchMember,
     BatchRequest,
@@ -28,10 +31,10 @@ from src.label_studio_coco_refinement.store import (
     StoreBusyError,
     StoreError,
     ValidationError,
-    WorkingDatasetStore,
-    semantic_hash,
 )
-
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 _JsonScalar = str | int | float | bool | None
 _FrozenJson = _JsonScalar | tuple["_FrozenJson", ...] | Mapping[str, "_FrozenJson"]

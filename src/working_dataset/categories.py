@@ -108,7 +108,9 @@ COCO80_CATEGORIES: tuple[CocoCategory, ...] = tuple(
 class Coco80Registry:
     """Closed exact-name registry that never exposes contiguous evaluator IDs."""
 
-    def __init__(self, categories: tuple[CocoCategory, ...] = COCO80_CATEGORIES) -> None:
+    def __init__(
+        self, categories: tuple[CocoCategory, ...] = COCO80_CATEGORIES
+    ) -> None:
         categories = tuple(categories)
         if len(categories) != 80:
             raise DataContractError(
@@ -141,7 +143,9 @@ class Coco80Registry:
 
     @property
     def fingerprint(self) -> str:
-        payload = [{"id": category.id, "name": category.name} for category in self._categories]
+        payload = [
+            {"id": category.id, "name": category.name} for category in self._categories
+        ]
         encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 

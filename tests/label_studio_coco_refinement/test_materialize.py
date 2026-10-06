@@ -23,24 +23,32 @@ from src.config.models import (
     TemplatePromptConfig,
 )
 from src.data import load_raw_examples
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.materialize import (
-    CommittedGenerationReceipt,
     MATERIALIZER_VERSION,
     OPERATOR_RECEIPT_CODE,
     OPERATOR_RECEIPT_NAME,
+    CommittedGenerationReceipt,
     ProjectTaskIndexSourceIdentityResolver,
     SourceTaskIdentityReceipt,
     WorkingCoordMaterializer,
 )
 from src.label_studio_coco_refinement.models import (
+    RefinementRuntimeLayout,
+)
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
+    semantic_hash,
+    sha256_json,
+)
+from src.working_dataset.models import (
     ObjectIdentity,
     OrderedWorkingObject,
-    RefinementRuntimeLayout,
     WorkingObject,
     stable_top_left_order,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.records import (
     BatchMember,
     BatchRequest,
     BootstrapSpec,
@@ -48,11 +56,10 @@ from src.label_studio_coco_refinement.store import (
     DraftSaveReceipt,
     InjectedCrash,
     RecoveryError,
-    WorkingDatasetStore,
-    semantic_hash,
-    sha256_json,
 )
-
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "label_studio_coco_refinement"

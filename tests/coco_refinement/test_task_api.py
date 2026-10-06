@@ -4,9 +4,9 @@ import hashlib
 from pathlib import Path
 from typing import Any, Callable
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-import pytest
 
 from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.http_security import CSRF_HEADER
@@ -19,8 +19,12 @@ from src.coco_refinement.repository import (
 )
 from src.coco_refinement.service import create_service_app
 from src.coco_refinement.task_service import TaskService
-from src.label_studio_coco_refinement.store import DraftRestore, sha256_json
-
+from src.working_dataset.codec import (
+    sha256_json,
+)
+from src.working_dataset.records import (
+    DraftRestore,
+)
 
 HOST = "127.0.0.1:9131"
 ORIGIN = f"http://{HOST}"

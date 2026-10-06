@@ -14,7 +14,6 @@ import pytest
 
 from scripts.probes.label_studio_coco_refinement import async_batch as probe
 
-
 EXPECTED_CONTRACTS = {
     "DraftSaveReceipt": [
         "project_id",
@@ -110,6 +109,10 @@ def _code_identity() -> dict[str, Any]:
     store = Path(probe.store_module.__file__).resolve()
     return {
         "git_head": _git_output("rev-parse", "HEAD"),
+        "dataset_core": {
+            str(path.relative_to(probe.REPO_ROOT)): _sha256_file(path)
+            for path in sorted(store.parent.glob("*.py"))
+        },
         "store": {
             "path": str(store),
             "sha256": _sha256_file(store),

@@ -12,10 +12,14 @@ from PIL import Image
 
 from src.coco_refinement.bootstrap import BootstrapSourceContract, bootstrap_workspace
 from src.coco_refinement.canonical import canonicalize_objects
+from src.coco_refinement.dataset_publisher import (
+    CommittedGenerationPublisher,
+    TokenBudgetValidation,
+)
 from src.coco_refinement.preflight import (
+    SUPPORTED_DEPENDENCIES,
     LaunchPreflight,
     RuntimeRootBusyError,
-    SUPPORTED_DEPENDENCIES,
     RuntimeRootLock,
     run_launch_preflight,
 )
@@ -30,24 +34,24 @@ from src.coco_refinement.runtime import (
     StoreTerminalPairProvider,
     _publish_terminal_commit,
     create_standalone_runtime,
-    inspect_source_contracts_read_only,
     inspect_source_contracts_for_resume,
+    inspect_source_contracts_read_only,
     production_adapter_factories,
     synchronize_latest_training_publications,
 )
-from src.coco_refinement.dataset_publisher import (
-    CommittedGenerationPublisher,
-    TokenBudgetValidation,
-)
-from src.label_studio_coco_refinement.store import (
-    BatchRequest,
-    BatchResult,
-    BatchStatus,
-    WorkingDatasetStore,
+from src.label_studio_coco_refinement.runtime import AuthenticatedPrincipal
+from src.working_dataset.codec import (
     canonical_json,
     sha256_file,
 )
-from src.label_studio_coco_refinement.runtime import AuthenticatedPrincipal
+from src.working_dataset.records import (
+    BatchRequest,
+    BatchResult,
+    BatchStatus,
+)
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 
 def _supported_version(distribution: str) -> str:

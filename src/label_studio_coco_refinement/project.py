@@ -13,12 +13,12 @@ import heapq
 import json
 import math
 import os
-from collections import OrderedDict
-from contextlib import nullcontext
 import shutil
 import stat
 import tempfile
 import threading
+from collections import OrderedDict
+from contextlib import nullcontext
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -26,6 +26,18 @@ from types import MappingProxyType
 from typing import Any, BinaryIO, Callable, Iterator, Mapping, Protocol, Sequence
 from urllib.parse import quote, unquote
 
+from src.working_dataset.codec import _is_sha256
+from src.working_dataset.records import (
+    _BOOTSTRAP_TASK_INDEX_BINDING_KEYS,
+    BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+    BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+    BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+    BOOTSTRAP_TASK_MANIFEST_KEY,
+    ValidationError,
+)
+from src.working_dataset.records import (
+    ManifestDriftError as StoreManifestDriftError,
+)
 
 ADAPTER_VERSION = "label-studio-coco-refinement-v1"
 DATASET_NAME = "rescale_32_1024_bbox_len12000"
@@ -168,7 +180,7 @@ class RefinementProjectAdapter(Protocol):
 def default_registry() -> Coco80RegistryProtocol:
     """Load the sibling canonical registry lazily to keep this module decoupled."""
 
-    from .categories import COCO80_REGISTRY
+    from src.working_dataset.categories import COCO80_REGISTRY
 
     return COCO80_REGISTRY
 
@@ -3641,3 +3653,60 @@ def _collect_differences(
         return
     if expected != observed:
         output.append(path or "<root>")
+
+
+def bind_bootstrap_task_index_fingerprints(
+    *,
+    source: Path,
+    split: str,
+    extra_fingerprints: Mapping[str, str],
+) -> dict[str, str]:
+    """Bind a canonical project task-index receipt when the adapter supplies one."""
+
+    extras = dict(extra_fingerprints)
+    supplied_reserved = sorted(_BOOTSTRAP_TASK_INDEX_BINDING_KEYS.intersection(extras))
+    if supplied_reserved:
+        raise ValidationError(
+            "bootstrap task-index bindings are derived, not caller supplied: "
+            + ", ".join(supplied_reserved)
+        )
+    expected_manifest = extras.get("task_manifest")
+    if expected_manifest is None:
+        return extras
+    if not _is_sha256(expected_manifest):
+        raise ValidationError(
+            "extra_fingerprints.task_manifest must be a lowercase SHA-256 digest"
+        )
+
+    project_split = Split(split)
+    contract = SOURCE_CONTRACTS[project_split]
+    repo_root: Path | None = None
+    for candidate in source.parents:
+        expected = candidate / Path(contract.relative_path)
+        try:
+            if expected.resolve(strict=True) == source:
+                repo_root = candidate
+                break
+        except OSError:
+            continue
+    if repo_root is None:
+        raise ValidationError(
+            "task-manifest binding requires the exact selected-source repository path"
+        )
+    try:
+        receipt = load_canonical_task_index_receipt(
+            repo_root,
+            project_split,
+            expected_task_manifest_fingerprint=expected_manifest,
+        )
+    except ProjectContractError as exc:
+        raise StoreManifestDriftError(f"bootstrap_task_index: {exc}") from exc
+    extras.update(
+        {
+            BOOTSTRAP_TASK_INDEX_SCHEMA_KEY: str(TASK_INDEX_SCHEMA_VERSION),
+            BOOTSTRAP_TASK_INDEX_BUILD_KEY: receipt.build_key,
+            BOOTSTRAP_TASK_INDEX_SHA256_KEY: receipt.sha256,
+            BOOTSTRAP_TASK_MANIFEST_KEY: receipt.task_manifest_fingerprint,
+        }
+    )
+    return extras

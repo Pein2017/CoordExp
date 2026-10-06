@@ -12,7 +12,6 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from src.common.errors import RuntimeContractError
 from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.models import NativeTaskIdentity, Split
 from src.coco_refinement.repository import (
@@ -20,19 +19,27 @@ from src.coco_refinement.repository import (
     ProjectRecord,
     SqliteDraftRepository,
 )
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+from src.common.errors import RuntimeContractError
 from src.label_studio_coco_refinement.project import (
     SHARED_IMAGE_ROOT,
     SOURCE_CONTRACTS,
+)
+from src.label_studio_coco_refinement.project import (
     Split as ProjectSplit,
 )
-from src.label_studio_coco_refinement.store import (
-    BootstrapSpec,
-    WorkingDatasetStore,
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
     sha256_file,
     sha256_json,
 )
-
+from src.working_dataset.records import (
+    BootstrapSpec,
+)
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 DEFAULT_RUNTIME_RELATIVE = Path(".local/state/coco_refinement/gate-a")
 _ADAPTER_VERSION = "coco-refinement-native-v1"

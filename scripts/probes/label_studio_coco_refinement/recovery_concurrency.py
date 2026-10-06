@@ -26,8 +26,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY  # noqa: E402
-from src.label_studio_coco_refinement.store import (  # noqa: E402
+from src.working_dataset.categories import (  # noqa: E402
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (  # noqa: E402
+    canonical_json,
+    semantic_hash,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (  # noqa: E402
     AuthoritativeDraftIdentity,
     BatchMember,
     BatchRequest,
@@ -37,13 +45,10 @@ from src.label_studio_coco_refinement.store import (  # noqa: E402
     DraftSaveReceipt,
     InferenceReceiptLink,
     StoreBusyError,
-    WorkingDatasetStore,
-    canonical_json,
-    semantic_hash,
-    sha256_file,
-    sha256_json,
 )
-
+from src.working_dataset.store import (  # noqa: E402
+    WorkingDatasetStore,
+)
 
 WAIT_SECONDS = 5.0
 OBSERVATION_SECONDS = 1.0
@@ -624,9 +629,13 @@ def run_probe(*, cuts: Sequence[RecoveryCut] = RECOVERY_CUTS) -> dict[str, Any]:
         "probe": "label-studio-coco-refinement-os-recovery-concurrency",
         "disposable_fixture": True,
         "code_identity": {
+            "dataset_core": {
+                str(path.relative_to(REPO_ROOT)): sha256_file(path)
+                for path in sorted((REPO_ROOT / "src/working_dataset").glob("*.py"))
+            },
             "probe_sha256": sha256_file(Path(__file__).resolve()),
             "store_sha256": sha256_file(
-                REPO_ROOT / "src/label_studio_coco_refinement/store.py"
+                REPO_ROOT / "src/working_dataset/store.py"
             ),
             "python_version": platform.python_version(),
             "platform": platform.platform(),

@@ -11,8 +11,16 @@ from typing import Any, Callable
 
 import pytest
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
+    canonical_json,
+    semantic_hash,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (
     AuthoritativeDraftIdentity,
     BatchMember,
     BatchRequest,
@@ -22,13 +30,10 @@ from src.label_studio_coco_refinement.store import (
     DraftSaveReceipt,
     InferenceReceiptLink,
     StoreBusyError,
-    WorkingDatasetStore,
-    canonical_json,
-    semantic_hash,
-    sha256_file,
-    sha256_json,
 )
-
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix" or not Path("/proc/self/status").exists(),

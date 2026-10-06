@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import shutil
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 import src.coco_refinement.service as service_module
 from src.coco_refinement.service import create_service_app
 from src.coco_refinement.task_service import TaskService
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.editor_policy import editor_policy_golden_vectors
-
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 HOST = "127.0.0.1:9143"
 ORIGIN = f"http://{HOST}"

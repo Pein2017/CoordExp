@@ -19,19 +19,24 @@ from src.data import iter_raw_examples
 from src.data.examples import JsonFrozen, freeze_json, thaw_json
 from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
+)
+from src.working_dataset.codec import (
+    sha256_json,
+)
+from src.working_dataset.models import (
     Split,
     WorkingRow,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.records import (
     BOOTSTRAP_TASK_INDEX_BUILD_KEY,
     BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
     BOOTSTRAP_TASK_INDEX_SHA256_KEY,
     BOOTSTRAP_TASK_MANIFEST_KEY,
     TASK_INDEX_IDENTITY_SCHEMA_VERSION,
-    WorkingDatasetStore,
-    sha256_json,
 )
-
+from src.working_dataset.store import (
+    WorkingDatasetStore,
+)
 
 MATERIALIZER_VERSION = "label-studio-working-coord-v4"
 OPERATOR_RECEIPT_SCHEMA_VERSION = 1
@@ -452,8 +457,10 @@ class _CanonicalIdentitySession:
             SOURCE_CONTRACTS,
             TASK_INDEX_SCHEMA_VERSION,
             ProjectContractError,
-            Split as ProjectSplit,
             load_canonical_task_index_receipt,
+        )
+        from src.label_studio_coco_refinement.project import (
+            Split as ProjectSplit,
         )
 
         self.layout = layout

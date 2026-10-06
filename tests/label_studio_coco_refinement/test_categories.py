@@ -3,14 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
 from src.common.errors import DataContractError
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "label_studio_coco_refinement"

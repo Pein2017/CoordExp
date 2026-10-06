@@ -8,10 +8,9 @@ from typing import Any
 
 import pytest
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.runtime import (
-    AuthenticationError,
     AuthenticatedPrincipal,
+    AuthenticationError,
     AuthoritativeDraftSnapshot,
     BatchCoordinator,
     DraftCatalogCapture,
@@ -20,7 +19,16 @@ from src.label_studio_coco_refinement.runtime import (
     RefinementRuntime,
     WorkerState,
 )
-from src.label_studio_coco_refinement.store import (
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
+    canonical_json,
+    semantic_hash,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (
     AuthoritativeDraftIdentity,
     BatchRequest,
     BatchResult,
@@ -29,11 +37,9 @@ from src.label_studio_coco_refinement.store import (
     InferenceReceiptLink,
     RecoveryError,
     StoreBusyError,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
-    canonical_json,
-    semantic_hash,
-    sha256_file,
-    sha256_json,
 )
 
 

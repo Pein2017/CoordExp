@@ -9,7 +9,9 @@ from typing import Any
 import pytest
 
 from scripts.probes.label_studio_coco_refinement import materialize_full as probe
-from src.label_studio_coco_refinement.models import RefinementRuntimeLayout
+from src.label_studio_coco_refinement.models import (
+    RefinementRuntimeLayout,
+)
 
 
 def _minimal_live_repository(tmp_path: Path) -> tuple[Path, RefinementRuntimeLayout]:

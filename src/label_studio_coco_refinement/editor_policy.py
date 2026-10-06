@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 VISUAL_POLICY_ID = "visual_policy_v1"
 NEIGHBOR_EXPANSION_BINS = 12

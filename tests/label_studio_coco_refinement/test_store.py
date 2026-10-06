@@ -13,9 +13,20 @@ from typing import Any
 
 import pytest
 
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
-import src.label_studio_coco_refinement.store as store_module
-from src.label_studio_coco_refinement.store import (
+import src.working_dataset.codec as store_codec
+import src.working_dataset.index as store_index
+import src.working_dataset.records as store_records
+import src.working_dataset.store as store_module
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
+from src.working_dataset.codec import (
+    canonical_json,
+    semantic_hash,
+    sha256_file,
+    sha256_json,
+)
+from src.working_dataset.records import (
     AuthoritativeDraftIdentity,
     BootstrapSpec,
     CommitConflictError,
@@ -24,18 +35,16 @@ from src.label_studio_coco_refinement.store import (
     CommitRolledBackError,
     CommitStatus,
     DraftSaveReceipt,
-    InjectedCrash,
     InferenceReceiptLink,
+    InjectedCrash,
     ManifestDriftError,
     RecoveryError,
     StaleCommitError,
     StoreBusyError,
     ValidationError,
+)
+from src.working_dataset.store import (
     WorkingDatasetStore,
-    canonical_json,
-    semantic_hash,
-    sha256_file,
-    sha256_json,
 )
 
 
@@ -53,14 +62,14 @@ class BatchReadingAnnotationVerifier:
     def __init__(self, *, barrier: threading.Barrier | None = None) -> None:
         self.store: WorkingDatasetStore | None = None
         self.barrier = barrier
-        self.batch_calls: list[store_module.BatchRequest] = []
+        self.batch_calls: list[store_records.BatchRequest] = []
         self.fallback_calls: list[AuthoritativeDraftIdentity] = []
 
     def verify(self, identity: AuthoritativeDraftIdentity) -> bool:
         self.fallback_calls.append(identity)
         return True
 
-    def verify_batch(self, request: store_module.BatchRequest) -> bool:
+    def verify_batch(self, request: store_records.BatchRequest) -> bool:
         self.batch_calls.append(request)
         if self.store is not None:
             image_ids = tuple(member.request.image_id for member in request.members)
@@ -367,7 +376,7 @@ def _seed_queue_record_kind(store: WorkingDatasetStore, kind: str) -> str:
     if kind == "queue_terminal":
         result = store.process_next_batch()
         assert (
-            result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+            result is not None and result.status is store_records.BatchStatus.SUCCEEDED
         )
         return batch_id
     raise AssertionError(kind)  # pragma: no cover - test helper contract
@@ -392,11 +401,11 @@ def _batch_request(
             regions=regions,
         )
         members.append(
-            store_module.BatchMember(source_row_index=image_id - 1, request=request)
+            store_records.BatchMember(source_row_index=image_id - 1, request=request)
         )
     if reverse_members:
         members.reverse()
-    return store_module.BatchRequest(
+    return store_records.BatchRequest(
         batch_id=batch_id,
         split="train",
         current_user_id=current_user_id,
@@ -406,11 +415,11 @@ def _batch_request(
 
 
 def _replace_only_batch_member_request(
-    batch: store_module.BatchRequest,
+    batch: store_records.BatchRequest,
     request: CommitRequest,
     *,
     source_row_index: Any | None = None,
-) -> store_module.BatchRequest:
+) -> store_records.BatchRequest:
     member = batch.members[0]
     return replace(
         batch,
@@ -439,7 +448,7 @@ def test_batch_enqueue_is_durable_immutable_and_does_not_publish(
     receipt = store.enqueue_batch(request)
 
     assert receipt.batch_id == "batch-1"
-    assert receipt.status is store_module.BatchStatus.QUEUED
+    assert receipt.status is store_records.BatchStatus.QUEUED
     assert receipt.member_count == 2
     assert len(receipt.payload_hash) == 64
     assert store.working_path.read_bytes() == working_before
@@ -470,7 +479,7 @@ def test_hashed_batch_payload_rehydrates_without_type_or_value_changes(
     )
     payload = json.loads(store.queue_path.read_text(encoding="utf-8"))["payload"]
 
-    rehydrated = store_module._batch_request_from_payload(payload)
+    rehydrated = store_codec._batch_request_from_payload(payload)
 
     assert store._canonical_batch_payload(rehydrated) == payload
 
@@ -512,7 +521,7 @@ def test_batch_verifier_runs_once_outside_locks_and_can_read_store(
 
     receipt = store.enqueue_batch(request)
 
-    assert receipt.status is store_module.BatchStatus.QUEUED
+    assert receipt.status is store_records.BatchStatus.QUEUED
     assert len(verifier.batch_calls) == 1
     assert verifier.batch_calls[0].current_user_id == "reviewer"
     assert verifier.fallback_calls == []
@@ -910,7 +919,7 @@ def test_success_queue_terminal_allows_legacy_omitted_error_field(
     reopened = _reopen(store)
 
     assert (
-        reopened.get_batch_status(batch_id).status is store_module.BatchStatus.SUCCEEDED
+        reopened.get_batch_status(batch_id).status is store_records.BatchStatus.SUCCEEDED
     )
     assert store.queue_path.read_bytes() == queue_before
 
@@ -938,7 +947,7 @@ def test_batch_enqueue_returns_existing_active_batch_identity(
     assert returned == active
     assert (
         store.get_batch_status("batch-other").status
-        is store_module.BatchStatus.NOT_FOUND
+        is store_records.BatchStatus.NOT_FOUND
     )
     assert store.queue_path.read_text(encoding="utf-8").count("\n") == 1
 
@@ -956,10 +965,10 @@ def test_concurrent_post_attestation_admission_enqueues_only_one_batch(
     )
     request_a = _batch_request(store, batch_id="racing-a", image_ids=(1,))
     request_b = _batch_request(store, batch_id="racing-b", image_ids=(2,))
-    receipts: list[store_module.BatchEnqueueReceipt] = []
+    receipts: list[store_records.BatchEnqueueReceipt] = []
     errors: list[BaseException] = []
 
-    def enqueue(request: store_module.BatchRequest) -> None:
+    def enqueue(request: store_records.BatchRequest) -> None:
         try:
             receipts.append(store.enqueue_batch(request))
         except BaseException as exc:  # capture thread failures for the assertion
@@ -989,8 +998,8 @@ def test_concurrent_post_attestation_admission_enqueues_only_one_batch(
 @pytest.mark.parametrize(
     "claimed,expected_status",
     [
-        (False, store_module.BatchStatus.QUEUED),
-        (True, store_module.BatchStatus.RUNNING),
+        (False, store_records.BatchStatus.QUEUED),
+        (True, store_records.BatchStatus.RUNNING),
     ],
 )
 def test_batch_enqueue_retries_return_queue_identity_while_worker_locked(
@@ -1035,7 +1044,7 @@ def test_batch_enqueue_terminal_retry_is_reconciling_while_worker_locked(
     accepted = store.enqueue_batch(request)
     result = store.process_next_batch()
     assert result is not None
-    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.status is store_records.BatchStatus.SUCCEEDED
     queue_bytes = store.queue_path.read_bytes()
 
     with store._exclusive_lock():
@@ -1043,7 +1052,7 @@ def test_batch_enqueue_terminal_retry_is_reconciling_while_worker_locked(
 
     assert retry.batch_id == accepted.batch_id
     assert retry.payload_hash == accepted.payload_hash
-    assert retry.status is store_module.BatchStatus.RECONCILING
+    assert retry.status is store_records.BatchStatus.RECONCILING
     assert store.queue_path.read_bytes() == queue_bytes
 
 
@@ -1055,7 +1064,7 @@ def test_batch_candidate_build_keeps_old_generation_readable(
     store.enqueue_batch(request)
     pause = PauseAt("batch_working_temp_fsynced")
     store._fault_injector = pause
-    outcome: list[store_module.BatchResult] = []
+    outcome: list[store_records.BatchResult] = []
     errors: list[BaseException] = []
 
     def process() -> None:
@@ -1073,7 +1082,7 @@ def test_batch_candidate_build_keeps_old_generation_readable(
         status = store.get_batch_status("batch-paused-build")
         restored = store.restore_draft(1)
         state = store.state_snapshot()
-        assert status.status is store_module.BatchStatus.RUNNING
+        assert status.status is store_records.BatchStatus.RUNNING
         assert restored.generation == 0
         assert restored.row_hash == request.members[0].request.base_row_hash
         assert state.generation == 0
@@ -1086,10 +1095,10 @@ def test_batch_candidate_build_keeps_old_generation_readable(
     assert not worker.is_alive()
     assert errors == []
     assert len(outcome) == 1
-    assert outcome[0].status is store_module.BatchStatus.SUCCEEDED
+    assert outcome[0].status is store_records.BatchStatus.SUCCEEDED
     assert (
         store.get_batch_status("batch-paused-build").status
-        is store_module.BatchStatus.SUCCEEDED
+        is store_records.BatchStatus.SUCCEEDED
     )
     assert store.restore_draft(1).generation == 1
 
@@ -1116,7 +1125,7 @@ def test_batch_materialization_uses_frozen_identity_while_readers_reload(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(store, "_materialize_objects", blocked_materialize)
-    outcome: list[store_module.BatchResult] = []
+    outcome: list[store_records.BatchResult] = []
     errors: list[BaseException] = []
 
     def process() -> None:
@@ -1135,7 +1144,7 @@ def test_batch_materialization_uses_frozen_identity_while_readers_reload(
         assert store.restore_draft(1).generation == 0
         assert (
             store.get_batch_status("batch-frozen-maps").status
-            is store_module.BatchStatus.RUNNING
+            is store_records.BatchStatus.RUNNING
         )
         with pytest.raises(StoreBusyError, match="processor is already active"):
             peer.recover()
@@ -1196,7 +1205,7 @@ def test_batch_phase_c_rejects_changed_cache_before_publication(
     store._fault_injector = None
     retried = store.process_next_batch()
     assert retried is not None
-    assert retried.status is store_module.BatchStatus.SUCCEEDED
+    assert retried.status is store_records.BatchStatus.SUCCEEDED
 
 
 def test_batch_enqueue_retries_reconcile_unlocked_journal_terminal_gap(
@@ -1218,7 +1227,7 @@ def test_batch_enqueue_retries_reconcile_unlocked_journal_terminal_gap(
 
     assert exact.batch_id == accepted.batch_id
     assert exact.payload_hash == accepted.payload_hash
-    assert exact.status is store_module.BatchStatus.RECONCILING
+    assert exact.status is store_records.BatchStatus.RECONCILING
     assert active == exact
     assert worker.queue_path.read_bytes() == queue_bytes
 
@@ -1253,7 +1262,7 @@ def test_batch_enqueue_verifies_immutable_source_row_index(
     batch_members = []
     for ordinal, (source_row_index, image_id) in enumerate(members):
         batch_members.append(
-            store_module.BatchMember(
+            store_records.BatchMember(
                 source_row_index=source_row_index,
                 request=_request(
                     store,
@@ -1262,7 +1271,7 @@ def test_batch_enqueue_verifies_immutable_source_row_index(
                 ),
             )
         )
-    request = store_module.BatchRequest(
+    request = store_records.BatchRequest(
         batch_id="invalid-index-batch",
         split="train",
         current_user_id="reviewer",
@@ -1355,7 +1364,7 @@ def test_task_navigation_random_reads_only_the_requested_row(
 ) -> None:
     store, _, _ = project
     baseline = store.restore_draft(2)
-    original_parse = store_module._parse_working_jsonl_row
+    original_parse = store_codec._parse_working_jsonl_row
     parsed_indexes: list[int] = []
 
     def tracked_parse(raw: bytes, source_row_index: int) -> dict[str, Any]:
@@ -1365,7 +1374,7 @@ def test_task_navigation_random_reads_only_the_requested_row(
     def forbidden_scan(*_args: Any, **_kwargs: Any) -> dict[int, dict[str, Any]]:
         raise AssertionError("task navigation must not scan the complete working file")
 
-    monkeypatch.setattr(store_module, "_parse_working_jsonl_row", tracked_parse)
+    monkeypatch.setattr(store_index, "_parse_working_jsonl_row", tracked_parse)
     monkeypatch.setattr(store, "_scan_attested_restore_rows", forbidden_scan)
 
     restored = store.restore_task_navigation(
@@ -1526,7 +1535,7 @@ def test_process_batch_publishes_every_member_once_in_source_order(
 
     assert result is not None
     assert result.batch_id == receipt.batch_id
-    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.status is store_records.BatchStatus.SUCCEEDED
     assert result.generation == 1
     assert [member.image_id for member in result.members] == [1, 2]
     assert [
@@ -1543,7 +1552,7 @@ def test_process_batch_publishes_every_member_once_in_source_order(
     assert manifest["working_sha256"] == result.working_sha256
     assert (
         store.get_batch_status(receipt.batch_id).status
-        is store_module.BatchStatus.SUCCEEDED
+        is store_records.BatchStatus.SUCCEEDED
     )
     assert store.get_batch_result(receipt.batch_id) == result
     records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
@@ -1586,19 +1595,19 @@ def test_batch_freshness_is_per_row_not_global_generation(
             regions=_regions(store, 3, include_new=False),
         )
     )
-    batch = store_module.BatchRequest(
+    batch = store_records.BatchRequest(
         batch_id="old-generation-batch",
         split="train",
         current_user_id="reviewer",
         base_generation=old_request.observed_generation,
-        members=(store_module.BatchMember(source_row_index=0, request=old_request),),
+        members=(store_records.BatchMember(source_row_index=0, request=old_request),),
     )
 
     worker_store.enqueue_batch(batch)
     result = worker_store.process_next_batch()
 
     assert result is not None
-    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.status is store_records.BatchStatus.SUCCEEDED
     assert result.generation == 2
 
 
@@ -1609,14 +1618,14 @@ def test_stale_batch_member_fails_all_members_without_replacement(
     old_one = _request(store, commit_id="stale-one", image_id=1)
     old_two = _request(store, commit_id="stale-two", image_id=2)
     store.commit(_request(store, commit_id="advance-row-one", image_id=1))
-    batch = store_module.BatchRequest(
+    batch = store_records.BatchRequest(
         batch_id="stale-batch",
         split="train",
         current_user_id="reviewer",
         base_generation=0,
         members=(
-            store_module.BatchMember(source_row_index=0, request=old_one),
-            store_module.BatchMember(source_row_index=1, request=old_two),
+            store_records.BatchMember(source_row_index=0, request=old_one),
+            store_records.BatchMember(source_row_index=1, request=old_two),
         ),
     )
     store.enqueue_batch(batch)
@@ -1626,12 +1635,12 @@ def test_stale_batch_member_fails_all_members_without_replacement(
     result = store.process_next_batch()
 
     assert result is not None
-    assert result.status is store_module.BatchStatus.FAILED
+    assert result.status is store_records.BatchStatus.FAILED
     assert "base row hash changed" in (result.error or "")
     assert store.working_path.read_bytes() == working_before
     assert store.manifest_path.read_bytes() == manifest_before
     assert (
-        store.get_batch_status("stale-batch").status is store_module.BatchStatus.FAILED
+        store.get_batch_status("stale-batch").status is store_records.BatchStatus.FAILED
     )
 
 
@@ -1645,7 +1654,7 @@ def test_sequential_batches_preserve_prior_rows_and_use_frozen_snapshot(
     first_result = store.process_next_batch()
     assert (
         first_result is not None
-        and first_result.status is store_module.BatchStatus.SUCCEEDED
+        and first_result.status is store_records.BatchStatus.SUCCEEDED
     )
     row_one_after_first = store.working_path.read_bytes().splitlines(keepends=True)[0]
     assert json.loads(row_one_after_first)["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
@@ -1655,7 +1664,7 @@ def test_sequential_batches_preserve_prior_rows_and_use_frozen_snapshot(
 
     assert (
         second_result is not None
-        and second_result.status is store_module.BatchStatus.SUCCEEDED
+        and second_result.status is store_records.BatchStatus.SUCCEEDED
     )
     assert (
         store.working_path.read_bytes().splitlines(keepends=True)[0]
@@ -1682,7 +1691,7 @@ def test_batch_worker_does_not_use_legacy_prescan_or_temp_rehash(
     result = store.process_next_batch()
 
     assert result is not None
-    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.status is store_records.BatchStatus.SUCCEEDED
 
 
 def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
@@ -1697,7 +1706,7 @@ def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
 
     store._fault_injector = fail_after_reservation
     failed = store.process_next_batch()
-    assert failed is not None and failed.status is store_module.BatchStatus.FAILED
+    assert failed is not None and failed.status is store_records.BatchStatus.FAILED
     store._fault_injector = None
     reservations = [
         json.loads(line)
@@ -1732,7 +1741,7 @@ def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
     )
     other = replace(
         other,
-        members=(store_module.BatchMember(source_row_index=1, request=other_member),),
+        members=(store_records.BatchMember(source_row_index=1, request=other_member),),
         base_generation=store.restore_draft(2).generation,
     )
     store.enqueue_batch(other)
@@ -1765,14 +1774,14 @@ def test_batch_rejects_cross_task_stable_key_collision_before_reservation(
 
     result = store.process_next_batch()
 
-    assert result is not None and result.status is store_module.BatchStatus.FAILED
+    assert result is not None and result.status is store_records.BatchStatus.FAILED
     assert "stable region key is already bound to another task" in (result.error or "")
     assert store.working_path.read_bytes() == working_before
     assert store.manifest_path.read_bytes() == manifest_before
     records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
     assert [record["kind"] for record in records] == ["batch_terminal"]
     reopened = _reopen(store)
-    assert reopened.get_batch_result(batch.batch_id).status is store_module.BatchStatus.FAILED
+    assert reopened.get_batch_result(batch.batch_id).status is store_records.BatchStatus.FAILED
 
 
 def test_terminal_batch_retry_does_not_republish_or_allocate_again(
@@ -1797,7 +1806,7 @@ def test_terminal_batch_retry_does_not_republish_or_allocate_again(
 
     assert retry_receipt.batch_id == first_receipt.batch_id
     assert retry_receipt.payload_hash == first_receipt.payload_hash
-    assert retry_receipt.status is store_module.BatchStatus.SUCCEEDED
+    assert retry_receipt.status is store_records.BatchStatus.SUCCEEDED
     assert store.get_batch_result(batch.batch_id) == first_result
     assert store.process_next_batch() is None
     assert {
@@ -1812,7 +1821,7 @@ def test_batch_deletion_tombstones_identity_against_later_redraw(
     store, _, _ = project
     store.enqueue_batch(_batch_request(store, batch_id="add", image_ids=(1,)))
     added = store.process_next_batch()
-    assert added is not None and added.status is store_module.BatchStatus.SUCCEEDED
+    assert added is not None and added.status is store_records.BatchStatus.SUCCEEDED
     assert added.members[0].region_id_mapping["drawn:batch-1"] == -1
 
     delete_regions = [
@@ -1826,16 +1835,16 @@ def test_batch_deletion_tombstones_identity_against_later_redraw(
         image_id=1,
         regions=delete_regions,
     )
-    delete_batch = store_module.BatchRequest(
+    delete_batch = store_records.BatchRequest(
         batch_id="delete",
         split="train",
         current_user_id="reviewer",
         base_generation=delete_request.observed_generation,
-        members=(store_module.BatchMember(0, delete_request),),
+        members=(store_records.BatchMember(0, delete_request),),
     )
     store.enqueue_batch(delete_batch)
     deleted = store.process_next_batch()
-    assert deleted is not None and deleted.status is store_module.BatchStatus.SUCCEEDED
+    assert deleted is not None and deleted.status is store_records.BatchStatus.SUCCEEDED
 
     redraw_regions = _regions(store, image_id=1, include_new=False)
     redraw_regions.append(
@@ -1852,27 +1861,27 @@ def test_batch_deletion_tombstones_identity_against_later_redraw(
         image_id=1,
         regions=redraw_regions,
     )
-    redraw_batch = store_module.BatchRequest(
+    redraw_batch = store_records.BatchRequest(
         batch_id="redraw",
         split="train",
         current_user_id="reviewer",
         base_generation=redraw_request.observed_generation,
-        members=(store_module.BatchMember(0, redraw_request),),
+        members=(store_records.BatchMember(0, redraw_request),),
     )
     store.enqueue_batch(redraw_batch)
 
     redrawn = store.process_next_batch()
 
-    assert redrawn is not None and redrawn.status is store_module.BatchStatus.FAILED
+    assert redrawn is not None and redrawn.status is store_records.BatchStatus.FAILED
     assert "tombstoned" in (redrawn.error or "")
 
 
 @pytest.mark.parametrize(
     "boundary,expected_status,expected_generation",
     [
-        ("batch_prepared_journal_fsynced", store_module.BatchStatus.FAILED, 0),
-        ("batch_working_replaced", store_module.BatchStatus.SUCCEEDED, 1),
-        ("batch_terminal_journal_fsynced", store_module.BatchStatus.SUCCEEDED, 1),
+        ("batch_prepared_journal_fsynced", store_records.BatchStatus.FAILED, 0),
+        ("batch_working_replaced", store_records.BatchStatus.SUCCEEDED, 1),
+        ("batch_terminal_journal_fsynced", store_records.BatchStatus.SUCCEEDED, 1),
     ],
 )
 def test_batch_reopen_reconciles_transaction_and_queue_projection(
@@ -1921,7 +1930,7 @@ def test_prepublication_recovery_observer_exposes_exact_prior_navigation_row(
     errors: list[BaseException] = []
 
     def observe(_request: Any, result: Any) -> None:
-        assert result.status is store_module.BatchStatus.FAILED
+        assert result.status is store_records.BatchStatus.FAILED
         assert result.error == "recovered before batch publication"
         observer_entered.set()
         assert observer_release.wait(3.0)
@@ -1948,7 +1957,7 @@ def test_prepublication_recovery_observer_exposes_exact_prior_navigation_row(
     recovery.join(3.0)
     assert not recovery.is_alive()
     assert errors == []
-    assert store.get_batch_status("batch-1").status is store_module.BatchStatus.FAILED
+    assert store.get_batch_status("batch-1").status is store_records.BatchStatus.FAILED
 
 
 @pytest.mark.parametrize(
@@ -1986,11 +1995,11 @@ def test_preopened_peer_never_crosses_batch_publication_authorities(
         ] == [11, 21, 31, 41]
         assert (
             peer.get_batch_status("batch-1").status
-            is store_module.BatchStatus.SUCCEEDED
+            is store_records.BatchStatus.SUCCEEDED
         )
         accepted = peer.enqueue_batch(next_request)
         assert accepted.batch_id == "batch-next"
-        assert accepted.status is store_module.BatchStatus.QUEUED
+        assert accepted.status is store_records.BatchStatus.QUEUED
         assert peer.state_snapshot().generation == 1
     else:
         with pytest.raises(RecoveryError, match="requires recovery"):
@@ -2001,11 +2010,11 @@ def test_preopened_peer_never_crosses_batch_publication_authorities(
             peer.state_snapshot()
         assert (
             peer.get_batch_status("batch-1").status
-            is store_module.BatchStatus.RECONCILING
+            is store_records.BatchStatus.RECONCILING
         )
         receipt = peer.enqueue_batch(next_request)
         assert receipt.batch_id == "batch-1"
-        assert receipt.status is store_module.BatchStatus.RECONCILING
+        assert receipt.status is store_records.BatchStatus.RECONCILING
         with pytest.raises(RecoveryError, match="requires recovery"):
             peer.get_batch_status("batch-next")
         assert not any(
@@ -2134,10 +2143,10 @@ def test_lost_enqueue_response_reopens_as_same_queued_batch(
 
     reopened = _reopen(store)
     assert (
-        reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+        reopened.get_batch_status("batch-1").status is store_records.BatchStatus.QUEUED
     )
     result = reopened.process_next_batch()
-    assert result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+    assert result is not None and result.status is store_records.BatchStatus.SUCCEEDED
 
 
 def test_bootstrap_persists_verified_zero_based_task_index(
@@ -2175,7 +2184,7 @@ def test_reopen_truncates_only_an_unambiguous_torn_queue_tail(
 
     assert reopened.queue_path.read_bytes() == durable
     assert (
-        reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+        reopened.get_batch_status("batch-1").status is store_records.BatchStatus.QUEUED
     )
 
 
@@ -2191,7 +2200,7 @@ def test_reopen_removes_orphan_batch_candidate_and_keeps_queue_dispatchable(
 
     assert not orphan.exists()
     result = reopened.process_next_batch()
-    assert result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+    assert result is not None and result.status is store_records.BatchStatus.SUCCEEDED
 
 
 def test_batch_candidate_rejects_untouched_input_drift_before_replacement(

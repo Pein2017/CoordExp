@@ -7,12 +7,6 @@ from dataclasses import replace
 import pytest
 
 from src.inference.parsing import parse_compact_object_box_closed
-from src.label_studio_coco_refinement.categories import (
-    COCO80_CATEGORIES,
-    COCO80_REGISTRY,
-    Coco80Registry,
-    CocoCategory,
-)
 from src.label_studio_coco_refinement.inference_results import (
     CategoryIdentity,
     CurrentTarget,
@@ -34,6 +28,12 @@ from src.templates.renderer import (
     BOX_START_TOKEN,
     OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
+)
+from src.working_dataset.categories import (
+    COCO80_CATEGORIES,
+    COCO80_REGISTRY,
+    Coco80Registry,
+    CocoCategory,
 )
 
 

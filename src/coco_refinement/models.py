@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, Any, Literal
 from src.common.errors import DataContractError
 from src.data.examples import JsonFrozen, freeze_json, thaw_json
 from src.data.geometry import validate_bbox_bins
-from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+from src.working_dataset.categories import (
+    COCO80_REGISTRY,
+)
 
 if TYPE_CHECKING:
     from src.label_studio_coco_refinement.runtime import AuthoritativeDraftSnapshot

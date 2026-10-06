@@ -27,7 +27,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.label_studio_coco_refinement.materialize import (  # noqa: E402
     OPERATOR_RECEIPT_NAME,
 )
-from src.label_studio_coco_refinement.models import (  # noqa: E402
+from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
 )
 
@@ -37,11 +37,15 @@ OPERATOR_SCRIPT = REPO_ROOT / "scripts/materialize_label_studio_coco_refinement.
 CODE_PATHS = (
     Path("scripts/materialize_label_studio_coco_refinement.py"),
     Path("scripts/probes/label_studio_coco_refinement/materialize_full.py"),
-    Path("src/label_studio_coco_refinement/categories.py"),
+    Path("src/working_dataset/categories.py"),
     Path("src/label_studio_coco_refinement/materialize.py"),
     Path("src/label_studio_coco_refinement/models.py"),
     Path("src/label_studio_coco_refinement/project.py"),
-    Path("src/label_studio_coco_refinement/store.py"),
+    Path("src/working_dataset/store.py"),
+    Path("src/working_dataset/records.py"),
+    Path("src/working_dataset/codec.py"),
+    Path("src/working_dataset/index.py"),
+    Path("src/working_dataset/models.py"),
     Path("src/data/__init__.py"),
     Path("src/data/examples.py"),
     Path("src/data/jsonl.py"),

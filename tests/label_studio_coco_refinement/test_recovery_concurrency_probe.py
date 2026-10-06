@@ -10,7 +10,6 @@ import pytest
 
 from scripts.probes.label_studio_coco_refinement import recovery_concurrency as probe
 
-
 pytestmark = pytest.mark.skipif(
     os.name != "posix" or not Path("/proc/self/status").exists(),
     reason="the executable probe requires POSIX signals and Linux /proc",
@@ -78,11 +77,15 @@ def test_cli_writes_same_receipt_that_it_prints(tmp_path: Path) -> None:
     persisted = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert printed == persisted
     assert printed["code_identity"] == {
+        "dataset_core": {
+            str(path.relative_to(probe.REPO_ROOT)): probe.sha256_file(path)
+            for path in sorted((probe.REPO_ROOT / "src/working_dataset").glob("*.py"))
+        },
         "platform": printed["code_identity"]["platform"],
         "probe_sha256": probe.sha256_file(Path(probe.__file__).resolve()),
         "python_version": probe.platform.python_version(),
         "store_sha256": probe.sha256_file(
-            probe.REPO_ROOT / "src/label_studio_coco_refinement/store.py"
+            probe.REPO_ROOT / "src/working_dataset/store.py"
         ),
     }
     assert printed["summary"] == {
