@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.errors import ConfigContractError
+from src.config.document import copy_mapping
 from src.config.models import PathOrigin, RunDirectory, TrainConfig
 
 
@@ -44,7 +45,7 @@ def resolve_path_fields(
     payload: dict[str, Any],
     leaf_origins: dict[str, Path],
 ) -> tuple[dict[str, Any], dict[str, PathOrigin]]:
-    resolved = _deep_copy_dict(payload)
+    resolved = copy_mapping(payload)
     path_origins: dict[str, PathOrigin] = {}
     for field in PATH_FIELDS:
         declared = get_nested(resolved, field)
@@ -147,23 +148,3 @@ def validate_run_output_destination(path: Path, *, field: str) -> None:
             "shared_output_root": str(shared_root),
         },
     )
-
-
-def _deep_copy_dict(payload: dict[str, Any]) -> dict[str, Any]:
-    copied: dict[str, Any] = {}
-    for key, value in payload.items():
-        if isinstance(value, dict):
-            copied[key] = _deep_copy_dict(value)
-        elif isinstance(value, list):
-            copied[key] = [_deep_copy_value(item) for item in value]
-        else:
-            copied[key] = value
-    return copied
-
-
-def _deep_copy_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return _deep_copy_dict(value)
-    if isinstance(value, list):
-        return [_deep_copy_value(item) for item in value]
-    return value
