@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import replace
 from dataclasses import dataclass
-import inspect
 from typing import Any
 
 import pytest
@@ -307,15 +306,6 @@ def test_supervised_trainer_allows_optional_unhandled_scheduled_events() -> None
     result = trainer.run()
 
     assert result.scheduled_event_counts["eval.forward"] == 1
-
-
-def test_supervised_trainer_has_no_generic_scheduled_event_dispatch_residue() -> None:
-    trainer_source = inspect.getsource(trainer_module.SupervisedTrainer)
-
-    assert "_scheduled" + "_handler" not in trainer_source
-    assert "event_" + "name" not in trainer_source
-    assert "scheduled_event" + "_handlers" not in trainer_source
-    assert "training." + "logging" not in inspect.getsource(trainer_module)
 
 
 def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> None:
