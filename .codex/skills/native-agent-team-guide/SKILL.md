@@ -25,7 +25,12 @@ Reconcile existing workers and owners. Reuse reliable context; choose topology
 from actual dependencies and integration cost, not fixed layers. Deeper nesting
 needs a concrete benefit and authorization. Resolve supported model/effort and
 fork settings from the current tool schema; full-history forks may disallow
-setting overrides. Verify actual settings against global model routing.
+setting overrides. Verify actual settings against global model routing. For Pi Web,
+apply the [explicit invocation policy](../../AGENTS.md#model-routing): choose the
+resource profile separately from the temporary role, supply every lead-selected
+execution field, and never treat a profile or parent default as the decision.
+Resume retains the child's history/isolation rather than creating a new fork;
+request a new child when those conditions need to change.
 
 Bind the package to outcome/non-goals, physical checkout and owned paths,
 authority, source/input identities, dependencies, actual consumer/schema,

@@ -42,6 +42,53 @@ For CoordExp design trade-offs, preserve this order: accuracy/precision, trainin
 and system efficiency, simplicity/low implementation overhead, then scalability
 and future extension. This does not authorize changing a frozen scientific metric.
 
+## Local Pi customization
+
+Pi Web keeps its built-in subagent engine. Local profiles live in
+`/data/CoordExp/.pi/agents/`; `general-purpose` remains enabled for generic
+engineering, while `explore` and `plan` are disabled in that directory's
+`settings.json`, not removed from vendor source. The historical IDs `coord-scout`,
+`coord-builder`, `coord-research` and `coord-runner` now identify source,
+implementation, research and runtime **resource bundles**, not fixed worker roles.
+Their tools, skills, extensions and MCP selections stay configurable; model,
+thinking, turn budget, parent-context inheritance, background mode and isolation
+are explicit task-level choices of the main/lead. The profile files contain no
+execution defaults or fixed report word limits. `general-purpose` is the baseline
+resource subset. See the single
+[invocation policy](../.codex/AGENTS.md#model-routing) and
+[Pi Web's interface note](../codex-tools/pi-web/docs/agents/subagents.md).
+Temporary roles and output requirements belong in the assignment, which grants
+no additional research launch, process-stop or publication authority.
+
+CodeGraph queries must name the indexed source owner explicitly:
+
+- CoordExp source: `/data/CoordExp`.
+- Pi Web source: `/data/CoordExp/codex-tools/pi-web`.
+- Official Pi reference: `/data/CoordExp/codex-tools/pi-core` (tag `v1.0.3`).
+- Codex source: `/data/CoordExp/external/harness/codex`.
+
+The older `external/harness/pi` is a distinct versioned checkout, not the installed
+SDK. `projectPath` selects the nearest index, not a query subtree. Do not use the
+`node_modules/@earendil-works` symlink as a runtime-source index; ignored compiled
+vendor paths can leave an examples-only index. A result from an unrelated file is
+not evidence merely because the query returned successfully.
+See [Pi source navigation](../codex-tools/pi-web/docs/pi-source-navigation.md)
+for index commands and reference/runtime version alignment.
+
+The Pi RTK adapter is `/data/CoordExp/.pi/extensions/coordexp-rtk.ts`; command
+rewrite semantics remain at `.codex/hooks/rtk-pretooluse.py`. Compression is for
+human engineering diagnostics, never an exact-output or scientific artifact
+contract. Use `RTK_HOOK_DISABLE=1` for a raw command. Do not register a second RTK
+extension alongside the auto-discovered one.
+
+For observation, keep raw journals/logs at their existing owner and return bounded
+projections plus source pointers. A subagent's terminal tool details may carry a
+read-time lifecycle-scoped usage/model/artifact projection; persisted assistant
+responses are not exact SDK turn counts, and absent provider routing or termination
+metadata must stay unknown. Durable external jobs use the existing
+[native-team job handoff](../.codex/skills/native-agent-team-guide/SKILL.md#durable-job-handoff),
+not a second scheduler or run ledger. Agent interruption is not job cancellation.
+
 ## Experimental shared memory
 
 The self-built cross-harness shared-memory MCP is separate from Codex automatic

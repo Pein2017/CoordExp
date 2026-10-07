@@ -20,7 +20,7 @@ SPEC.loader.exec_module(rtk_pretooluse)
     [
         (
             "conda run -n ms python -m pytest -q",
-            "conda run -n ms rtk pytest -q",
+            None,
         ),
         (
             "pytest tests/test_service.py -q",
@@ -28,22 +28,22 @@ SPEC.loader.exec_module(rtk_pretooluse)
         ),
         (
             "python -m pytest --collect-only -q",
-            "rtk test python -m pytest --collect-only -q",
+            None,
         ),
         (
             "uv run pytest tests/test_service.py -q",
-            "uv run rtk pytest tests/test_service.py -q",
+            None,
         ),
         (
             "uv run python -m pytest tests/test_service.py -q",
-            "uv run rtk pytest tests/test_service.py -q",
+            None,
         ),
     ],
 )
 def test_pytest_rewrite_preserves_argv_without_stale_workaround(
-    command: str, expected: str
+    command: str, expected: str | None
 ) -> None:
-    """Only collection keeps the generic filter with RTK 0.45."""
+    """Only direct pytest is eligible; interpreter and collection stay raw."""
 
     assert rtk_pretooluse.rewrite_command(command) == expected
 
@@ -95,10 +95,10 @@ def test_exact_or_machine_output_is_left_raw(command: str) -> None:
     assert rtk_pretooluse.rewrite_command(command) is None
 
 
-def test_pytest_collection_keeps_generic_filter() -> None:
+def test_pytest_collection_keeps_raw_denominator() -> None:
     assert rtk_pretooluse.rewrite_command(
         "python -m pytest --collect-only -q"
-    ) == "rtk test python -m pytest --collect-only -q"
+    ) is None
 
 
 def test_pytest_version_uses_upstream_filter() -> None:

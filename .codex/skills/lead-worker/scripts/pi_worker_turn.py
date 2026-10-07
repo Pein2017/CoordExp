@@ -75,15 +75,19 @@ def normalize_base_url(value: str) -> str:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", required=True, type=normalize_base_url,
-                        help="explicit loopback Pi Web HTTP endpoint, for example http://127.0.0.1:30141")
-    parser.add_argument("--lead-session", required=True, type=parse_uuid)
+    parser.add_argument("--base-url", default="http://127.0.0.1:12345", type=normalize_base_url,
+                        help="Pi Web loopback endpoint (default: http://127.0.0.1:12345)")
+    parser.add_argument("--lead-session", type=parse_uuid)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--worker-session", type=parse_uuid)
     mode.add_argument("--create", action="store_true")
+    mode.add_argument("--list-models", action="store_true",
+                      help="list current provider/model/effort choices without creating a session")
     parser.add_argument("--cwd", required=True, type=Path)
     parser.add_argument("--to", choices=("worker", "lead"), default="worker")
     parser.add_argument("--send", action="store_true")
+    parser.add_argument("--delivery", choices=("queue", "steering"),
+                        help="send mode: queue (default) or steering at the next agent boundary")
     parser.add_argument("--message", type=Path)
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--name")
@@ -97,8 +101,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error(f"--cwd must be an existing directory ({type(exc).__name__})")
     if not args.cwd.is_dir():
         parser.error("--cwd must be an existing directory")
-    if args.worker_session == args.lead_session:
+    if not args.list_models and args.lead_session is None:
+        parser.error("--lead-session is required for create, inspect, and send")
+    if args.worker_session is not None and args.worker_session == args.lead_session:
         parser.error("lead and worker sessions must be different UUIDs")
+
+    if args.list_models and (args.lead_session is not None or args.send or args.to != "worker"):
+        parser.error("--list-models needs only --base-url and --cwd")
 
     create_only = (args.name, args.provider, args.model, args.effort)
     if args.create:
@@ -116,6 +125,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             parser.error("--send requires --message and a new --receipt path")
     elif args.message is not None or args.receipt is not None:
         parser.error("--message and --receipt require --send")
+    if args.delivery is not None and not args.send:
+        parser.error("--delivery requires --send")
+    args.delivery = args.delivery or "queue"
     return args
 
 
@@ -385,9 +397,15 @@ def _command_for_return(base_url: str, lead_id: str, worker_id: str, cwd: Path) 
 def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, object]:
     lead = inspect_session(client, args.lead_session, args.cwd)
     message = read_message(args.message)
+    models = list_models(client, args.cwd)
+    selected = next((m for m in models if m["provider"] == args.provider
+                     and m["model"] == args.model), None)
+    if selected is None or args.effort not in selected["efforts"]:
+        raise CliFailure("requested provider/model/effort is unavailable; use --list-models; no session created")
     dispatch_id = str(uuid4())
     base_receipt: dict[str, object] = {
         "kind": "pi_web_peer_session",
+        "delivery": args.delivery,
         "status": "creation_unknown",
         "phase": "create_session",
         "dispatch_id": dispatch_id,
@@ -481,7 +499,9 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
             first_prompt = (
                 envelope + "\n\nDirect return to the lead:\n" + return_command
                 + "\nUse a new report file and new receipt path. A successful API acknowledgment means the "
-                "report was accepted or queued, not that it was completed."
+                "report was accepted or queued, not that it was completed. Default delivery is queue; "
+                "add --delivery steering only for an urgent correction to the lead’s ongoing work. "
+                "Steering does not cancel external jobs."
             )
             receipt.update(status="delivery_unknown", phase="send_first_prompt",
                            worker=worker, sent_sha256=message_hash(first_prompt))
@@ -489,7 +509,7 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
                 sent = client.request("POST", f"/api/agent/{worker_id}", {
                     "type": "prompt",
                     "message": first_prompt,
-                    "streamingBehavior": "followUp",
+                    "streamingBehavior": "steer" if args.delivery == "steering" else "followUp",
                 })
                 _accepted(sent)
             except ApiFailure as exc:
@@ -504,6 +524,7 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
                 "status": "accepted_or_queued",
                 "acknowledgment": "api_accepted_or_queued",
                 "dispatch_id": dispatch_id,
+                "delivery": args.delivery,
                 "lead": lead,
                 "worker": worker,
                 "receipt": str(args.receipt),
@@ -570,6 +591,7 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
     )
     receipt_data: dict[str, object] = {
         "kind": "pi_web_peer_session",
+        "delivery": args.delivery,
         "status": "prepared",
         "phase": "load_target_state",
         "dispatch_id": dispatch_id,
@@ -601,7 +623,7 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
                 sent = client.request("POST", f"/api/agent/{target_id}", {
                     "type": "prompt",
                     "message": envelope,
-                    "streamingBehavior": "followUp",
+                    "streamingBehavior": "steer" if args.delivery == "steering" else "followUp",
                 })
                 _accepted(sent)
             except ApiFailure as exc:
@@ -617,12 +639,40 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
                 receipt.update(error_type=_safe_error_type(exc), http_status=_request_error_status(exc))
             raise
     summary.update(status="accepted_or_queued", acknowledgment="api_accepted_or_queued",
-                   dispatch_id=dispatch_id, receipt=str(args.receipt))
+                   dispatch_id=dispatch_id, receipt=str(args.receipt), delivery=args.delivery)
     return summary
+
+
+def list_models(client: PiWebClient, cwd: Path) -> list[dict[str, object]]:
+    """Return only the public selection fields; never echo backend error bodies."""
+    catalog = client.request("GET", "/api/models?" + urllib.parse.urlencode({"cwd": str(cwd)}))
+    if catalog.get("modelError"):
+        raise CliFailure("Pi Web model catalog is unavailable; no session created")
+    entries, levels = catalog.get("modelList"), catalog.get("thinkingLevels")
+    if not isinstance(entries, list) or not isinstance(levels, dict):
+        raise CliFailure("Pi Web model catalog has an unsupported shape; no session created")
+    result = []
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise CliFailure("Pi Web model catalog has an invalid entry; no session created")
+        provider, model = entry.get("provider"), entry.get("id")
+        if not all(isinstance(v, str) and v.strip() for v in (provider, model)):
+            raise CliFailure("Pi Web model catalog has an invalid identity; no session created")
+        efforts = levels.get(f"{provider}:{model}")
+        if (not isinstance(efforts, list) or not efforts
+                or any(not isinstance(v, str) or v not in THINKING_LEVELS for v in efforts)
+                or (provider, model) in seen):
+            raise CliFailure("Pi Web model catalog has invalid effort metadata; no session created")
+        seen.add((provider, model))
+        result.append({"provider": provider, "model": model, "efforts": efforts})
+    return result
 
 
 def operate(args: argparse.Namespace) -> dict[str, object]:
     client = PiWebClient(args.base_url)
+    if args.list_models:
+        return {"status": "listed_only", "cwd": str(args.cwd), "models": list_models(client, args.cwd)}
     if args.create:
         return create_and_send(client, args)
     return inspect_or_send_pair(client, args)

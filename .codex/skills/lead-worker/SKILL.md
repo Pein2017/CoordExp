@@ -37,6 +37,27 @@ another reply, retry/relaunch limits, and the boundary requiring a lead or user
 decision. For exploration, name known paths or symbols and the uncertainty to
 resolve. Add budgets only when material.
 
+Define packages around decisions, not technical phases. When the question,
+contrast, inputs, resource bounds and stop rule are settled and execution is
+authorized, prefer one package covering implementation, necessary checks,
+execution, terminal artifact verification and a candidate report. Specify the
+conditions for continuing; passing a routine check should not require another
+lead reply. Use the [worker continuation rules](../native-agent-team-guide/SKILL.md#coordinate-and-continue)
+for repair and escalation. A progress report need not pause authorized work.
+
+Separate discovery when its findings can change the design or authorization;
+otherwise keep source inspection inside the execution package. Preserve required
+checks and release gates. Name who can satisfy each gate under the existing grant;
+if a gate explicitly requires a lead decision or missing permission, stop there
+rather than bypassing it. Bundling does not authorize a successor experiment.
+
+For example: "Implement the agreed three-condition probe, run the necessary CPU
+checks, then execute the bound native run if those checks pass and its release
+requirements are satisfied. Verify terminal outputs and report a candidate.
+Escalate changes to the contrast, inputs, metrics or resource bounds; reconcile
+unknown execution status before any relaunch." Final scientific interpretation
+and acceptance remain with the lead.
+
 Bind storage ownership separately from transport. For CoordExp, consult
 `/data/CoordExp/docs/storage-ownership.md`: a durable protocol/report belongs
 to its existing research or change owner; a disposable message file belongs in
@@ -58,6 +79,11 @@ Codex-to-Pi identity bridge.
 - **Pi Web:** read [Pi independent-session transport](references/pi-transport.md)
   before using [`pi_worker_turn.py`](scripts/pi_worker_turn.py). It uses ordinary
   session endpoints, not `Agent`, `resume`, or the subagent notification path.
+  The create command performs model/effort preflight and runtime verification;
+  use `--list-models` only when choices are needed. Normal dispatch needs no
+  helper or Pi Web source exploration. The endpoint defaults to local port
+  12345. Both peer directions support `--delivery queue` (default) and
+  `--delivery steering` for urgent corrections to ongoing work.
   A terminal-only Pi installation without Pi Web is outside this adapter.
 - **Ordinary subagents:** only when that topology is wanted and authorized,
   follow [native agent messaging](../native-agent-team-guide/SKILL.md).

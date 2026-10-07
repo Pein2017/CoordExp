@@ -13,30 +13,56 @@ guessed from a timestamp. Start the lead as a normal Pi Web conversation. The
 worker is another normal session with independent history and settings. Do not
 open the same session in a separate CLI writer while Pi Web owns it.
 
-Resolve the current loopback service URL from its runtime owner/listener. Pass
-it explicitly with `--base-url`; do not reuse a historical port or a public
-Cloudflare/browser URL. This helper bypasses ambient HTTP proxies and refuses
-redirects. If the backend needs authentication or is unavailable, report that
-gap rather than changing routing, credentials or services.
+The user-selected local default is `http://127.0.0.1:12345`; omit `--base-url`
+for normal CoordExp use. No port discovery or listener check is needed before
+calling the helper. An explicit `--base-url` may override it for a deliberately
+selected local backend or testing; never use a public Cloudflare/browser URL.
+If the endpoint is unavailable, report the error instead of scanning for another
+service. Use the lead's actual session ID from its current caller context.
+Do not guess it from session lists.
 
-Choose worker provider, model and effort with the user, verify them against the
-current model catalog, and give the worker an already prepared bounded task.
-Do not substitute a cheaper/default model for a selected persistent worker.
+Prepare the bounded assignment and use the create command below directly when
+the user has selected provider/model/effort. **Creation now checks the current
+model catalog before any mutation**, then verifies the created session's actual
+settings. No separate catalog query, source search, or HTTP assembly is needed.
+Do not substitute a default model or silently lower effort.
 
-## Create and start an independent worker
-
-Use a UTF-8 assignment and a fresh receipt path owned by this task. The URL and
-IDs below are variables to resolve, not defaults:
+Only when choosing a model or diagnosing a rejected selection, list choices:
 
 ```bash
 python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
-  --base-url "$PI_WEB_URL" --lead-session "$LEAD_SESSION_ID" \
+  --cwd /absolute/worktree --list-models
+```
+
+This returns only provider/model/effort choices and creates no session or model
+turn. Internally it uses `GET /api/models?cwd=<URL-encoded physical cwd>`; callers
+need not interpret the raw API schema. A catalog error or unavailable selection
+stops creation before any POST. Existing-session inspection/send does not need
+the catalog.
+
+Normal use is the documented command, not reading the helper or searching Pi
+Web source. Once the command succeeds, return to the assignment and its receipt.
+For an unavailable endpoint, unsupported selection or contradictory response,
+report the specific failure and whether creation/delivery may have occurred;
+do not launch broad source exploration or change services, credentials or routing.
+Use targeted source inspection only for an actual transport debugging task.
+The helper bypasses ambient HTTP proxies and refuses redirects.
+
+## Create and start an independent worker
+
+Use a UTF-8 assignment and a fresh receipt path owned by this task. The session
+IDs below must be the actual pair, not example IDs:
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
+  --lead-session "$LEAD_SESSION_ID" \
   --create --name "$WORKER_NAME" --provider "$WORKER_PROVIDER" \
   --model "$WORKER_MODEL" --effort "$WORKER_EFFORT" --cwd /absolute/worktree \
   --send --message /absolute/assignment.txt --receipt /absolute/create.json
 ```
 
-The helper creates a normal session, verifies its identity/settings, names it,
+The helper validates the selected model/effort, creates a normal session,
+verifies its identity/settings, names it,
 and submits the first task. Its assignment includes the pair's IDs and a return
 command. Keep the returned worker ID at the existing task/research owner. The
 receipt acknowledges submission, not successful execution or acceptance.
@@ -54,7 +80,7 @@ Inspect the pair without starting a model turn:
 
 ```bash
 python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
-  --base-url "$PI_WEB_URL" --lead-session "$LEAD_SESSION_ID" \
+  --lead-session "$LEAD_SESSION_ID" \
   --worker-session "$WORKER_SESSION_ID" --cwd /absolute/worktree
 ```
 
@@ -63,13 +89,27 @@ to send to the worker. For a direct report back to the lead, use the same pair:
 
 ```bash
 python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
-  --base-url "$PI_WEB_URL" --lead-session "$LEAD_SESSION_ID" \
+  --lead-session "$LEAD_SESSION_ID" \
   --worker-session "$WORKER_SESSION_ID" --cwd /absolute/worktree \
   --to lead --send --message /absolute/report.txt --receipt /absolute/return.json
 ```
 
-Default delivery starts an idle recipient or queues a follow-up for a busy one;
-it does not interrupt the current task. An unloaded persisted recipient may be
+Choose delivery explicitly when needed, in either direction:
+
+- `--delivery queue` (default): starts an idle recipient, or leaves a follow-up
+  for after its current work. Use for results, candidates and routine questions.
+- `--delivery steering`: starts an idle recipient, or injects a steering message
+  at a subsequent agent processing boundary while it is busy. Use for an urgent
+  correction that changes ongoing work, such as preventing a duplicate launch.
+  State the affected action and new evidence. It does not kill an external job
+  or guarantee immediate/exact-turn interruption.
+
+For example, append `--delivery steering` to the return command above to steer
+the lead; omit `--to lead` to steer the worker. These are cross-session peer
+messages, not `steer_subagent` calls. The requested mode is saved in the receipt
+and command result; acknowledgment still means accepted/queued, not consumed.
+
+An unloaded persisted recipient may be
 reopened for sending without changing model/effort. Read-only inspection does
 not reopen it. Both sessions must be ordinary sessions in the declared physical
 checkout; the helper refuses child/fork relations and identical IDs.

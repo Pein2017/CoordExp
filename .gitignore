@@ -50,6 +50,8 @@
 # Hard local-only workspace roots. These patterns are intentionally explicit
 # even though the repo uses an allowlist, so future allowlist edits do not
 # accidentally surface runtime state, secrets, checkpoints, or external clones.
+# codex-tools contains independent Git checkouts and their local test/recovery
+# fixtures; those repos own their own ignore rules and must not enter main.
 /codex-tools/
 /codex-harnessdock/
 /codex-harnessdock-dev/

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import socket
 import subprocess
 import sys
@@ -58,6 +59,10 @@ class PiWebFixture:
         self.redirect_hits = 0
         self.runtime_override: dict[str, object] = {}
         self.info_overrides: dict[str, dict[str, object]] = {}
+        self.catalog = {
+            "modelList": [{"provider": "openai", "id": "gpt-6-sol", "name": "Sol"}],
+            "thinkingLevels": {"openai:gpt-6-sol": ["off", "high"]},
+        }
 
     def new_server(self) -> ThreadingHTTPServer:
         fixture = self
@@ -101,6 +106,12 @@ class PiWebFixture:
                 parsed = urlsplit(self.path)
                 path = parsed.path
                 fixture.calls.append(("GET", self.path, None))
+                if path == "/api/models":
+                    if parse_qs(parsed.query).get("cwd") != [fixture.cwd]:
+                        self._json(400, {"error": "wrong cwd"})
+                    else:
+                        self._json(200, fixture.catalog)
+                    return
                 if path == "/redirected":
                     fixture.redirect_hits += 1
                     self._json(200, {"unexpected": True})
@@ -235,6 +246,13 @@ class PiWebFixture:
 
 
 class PiWorkerTurnTest(unittest.TestCase):
+    def test_default_endpoint_and_delivery_arguments(self) -> None:
+        parse = runpy.run_path(str(SCRIPT))["parse_args"]
+        args = parse(["--cwd", str(Path.cwd()), "--list-models"])
+        self.assertEqual(args.base_url, "http://127.0.0.1:12345")
+        with self.assertRaises(SystemExit):
+            parse(["--cwd", str(Path.cwd()), "--list-models", "--delivery", "steering"])
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -287,6 +305,11 @@ class PiWorkerTurnTest(unittest.TestCase):
         output = json.loads(result.stdout)
         saved = json.loads(receipt.read_text(encoding="utf-8"))
         self.assertEqual(output["status"], "accepted_or_queued")
+        catalog_index = next(i for i, call in enumerate(self.fixture.calls)
+                             if call[1].startswith("/api/models?"))
+        create_index = next(i for i, call in enumerate(self.fixture.calls)
+                            if call[:2] == ("POST", "/api/agent/new"))
+        self.assertLess(catalog_index, create_index)
         self.assertEqual(saved["worker_session_id"], CREATED)
         self.assertEqual(saved["worker"]["name"], "bounded-peer")
         self.assertTrue(self.fixture.sessions[CREATED]["transient"] is False)
@@ -318,6 +341,35 @@ class PiWorkerTurnTest(unittest.TestCase):
         self.assertEqual([m["receipt"]["status"] for m in self.fixture.mutations], [
             "creation_unknown", "created", "delivery_unknown",
         ])
+
+    def test_list_models_needs_no_session_and_never_mutates(self) -> None:
+        result = self.run_cli(["--base-url", self.base, "--cwd", str(self.root), "--list-models"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["models"], [
+            {"provider": "openai", "model": "gpt-6-sol", "efforts": ["off", "high"]},
+        ])
+        self.assertEqual(len(self.fixture.calls), 1)
+        self.assertEqual(self.fixture.calls[0][0], "GET")
+
+    def test_create_catalog_rejections_happen_before_any_mutation(self) -> None:
+        for catalog in (
+            {"modelList": [], "thinkingLevels": {}},
+            {"modelList": [{"provider": "other", "id": "gpt-6-sol"}],
+             "thinkingLevels": {"other:gpt-6-sol": ["high"]}},
+            {"modelList": [{"provider": "openai", "id": "gpt-6-sol"}],
+             "thinkingLevels": {"openai:gpt-6-sol": ["off"]}},
+            {"modelList": [{"provider": "openai", "id": "gpt-6-sol"}], "thinkingLevels": {}},
+            {"modelError": "PRIVATE_DETAIL", "modelList": [], "thinkingLevels": {}},
+        ):
+            with self.subTest(catalog=catalog):
+                self.fixture.catalog = catalog
+                self.fixture.calls.clear()
+                receipt = self.root / "rejected.json"
+                result = self.run_cli(self.create_args(receipt, self.message_file()))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(receipt.exists())
+                self.assertFalse(any(c[0] == "POST" for c in self.fixture.calls))
+                self.assertNotIn("PRIVATE_DETAIL", result.stderr)
 
     def test_inspection_is_read_only_and_rejects_relation_cwd_and_loaded_settings_drift(self) -> None:
         inspected = self.run_cli(self.pair_args())
@@ -388,6 +440,38 @@ class PiWorkerTurnTest(unittest.TestCase):
         self.assertIn(f"sender_session_id={WORKER}", str(lead_prompt["message"]))
         self.assertIn(f"recipient_session_id={LEAD}", str(lead_prompt["message"]))
         self.assertEqual(lead_prompt["streamingBehavior"], "followUp")
+
+    def test_steering_routes_both_directions_busy_and_idle_with_durable_mode(self) -> None:
+        for to, target in (("worker", WORKER), ("lead", LEAD)):
+            for busy in (False, True):
+                with self.subTest(to=to, busy=busy):
+                    self.fixture.calls.clear()
+                    self.fixture.mutations.clear()
+                    self.fixture.sessions[target]["streaming"] = busy
+                    receipt = self.root / f"steer-{to}-{busy}.json"
+                    self.fixture.receipt_path = receipt
+                    sent = self.run_cli(self.pair_args(receipt, self.message_file(), to)
+                                        + ["--delivery", "steering"])
+                    self.assertEqual(sent.returncode, 0, sent.stderr)
+                    prompt = next(c for c in self.fixture.calls if c[0] == "PROMPT_BODY")
+                    self.assertEqual(prompt[1], f"/api/agent/{target}")
+                    self.assertEqual(prompt[2]["streamingBehavior"], "steer")
+                    self.assertEqual(json.loads(sent.stdout)["delivery"], "steering")
+                    self.assertEqual(json.loads(receipt.read_text())["delivery"], "steering")
+                    self.assertTrue(all(m["receipt"]["delivery"] == "steering"
+                                        for m in self.fixture.mutations))
+
+    def test_steering_unknown_delivery_does_not_resend(self) -> None:
+        receipt = self.root / "steer-unknown.json"
+        self.fixture.receipt_path = receipt
+        self.fixture.disconnect_prompt = True
+        args = self.pair_args(receipt, self.message_file(), "lead") + ["--delivery", "steering"]
+        self.assertNotEqual(self.run_cli(args).returncode, 0)
+        saved = json.loads(receipt.read_text())
+        self.assertEqual(saved["status"], "delivery_unknown")
+        self.assertEqual(saved["delivery"], "steering")
+        self.assertNotEqual(self.run_cli(args).returncode, 0)
+        self.assertEqual(sum(c[0] == "PROMPT_BODY" for c in self.fixture.calls), 1)
 
     def test_unknown_create_send_redirect_and_reused_receipts_never_duplicate(self) -> None:
         message = self.message_file()
