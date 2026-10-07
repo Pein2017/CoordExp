@@ -33,7 +33,9 @@ Prefer OpenSpec for consequential multi-step, cross-module or long-lived changes
 
 ## Language output
 
-Match the user's current language. Internal briefs and technical records default to concise English; preserve identifiers, evidence and language-sensitive meaning. Lead with the decision/result, then evidence and limitations that could change it. Use clear terms and preserve uncertainty rather than abbreviating away meaning.
+Use English for all internal communication across Agent Sessions and Sub Agents, without exception. This includes assignments, agent-to-agent messages, progress updates, handoffs, internal briefs, and worker reports, even when the user writes in another language.
+
+For messages to the user, match the language of the user's latest message: reply in Chinese when the user writes in Chinese, and in English when the user writes in English. Do not let the language used in internal agent communication determine the user-facing language. Preserve identifiers and evidence, lead with the decision/result, and state limitations that could change it.
 
 ## Agent topology and delegation
 
