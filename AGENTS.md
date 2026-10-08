@@ -18,3 +18,8 @@ Read the relevant owner when the task crosses its boundary:
 
 Runtime behavior belongs to this checkout's source, typed configs and stable
 `openspec/specs/`, not a sibling's current implementation or historical receipt.
+
+For code navigation, use `rg`/`grep` first for known text, filenames, config keys
+and errors; read only the relevant matches. Use CodeGraph for unknown symbols,
+call paths and cross-file impact. Avoid repeating the same search in both tools;
+combine them only to close a concrete gap.
