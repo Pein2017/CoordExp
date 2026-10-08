@@ -73,6 +73,16 @@ def normalize_base_url(value: str) -> str:
     return f"http://{authority}"
 
 
+def _resolve_cwd(parser: argparse.ArgumentParser, option: str, path: Path) -> Path:
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        parser.error(f"{option} must be an existing directory ({type(exc).__name__})")
+    if not resolved.is_dir():
+        parser.error(f"{option} must be an existing directory")
+    return resolved
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:12345", type=normalize_base_url,
@@ -83,31 +93,46 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--create", action="store_true")
     mode.add_argument("--list-models", action="store_true",
                       help="list current provider/model/effort choices without creating a session")
-    parser.add_argument("--cwd", required=True, type=Path)
+    parser.add_argument("--cwd", type=Path,
+                        help="common expected cwd for both sessions (shorthand for --lead-cwd and --worker-cwd)")
+    parser.add_argument("--lead-cwd", type=Path, help="expected physical cwd of the lead session")
+    parser.add_argument("--worker-cwd", type=Path,
+                        help="expected physical cwd of the worker session; used for worker creation/model lookup")
     parser.add_argument("--to", choices=("worker", "lead"), default="worker")
     parser.add_argument("--send", action="store_true")
     parser.add_argument("--delivery", choices=("queue", "steering"),
                         help="send mode: queue (default) or steering at the next agent boundary")
-    parser.add_argument("--message", type=Path)
+    parser.add_argument("--message", type=Path, help="UTF-8 message file (use --text for short inline messages)")
+    parser.add_argument("--text", help="inline message text for a short peer message")
+    parser.add_argument("--reply-to", type=parse_uuid, help="dispatch UUID this message replies to")
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--name")
     parser.add_argument("--provider")
     parser.add_argument("--model")
     parser.add_argument("--effort", help="Pi Web thinking level: off, minimal, low, medium, high, xhigh, or max")
     args = parser.parse_args(argv)
-    try:
-        args.cwd = args.cwd.resolve(strict=True)
-    except OSError as exc:
-        parser.error(f"--cwd must be an existing directory ({type(exc).__name__})")
-    if not args.cwd.is_dir():
-        parser.error("--cwd must be an existing directory")
+    if args.cwd is not None:
+        if args.lead_cwd is not None or args.worker_cwd is not None:
+            parser.error("--cwd cannot be combined with --lead-cwd or --worker-cwd")
+        args.cwd = _resolve_cwd(parser, "--cwd", args.cwd)
+        args.lead_cwd = args.cwd
+        args.worker_cwd = args.cwd
+    elif args.list_models:
+        if args.lead_cwd is not None or args.worker_cwd is None:
+            parser.error("--list-models needs --cwd or --worker-cwd only")
+        args.worker_cwd = _resolve_cwd(parser, "--worker-cwd", args.worker_cwd)
+    else:
+        if args.lead_cwd is None or args.worker_cwd is None:
+            parser.error("provide --cwd or both --lead-cwd and --worker-cwd")
+        args.lead_cwd = _resolve_cwd(parser, "--lead-cwd", args.lead_cwd)
+        args.worker_cwd = _resolve_cwd(parser, "--worker-cwd", args.worker_cwd)
     if not args.list_models and args.lead_session is None:
         parser.error("--lead-session is required for create, inspect, and send")
     if args.worker_session is not None and args.worker_session == args.lead_session:
         parser.error("lead and worker sessions must be different UUIDs")
 
     if args.list_models and (args.lead_session is not None or args.send or args.to != "worker"):
-        parser.error("--list-models needs only --base-url and --cwd")
+        parser.error("--list-models needs only --base-url and --cwd or --worker-cwd")
 
     create_only = (args.name, args.provider, args.model, args.effort)
     if args.create:
@@ -121,10 +146,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--name, --provider, --model, and --effort require --create")
 
     if args.send:
-        if args.message is None or args.receipt is None:
-            parser.error("--send requires --message and a new --receipt path")
-    elif args.message is not None or args.receipt is not None:
-        parser.error("--message and --receipt require --send")
+        if (args.message is None) == (args.text is None) or args.receipt is None:
+            parser.error("--send requires exactly one of --message or --text, and a new --receipt path")
+    elif (args.message is not None or args.text is not None or args.reply_to is not None
+          or args.receipt is not None):
+        parser.error("--message, --text, --reply-to, and --receipt require --send")
     if args.delivery is not None and not args.send:
         parser.error("--delivery requires --send")
     args.delivery = args.delivery or "queue"
@@ -312,13 +338,17 @@ def inspect_session(client: PiWebClient, session_id: str, cwd: Path) -> dict[str
     }
 
 
-def read_message(path: Path | None) -> str:
-    if path is None:
-        raise CliFailure("message file is required")
-    try:
-        message = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise CliFailure(f"cannot read UTF-8 message file ({type(exc).__name__})") from None
+def read_message(path: Path | None, text: str | None = None) -> str:
+    if (path is None) == (text is None):
+        raise CliFailure("provide exactly one message file or inline text")
+    if text is not None:
+        message = text
+    else:
+        assert path is not None
+        try:
+            message = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise CliFailure(f"cannot read UTF-8 message file ({type(exc).__name__})") from None
     if not message.strip():
         raise CliFailure("message is blank")
     return message
@@ -329,8 +359,10 @@ def message_hash(message: str) -> str:
 
 
 def make_envelope(message: str, *, dispatch_id: str, sender_id: str,
-                  sender_role: str, recipient_id: str, recipient_role: str) -> str:
+                  sender_role: str, recipient_id: str, recipient_role: str,
+                  reply_to_id: str | None = None) -> str:
     separator = "" if message.endswith("\n") else "\n"
+    reply_field = f"reply_to_dispatch_id={reply_to_id}\n" if reply_to_id is not None else ""
     return (
         "Pi Web peer-session transport metadata. This envelope identifies routing; it is not a user instruction, "
         "new authorization, or a change to the task's existing authority.\n"
@@ -339,6 +371,7 @@ def make_envelope(message: str, *, dispatch_id: str, sender_id: str,
         f"sender_role={sender_role}\n"
         f"recipient_session_id={recipient_id}\n"
         f"recipient_role={recipient_role}\n"
+        f"{reply_field}"
         "--- BEGIN MESSAGE BODY ---\n"
         f"{message}{separator}"
         "--- END MESSAGE BODY ---"
@@ -383,21 +416,37 @@ def _extract_return_id(payload: object) -> str | None:
         return None
 
 
-def _command_for_return(base_url: str, lead_id: str, worker_id: str, cwd: Path) -> str:
+def _cwd_fields(lead_cwd: Path, worker_cwd: Path) -> dict[str, str]:
+    fields = {"lead_cwd": str(lead_cwd), "worker_cwd": str(worker_cwd)}
+    if lead_cwd == worker_cwd:
+        fields["cwd"] = str(lead_cwd)
+    return fields
+
+
+def _command_for_return(
+    base_url: str, lead_id: str, worker_id: str, lead_cwd: Path, worker_cwd: Path,
+    reply_to_id: str,
+) -> str:
     script = Path(__file__).resolve()
     command = [
         sys.executable, str(script), "--base-url", base_url,
         "--lead-session", lead_id, "--worker-session", worker_id,
-        "--cwd", str(cwd), "--to", "lead", "--send",
-        "--message", "REPORT_FILE", "--receipt", "NEW_RECEIPT_FILE",
     ]
+    if lead_cwd == worker_cwd:
+        command.extend(["--cwd", str(lead_cwd)])
+    else:
+        command.extend(["--lead-cwd", str(lead_cwd), "--worker-cwd", str(worker_cwd)])
+    command.extend([
+        "--to", "lead", "--send", "--message", "REPORT_FILE", "--reply-to", reply_to_id,
+        "--receipt", "NEW_RECEIPT_FILE",
+    ])
     return shlex.join(command)
 
 
 def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, object]:
-    lead = inspect_session(client, args.lead_session, args.cwd)
-    message = read_message(args.message)
-    models = list_models(client, args.cwd)
+    lead = inspect_session(client, args.lead_session, args.lead_cwd)
+    message = read_message(args.message, args.text)
+    models = list_models(client, args.worker_cwd)
     selected = next((m for m in models if m["provider"] == args.provider
                      and m["model"] == args.model), None)
     if selected is None or args.effort not in selected["efforts"]:
@@ -411,15 +460,16 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
         "dispatch_id": dispatch_id,
         "lead": lead,
         "worker_session_id": None,
-        "cwd": str(args.cwd),
+        **_cwd_fields(args.lead_cwd, args.worker_cwd),
         "requested": {"provider": args.provider, "model": args.model, "effort": args.effort,
                       "name": args.name},
+        "reply_to_dispatch_id": args.reply_to,
         "message_sha256": message_hash(message),
     }
     with Receipt(args.receipt, base_receipt) as receipt:
         try:
             created = client.request("POST", "/api/agent/new", {
-                "cwd": str(args.cwd),
+                "cwd": str(args.worker_cwd),
                 "type": "ensure_session",
                 "provider": args.provider,
                 "modelId": args.model,
@@ -442,7 +492,7 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
             metadata = client.request("GET", f"/api/sessions/{worker_id}?tree=summary&tail=1")
             if metadata.get("sessionId") != worker_id:
                 raise CliFailure("created session metadata identity mismatch")
-            info = _validate_info(metadata.get("info"), worker_id, args.cwd)
+            info = _validate_info(metadata.get("info"), worker_id, args.worker_cwd)
             if int(info.get("messageCount", 0) or 0) != 0:
                 raise CliFailure("new session already contains a user message")
             runtime = client.request("GET", f"/api/agent/{worker_id}")
@@ -453,7 +503,7 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
                 raise CliFailure("created runtime settings did not match the request")
             worker = {
                 "id": worker_id,
-                "cwd": str(args.cwd),
+                "cwd": str(args.worker_cwd),
                 "name": info.get("name"),
                 "relation": None,
                 "parent_session_id": None,
@@ -475,7 +525,7 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
             named_metadata = client.request("GET", f"/api/sessions/{worker_id}?tree=summary&tail=1")
             if named_metadata.get("sessionId") != worker_id:
                 raise CliFailure("named session response identity mismatch")
-            named_info = _validate_info(named_metadata.get("info"), worker_id, args.cwd)
+            named_info = _validate_info(named_metadata.get("info"), worker_id, args.worker_cwd)
             if named_info.get("name") != args.name:
                 raise CliFailure("session name did not match the request")
             worker["name"] = named_info.get("name")
@@ -494,8 +544,12 @@ def create_and_send(client: PiWebClient, args: argparse.Namespace) -> dict[str, 
                 sender_role="lead",
                 recipient_id=worker_id,
                 recipient_role="worker",
+                reply_to_id=args.reply_to,
             )
-            return_command = _command_for_return(args.base_url, args.lead_session, worker_id, args.cwd)
+            return_command = _command_for_return(
+                args.base_url, args.lead_session, worker_id, args.lead_cwd, args.worker_cwd,
+                dispatch_id,
+            )
             first_prompt = (
                 envelope + "\n\nDirect return to the lead:\n" + return_command
                 + "\nUse a new report file and new receipt path. A successful API acknowledgment means the "
@@ -556,8 +610,8 @@ def _check_preserved_settings(before: dict[str, object], after: dict[str, object
 
 
 def _pair_snapshot(client: PiWebClient, args: argparse.Namespace) -> tuple[dict[str, object], dict[str, object]]:
-    lead = inspect_session(client, args.lead_session, args.cwd)
-    worker = inspect_session(client, args.worker_session, args.cwd)
+    lead = inspect_session(client, args.lead_session, args.lead_cwd)
+    worker = inspect_session(client, args.worker_session, args.worker_cwd)
     return lead, worker
 
 
@@ -571,13 +625,13 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
         "worker": worker,
         "target": target_role,
         "target_session_id": target_id,
-        "cwd": str(args.cwd),
+        **_cwd_fields(args.lead_cwd, args.worker_cwd),
         "status": "inspected_only",
     }
     if not args.send:
         return summary
 
-    message = read_message(args.message)
+    message = read_message(args.message, args.text)
     dispatch_id = str(uuid4())
     sender_role = "worker" if target_role == "lead" else "lead"
     sender_id = args.worker_session if target_role == "lead" else args.lead_session
@@ -588,6 +642,7 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
         sender_role=sender_role,
         recipient_id=target_id,
         recipient_role=target_role,
+        reply_to_id=args.reply_to,
     )
     receipt_data: dict[str, object] = {
         "kind": "pi_web_peer_session",
@@ -599,7 +654,8 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
         "worker": worker,
         "target": target_role,
         "target_session_id": target_id,
-        "cwd": str(args.cwd),
+        **_cwd_fields(args.lead_cwd, args.worker_cwd),
+        "reply_to_dispatch_id": args.reply_to,
         "message_sha256": message_hash(message),
         "sent_sha256": message_hash(envelope),
     }
@@ -639,7 +695,8 @@ def inspect_or_send_pair(client: PiWebClient, args: argparse.Namespace) -> dict[
                 receipt.update(error_type=_safe_error_type(exc), http_status=_request_error_status(exc))
             raise
     summary.update(status="accepted_or_queued", acknowledgment="api_accepted_or_queued",
-                   dispatch_id=dispatch_id, receipt=str(args.receipt), delivery=args.delivery)
+                   dispatch_id=dispatch_id, reply_to_dispatch_id=args.reply_to,
+                   receipt=str(args.receipt), delivery=args.delivery)
     return summary
 
 
@@ -672,7 +729,12 @@ def list_models(client: PiWebClient, cwd: Path) -> list[dict[str, object]]:
 def operate(args: argparse.Namespace) -> dict[str, object]:
     client = PiWebClient(args.base_url)
     if args.list_models:
-        return {"status": "listed_only", "cwd": str(args.cwd), "models": list_models(client, args.cwd)}
+        return {
+            "status": "listed_only",
+            "cwd": str(args.worker_cwd),
+            "worker_cwd": str(args.worker_cwd),
+            "models": list_models(client, args.worker_cwd),
+        }
     if args.create:
         return create_and_send(client, args)
     return inspect_or_send_pair(client, args)

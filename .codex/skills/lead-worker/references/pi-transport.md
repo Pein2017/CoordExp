@@ -4,7 +4,9 @@ Use this for a user-requested pair of ordinary Pi Web sessions. The
 [lead-worker skill](../SKILL.md) owns roles and authorization. The helper is
 [`pi_worker_turn.py`](../scripts/pi_worker_turn.py); it does not call Pi Web's
 `Agent` tools or assign a parent/subagent relation. It requires the local Pi Web
-HTTP service; it is not a terminal-Pi RPC adapter.
+HTTP service; it is not a terminal-Pi RPC adapter. Both sessions must be visible
+through the same Pi Web endpoint; this helper does not bridge separate services
+or machines and does not create a shared-file mailbox.
 
 ## Resolve the pair and backend
 
@@ -38,7 +40,11 @@ This returns only provider/model/effort choices and creates no session or model
 turn. Internally it uses `GET /api/models?cwd=<URL-encoded physical cwd>`; callers
 need not interpret the raw API schema. A catalog error or unavailable selection
 stops creation before any POST. Existing-session inspection/send does not need
-the catalog.
+the catalog. `--cwd` remains the shorthand for one shared directory. For distinct
+worktrees use `--lead-cwd` and `--worker-cwd`; each is resolved locally and checked
+against that session's own Pi Web metadata. Model lookup and worker creation use
+`--worker-cwd`. `--list-models` accepts `--worker-cwd` when you want to select the
+worker context explicitly.
 
 Normal use is the documented command, not reading the helper or searching Pi
 Web source. Once the command succeeds, return to the assignment and its receipt.
@@ -61,11 +67,13 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
   --send --message /absolute/assignment.txt --receipt /absolute/create.json
 ```
 
-The helper validates the selected model/effort, creates a normal session,
-verifies its identity/settings, names it,
-and submits the first task. Its assignment includes the pair's IDs and a return
-command. Keep the returned worker ID at the existing task/research owner. The
-receipt acknowledges submission, not successful execution or acceptance.
+The helper validates the selected model/effort, creates a normal session in
+`--worker-cwd`, verifies its identity/settings, names it, and submits the first
+task. Its assignment includes the pair's IDs, both expected working directories,
+and a matching return command tagged with the assignment's dispatch UUID. When
+both sessions use exactly the same working directory, `--cwd` remains a concise
+shorthand. Keep the returned worker ID at the existing task/research owner.
+The receipt acknowledges submission, not successful execution or acceptance.
 
 Creation is several HTTP operations, not a transaction. If naming or first input
 fails after creation, keep the known worker ID and reconcile it; do not create
@@ -94,6 +102,27 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
   --to lead --send --message /absolute/report.txt --receipt /absolute/return.json
 ```
 
+For distinct worktrees, pass both expectations; short messages may use `--text`
+instead of a file. `--reply-to` optionally tags a message with a previous dispatch
+UUID for conversational correlation (it does not change routing or delivery):
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
+  --lead-session "$LEAD_SESSION_ID" --worker-session "$WORKER_SESSION_ID" \
+  --lead-cwd /absolute/lead-worktree --worker-cwd /absolute/worker-worktree \
+  --to worker --send --text "Please confirm you received the update." \
+  --reply-to "$PREVIOUS_DISPATCH_ID" --receipt /absolute/reply.json
+```
+
+`--message` and `--text` are mutually exclusive. Prefer `--message` for long
+assignments/reports; it reads a UTF-8 file and does not put its contents in the
+shell command line. The helper retains explicit session-ID addressing, a fresh
+dispatch UUID, an authority-neutral envelope, a content-hash receipt and the
+existing queue/steering modes. Generated return commands tag their reply with the
+original dispatch UUID; this is conversation correlation, not server-side
+exactly-once delivery. The helper does not resolve recipients by display name or
+broadcast to every session.
+
 Choose delivery explicitly when needed, in either direction:
 
 - `--delivery queue` (default): starts an idle recipient, or leaves a follow-up
@@ -111,8 +140,10 @@ and command result; acknowledgment still means accepted/queued, not consumed.
 
 An unloaded persisted recipient may be
 reopened for sending without changing model/effort. Read-only inspection does
-not reopen it. Both sessions must be ordinary sessions in the declared physical
-checkout; the helper refuses child/fork relations and identical IDs.
+not reopen it. Both sessions must be ordinary independent root sessions on the
+same declared Pi Web endpoint. Their expected physical directories may differ,
+but each must resolve locally and match its own session metadata. The helper
+refuses child/fork relations and identical IDs.
 
 Every message is marked as a peer dispatch/report, with sender, recipient and
 dispatch identity. This is transport metadata, not new user authorization. The

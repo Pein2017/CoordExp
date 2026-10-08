@@ -246,6 +246,16 @@ class PiWebFixture:
 
 
 class PiWorkerTurnTest(unittest.TestCase):
+    def test_cwd_arguments_require_unambiguous_expected_directories(self) -> None:
+        parse = runpy.run_path(str(SCRIPT))["parse_args"]
+        with self.assertRaises(SystemExit):
+            parse(["--lead-session", LEAD, "--worker-session", WORKER,
+                   "--lead-cwd", str(self.root)])
+        with self.assertRaises(SystemExit):
+            parse(["--lead-session", LEAD, "--worker-session", WORKER,
+                   "--cwd", str(self.root), "--lead-cwd", str(self.root),
+                   "--worker-cwd", str(self.worker_root)])
+
     def test_default_endpoint_and_delivery_arguments(self) -> None:
         parse = runpy.run_path(str(SCRIPT))["parse_args"]
         args = parse(["--cwd", str(Path.cwd()), "--list-models"])
@@ -255,7 +265,10 @@ class PiWorkerTurnTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / "lead-worktree"
+        self.root.mkdir()
+        self.worker_root = Path(self.temp.name) / "worker-worktree"
+        self.worker_root.mkdir()
         self.fixture = PiWebFixture(self.root)
         self.server = self.fixture.new_server()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -295,6 +308,10 @@ class PiWorkerTurnTest(unittest.TestCase):
         if receipt is not None and message is not None:
             values += ["--send", "--message", str(message), "--receipt", str(receipt)]
         return values
+
+    def split_cwd_pair_args(self, to: str = "worker") -> list[str]:
+        return ["--base-url", self.base, "--lead-session", LEAD, "--worker-session", WORKER,
+                "--lead-cwd", str(self.root), "--worker-cwd", str(self.worker_root), "--to", to]
 
     def test_create_verifies_names_then_sends_with_identity_and_direct_return(self) -> None:
         message = self.message_file("Inspect only the assigned artifact; do not expand scope.")
@@ -342,6 +359,67 @@ class PiWorkerTurnTest(unittest.TestCase):
             "creation_unknown", "created", "delivery_unknown",
         ])
 
+    def test_pair_send_supports_distinct_worktrees_and_inline_text(self) -> None:
+        self.fixture.sessions[WORKER]["cwd"] = str(self.worker_root)
+        receipt = self.root / "cross-worktree-send.json"
+        message = "Quick peer check: report whether the target is reachable."
+        reply_to = "00000000-0000-4000-8000-000000000099"
+        self.fixture.receipt_path = receipt
+        result = self.run_cli(self.split_cwd_pair_args() + [
+            "--send", "--text", message, "--reply-to", reply_to, "--receipt", str(receipt),
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["lead"]["cwd"], str(self.root))
+        self.assertEqual(output["worker"]["cwd"], str(self.worker_root))
+        saved = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(saved["lead_cwd"], str(self.root))
+        self.assertEqual(saved["worker_cwd"], str(self.worker_root))
+        self.assertNotIn("cwd", saved)
+        self.assertEqual(saved["reply_to_dispatch_id"], reply_to)
+        prompt = next(body for kind, _, body in self.fixture.calls
+                      if kind == "PROMPT_BODY")["message"]
+        self.assertIn(f"reply_to_dispatch_id={reply_to}", prompt)
+        self.assertIn(f"sender_session_id={LEAD}", prompt)
+        self.assertIn(f"recipient_session_id={WORKER}", prompt)
+        self.assertIn(message, prompt)
+
+        self.fixture.calls.clear()
+        self.fixture.info_overrides[WORKER] = {"cwd": str(self.root)}
+        rejected = self.run_cli(self.split_cwd_pair_args() + [
+            "--send", "--text", message, "--receipt", str(self.root / "wrong-peer-cwd.json"),
+        ])
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertFalse(any(method == "POST" for method, _, _ in self.fixture.calls))
+
+    def test_create_can_target_a_distinct_worker_worktree_and_generates_return_route(self) -> None:
+        self.fixture.cwd = str(self.worker_root)
+        message = self.message_file("Inspect the assigned artifact and report the result.")
+        receipt = self.root / "cross-worktree-create.json"
+        self.fixture.receipt_path = receipt
+        result = self.run_cli([
+            "--base-url", self.base, "--lead-session", LEAD,
+            "--lead-cwd", str(self.root), "--worker-cwd", str(self.worker_root),
+            "--create", "--provider", "openai", "--model", "gpt-6-sol",
+            "--effort", "high", "--name", "cross-worktree-peer", "--send",
+            "--message", str(message), "--receipt", str(receipt),
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        saved = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(saved["lead_cwd"], str(self.root))
+        self.assertEqual(saved["worker_cwd"], str(self.worker_root))
+        create_body = next(body for method, path, body in self.fixture.calls
+                           if method == "POST" and path == "/api/agent/new")
+        self.assertEqual(create_body["cwd"], str(self.worker_root))
+        prompt = next(body for method, path, body in self.fixture.calls
+                      if method == "POST" and path.endswith(f"/{CREATED}")
+                      and body.get("type") == "prompt")["message"]
+        self.assertIn("--lead-cwd", prompt)
+        self.assertIn(str(self.root), prompt)
+        self.assertIn("--worker-cwd", prompt)
+        self.assertIn(str(self.worker_root), prompt)
+        self.assertIn(f"--reply-to {saved['dispatch_id']}", prompt)
+
     def test_list_models_needs_no_session_and_never_mutates(self) -> None:
         result = self.run_cli(["--base-url", self.base, "--cwd", str(self.root), "--list-models"])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -350,6 +428,18 @@ class PiWorkerTurnTest(unittest.TestCase):
         ])
         self.assertEqual(len(self.fixture.calls), 1)
         self.assertEqual(self.fixture.calls[0][0], "GET")
+
+    def test_list_models_can_use_worker_cwd_without_session_pair(self) -> None:
+        self.fixture.cwd = str(self.worker_root)
+        result = self.run_cli([
+            "--base-url", self.base, "--worker-cwd", str(self.worker_root), "--list-models",
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["cwd"], str(self.worker_root))
+        self.assertEqual(output["worker_cwd"], str(self.worker_root))
+        self.assertEqual(parse_qs(urlsplit(self.fixture.calls[0][1]).query)["cwd"], [str(self.worker_root)])
+        self.assertFalse(any(method == "POST" for method, _, _ in self.fixture.calls))
 
     def test_create_catalog_rejections_happen_before_any_mutation(self) -> None:
         for catalog in (
