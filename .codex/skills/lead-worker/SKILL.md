@@ -18,6 +18,18 @@ a runtime parent relation. Do not substitute a subagent when the user requested
 two independent sessions. Here, "thread" and "session" name the same role in
 different harnesses.
 
+## Protect the lead's decision context
+
+In this lead/worker workflow, delegate execution-heavy work by default: broad
+source investigation, implementation, routine checks/repair, run observation and
+bulk artifact processing belong with the worker. The lead retains the question,
+contrasts, authorization, dependencies, decisive evidence, interpretation and
+acceptance. Do small or tightly coupled work directly when delegation would cost
+more; do not duplicate an already-owned worker task. Directly checking decisive
+original evidence remains part of lead acceptance, not a reason to repeat every
+technical check. Markdown owners, skills and reports are freely readable; keep
+raw execution history out of the lead's routine reading, not durable knowledge.
+
 ## Choose the worker and bind the package
 
 Reuse a designated worker while its task and context remain reliable. Follow
@@ -37,19 +49,12 @@ another reply, retry/relaunch limits, and the boundary requiring a lead or user
 decision. For exploration, name known paths or symbols and the uncertainty to
 resolve. Add budgets only when material.
 
-Define packages around decisions, not technical phases. When the question,
-contrast, inputs, resource bounds and stop rule are settled and execution is
-authorized, prefer one package covering implementation, necessary checks,
-execution, terminal artifact verification and a candidate report. Specify the
-conditions for continuing; passing a routine check should not require another
-lead reply. Use the [worker continuation rules](../native-agent-team-guide/SKILL.md#coordinate-and-continue)
-for repair and escalation. A progress report need not pause authorized work.
-
-Separate discovery when its findings can change the design or authorization;
-otherwise keep source inspection inside the execution package. Preserve required
-checks and release gates. Name who can satisfy each gate under the existing grant;
-if a gate explicitly requires a lead decision or missing permission, stop there
-rather than bypassing it. Bundling does not authorize a successor experiment.
+Use the [outcome-package rules](../native-agent-team-guide/SKILL.md#assign-and-choose-the-team)
+and [worker continuation rules](../native-agent-team-guide/SKILL.md#coordinate-and-continue).
+Explicitly separate routine work the worker can finish without another reply
+from changes requiring a decision. A check passing or a progress report does
+not create another approval stage; discovery that can change the scientific
+design or authority does.
 
 For example: "Implement the agreed three-condition probe, run the necessary CPU
 checks, then execute the bound native run if those checks pass and its release
@@ -114,13 +119,11 @@ Follow [global checkpoint and waiting rules](../../AGENTS.md#checkpoints-and-wai
 A timeout or `idle` status is not acceptance; do not fetch routine transcripts.
 
 At decision checkpoints and completion, the worker reports directly to the lead
-task. Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with
-source identities, evidence/checks, resource and job state, changed paths and
-unresolved questions. The lead verifies the stable candidate at its consumer
-and alone marks it `lead-accepted`; user-owned decisions require separate
-`user-accepted` evidence. Record acceptance in the existing research record. Do
-not reopen a worker after its package is complete unless a bounded correction
-changes its next action.
+task using the [decision-focused report and acceptance contract](../native-agent-team-guide/SKILL.md#report-and-accept).
+For research, record accepted findings and limits at the existing research owner;
+optional memory capture follows that closeout, not the other way around. Do not
+reopen a worker after its package is complete unless a bounded correction changes
+its next action.
 
 Use the [durable job handoff](../native-agent-team-guide/SKILL.md#durable-job-handoff)
 for long external jobs; interruption alone does not stop a job.

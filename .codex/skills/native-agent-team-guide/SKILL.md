@@ -27,16 +27,28 @@ needs a concrete benefit and authorization. Resolve supported model/effort and
 fork settings from the current tool schema; full-history forks may disallow
 setting overrides. Verify actual settings against global model routing. For Pi Web,
 apply the [explicit invocation policy](../../AGENTS.md#model-routing): choose the
-resource profile separately from the temporary role, supply every lead-selected
-execution field, and never treat a profile or parent default as the decision.
-Resume retains the child's history/isolation rather than creating a new fork;
-request a new child when those conditions need to change.
+resource profile separately from the temporary role and explicitly select
+`subagent_type` for each new child; do not rely on a default. Match required MCP,
+web and execution tools to the selected resources before dispatch: inherited
+conversation does not inherit tools, and configured tools do not prove a live
+connection. Supply every lead-selected execution field. On resume, omit the
+creation-only profile choice and retain the child's history/resources/isolation;
+request a new child when a different resource bundle or isolation is needed.
 
 Bind the package to outcome/non-goals, physical checkout and owned paths,
 authority, source/input identities, dependencies, actual consumer/schema,
 acceptance evidence, return target, authorized next actions, retry/relaunch limits
 and stop boundary. Add constants only when they affect execution. An exploration
 brief names entrypoints and the uncertainty, not a speculative implementation.
+
+Size the package around an outcome, not a technical phase. When design and
+execution authority are settled, include implementation, necessary checks,
+authorized execution, terminal-artifact verification and a candidate report.
+State both what the worker may continue or repair without a reply and what
+requires a decision. Separate discovery only when it can change the design or
+authority; otherwise keep source inspection inside the package. Preserve release
+gates and name who can satisfy them. An unresolved gate is not permission to
+bypass it, and a completed package grants no successor experiment.
 
 For the experimental shared-memory MCP, name recall/candidate duties and the
 consolidator. Follow [its skill](../shared-memory/SKILL.md): a child needs its own
@@ -56,6 +68,9 @@ retry and stop bounds. A failed check alone needs no lead signoff or arbitrary
 repair-count ceiling. Preserve frozen identities and meaningful checks; escalate
 changes to research meaning, scope, material cost or stop rules. Continue unaffected
 work and report decision-bearing failures with evidence, impact and a next step.
+A progress report is not a request to pause. For example, repair a gallery from
+saved outputs inside the package; escalate if the repair instead requires an
+ungranted model rerun or a changed scoring definition.
 
 Checkpoint at a decision, first production-shaped result, acceptance or material
 rework risk, not every phase. For changed process/artifact ownership, use
@@ -69,12 +84,22 @@ use bounded relevant intervals, exit status and terminal artifacts.
 After a demonstrated semantic misunderstanding, clarify the invariant and a
 counterexample or take over tightly coupled work. More effort alone is not a fix.
 
-Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`, with changed
-paths, source/input/runtime/artifact identities, actual exit statuses, structured
-checks, raw-evidence pointers, consumer coverage, unresolved questions and job state.
-The lead reuses unchanged package checks and verifies the final consumer/decision
-boundary before `lead-accepted`; user-owned decisions need `user-accepted` evidence.
-A worker's technical acceptance is not final scientific acceptance.
+## Report and accept
+
+Return `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED` or `SUPERSEDED`. Lead with
+the outcome, decision needed, material failures/limits and remaining job state;
+include changed paths, relevant source/input/runtime/artifact identities, actual
+exit statuses, checks and consumer coverage. Link raw evidence with precise
+locations instead of replaying the execution diary or dumping logs/manifests.
+Keep detail proportional to the task; a report need not become another artifact.
+
+The lead reuses unchanged package checks and directly verifies the evidence that
+can change the final consumer/decision boundary before `lead-accepted`. Inspect
+raw logs when a failure, contradiction or missing check requires them, not as a
+routine second execution review. Markdown owners, skills and reports remain
+freely readable whenever useful; this boundary limits redundant execution replay,
+not access to durable knowledge. User-owned decisions need `user-accepted`
+evidence; a worker's technical acceptance is not final scientific acceptance.
 
 ## Durable job handoff
 

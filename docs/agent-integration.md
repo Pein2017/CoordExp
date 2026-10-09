@@ -45,16 +45,23 @@ and future extension. This does not authorize changing a frozen scientific metri
 ## Local Pi customization
 
 Pi Web keeps its built-in subagent engine. Local profiles live in
-`/data/CoordExp/.pi/agents/`; `general-purpose` remains enabled for generic
-engineering, while `explore` and `plan` are disabled in that directory's
-`settings.json`, not removed from vendor source. The historical IDs `coord-scout`,
-`coord-builder`, `coord-research` and `coord-runner` now identify source,
-implementation, research and runtime **resource bundles**, not fixed worker roles.
+`/data/CoordExp/.pi/agents/`; `general-purpose`, `explore` and `plan` are disabled
+in that directory's `settings.json`, not removed from vendor source. The enabled
+IDs `coordexp-scout`, `coordexp-builder`, `coordexp-research` and `coordexp-runner`
+identify source, implementation, research and runtime **resource bundles**, not
+fixed worker roles. Each selects CodeGraph exploration and Shared Memory
+`context`, `search` and `read`, not memory writes or nested `Agent` tools.
+Extension selection remains limited to RTK for builder/runner; scout/research
+load no extensions. The Notion profile is unchanged.
 Their tools, skills, extensions and MCP selections stay configurable; model,
 thinking, turn budget, parent-context inheritance, background mode and isolation
 are explicit task-level choices of the main/lead. The profile files contain no
-execution defaults or fixed report word limits. `general-purpose` is the baseline
-resource subset. See the single
+execution defaults or fixed report word limits. No legacy alias profiles are
+kept: saved child metadata retains historical IDs and frozen resource snapshots,
+so resume does not require the renamed profile or gain its newly selected
+`context` operation. New children use the current definitions; already-live
+catalogs/wrappers may remain stale until reloaded or naturally replaced. Disk
+selection is not evidence of live tool availability. See the single
 [invocation policy](../.codex/AGENTS.md#model-routing) and
 [Pi Web's interface note](../codex-tools/pi-web/docs/agents/subagents.md).
 Temporary roles and output requirements belong in the assignment, which grants
