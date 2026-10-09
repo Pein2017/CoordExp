@@ -1,5 +1,7 @@
 ## 1. Native Workspace Foundation
 
+> **Archive scope (2026-10-09):** This checklist is historical. The user withdrew Gate A human acceptance, all new ROI assistance and the final legacy-replacement rollout. Incomplete checkboxes below denote **not executed, now cancelled**, not outstanding work or successful tests. See [scope closure](scope-closure.md).
+
 - [x] 1.1 Record the approved replacement decisions: native norm1000 Drafts with no Label Studio Draft migration, complete train/val indexes plus sparse Draft rows, simple asynchronous Commit, human-loop-first UAT, real ROI second, and legacy fallback isolation.
 - [x] 1.2 Record the parent/nested legacy commit identities and archive branch in a durable research receipt; prove the tracked Cypress config is restored and keep the AgentGuard-blocked untracked harness outside every commit.
 - [x] 1.3 Add interface-level failing tests for native object canonicalization: strict norm1000 geometry, official sparse COCO-80 IDs, source/new/ROI stable keys, positive-ID preservation, metadata allowlist, deterministic semantic hash, duplicate rejection, and presentation exclusion.
@@ -24,7 +26,7 @@
 ## 3. Lightweight Human Annotation Gate
 
 - [x] 3.1 Add the build-free HTML/CSS/ES-module application shell with train/val project selector, full task cursor/list, image viewport, compact status panel, and no Label Studio/Node runtime dependency.
-- [ ] 3.2 Add SVG image/overlay coordinate mapping and pointer-tested bbox select/create/move/resize/delete with server-returned canonical norm1000 geometry, stable keys, zero rotation, zoom/pan, and natural-aspect preservation.
+- [x] 3.2 Add SVG image/overlay coordinate mapping and pointer-tested bbox select/create/move/resize/delete with server-returned canonical norm1000 geometry, stable keys, zero rotation, zoom/pan, and natural-aspect preservation.
 - [x] 3.3 Add keyboard COCO-80 exact/prefix/substring/spelling-tolerant search, canonical sparse-ID selection, cancellation, and rejection of aliases/free-form persistence.
 - [x] 3.4 Add one client Draft controller for discrete autosave, idempotent mutation IDs, save/conflict/error state, Next/Previous/row navigation flush, pending-Draft reminder, unload warning only for unsaved local state, and batch-independent navigation.
 - [x] 3.5 Add local Undo grouping plus show-all, dim-non-selected, hide-non-selected, per-region visibility, restore, focused deletion recovery, and tests proving presentation never changes semantic hash or save count.
@@ -39,7 +41,7 @@
 - [x] 3.14 Add tested rendered-image wheel routing: Command/Meta zoom, plain vertical pan, Shift horizontal pan with browser delta normalization, letterbox/outside page pass-through, and fit/boundary handoff without Draft mutation.
 - [x] 3.15 Accept post-Commit canonical object reordering through stable-key semantic comparison, preserve identity-only enrichment and Undo, and latch genuine rebind failures so status polling cannot repeatedly rebuild the canvas.
 
-## 4. Real ROI Assistance Gate
+## 4. Real ROI Assistance Gate (withdrawn; historical proposal)
 
 - [ ] 4.1 Add failing native target/finalization tests and implement SQLite current-target capture, target/revision CAS recheck, inference receipt resolution, and all-valid-results atomic Draft append with idempotent response-loss recovery.
 - [ ] 4.2 Add profile-list/infer/status APIs over the existing allowlisted launch manager, resident engine, parser, ROI transform, cancellation/deadline, and credential-safe receipt store without importing the offline inference pipeline entrypoint.
@@ -49,10 +51,10 @@
 - [ ] 4.6 Execute one accepted real-profile ROI smoke through current model/prompt/parser components and attest canvas/profile/transform/raw/mapped/Draft/batch/working/materialized links plus unchanged source/images.
 - [ ] 4.7 Gate Wave 4 with targeted tests, strict OpenSpec validation, inference-entrypoint/source-residue checks, and separate engineering plus intent-contract audits with no unresolved P0/P1 findings.
 
-## 5. Operator Handoff and Replacement Acceptance
+## 5. Operator Handoff and Replacement Acceptance (withdrawn except completed 5.1a)
 
 - [ ] 5.1 Run representative train/val human-only and inference-assisted sessions, materialize the terminal generation, load it through the current coordexp-infras data path, and verify positive/negative IDs, sparse category mapping, geometry, ordering, metadata, and shared images.
-- [ ] 5.1a Add and attest the operator-approved training publisher that validates a terminal generation and the 12000-token ceiling, then transactionally replaces the selected max_len12000 norm/coord pair with shared image locators while preserving original COCO data and recovering the previous pair on failure.
+- [x] 5.1a Add and attest the operator-approved training publisher that validates a terminal generation and the 12000-token ceiling, then transactionally replaces the selected max_len12000 norm/coord pair with shared image locators while preserving original COCO data and recovering the previous pair on failure.
 - [ ] 5.2 Add concise operator docs for dependencies, launch/shutdown, runtime roots, Draft versus Commit, recovery/status, output/materialization, ROI profiles, known exclusions, fallback, and protected source data.
 - [ ] 5.3 Record final legacy boundaries: archived vendor branch, old OpenSpec status, retained 8080/state disposition, new runtime identity, and the manual cleanup command for AgentGuard-blocked untracked harness files.
 - [ ] 5.4 Conduct final user acceptance on train and validation, require explicit approval before deactivating legacy 8080 or treating the standalone workspace as active, then sync stable specs/docs and archive `coco-refinement` only after every requirement has executed evidence.
@@ -65,3 +67,8 @@
 - [x] 6.4 Complete the minimum accepted publisher behavior from 5.1a, then chain terminal Focus Commit to that validated background publisher for the same split/generation; persist/recover one queue-batch-publication status chain, hold the split batch-process barrier, reject overtaking same-split Commit/release while nonterminal, preserve the prior norm/coord pair on failure, retain the active queue, and support publication retry without Draft recapture.
 - [x] 6.5 Add Focus mode to the build-free client with exact ordered task list, bounded Next/Previous, current/total and pending-count cues, separate Commit/publish states, Focus Commit control, and an explicit switch back to full-index navigation.
 - [x] 6.6 Run repository/API/client regression tests for valid and invalid queue creation, member identity revalidation, restart and pre-publication crash recovery, release safety, scoped versus ordinary Commit admission, later Draft preservation, automatic publish success/failure/retry, no generation overtaking, source/raw/image immutability, and responsive editing; then run strict OpenSpec validation and separate engineering plus intent-contract audits.
+
+## 2026-10-09 checklist reconciliation
+
+- Task 3.2 is fulfilled by `src/coco_refinement/static/{svg-editor,editor-geometry}.js`, the canonical Draft/API integration and focused pointer/geometry tests. Task 5.1a is fulfilled by `src/coco_refinement/dataset_publisher.py`, the existing completed Focus/ordinary Commit integration (6.4), and target/rollback/token-budget tests. On the current checkout, with Node v22.22.0 selected for the maintained `--experimental-default-type=module` test invocation, the relevant editor/geometry/publisher tests passed **22/22**. An initial run under the WebCodex-bundled Node v24.16.0 failed fifteen Node-based tests before assertion because that binary rejects this retired CLI flag; seven Python publisher tests passed. This is an invocation-version mismatch, not evidence that the editor implementation failed.
+- Tasks 3.8, 4.1–4.7, 5.1, 5.2, 5.3 and 5.4 were not completed or accepted. The user explicitly cancelled them later on 2026-10-09; their unchecked states remain as historical evidence, not as an active backlog. Gate A human approval, real ROI, production-shaped train/val model-assisted loading and final legacy replacement are not established by these focused tests. No live annotation service, real training publish, user acceptance or legacy deactivation was performed in this reconciliation.
