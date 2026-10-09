@@ -35,3 +35,8 @@ before any tool or compaction. Its receipt is
 `.local/qualification/continuation-9UkwKX/result.json`. No retry was made. The
 deterministic checks establish lifecycle/persistence behavior, not live model
 continuation through an opaque checkpoint. This change remains unarchived.
+
+## Historical-scope closeout — 2026-10-09
+
+The user approved closing stale OpenSpec acceptance debt rather than retrying the original hosted request. Item 2.2 remains **unchecked**: the native model/provider continuation was never observed in this scope. The local Pi 1.0.3 SDK, release and shared-profile adoption evidence above remains valid only at its tested boundary; later Pi local-compaction scheduling and releases have independent records. Archive this historical change without implying hosted success. Any future live continuation qualification should be separately selected against the then-current installed model/provider and deployment, with a fresh bounded cost/stop policy.
+
