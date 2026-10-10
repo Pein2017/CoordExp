@@ -1,19 +1,22 @@
 # Pi Web independent-session transport
 
-Use this for a user-requested pair of ordinary Pi Web sessions. The
+Use this for an explicitly selected pair of ordinary Pi Web sessions. The
 [lead-worker skill](../SKILL.md) owns roles and authorization. The helper is
 [`pi_worker_turn.py`](../scripts/pi_worker_turn.py); it does not call Pi Web's
-`Agent` tools or assign a parent/subagent relation. It requires the local Pi Web
-HTTP service; it is not a terminal-Pi RPC adapter. Both sessions must be visible
-through the same Pi Web endpoint; this helper does not bridge separate services
-or machines and does not create a shared-file mailbox.
+`Agent` tools or assign a parent/subagent relation. The caller may use any
+harness, including Codex, but the recipient must be a Pi Web session: session
+IDs belong to that destination backend. This does not translate Codex thread
+IDs, provide Codex-to-Codex routing, or bridge separate Pi Web services or
+machines. The helper requires the local Pi Web HTTP service; it is not a
+terminal-Pi RPC adapter and does not create a shared-file mailbox.
 
-## Resolve the pair and backend
+## Resolve the legacy pair and backend
 
-Use the lead's actual Pi session ID, not a Codex thread ID, worker ID or filename
-guessed from a timestamp. Start the lead as a normal Pi Web conversation. The
-worker is another normal session with independent history and settings. Do not
-open the same session in a separate CLI writer while Pi Web owns it.
+For legacy pair/create commands, use the lead's actual Pi session ID, not a
+Codex thread ID, worker ID or filename guessed from a timestamp. Start the lead
+as a normal Pi Web conversation. The worker is another normal session with
+independent history and settings. Do not open the same session in a separate
+CLI writer while Pi Web owns it.
 
 The user-selected local default is `http://127.0.0.1:12345`; omit `--base-url`
 for normal CoordExp use. No port discovery or listener check is needed before
@@ -53,6 +56,65 @@ report the specific failure and whether creation/delivery may have occurred;
 do not launch broad source exploration or change services, credentials or routing.
 Use targeted source inspection only for an actual transport debugging task.
 The helper bypasses ambient HTTP proxies and refuses redirects.
+
+## Route one selected peer
+
+The legacy lead/worker flags below remain available. For an existing Pi Web
+peer without lead/worker roles, use one of these mutually exclusive forms. Both
+selected sessions must be distinct ordinary root sessions visible through the
+same declared endpoint. Explicit IDs are Pi Web IDs, and each explicit cwd must
+be an absolute physical directory that matches that session. Without `--send`,
+the helper only inspects; it does not start a turn. These routes address one
+recipient only.
+
+**Explicit Pi Web IDs and directories:**
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
+  --sender "$SENDER_PI_SESSION_ID" --recipient "$RECIPIENT_PI_SESSION_ID" \
+  --sender-cwd /absolute/sender-worktree \
+  --recipient-cwd /absolute/recipient-worktree \
+  --send --text 'Schema field is ready; see the task report.' \
+  --receipt /absolute/task-owned/dispatch.json
+```
+
+**Aliases from a caller-selected task state:**
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
+  --participants-state /absolute/task/state.json \
+  --sender gradient-worker --recipient runtime-worker \
+  --send --text 'Schema field is ready; see the task report.' \
+  --receipt /absolute/task-owned/dispatch.json
+```
+
+The state contains a transport-owned version-1 section; other task/scientific
+fields are ignored and the file is read-only to the helper:
+
+```json
+{
+  "pi_peer_transport": {
+    "version": 1,
+    "participants": {
+      "gradient-worker": {
+        "session_id": "<canonical Pi Web session UUID>",
+        "cwd": "/absolute/physical/gradient-worktree"
+      },
+      "runtime-worker": {
+        "session_id": "<canonical Pi Web session UUID>",
+        "cwd": "/absolute/physical/runtime-worktree"
+      }
+    }
+  }
+}
+```
+
+Aliases select exact Pi Web session IDs and cwd bindings; they are not
+identities, permissions or inferred role names. Do not combine alias and
+explicit-ID routing, override alias cwd values, mix new peer flags with legacy
+pair/create/model-list modes, or request multiple recipients. Invalid bindings
+fail before API mutation. A receipt records the resolved IDs and directories
+alongside any alias labels.
 
 ## Create and start an independent worker
 
@@ -114,24 +176,53 @@ python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
   --reply-to "$PREVIOUS_DISPATCH_ID" --receipt /absolute/reply.json
 ```
 
-`--message` and `--text` are mutually exclusive. Prefer `--message` for long
-assignments/reports; it reads a UTF-8 file and does not put its contents in the
-shell command line. The helper retains explicit session-ID addressing, a fresh
-dispatch UUID, an authority-neutral envelope, a content-hash receipt and the
-existing queue/steering modes. Generated return commands tag their reply with the
+`--message` and `--text` are mutually exclusive. `--message FILE` reads and
+sends the entire UTF-8 file body; it is not a report attachment or pointer. Use
+`--text` for a short brief and optional `--report-path` for a literal absolute
+report reference. `--report-section`, `--revision` and `--supersedes` add
+reference metadata (`--report-section` requires `--report-path`). The helper
+does not open, stat, hash, canonicalize or inject the referenced report, so a
+syntactically valid but unavailable path is not an existence or verification
+claim. These fields do not impose a word limit, change authority, or select a
+delivery mode. The receipt retains routing and reference metadata; the body and
+full envelope have separate hashes.
+
+For example, a direct peer brief may point at one affected report section:
+
+```bash
+python /data/CoordExp/.codex/skills/lead-worker/scripts/pi_worker_turn.py \
+  --sender "$SENDER_PI_SESSION_ID" --recipient "$RECIPIENT_PI_SESSION_ID" \
+  --sender-cwd /absolute/sender-worktree \
+  --recipient-cwd /absolute/recipient-worktree \
+  --send --text 'Use the corrected presentation table; keyed data are unchanged.' \
+  --report-path /absolute/task/reports/ce-presentation.md \
+  --report-section summary-table --revision r2 \
+  --supersedes 'r1 presentation table only' \
+  --receipt /absolute/task-owned/correction.json
+```
+
+The helper retains explicit session-ID addressing, a fresh dispatch UUID, an
+authority-neutral envelope, a content-hash receipt and the existing
+queue/steering modes. Generated return commands tag their reply with the
 original dispatch UUID; this is conversation correlation, not server-side
 exactly-once delivery. The helper does not resolve recipients by display name or
 broadcast to every session.
 
 Choose delivery explicitly when needed, in either direction:
 
-- `--delivery queue` (default): starts an idle recipient, or leaves a follow-up
-  for after its current work. Use for results, candidates and routine questions.
-- `--delivery steering`: starts an idle recipient, or injects a steering message
-  at a subsequent agent processing boundary while it is busy. Use for an urgent
-  correction that changes ongoing work, such as preventing a duplicate launch.
-  State the affected action and new evidence. It does not kill an external job
-  or guarantee immediate/exact-turn interruption.
+- `--delivery queue` (default): starts a turn in an idle recipient with the
+  queued message, or leaves a follow-up for after its current work when busy.
+  Use for results, candidates and routine questions.
+- `--delivery steering`: starts a turn in an idle recipient, or injects a
+  steering message at a subsequent agent processing boundary while it is busy.
+  Use for an urgent correction to ongoing work, naming the affected action and
+  new evidence. It does not cancel an external job or guarantee immediate or
+  exact-turn interruption.
+
+An accepted/queued receipt means the server accepted the prompt submission; it
+does not mean the recipient read, consumed or accepted the message, completed
+the requested work, or accepted a result. Queue is not a passive notification,
+and steering is not cancellation.
 
 For example, append `--delivery steering` to the return command above to steer
 the lead; omit `--to lead` to steer the worker. These are cross-session peer
